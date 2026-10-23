@@ -1185,3 +1185,75 @@ Evidence lives in **`.canary/alpine-validation/runs/20261022T223250Z-r2-resource
 Reusable owned commands: `python .canary/alpine-validation/prepare-r2-resource.py`, `python .canary/alpine-validation/configure-r2-resource.py`, the cached start/serial/offline setup, `python <run>/execute-r2.py`, `python .canary/alpine-validation/run-r2-production.py`, `python .canary/alpine-validation/collect-r2-resource.py`, and `.canary/alpine-validation/finish-r2-resource.ps1`. Complete scripts and original input/build/module records remain in the private run. No generated credential, user `.env`/database/default binary, fixture DB/identity/body or private SSH key is in the log archive; generated runtime tokens in command evidence are placeholders.
 
 Controllers removed only explicitly named owned containers in `finally`. No named volumes or custom networks were created. After evidence verification, cleanup removed the dated guest directory (including own DB/identity/body/binary copies); inventory showed **no containers or volumes**, only default networks and **6.1 GiB free disk**. QEMU **18008** stopped; dedicated SSH keypair, known-hosts and authoritative PID files were absent at **2026-10-22T22:41:41.2380350Z**. Cached tools/APKs/images/disk were retained, qcow2 physical size **6109396992 bytes**. User services/ports3100/5173, user data, host DNS/trust and unrelated browser artifacts stayed untouched. No nested agent, commit or application/module/UI/test edit occurred. Only private validation helpers/evidence and this append changed; all prior bytes/reports were preserved. Runtime ownership is released with the VM stopped; another Alpine/R3 run requires a separate root request.
+
+
+## 2026-10-23 protocol 14: integrated GitHub container validation
+
+Source: [`77416a15b2303aa6faaae254347c6e15e609f1c7`](https://github.com/Narehood/Uptime-Canary/commit/77416a15b2303aa6faaae254347c6e15e609f1c7).
+Workflow: [39972484403](https://github.com/Narehood/Uptime-Canary/actions/runs/39972484403).
+
+This source adopts the reviewed official JSONata 2.2.2 runtime with the finite
+profile and optimized private descriptor/numeric guards. The former Go port
+remains historical test source, with no production fallback. This is protocol
+14 and requires a coordinated cluster upgrade. Worker slots, memory controls,
+probe deadlines and the one-second advisory VM timer are unchanged.
+[Migration notes](../apps/node-go/internal/jsonquery/RUNTIME_MIGRATION.md)
+record the four narrow legacy semantic expectation updates and the bounded
+allocation outcome classification. The independent matcher/projection
+regressions remain unchanged.
+
+The preceding protocol-13 run (`23e4b13`, workflow 39967318101) passed the full
+Alpine core race suite: 869 passing events, no test failures or race warnings.
+Its subsequent worker-parent phase failed only in the old JSONata package:
+1,414 passing events and 79 failure events. That failure remains historical;
+it is not a result for the replacement runtime.
+
+| Protocol-14 gate | Result |
+| --- | --- |
+| Windows native node packages, sequential, cgo disabled/read-only modules | 19/19 packages passed; guarded command 319.266 seconds |
+| Provenance, notices, module verification and node-wide vet | Passed |
+| Static Linux amd64 and arm64 production builds, normal module graph | Passed; compilation is not execution |
+| Alpine node Dockerfile build and runtime checks | 11/11 passed |
+| Web Dockerfile, assets, headers, health, SPA fallback and nonroot runtime | Passed |
+| Full Alpine race workflow | Passed; core 869 and worker-parent packages 1,527 passing test/subtest events, zero failures, skips or race warnings |
+
+Node runtime checks include actual HTTP/ICMP results, local outage/recovery
+webhooks, restart persistence, nonroot/read-only/no-new-privileges policy and
+separate private retained identity storage. Portainer's stack template passes
+`docker compose ... config --quiet`; no deployment to a user's Portainer host
+is claimed. The original Dockerfiles are used. Runtime source hashes are
+verified in every job before building.
+
+Local validation used only `scripts/bounded_validation.py`, one owned build
+cache and disposable outputs. Sampled peaks remained below 3 GiB repository
+and 512 MiB scratch limits; cleanup returned scratch to zero. The idle tree
+was 1,230,270,232 bytes (about 1.15 GiB), with a 240,786,230-byte owned cache.
+Shared module-cache growth was 715 bytes. CI archives were inspected in memory,
+without keeping another source, binary or log collection locally. No private
+VM, user database, environment file or live provider was used.
+
+The public GitHub job artifacts retain exact commands and detailed logs. This
+section distinguishes native compilation, container execution and race scope;
+it does not certify complete Kuma parity or a tagged production release.
+
+The final workflow succeeded at **2026-10-23 15:11:52 UTC**. Its three jobs
+all passed. The race runs instrument the parent packages and use deliberately
+uninstrumented production worker children under the unchanged process caps.
+The helper packages, including `jsonquery/jsvm`, also pass `-race` separately;
+their quiet-output results are not added to the event totals above. The
+unchanged independent matcher/projection review passes all **130 cases** in
+the actual Alpine worker run. Both parent reports contain empty failed,
+skipped, unfinished and panic lists; source, worker and fixture hashes remain
+unchanged throughout each run.
+
+All three artifacts carry the same **539-entry** source manifest, SHA-256
+`424c8486bb022c464e7efc41830d6216f7f50cac5831ade25475774d53a8311d`.
+Every entry matched the local source after the run. The race artifact is
+`12510728087` (243,204 bytes), archive SHA-256
+`751da4212d155d4335023272ec0ffae67ae54362ded743e35de1c24a18d16ac8`.
+Node and web artifact IDs are `12510246051` and `12508754339`. The two parent
+phases used the same production worker SHA-256
+`5b9586d0d4a36b6aefd70ff4cff50493fbed2fb01aaf2454efdc96ef50fbed04`.
+No release binaries were published or retained locally. This result covers
+Linux amd64; arm64 was cross-compiled, not executed. The older standalone
+browser harness and its historical catalogue assertion were not rerun here.
