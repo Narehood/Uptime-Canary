@@ -92,3 +92,27 @@ The new Alpine process/Compose checks are pending their first CI execution.
 Existing protocol-14 node/web/race results remain those linked in
 [container validation](container-validation.md). This extension does not
 relabel those earlier runs as covering the new checks.
+
+
+### First expanded CI run: fixture dependency repaired
+
+On `9add261`, workflow 39989316293's new Alpine proof job passed all 17 tests
+with zero failures/cancellations/skips/todos, exit 0 and no OOM. It also passed
+the actual isolated Compose template check, including private identity storage,
+management CORS and restart persistence. Its artifact is 12517177682. Web passed.
+
+The separate node job stopped before application checks, during fixture health.
+Artifact 12517212241 retains the actual fixture-container traceback:
+
+```text
+File "/fixture.py", line 17, in <module>
+  from validation_workspace import tap_counts
+ModuleNotFoundError: No module named 'validation_workspace'
+```
+
+The fixture image deliberately contains one standalone stdlib script. Moving
+that proof-only import into `validate_proof` restores that contract; no app,
+probe deadline or expected outcome changes. A new isolated-interpreter test
+loads the copied fixture with `python -I -S`, without repository helpers, and
+passes. The original failed CI evidence remains intact. The follow-up full CI
+run is pending; earlier `77416a1` race results are not relabelled as this run.

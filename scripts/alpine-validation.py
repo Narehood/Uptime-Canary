@@ -14,7 +14,6 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from validation_workspace import tap_counts
 
 
 def fixture():
@@ -180,6 +179,8 @@ def main():
             subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
 
     def validate_proof():
+        # The standalone --fixture image contains only this stdlib script.
+        from validation_workspace import tap_counts
         node_image, proof_image, proof = prefix + "-proof-node", prefix + "-proof-image", prefix + "-proof"
         images.extend([node_image, proof_image])
         containers.append(proof)
