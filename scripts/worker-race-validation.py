@@ -23,6 +23,33 @@ _paths_spec.loader.exec_module(_paths_module)
 filesystem_path = _paths_module.filesystem_path
 
 
+def summarize_tests(raw):
+    """Keep package alarms visible even when Go emits no individual test failure."""
+    events, running, panics = [], set(), []
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        events.append(event)
+        name, action = event.get("Test"), event.get("Action")
+        if name and action == "run":
+            running.add(name)
+        elif name and action in ("pass", "fail", "skip"):
+            running.discard(name)
+        for output in event.get("Output", "").splitlines():
+            if output.startswith(("panic:", "fatal error:")):
+                panics.append(output)
+    return {
+        "passedTestEvents": sum(e.get("Action") == "pass" and "Test" in e for e in events),
+        "failedTests": [e for e in events if e.get("Action") == "fail" and "Test" in e],
+        "skippedTests": [e for e in events if e.get("Action") == "skip" and "Test" in e],
+        "failedPackages": sorted({e["Package"] for e in events if e.get("Action") == "fail" and "Test" not in e and "Package" in e}),
+        "unfinishedTests": sorted(running),
+        "panicMessages": panics,
+    }
+
+
 def fingerprints(source):
     source = filesystem_path(source)
     paths = [source / "go.mod", source / "go.sum"]
@@ -76,7 +103,8 @@ def main():
         report["checks"][label] = record
         (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
         try:
-            raw, _ = child.communicate(timeout=1800 if args.core else 600)
+            # Include compilation outside Go's package-wide test alarm.
+            raw, _ = child.communicate(timeout=2100 if args.core else 600)
         except BaseException:
             # Terminate only the exact process tree/session created above.
             if child.poll() is None:
@@ -114,28 +142,22 @@ def main():
     assignment = "uptime-canary/apps/node-go/internal/probeworker/process.raceWorkerExecutable=" + worker.as_posix()
     fixture_assignment = "uptime-canary/apps/node-go/internal/probeworker/process.raceFixtureExecutable=" + fixture.as_posix()
     flags = "-X " + json.dumps(assignment) + " -X " + json.dumps(fixture_assignment)
+    # The full durable capacity/paging suite exceeds 20 minutes on Alpine
+    # under -race. This suite alarm does not alter any probe/worker deadline.
     command = [go, "test", "-race", "-tags=canary_worker_race", "-ldflags", flags,
-               "-json", "-count=1", "-timeout=20m" if args.core else "-timeout=5m"]
+               "-json", "-count=1", "-timeout=30m" if args.core else "-timeout=5m"]
     if args.run:
         command += ["-run", args.run]
     command += ["./apps/node-go/internal/canary"] if args.core else ["./apps/node-go/internal/checks", "./apps/node-go/internal/jsonquery", "./apps/node-go/internal/services", "./apps/node-go/internal/probeworker", "./apps/node-go/internal/probeworker/process"]
     result = run("race-parents", command, {"CGO_ENABLED": "1"})
-    events = []
-    for line in result.stdout.decode("utf-8", errors="replace").splitlines():
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass
     report.update({"sourceUnchanged": fingerprints(source) == before,
                    "workerUnchanged": hashlib.sha256(worker.read_bytes()).hexdigest() == report["workerSha256"],
                    "fixtureUnchanged": hashlib.sha256(fixture.read_bytes()).hexdigest() == report["processFixtureSha256"],
                    "dataRaceWarnings": result.stdout.count(b"WARNING: DATA RACE"),
-                   "passedTestEvents": sum(e.get("Action") == "pass" and "Test" in e for e in events),
-                   "failedTests": [e for e in events if e.get("Action") == "fail" and "Test" in e],
-                   "skippedTests": [e for e in events if e.get("Action") == "skip" and "Test" in e]})
+                   **summarize_tests(result.stdout)})
     report["passed"] = result.returncode == 0 and report["sourceUnchanged"] and report["workerUnchanged"] and report["fixtureUnchanged"] and not report["dataRaceWarnings"]
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps({"evidence": str(output), **{k: report[k] for k in ("passed", "sourceUnchanged", "passedTestEvents", "dataRaceWarnings", "failedTests", "skippedTests")}}, indent=2), flush=True)
+    print(json.dumps({"evidence": str(output), **{k: report[k] for k in ("passed", "sourceUnchanged", "passedTestEvents", "dataRaceWarnings", "failedTests", "skippedTests", "failedPackages", "unfinishedTests", "panicMessages")}}, indent=2), flush=True)
     raise SystemExit(0 if report["passed"] else 1)
 
 
