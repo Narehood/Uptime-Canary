@@ -78,34 +78,36 @@ npm run dev:web   # http://127.0.0.1:5173, while npm run dev is running
 
 Sign in with the node address (`http://127.0.0.1:3100`) and a password or account token. The token or session stays in the tab's memory; only the last node address and theme are stored in the browser. Everything you see is "as known to" that node, and switching nodes is always your choice.
 
-![Dashboard overview from a local two-node test: a headline names the monitors that are down, tiles count down, unknown, up, peers in view, notifications and active maintenance, and a matrix shows each monitor's result from fixture-a and fixture-b. A failing monitor carries a "maintenance: Patch window" tag.](docs/assets/dashboard-overview.png)
+![Dashboard overview in the dark theme from a local two-node test: the headline reads that Payments API and Redis cache are down everywhere and Release gate is pending from 2 of 2 locations. Tiles count 2 down, 0 unknown, 4 of 8 up (1 paused, 1 pending), 1 of 1 peer in view, 1 notification, 1 of 1 maintenance window holding alerts for 1 monitor, and 0 of 4 groups holding alerts. A matrix shows each monitor's result from fixture-a and fixture-b; Payments API carries a "maintenance: Patch window" tag.](docs/assets/dashboard-overview.png)
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-new-monitor.png" alt="New monitor form: check type cards grouped as web and network, databases and caches, messaging and containers, infrastructure and RPC, and passive and operator controlled."></td>
-<td width="50%"><img src="docs/assets/dashboard-monitor-detail.png" alt="Monitor history from a local test: range buttons, then Observed time tiles reading 83.1% observed availability, 24.6% coverage and 2 min 29 s down, a column chart where hatched unknown time precedes green up columns with red down and gray pending slices, and individual-check statistics below."></td>
+<td width="50%"><img src="docs/assets/dashboard-new-monitor.png" alt="New monitor form: check type cards grouped as web and network, remote probes (third party) with Globalping, databases and caches, messaging and containers, infrastructure and RPC, and passive and operator controlled."></td>
+<td width="50%"><img src="docs/assets/dashboard-monitor-detail.png" alt="History of a manual monitor whose state was switched by hand during a local test: range buttons with 1 h chosen, then Observed time tiles reading 75.8% observed availability (up 2 min 26 s of 3 min 12 s known), 5.35% coverage and 46 s down. A column chart shows hatched unknown time before the last few minutes of green up columns with red down and gray pending slices. Individual checks read 108 samples (75 up, 25 down, 8 pending) and 75% sample availability. The incident list beside it still shows the newest down incident as open."></td>
 </tr>
 <tr>
 <td><b>Forms for every check type.</b> Essentials first; credentials, queries, TLS and advanced options open on demand. Stored secrets stay masked and are never cleared by accident, and the form warns before a change would close an open incident.</td>
 <td><b>History you can trust.</b> Observed time shows how long the node actually saw each state: availability of the known time, how much of the range is known at all, and gaps as unknown, never as up. Samples and latency follow with their own denominators. Neither is an SLA.</td>
 </tr>
 <tr>
-<td><img src="docs/assets/dashboard-deliveries.png" alt="Delivery attempts table: a test and a down alert through the Ops webhook channel, both accepted with HTTP 204, and a note that acceptance isn't proof of inbox delivery."></td>
-<td><img src="docs/assets/dashboard-maintenance.png" alt="Maintenance list: a Patch window card marked Active, holding alerts, with its current window shown in UTC and local time, and the monitor it holds."></td>
+<td><img src="docs/assets/dashboard-deliveries.png" alt="Delivery attempts table: a down alert for Payments API and a channel test through the Ops webhook channel, both sent by fixture-a and accepted with HTTP 204, and a note that acceptance isn't proof of inbox, channel or device delivery."></td>
+<td><img src="docs/assets/dashboard-maintenance.png" alt="Maintenance list: a Patch window card marked Active, holding alerts, for a one-time 1 h window shown in UTC and local time, applied to and holding the Payments API monitor."></td>
 </tr>
 <tr>
 <td><b>Every delivery attempt.</b> Per destination: accepted, retrying, held, failed or unknown, with HTTP status, next retry and a plain explanation. Test any channel (it asks first, because it sends a real message).</td>
 <td><b>Planned maintenance.</b> Six schedule types in a named time zone. The node computes the windows; the dashboard shows them in UTC and your local time and marks every monitor it holds.</td>
 </tr>
 <tr>
-<td><img src="docs/assets/dashboard-groups.png" alt="Groups page from a local test: two empty top-level groups marked Health pending, and a Site group marked Health down with a health bar and counts (2 up, 1 down, 1 pending, 0 unknown, 1 paused, 1 in maintenance); its nested Rack B group is indented beneath it with its own counts."></td>
-<td><img src="docs/assets/dashboard-badges.png" alt="Share dialog for a status page: a Badges section with a served-by node, a loopback-address caveat, a whole-page badge reading status down with maintenance, and single-service badges with Markdown and image URL copy buttons; a duplicated public name is listed without a badge."></td>
+<td><img src="docs/assets/dashboard-groups.png" alt="Groups page from a local test: a short explanation of grouping and nesting, then two empty top-level groups, Branch office and Lab, marked Health pending, and a Site group marked Health down with a health bar and counts (3 up, 1 down, 1 pending, 0 unknown, 1 paused, 1 in maintenance) for 5 active monitors across the group and its 1 nested group."></td>
+<td><img src="docs/assets/dashboard-badges.png" alt="Share dialog for a status page: a Badges section with a served-by node, a loopback-address caveat, a whole-page badge reading status down with maintenance, and single-service badges reading up, down with maintenance, and unknown, each with Markdown and image URL copy buttons; a duplicated public name is listed without a badge."></td>
 </tr>
 <tr>
 <td><b>Nested groups.</b> Put groups inside a parent to see the combined current health of everything below it. A missing parent or a cycle shows as unknown with the reason, never as healthy. Nesting changes no alert or maintenance behavior.</td>
 <td><b>Badges and share links.</b> Copy Markdown, HTML or an image URL for a published page or one service. The dialog says which node serves the image, warns about addresses others can't reach, and explains which renames break an embed.</td>
 </tr>
 </table>
+
+Screenshots show the dark theme in Chrome, signed in to one of two private local test nodes built from development commit `1a7447d`. They illustrate the interface; they aren't release evidence.
 
 Editors and admins manage monitors, tags, groups, channels, maintenance, status pages and conflicts; admins also manage accounts. Viewers get a read-only dashboard without credentials, service settings or channel configuration. Design notes: [docs/design.md](docs/design.md).
 
@@ -124,7 +126,7 @@ All 26 types share retries, a retry interval, inversion, placement, channels, re
 
 **Globalping** (protocol 12, development) asks the [Globalping](https://globalping.io) network to run one measurement from a probe matching your location and reads its result.
 
-![New-monitor form with Globalping chosen: a note that the target, location, path, query and request headers are sent to Globalping and its probe while the API token stays on the nodes, then the Ping/HTTP/DNS choice, the URL, a probe location of Frankfurt+AWS, the method and HTTP/2 options, and the response conditions.](docs/assets/dashboard-globalping.png)
+![New-monitor form with Globalping chosen: a note that the target, location, path, query and request headers are sent to Globalping and its probe while the API token stays on the nodes, then the Ping/HTTP/DNS choice, the URL, a probe location of Frankfurt+AWS, the method and HTTP/2 options, and the response conditions with the keyword healthy.](docs/assets/dashboard-globalping.png)
 
 - **What is shared.** The target, location and, for HTTP, the path, query and request headers (including an Authorization header) go to Globalping and the probe it picks, which may keep or publish measurement data under their own policies. The optional API token and API CA certificates stay on your nodes; viewers see neither the options nor an HTTP target's path and query.
 - **What counts.** Target and resolver failures are down. Authentication, quota, API errors, offline probes and Globalping-internal failures are **pending** by default, because they say nothing about the target; an opt-in treats them as down, as Uptime Kuma does. Latency is the probe's own measurement, never the API round trip.
@@ -162,7 +164,7 @@ Protocol 11 (development) lets a group sit inside a **parent group** for an over
 
 ## Status pages
 
-![A public status page titled Fixture status: "All systems operational", an Investigating announcement called Scheduled work, and a Web section where the Website service is operational with a "production: eu" tag.](docs/assets/status-page.png)
+![A public status page titled Service status: "All systems operational", an Identified announcement called Scheduled work about a database upgrade, and a Web section where the Website service is operational with a "production: eu" tag.](docs/assets/status-page.png)
 
 Every node serves published pages as JSON at `/public/status/<slug>`, without an account, cookie or query secret. Pages contain only what you type: page and section titles, a public name for each selected monitor, announcements, and optional certificate dates and public tags. Private names, IDs, targets, errors and node details are never published, and unknown is never shown as up. The dashboard's status-page editor builds a shareable link such as `https://dashboard.example.com/#/status/services?node=https://canary-1.example.com`; visitors can switch to another listed node if one is unreachable. Uptime bars, custom domains, CSS and subscriptions aren't available yet. Details: [status pages](docs/status-pages.md) and [tags](docs/tags.md).
 
@@ -180,6 +182,7 @@ A badge shows the current state only: unknown when results are stale, missing or
 | **Local + dashboard** | `npm run dev`, then `npm run dev:web` | UI `:5173` | ✅ browser-proved on private fixtures |
 | **Docker, headless** | `docker compose up --build -d node` | API `:3100` | ⚠️ images and the identity-volume layout verified with `docker run`; Compose itself and the current source pending |
 | **Docker + dashboard** | `docker compose --profile web up --build -d` | UI `:8080` | ⚠️ earlier snapshots verified; current source pending |
+| **Portainer stack** | Images built on the Docker host, then the [Portainer stack](docs/portainer.md) | API `:3100`, UI `:8080` | ⚠️ template checked with a Compose configuration check only |
 
 Every port listens on `127.0.0.1` by default. All images are Alpine Linux, build stages included; the node runs as an unprivileged user with `no-new-privileges`, and Compose grants `NET_RAW` only for ping. Each node needs its own volumes: `canary-data` at `/data` for the database and a separate `canary-identity` at `/identity` for identity state. Never share them between nodes, and keep the identity volume when you restore a database. Containers created before the identity volume existed need a one-time, stopped-node copy: see [backups](docs/backups.md).
 

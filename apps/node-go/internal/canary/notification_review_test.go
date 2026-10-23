@@ -123,10 +123,19 @@ func TestReviewExistingDestinationRetainsFastOutageDelivery(t *testing.T) {
 }
 
 func TestReviewNotificationTestsRejectAnotherPendingBatch(t *testing.T) {
+	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
 	}))
-	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		// A disconnected client need not cancel an unread POST body's server
+		// context. Always release this intentionally blocked fixture at cleanup.
+		close(release)
+		server.Close()
+	})
 	n := reviewNotificationNode(t)
 	now, nowFn := clock()
 	n.now = nowFn
