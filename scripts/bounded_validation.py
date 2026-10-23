@@ -129,7 +129,7 @@ def trim_cache():
 def usage(module_path, external_cache):
     return {'projectBytes': size(ROOT), 'scratchBytes': size(WORK / 'tmp') + size(WORK / 'outputs'),
             'cacheBytes': size(CACHE), 'moduleBytes': size(module_path),
-            'externalBuildCacheBytes': size(external_cache)}
+            'externalBuildCacheBytes': 0 if Path(external_cache).resolve() == CACHE.resolve() else size(external_cache)}
 
 
 def breach(current, baseline):

@@ -16,6 +16,18 @@ INFO = ("fixture: go1.27.3\n\tpath\tuptime-canary/apps/node-go/cmd/canary\n\tmod
 
 
 class ReleaseValidationTests(unittest.TestCase):
+    def test_native_execution_cannot_be_claimed_by_a_cross_build_or_unknown_machine(self):
+        self.assertEqual(validation.native_target("Linux", "aarch64"), "linux-arm64")
+        self.assertEqual(validation.native_target("Windows", "AMD64"), "windows-amd64")
+        self.assertTrue(validation.execution_policy("linux-arm64", "linux-arm64", True, True, True))
+        self.assertFalse(validation.execution_policy("linux-arm64", "windows-amd64", False, False, False))
+        for flags in ((True, False, False), (False, True, False), (False, False, True)):
+            with self.subTest(flags=flags), self.assertRaisesRegex(ValueError, "host target"):
+                validation.execution_policy("linux-arm64", "windows-amd64", *flags)
+        with self.assertRaisesRegex(ValueError, "host target"):
+            validation.execution_policy("linux-arm64", validation.native_target("Linux", "unexpected"), True, False, False)
+        with self.assertRaisesRegex(ValueError, "native Linux"):
+            validation.execution_policy("windows-amd64", "windows-amd64", True, False, True)
     def test_metadata_rejects_wrong_or_missing_source_target_policy_and_duplicate_fields(self):
         checked = validation.verify_build_info(INFO, "windows-amd64", COMMIT, "go1.27.3")
         self.assertEqual(checked["vcs.revision"], COMMIT)

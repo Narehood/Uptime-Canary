@@ -175,6 +175,51 @@ the shared owned cache below 256 MiB and zero module-cache growth. No VM,
 source snapshot, private cache, external notification or remote measurement
 was created. The failures above remain part of the record.
 
+### Native CI gate (pending first execution)
+
+The new `.github/workflows/release-package-validation.yml` runs serial native
+jobs on Windows amd64, Ubuntu amd64 and Ubuntu arm64. The runner labels are
+listed in [GitHub's hosted-runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+The workflow checks out the actual PR head commit rather than a synthetic merge
+commit, with read-only permissions and no persisted Git credential. Go 1.27.3,
+Node 24.13.0 and all actions are pinned; action dependency caches are disabled.
+It cannot tag, sign or publish a release.
+
+Each fresh disposable hosted runner installs the locked Go modules and the
+existing Node proof dependencies before the guard establishes its baseline.
+That initial remote dependency installation is not claimed as zero module-cache
+growth. No dependency or SDK is installed locally by authoring this workflow.
+The installed Go SDK is linked into the expected tools path instead of copied;
+one owned build cache is reused, with no cache archives or snapshots retained.
+Every subsequent build/test runs through the existing guard, preserving its
+3 GiB repository, 512 MiB scratch and post-baseline module-growth checks. The
+validator explicitly preserves serial Go compilation. The guard also correctly
+recognizes its already-selected owned cache, rather than classifying that same
+directory as unexpected external growth.
+
+The guard fixtures and archive/provenance fixtures run first. Native arm64 also
+runs every node package, filling a previously missing execution gate. Each
+target must then pass `--require-native --full-proofs`: two matching builds,
+verified/extracted archive identity, CLI help and **every** ordinary process
+proof. A mismatched or unknown host architecture is rejected before building;
+a successful cross-build can never satisfy this native gate.
+
+On both Linux architectures the extracted binary additionally runs CLI help in
+a pre-pulled native Alpine container with no network, read-only root, dropped
+capabilities, no-new-privileges and the nonroot host UID. The container image
+digest and actual architecture are recorded. This is a CLI portability check,
+not an assertion that the entire process suite ran inside Alpine. The existing
+broader Alpine application/race workflow remains a separate gate.
+
+Only the overwritten compact report and guard log/result are uploaded, with
+seven-day retention; binaries, archives, fixture databases and outputs are
+removed. Hosted runner dependencies disappear with the job, and no local VM or
+build collection is introduced. Current local source checks pass: nine guard
+test functions (4.188 s guarded) and eleven archive/provenance test functions
+(4.234 s guarded), including native/cross-target classification. Scratch returns
+to zero and shared modules do not grow. These checks do **not** prove the new
+workflow or native arm64 runtime passes; those results are pending execution.
+
 Before calling a release ready, the producer still needs to build and validate
 real Windows/Linux artifacts, verify target-specific dependency notices and
 source provenance, execute the supported native/container gates including

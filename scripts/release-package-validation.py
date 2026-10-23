@@ -26,6 +26,20 @@ spec.loader.exec_module(packager)
 MAIN = "uptime-canary/apps/node-go/cmd/canary"
 
 
+def native_target(system, machine):
+    architecture = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(machine.lower())
+    return system.lower() + "-" + (architecture or "unknown")
+
+
+def execution_policy(target, host, require_native, full_proofs, alpine_help):
+    native = target == host
+    if (require_native or full_proofs or alpine_help) and not native:
+        raise ValueError("Native execution was required but the host target does not match")
+    if alpine_help and not host.startswith("linux-"):
+        raise ValueError("Alpine help validation requires a native Linux host")
+    return native
+
+
 def clean_checkout(commit, root=ROOT):
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("An exact lowercase source commit is required")
@@ -119,7 +133,12 @@ def main():
     parser.add_argument("--commit", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--target", choices=packager.TARGETS, required=True)
+    parser.add_argument("--require-native", action="store_true", help="Refuse cross-build-only acceptance")
+    parser.add_argument("--full-proofs", action="store_true", help="Run every ordinary process proof on the extracted native executable")
+    parser.add_argument("--alpine-help", action="store_true", help="Also execute extracted CLI help in a pre-pulled restricted Alpine container")
     args = parser.parse_args()
+    native = execution_policy(args.target, native_target(platform.system(), platform.machine()),
+                              args.require_native, args.full_proofs, args.alpine_help)
     clean_checkout(args.commit)
     packager.version_value(args.version)
     output = guarded_output("release-package")
@@ -130,7 +149,7 @@ def main():
     env.update({k: v for k, v in os.environ.items() if k in ("GOCACHE", "GOTMPDIR", "GOMODCACHE", "GOPATH")})
     goos, goarch = args.target.split("-")
     env.update(GOTOOLCHAIN="local", GOENV="off", GOWORK="off", GOPROXY="off", GOSUMDB="off",
-               GOOS=goos, GOARCH=goarch, CGO_ENABLED="0", TSX_DISABLE_CACHE="1")
+               GOOS=goos, GOARCH=goarch, CGO_ENABLED="0", TSX_DISABLE_CACHE="1", GOFLAGS="-p=1 -mod=readonly")
     before = source_digest(ROOT)
     report = {"sourceCommit": args.commit, "sourceBefore": before, "target": args.target,
               "version": args.version, "passed": False, "releaseSignoff": False,
@@ -160,7 +179,7 @@ def main():
         binary = output / ("build.exe" if goos == "windows" else "build")
         build = [str(go), "build", "-mod=readonly", "-trimpath", "-buildvcs=true", "-buildmode=exe",
                  "-ldflags=-s -w", "-o", str(binary), "./apps/node-go/cmd/canary"]
-        run("build", build)
+        run("build", build, 360)
         report["buildSettings"] = verify_build_info(run("build-info", [str(go), "version", "-m", str(binary)]), args.target, args.commit, expected_go)
         result = packager.package(binary, output / "archives", args.version, args.commit, args.target)
         report["artifact"] = {k: v for k, v in result.items() if k not in ("archive", "checksum")}
@@ -172,9 +191,7 @@ def main():
         extracted = output / ("canary.exe" if goos == "windows" else "canary")
         unpack_binary(result, extracted, args.target, args.version, args.commit)
         verify_build_info(run("extracted-build-info", [str(go), "version", "-m", str(extracted)]), args.target, args.commit, expected_go)
-        native_os = "windows" if os.name == "nt" else platform.system().lower()
-        native_arch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
-        report["nativeExecution"] = args.target == native_os + "-" + str(native_arch)
+        report["nativeExecution"] = native
         if report["nativeExecution"]:
             if not run("extracted-help", [str(extracted), "--help"], 15).startswith("Commands: serve,"):
                 raise ValueError("Extracted executable did not return expected CLI help")
@@ -182,11 +199,32 @@ def main():
             if not node or not (ROOT / "node_modules/tsx/package.json").is_file():
                 raise ValueError("Existing Node and tsx are required for the native HA proof")
             env["CANARY_BIN"] = str(extracted)
+            tests = sorted((ROOT / "apps/proof/test").glob("*.test.ts")) if args.full_proofs else [ROOT / "apps/proof/test/public-availability.test.ts"]
+            if not tests or any(not path.is_file() for path in tests):
+                raise ValueError("Process proof selection is empty or missing")
+            report["proofs"] = [path.name for path in tests]
             proof = run("extracted-ha-proof", [node, "--import", "tsx", "--test", "--test-concurrency=1",
-                        "--test-reporter=tap", "apps/proof/test/public-availability.test.ts"], 150)
+                        "--test-reporter=tap", *map(str, tests)], 600 if args.full_proofs else 150)
             report["proofCounts"] = tap_counts(proof)
         else:
             report["executionLimit"] = "Cross-built artifact only; not executed on its target platform"
+        if args.alpine_help:
+            docker = shutil.which("docker")
+            if not docker or os.getuid() == 0:
+                raise ValueError("Docker and a nonroot native Linux host user are required")
+            image = "alpine:3.24"
+            report["alpineImage"] = json.loads(run("alpine-image", [docker, "image", "inspect", "--format", "{{json .RepoDigests}}", image], 30))
+            container = [docker, "run", "--rm", "--pull=never", "--network=none", "--read-only",
+                         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=128m",
+                         "--user=" + str(os.getuid()) + ":" + str(os.getgid())]
+            observed_arch = run("alpine-architecture", [*container, "--entrypoint=/bin/uname", image, "-m"], 30).strip()
+            if native_target("Linux", observed_arch) != args.target:
+                raise ValueError("Alpine container architecture does not match the native target")
+            help_text = run("alpine-extracted-help", [*container, "--mount", "type=bind,source=" + str(extracted) + ",target=/usr/local/bin/canary,readonly",
+                            "--entrypoint=/usr/local/bin/canary", image, "--help"], 30)
+            if not help_text.startswith("Commands: serve,"):
+                raise ValueError("The extracted executable did not return Alpine CLI help")
+            report["alpineHelpPassed"] = True
         if packager.digest_file(extracted)[0] != result["binarySha256"]:
             raise ValueError("Extracted executable changed during validation")
         clean_checkout(args.commit)
