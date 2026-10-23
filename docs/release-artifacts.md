@@ -1,4 +1,4 @@
-# Node release packaging
+# Node release packaging and validation
 
 `scripts/package-release.py` packages an **already built** node executable. It
 does not build, run, sign or publish it, create a Git tag, or certify a release.
@@ -80,6 +80,44 @@ Sampled scratch peaked at 459 bytes (sampling does not capture every instant)
 and returned to zero. No Go build, module-cache growth, actual executable,
 release image, source snapshot or retained binary collection was produced.
 CI now runs the same fixture checks; that Linux result is pending.
+
+## Actual build and archive validation
+
+`scripts/release-package-validation.py` is a separate guarded acceptance runner.
+It requires a clean Git checkout at the exact supplied commit, including no
+nonignored untracked files. It does not publish or retain a release artifact.
+
+```text
+python scripts/bounded_validation.py --timeout 480 -- python -B scripts/release-package-validation.py --commit <exact-HEAD> --version 0.0.0-dev --target windows-amd64
+```
+
+The runner uses the existing pinned toolchain and shared cache, with readonly
+modules, CGO disabled, no Go workspace and module-network access disabled. It
+checks embedded-runtime provenance and module integrity. The selected target's
+linked external module versions and the standard-library version must all have
+entries in the notice inventory, so a Linux-only inventory cannot silently omit
+a Windows-only module. This is a coverage check, not legal advice or a complete
+license audit.
+
+The real build must embed the requested Git revision, `vcs.modified=false`,
+the expected main module/package, toolchain, OS, architecture and static build
+settings. A second build must have identical bytes. The runner verifies archive
+checksums, metadata and license contents, extracts only its known executable to
+a private path, and checks that executable's build identity and checksum again.
+When the target matches the host, it runs CLI help and the existing two-node
+public-history process proof against that extracted executable. Cross-target
+checks explicitly omit execution. One native proof is not the full process
+suite or application acceptance gate.
+
+All binaries, private databases and archives remain in the guard's outputs and
+are deleted afterward. A single overwritten `.canary/release-package-current.json`
+retains compact source, commands, settings, checksums and proof results. It is
+development evidence, not a retained distributable or release approval.
+
+Three additional provenance fixture tests pass on Windows (4.172 seconds
+guarded), covering wrong/missing/duplicate build identity, target notice gaps and
+dirty or mismatched checkouts. They use tiny private Git fixtures and fixed
+metadata. No real build has been run with this runner yet.
 
 Before calling a release ready, the producer still needs to build and validate
 real Windows/Linux artifacts, verify target-specific dependency notices and
