@@ -69,9 +69,8 @@ before this command existed. Native Windows evidence for the new source:
 These checks used source fingerprint
 `561583e1116debeaf733dce463b3910205b692097d6bb9b61f694fc4c817757d`,
 unchanged during each run. The largest sampled scratch was 517,077,350 bytes,
-below 512 MiB, and returned to zero. Shared modules did not grow. Actual compiled
-archive execution and current-source CI remain pending; no release approval is
-claimed.
+below 512 MiB, and returned to zero. Shared modules did not grow. Current-source
+CI remains a separate gate; no release approval is claimed.
 
 The first compiled-archive attempt on `d3de153` failed the new validator before
 archive execution: it incorrectly required `-ldflags` in Go build metadata.
@@ -83,3 +82,20 @@ fixture comment; all runtime label/source/target rejection cases remain.
 That failed run took 87.672 seconds, left source unchanged, removed its
 470,209,710 sampled scratch bytes and grew no shared modules. This is a
 validator failure, not a demonstrated application version mismatch.
+
+The corrected Windows native archive run passes on clean commit
+`5019c672e202d0a12dbb5873d62ef169690e18b6`, source fingerprint
+`bc33418e81975d6ffd18aaaf618e35b374bae3d5f6bdf04f1dd1e0c3a4f3c0d9`:
+two matching builds, archive/extracted-file checksums, CLI identity and help,
+and the existing two-node public-history/restart/withdrawal proof (1/1, zero
+skips). Identity reports version `0.0.0-dev`, the exact clean Git revision,
+Go 1.27.3, Windows amd64 and peer protocol 15. The run took 101.109 seconds;
+247,956,427 sampled scratch bytes returned to zero, with zero module growth.
+
+- Executable SHA-256: `f91b9fd80128cc6e5c54a615b4386e9a78da95a92c6a85153907f86426ba5177`.
+- Archive SHA-256: `73c0eec1fda1a40263667feb193bd98f38bd9f14f2d7387a9e37893b16c2e28c`,
+  17,255,032 bytes. Both archive and executable were deleted by the guard.
+
+The corrected twelve Python fixture functions also pass (4.218 seconds
+guarded). These are local development results, not native Linux execution,
+full-suite acceptance, an original release artifact or tagged publication.
