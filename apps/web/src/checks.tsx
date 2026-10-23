@@ -1,0 +1,287 @@
+import type { ReactNode } from 'react';
+import type { CertificateSummary, HTTPMonitorOptions, Monitor, MonitorInput, MonitorType, RequestCredentials } from '@uptime-canary/shared';
+import { maskedUrl, plural, span } from './format';
+import { gpCanonical, gpFacts } from './globalping';
+import { SERVICE_PROTOCOL, serviceFacts } from './serviceSpecs';
+
+export type CheckCategory = 'web' | 'remote' | 'data' | 'messaging' | 'infra' | 'manual';
+
+export interface CheckType {
+  type: MonitorType;
+  label: string;
+  /** Short code for compact tags. */
+  short: string;
+  hint: string;
+  category: CheckCategory;
+  /** Network checks take their target from one field; service checks build it from their options. */
+  targetLabel?: string;
+  placeholder?: string;
+  targetHint?: string;
+}
+
+export const CATEGORY_LABEL: Record<CheckCategory, string> = {
+  web: 'Web and network',
+  remote: 'Remote probes (third party)',
+  data: 'Databases and caches',
+  messaging: 'Messaging and containers',
+  infra: 'Infrastructure and RPC',
+  manual: 'Passive and operator controlled',
+};
+
+/** Every check type the node implements, in the order the form offers them. */
+export const CHECK_TYPES: CheckType[] = [
+  { type: 'http', label: 'HTTP(S)', short: 'http', category: 'web', hint: 'Status, keyword or JSON', targetLabel: 'URL', placeholder: 'https://service.example.com/health', targetHint: 'An http:// or https:// address without credentials or #fragment.' },
+  { type: 'ping', label: 'Ping', short: 'ping', category: 'web', hint: 'ICMP echo reply', targetLabel: 'Host or IP address', placeholder: 'gateway.example.net or 192.0.2.10', targetHint: 'A host name, IPv4 or IPv6 address. Nodes need permission to send ICMP; without it results are unknown, never up or down.' },
+  { type: 'tcp', label: 'TCP port', short: 'tcp', category: 'web', hint: 'Opens a connection', targetLabel: 'Host and port', placeholder: 'db.example.net:5432', targetHint: 'host:port, or [IPv6]:port. Up when the connection opens.' },
+  { type: 'tls', label: 'TLS', short: 'tls', category: 'web', hint: 'Handshake and certificate', targetLabel: 'Host and port', placeholder: 'service.example.com:443', targetHint: 'host:port. Up when a TLS 1.2+ handshake succeeds and the certificate is valid.' },
+  { type: 'dns', label: 'DNS', short: 'dns', category: 'web', hint: 'Resolves a record', targetLabel: 'Name to look up', placeholder: 'example.com', targetHint: 'A domain name. For PTR, the IP address to look up.' },
+  { type: 'websocket', label: 'WebSocket', short: 'ws', category: 'web', hint: 'Upgrade and ping/pong', targetLabel: 'URL', placeholder: 'wss://stream.example.com/socket', targetHint: 'A ws:// or wss:// address. Up when the upgrade succeeds and a ping gets its pong.' },
+  { type: 'smtp', label: 'SMTP', short: 'smtp', category: 'web', hint: 'Greeting, EHLO, TLS', targetLabel: 'Host and port', placeholder: 'mail.example.com:587', targetHint: 'host:port. Sends no login and no mail: greeting, EHLO and the chosen TLS mode only.' },
+  { type: 'globalping', label: 'Globalping', short: 'gp', category: 'remote', hint: 'Ping, HTTP or DNS from a probe elsewhere' },
+  { type: 'postgres', label: 'PostgreSQL', short: 'pg', category: 'data', hint: 'Read-only query' },
+  { type: 'mysql', label: 'MySQL', short: 'mysql', category: 'data', hint: 'Read-only query' },
+  { type: 'sqlserver', label: 'SQL Server', short: 'mssql', category: 'data', hint: 'Read-only query' },
+  { type: 'oracledb', label: 'Oracle', short: 'oracle', category: 'data', hint: 'SELECT in a worker' },
+  { type: 'mongodb', label: 'MongoDB', short: 'mongo', category: 'data', hint: 'Ping and optional find' },
+  { type: 'redis', label: 'Redis', short: 'redis', category: 'data', hint: 'AUTH, SELECT, PING' },
+  { type: 'docker', label: 'Docker', short: 'docker', category: 'messaging', hint: 'Container state' },
+  { type: 'mqtt', label: 'MQTT', short: 'mqtt', category: 'messaging', hint: 'Subscribe and match' },
+  { type: 'rabbitmq', label: 'RabbitMQ', short: 'rabbit', category: 'messaging', hint: 'AMQP or alarms API' },
+  { type: 'kafka-producer', label: 'Kafka', short: 'kafka', category: 'messaging', hint: 'Metadata or produce' },
+  { type: 'grpc', label: 'gRPC', short: 'grpc', category: 'infra', hint: 'Health or unary call' },
+  { type: 'sftp', label: 'SFTP', short: 'sftp', category: 'infra', hint: 'SSH login, pinned key' },
+  { type: 'ntp', label: 'NTP', short: 'ntp', category: 'infra', hint: 'Stratum and offset' },
+  { type: 'snmp', label: 'SNMP', short: 'snmp', category: 'infra', hint: 'GET one OID' },
+  { type: 'radius', label: 'RADIUS', short: 'radius', category: 'infra', hint: 'Access-Request' },
+  { type: 'sip-options', label: 'SIP', short: 'sip', category: 'infra', hint: 'OPTIONS request' },
+  { type: 'push', label: 'Push', short: 'push', category: 'manual', hint: 'Your job sends heartbeats' },
+  { type: 'manual', label: 'Manual', short: 'manual', category: 'manual', hint: 'You set the status' },
+];
+
+const TYPE_MAP = new Map(CHECK_TYPES.map(entry => [entry.type as string, entry]));
+export const checkType = (type: string): CheckType | undefined => TYPE_MAP.get(type);
+export const typeLabel = (type: string): string => TYPE_MAP.get(type)?.label ?? type.toUpperCase();
+export const typeShort = (type: string): string => TYPE_MAP.get(type)?.short ?? type;
+/** Types whose target is a single field the operator types. */
+export const NETWORK_TYPES = new Set<MonitorType>(['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp']);
+export const isServiceType = (type: string): boolean => type in SERVICE_PROTOCOL;
+
+export const SMTP_MODES = [
+  { mode: 'plain', label: 'Plain', hint: 'No TLS, usually port 25' },
+  { mode: 'starttls', label: 'STARTTLS', hint: 'Upgrades after EHLO, usually 587' },
+  { mode: 'implicit', label: 'Implicit TLS', hint: 'TLS from the start, usually 465' },
+] as const;
+export type SmtpMode = (typeof SMTP_MODES)[number]['mode'];
+export const DNS_RECORDS = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'PTR'] as const;
+export type DnsRecord = (typeof DNS_RECORDS)[number];
+
+/** TLS options apply only to encrypted checks: HTTPS, TLS, WSS, and SMTP with STARTTLS or implicit TLS. */
+export function tlsApplies(type: MonitorType, target: string, smtpMode: SmtpMode | undefined): boolean {
+  const scheme = target.trim().toLowerCase();
+  switch (type) {
+    case 'http': return scheme.startsWith('https://');
+    case 'websocket': return scheme.startsWith('wss://');
+    case 'tls': return true;
+    case 'smtp': return Boolean(smtpMode && smtpMode !== 'plain');
+    default: return false;
+  }
+}
+
+/** Runtime-owned fields that management input never carries. */
+const RUNTIME_FIELDS = new Set(['id', 'revision', 'updatedAt', 'deleted', 'checkGeneration']);
+
+/**
+ * The writable part of a monitor, for PUT requests that change one field (pause/resume, manual status) and as
+ * the base of edits. Everything except runtime-owned fields is kept, including option objects and fields this
+ * dashboard doesn't model, so a round trip never drops configuration. Nulls are omitted: the node rejects null
+ * for optional fields.
+ */
+export function inputOf(monitor: Monitor): MonitorInput {
+  const input: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(monitor)) {
+    if (RUNTIME_FIELDS.has(key) || value === null || value === undefined) continue;
+    input[key] = typeof value === 'object' ? structuredClone(value) : value;
+  }
+  input.nodeIds = [...monitor.nodeIds];
+  return input as unknown as MonitorInput;
+}
+
+/**
+ * Mirrors the node's `sameCheck`: these fields define what is checked. Changing any of them starts a new check
+ * generation, which closes an open incident administratively, without a recovery alert. Name, schedule interval,
+ * retry spacing, alert destinations, repeat, group and manual status keep the incident.
+ */
+const CHECK_FIELDS = ['type', 'target', 'timeoutMs', 'enabled', 'nodeIds', 'expectedStatusCodes', 'upsideDown', 'retries', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'push', 'globalping'] as const;
+const norm = (key: string, value: unknown): unknown => {
+  if (key === 'nodeIds' && Array.isArray(value)) return [...value].sort();
+  if ((key === 'upsideDown' || key === 'enabled') && !value) return false;
+  if (key === 'retries' && !value) return 0;
+  if (key === 'expectedStatusCodes' && Array.isArray(value) && !value.length) return undefined;
+  // The node compares Globalping options through Go's omitempty encoding.
+  if (key === 'globalping') return value === undefined || value === null ? undefined : gpCanonical(value);
+  return value ?? undefined;
+};
+export function checkChanges(before: MonitorInput, after: MonitorInput): string[] {
+  const service = isServiceType(after.type) && before.type === after.type;
+  const changed: string[] = CHECK_FIELDS.filter(key => {
+    // The node derives service targets from their options; compare the options instead.
+    if (key === 'target' && service) return false;
+    return JSON.stringify(norm(key, before[key])) !== JSON.stringify(norm(key, after[key]));
+  });
+  // A push monitor's interval is its heartbeat deadline, so it defines the check.
+  if (after.type === 'push' && before.type === 'push' && before.intervalMs !== after.intervalMs) changed.push('intervalMs');
+  return changed;
+}
+const CHECK_FIELD_WORDS: Record<string, string> = {
+  type: 'check type', target: 'target', timeoutMs: 'timeout', enabled: 'active state', nodeIds: 'locations', expectedStatusCodes: 'accepted statuses',
+  upsideDown: 'inverted result', retries: 'retry count', http: 'HTTP options', tls: 'TLS options', dns: 'DNS options', websocket: 'WebSocket options',
+  smtp: 'SMTP options', service: `service options`, ping: 'ping options', push: 'push token or GET setting', intervalMs: 'heartbeat interval', globalping: 'Globalping options',
+};
+export const checkChangeWords = (keys: string[]): string[] => keys.map(key => CHECK_FIELD_WORDS[key] ?? key);
+
+/** "200–299, 301" from a list of codes. */
+export function statusCodesText(codes: number[] | undefined): string {
+  if (!codes?.length) return '';
+  const sorted = [...new Set(codes)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0]!, prev = start;
+  for (const code of [...sorted.slice(1), Number.NaN]) {
+    if (code === prev + 1) { prev = code; continue; }
+    parts.push(start === prev ? String(start) : `${start}–${prev}`);
+    start = prev = code;
+  }
+  return parts.join(', ');
+}
+export const rangesText = (ranges: { min: number; max: number }[] | undefined): string =>
+  (ranges ?? []).map(range => range.min === range.max ? String(range.min) : `${range.min}–${range.max}`).join(', ');
+
+/** What a monitor accepts as a passing HTTP status, in words. */
+export function acceptedStatusText(monitor: Monitor): string {
+  if (monitor.http?.statusRanges?.length) return rangesText(monitor.http.statusRanges);
+  if (monitor.expectedStatusCodes?.length) return statusCodesText(monitor.expectedStatusCodes);
+  return 'Any 2xx (default)';
+}
+
+const bytesText = (text: string): string => {
+  const n = new TextEncoder().encode(text).length;
+  return n < 1024 ? `${n} B` : `${(n / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KiB`;
+};
+export const pemCount = (pem: string | undefined): number => (pem?.match(/-----BEGIN [^-]*CERTIFICATE-----/gu) ?? []).length;
+
+export interface Fact { label: string; value: ReactNode }
+
+export const Hidden = () => <span className="muted">Hidden from viewers</span>;
+export const Secret = () => <span className="muted">set · hidden</span>;
+
+function requestFacts(o: RequestCredentials | undefined, viewer: boolean, reveal: boolean): Fact[] {
+  if (viewer) return [{ label: 'Headers, credentials and proxy', value: <Hidden /> }];
+  const facts: Fact[] = [];
+  const headers = Object.entries(o?.headers ?? {});
+  facts.push({
+    label: 'Headers',
+    value: headers.length
+      ? <span className="hdrs">{headers.map(([name, value]) => <span key={name} className="mono"><b>{name}</b>: {reveal ? value : '•••'}</span>)}</span>
+      : <span className="muted">None</span>,
+  });
+  facts.push({
+    label: 'Authentication',
+    value: (o as HTTPMonitorOptions | undefined)?.oauth2 ? 'OAuth2 client credentials (below)'
+      : o?.basicAuth ? <>Basic · user <span className="mono">{o.basicAuth.username || '(empty)'}</span>, password <Secret /></>
+      : o?.bearerToken ? <>Bearer token <Secret /></>
+      : headers.some(([name]) => name.toLowerCase() === 'authorization') ? 'Authorization header'
+      : <span className="muted">None</span>,
+  });
+  facts.push({
+    label: 'Proxy',
+    value: o?.proxyUrl ? <span className="mono wrap">{reveal ? o.proxyUrl : maskedUrl(o.proxyUrl)}</span>
+      : o?.useEnvironmentProxy ? 'The node’s environment proxy settings'
+      : <span className="muted">Direct</span>,
+  });
+  return facts;
+}
+
+/**
+ * Plain-language description of what a monitor checks. Viewers receive monitors with headers, bodies,
+ * credentials, proxies, PEM data and service options removed by the node, so those rows say "Hidden from
+ * viewers" instead of implying nothing is configured.
+ */
+export function checkFacts(m: Monitor, { viewer, reveal }: { viewer: boolean; reveal: boolean }): Fact[] {
+  const facts: Fact[] = [];
+  if (m.type === 'http') {
+    const h = m.http;
+    const method = h?.method || 'GET';
+    facts.push({ label: 'Request', value: <><span className="mono">{method}</span>{h?.maxRedirects === 0 ? ' · redirects not followed' : ` · follows up to ${plural(h?.maxRedirects ?? 5, 'redirect')}`}{h?.maxRedirects === undefined ? ' (default)' : ''}</> });
+    facts.push(...requestFacts(h, viewer, reveal));
+    const oauth = h?.oauth2;
+    if (oauth && !viewer) {
+      facts.push({ label: 'OAuth2 token endpoint', value: <span className="mono wrap">{reveal ? oauth.tokenUrl || '(empty)' : oauth.tokenUrl ? maskedUrl(oauth.tokenUrl) : '(empty)'}</span> });
+      facts.push({ label: 'OAuth2 client', value: <><span className="mono wrap">{oauth.clientId || '(empty)'}</span> · secret {oauth.clientSecret ? <Secret /> : <span className="muted">empty</span>} · {oauth.authMethod === 'client_secret_post' ? 'sent in the form body' : 'Basic header'}</> });
+      if (oauth.scope || oauth.audience) facts.push({ label: 'OAuth2 grant', value: <>{oauth.scope ? <>scope <span className="mono wrap">{oauth.scope}</span></> : null}{oauth.scope && oauth.audience ? ' · ' : null}{oauth.audience ? <>audience <span className="mono wrap">{oauth.audience}</span></> : null}</> });
+      facts.push({ label: 'OAuth2 trust', value: <>{oauth.tokenCaPem ? `System roots + ${plural(pemCount(oauth.tokenCaPem), 'custom CA certificate')}` : 'System roots'}{oauth.allowInsecureHttp ? <> · <span className="warn-text">plain HTTP allowed</span></> : null}</> });
+    }
+    if (!viewer) facts.push({ label: 'Body', value: h?.body ? (reveal ? <pre className="body-pre">{h.body}</pre> : <>{bytesText(h.body)} <span className="muted">· hidden</span></>) : <span className="muted">None</span> });
+    facts.push({ label: 'Accepts status', value: <span className="mono">{acceptedStatusText(m)}</span> });
+    const keyword = h?.keyword;
+    if (keyword) {
+      facts.push({ label: keyword.negate ? 'Body must not match' : 'Body must match', value: <>{keyword.regex ? 'Regular expression ' : 'Text '}<span className="mono wrap">{keyword.value}</span></> });
+    }
+    if (viewer) facts.push({ label: 'JSONata condition', value: <span className="muted">Hidden from viewers, if configured</span> });
+    else if (h?.jsonata?.expression) facts.push({ label: 'JSONata condition', value: <><span className="mono wrap">{h.jsonata.expression}</span> {h.jsonata.operator} <span className="mono wrap">{JSON.stringify(h.jsonata.expected)}</span> <span className="muted small">· evaluated by the node’s isolated worker</span></> });
+    const json = h?.json;
+    if (json) {
+      facts.push({
+        label: 'JSON condition',
+        value: <><span className="mono">{json.path}</span> {json.existsOnly ? (json.negate ? 'must not exist' : 'must exist') : <>{json.negate ? 'must not equal' : 'must equal'} <span className="mono wrap">{json.expected ?? 'null'}</span></>}</>,
+      });
+    }
+  }
+  if (m.type === 'ping') {
+    const p = m.ping;
+    facts.push({ label: 'Echo requests', value: <>{plural(p?.count || 1, 'packet')} · {p?.size ?? 32} byte payload · {p?.family === 'ipv4' ? 'IPv4 only' : p?.family === 'ipv6' ? 'IPv6 only' : 'IPv4 or IPv6'}</> });
+    facts.push({ label: 'Up when', value: 'At least one verified reply arrives within the timeout' });
+  }
+  if (m.type === 'websocket') facts.push(...requestFacts(m.websocket, viewer, reveal));
+  if (m.type === 'dns') {
+    const d = m.dns;
+    facts.push({ label: 'Record', value: <span className="mono">{d?.recordType ?? 'A'}</span> });
+    facts.push({ label: 'Resolver', value: d?.server ? <span className="mono">{d.server}</span> : 'The node’s system resolver' });
+    facts.push({ label: 'Expects', value: d?.expected?.length ? <span className="hdrs">{d.expected.map(value => <span key={value} className="mono wrap">{value}</span>)}</span> : 'Any answer' });
+  }
+  if (m.type === 'smtp') {
+    const mode = m.smtp?.tlsMode ?? 'plain';
+    facts.push({ label: 'TLS mode', value: SMTP_MODES.find(entry => entry.mode === mode)?.label ?? mode });
+  }
+  if (m.type === 'manual') {
+    const state = m.manual?.state;
+    facts.push({ label: 'Status set to', value: state ? <b>{state === 'up' ? 'Up' : state === 'down' ? 'Down' : 'Pending'}</b> : <span className="muted">Not set (pending)</span> });
+    facts.push({ label: 'Message', value: m.manual?.message ? <span className="wrap">{m.manual.message}</span> : <span className="muted">None</span> });
+    facts.push({ label: 'Network', value: 'No request is made. An editor sets the result.' });
+  }
+  if (m.type === 'push') {
+    facts.push({ label: 'Push token', value: viewer || !m.push?.token ? <Hidden /> : reveal ? <span className="mono wrap">{m.push.token}</span> : <Secret /> });
+    facts.push({ label: 'Accepts', value: m.push?.allowGet ? 'POST, and GET with the token in the URL' : 'POST with an Authorization: Push header' });
+    facts.push({ label: 'Down when', value: <>No up heartbeat arrives within {span(m.intervalMs)}, or a heartbeat reports down</> });
+  }
+  if (m.tls) {
+    const t = m.tls;
+    if (t.serverName) facts.push({ label: 'TLS server name', value: <span className="mono">{t.serverName}</span> });
+    facts.push({
+      label: 'Trusts',
+      value: viewer ? <>System roots · custom CAs <Hidden /></> : t.caPem ? <>System roots + {plural(pemCount(t.caPem), 'custom CA certificate')}</> : 'System roots',
+    });
+    if (viewer) facts.push({ label: 'Client certificate', value: <Hidden /> });
+    else if (t.clientCertPem) facts.push({ label: 'Client certificate', value: <>Configured (mutual TLS) · key <Secret /></> });
+    if (t.minValidityDays) facts.push({ label: 'Certificate must last', value: `At least ${plural(t.minValidityDays, 'more day')}` });
+    if (t.ignoreVerification) facts.push({ label: 'Verification', value: <span className="warn-text">Off: chain and host name aren’t verified. Dates still are.</span> });
+  }
+  if (isServiceType(m.type)) facts.push(...serviceFacts(m, viewer, reveal));
+  if (m.type === 'globalping') facts.push(...gpFacts(m, viewer, reveal));
+  if (m.retries) facts.push({ label: 'Retries', value: <>{plural(m.retries, 'failed check')} tolerated as pending before down{m.retryIntervalMs ? <>, spaced {span(m.retryIntervalMs)}</> : null}</> });
+  else if (m.retryIntervalMs && m.retryIntervalMs !== m.intervalMs) facts.push({ label: 'While failing', value: <>Checks every {span(m.retryIntervalMs)}</> });
+  if (m.upsideDown) facts.push({ label: 'Result', value: <span className="warn-text">Inverted: up when the check fails</span> });
+  return facts;
+}
+
+/** Days left on a certificate as of the node's own clock, rounded down like the node does. */
+export const certificateDaysLeft = (certificate: CertificateSummary, now: number): number =>
+  Math.floor((Date.parse(certificate.notAfter) - now) / 86_400_000);

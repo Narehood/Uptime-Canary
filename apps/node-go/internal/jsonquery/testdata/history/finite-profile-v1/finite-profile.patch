@@ -1,0 +1,114 @@
+diff --git a/v206/functions.go b/v206/functions.go
+--- a/v206/functions.go
++++ b/v206/functions.go
+@@ -945,7 +945,17 @@
+ 	 * @param {[]interface{}} args - the arguments to pass
+ 	 * @returns {interface{}} result of function invocation
+ 	 */
+-	invokeFunction := func(fn interface{}, args []interface{}) (interface{}, error) {
++	invokeFunction := func(fn interface{}, args []interface{}) (result interface{}, err error) {
++		// Native higher-order callbacks can bypass AST dispatch. Guard their
++		// results before the caller can consume or discard them.
++		defer func() {
++			if err == nil {
++				err = rejectNonfiniteResult(result)
++				if err != nil {
++					result = nil
++				}
++			}
++		}()
+ 		switch f := fn.(type) {
+ 		case *Lambda:
+ 			if f.apply != nil {
+diff --git a/v206/jsonata.go b/v206/jsonata.go
+--- a/v206/jsonata.go
++++ b/v206/jsonata.go
+@@ -829,6 +829,12 @@
+ 		if err != nil {
+ 			return nil, err
+ 		}
++	}
++
++	// Local finite-intermediate profile: check before predicates/grouping can
++	// consume or discard a nonfinite result.
++	if err := rejectNonfiniteResult(result); err != nil {
++		return nil, err
+ 	}
+ 
+ 	// Apply predicate filters to the evaluation result
+diff --git a/v206/finite.go b/v206/finite.go
+new file mode 100644
+--- /dev/null
++++ b/v206/finite.go
+@@ -0,0 +1,71 @@
++package jsonata
++
++import (
++	"errors"
++	"math"
++)
++
++const (
++	finiteResultMaxDepth  = 128
++	finiteResultMaxValues = 65536
++)
++
++var errFiniteResult = errors.New("JSON query result rejected by finite profile")
++
++// rejectNonfiniteResult implements the local finite-intermediate profile. Each
++// result has its own depth/value budget. Only JSON-shaped containers are walked;
++// functions, lexical environments and other opaque engine values are not inspected.
++// No reflection, pointer cache, host callbacks or user bindings are involved.
++// Cycles exhaust the depth budget (at most 129 edges); repeated references count
++// again. This bounds cyclic/shared graphs without skipping data after alias mutation.
++func rejectNonfiniteResult(value interface{}) error {
++	remaining := finiteResultMaxValues
++	return walkFiniteResult(value, 0, &remaining)
++}
++
++func walkFiniteResult(value interface{}, depth int, remaining *int) error {
++	if depth > finiteResultMaxDepth || *remaining == 0 {
++		return errFiniteResult
++	}
++	*remaining -= 1
++	switch v := value.(type) {
++	case float64:
++		if math.IsNaN(v) || math.IsInf(v, 0) {
++			return errFiniteResult
++		}
++	case float32:
++		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
++			return errFiniteResult
++		}
++	case map[string]interface{}:
++		if len(v) > *remaining {
++			return errFiniteResult
++		}
++		for _, child := range v {
++			if err := walkFiniteResult(child, depth+1, remaining); err != nil {
++				return err
++			}
++		}
++	case []interface{}:
++		return walkFiniteItems(v, depth, remaining)
++	case *JSONataArray:
++		if v != nil {
++			return walkFiniteItems(v.Data, depth, remaining)
++		}
++	case JSONataArray:
++		return walkFiniteItems(v.Data, depth, remaining)
++	}
++	return nil
++}
++
++func walkFiniteItems(items []interface{}, depth int, remaining *int) error {
++	if len(items) > *remaining {
++		return errFiniteResult
++	}
++	for _, child := range items {
++		if err := walkFiniteResult(child, depth+1, remaining); err != nil {
++			return err
++		}
++	}
++	return nil
++}

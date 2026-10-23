@@ -1,0 +1,10 @@
+{
+  "name": "Local gateway",
+  "type": "ping",
+  "target": "192.168.1.1",
+  "intervalMs": 30000,
+  "timeoutMs": 3000,
+  "nodeIds": ["canary-1"],
+  "enabled": true,
+  "repeatAfterMs": 0
+}

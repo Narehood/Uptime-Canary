@@ -1,0 +1,2043 @@
+[
+  {
+    "name": "matcher undefined exhaustion stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){missing}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher undefined exhaustion stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){missing}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher undefined exhaustion stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){missing}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "xb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher undefined exhaustion stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher undefined exhaustion stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher undefined exhaustion stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "xx",
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher private error stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('repair-private-marker')}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher private error stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('repair-private-marker')}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher private error stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('repair-private-marker')}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher private error stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('repair-private-marker')}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher private error stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('repair-private-marker')}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher private error stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('repair-private-marker')}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite arithmetic stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$boolean(1e308*10)}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite arithmetic stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$boolean(1e308*10)}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite arithmetic stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$boolean(1e308*10)}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite arithmetic stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$boolean(1e308*10)}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite arithmetic stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$boolean(1e308*10)}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite arithmetic stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$boolean(1e308*10)}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite aggregate stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$type($sum([1e308,1e308]))}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite aggregate stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$type($sum([1e308,1e308]))}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite aggregate stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$type($sum([1e308,1e308]))}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite aggregate stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$type($sum([1e308,1e308]))}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite aggregate stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$type($sum([1e308,1e308]))}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher nonfinite aggregate stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$type($sum([1e308,1e308]))}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed null stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){null}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed null stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){null}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed null stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){null}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed null stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){null}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed null stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){null}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed null stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){null}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed false stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){false}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed false stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){false}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed false stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){false}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed false stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){false}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed false stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){false}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed false stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){false}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed zero stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){0}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed zero stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){0}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed zero stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){0}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed zero stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){0}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed zero stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){0}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed zero stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){0}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed string stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){'bad'}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed string stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){'bad'}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed string stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){'bad'}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed string stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){'bad'}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed string stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){'bad'}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed string stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){'bad'}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed array stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){[]}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed array stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){[]}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed array stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){[]}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed array stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){[]}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed array stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){[]}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed array stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){[]}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed object stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed object stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed object stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed object stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed object stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed object stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{}}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed fields stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'start':'bad','end':'bad','groups':'bad','next':0}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed fields stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'start':'bad','end':'bad','groups':'bad','next':0}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed fields stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'start':'bad','end':'bad','groups':'bad','next':0}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed fields stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'start':'bad','end':'bad','groups':'bad','next':0}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed fields stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'start':'bad','end':'bad','groups':'bad','next':0}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher malformed fields stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'start':'bad','end':'bad','groups':'bad','next':0}}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher missing next stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[]}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher missing next stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[]}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher missing next stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[]}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher missing next stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[]}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher missing next stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[]}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher missing next stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[]}}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher noncallable next stage1 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':0}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher noncallable next stage1 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':0}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher noncallable next stage1 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':0}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher noncallable next stage2 match",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':0}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher noncallable next stage2 split",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':0}}}}}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher noncallable next stage2 replace",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':0}}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "initial matcher error",
+    "expression": "$count($match('ab',function($s){$error('repair-private-marker')}))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "initial malformed matcher",
+    "expression": "$count($match('ab',function($s){'bad'}))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T1010",
+      "state": "down"
+    }
+  },
+  {
+    "name": "initial undefined matcher",
+    "expression": "$count($match('ab',function($s){missing}))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher group data",
+    "expression": "$join($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':['captured'],'next':function(){missing}}}).groups,',')",
+    "document": {},
+    "operator": "==",
+    "expected": "captured",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "captured",
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher aliases",
+    "expression": "($n:=function(){missing}; $m:=function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$n}}; $count($match('ab',$m)))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher nested eval",
+    "expression": "$eval(\"$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){missing}}}))\")",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher nested eval error",
+    "expression": "$eval(\"$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('repair-private-marker')}}}))\")",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3121",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher partial continuation contract error",
+    "expression": "($n:=function($x){$x}; $m:=function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$n(?)}}; $count($match('ab',$m)))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher raw native continuation contract error",
+    "expression": "$count($match('a',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$sum}}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher wrapped native continuation",
+    "expression": "($mk:=function($n){function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$n}}};$count($match('a',$mk($sum))))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher wrapped partial continuation",
+    "expression": "($n:=function($x){$x}(?);$mk:=function($f){function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$f}}};$count($match('a',$mk($n))))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher initial partial argument",
+    "expression": "($m:=function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){missing}}}(?); $count($match('ab',$m)))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher closure captures finite",
+    "expression": "($x:='b'; $m:=function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':$x,'start':1,'end':2,'groups':[],'next':function(){missing}}}}}; $count($match('ab',$m)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher continuation alias error",
+    "expression": "($n:=function(){$error('repair-private-marker')}; $m:=function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$n}}; $count($match('ab',$m)))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher later-stage error",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('repair-private-marker')}}}}},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "matcher limit still observes next error",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('repair-private-marker')}}},1))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replacement callback error",
+    "expression": "$replace('ab',/a/,function($m){$error('repair-private-marker')})",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replacement callback finite",
+    "expression": "$replace('ab',/a/,function($m){'x'})",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "xb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex multiple match",
+    "expression": "$count($match('aba',/a/))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex multiple split",
+    "expression": "$count($split('aba',/a/))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex multiple replace",
+    "expression": "$replace('aba',/a/,'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xbx",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "xbx",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex exhausted match",
+    "expression": "$count($match('aba',/z/))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex exhausted split",
+    "expression": "$count($split('aba',/z/))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex exhausted replace",
+    "expression": "$replace('aba',/z/,'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "aba",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "aba",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex whole string match",
+    "expression": "$count($match('aaa',/a+/))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex whole string split",
+    "expression": "$count($split('aaa',/a+/))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex whole string replace",
+    "expression": "$replace('aaa',/a+/,'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "x",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "x",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex finite zero width at end match",
+    "expression": "$count($match('a',/a*/))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex finite zero width at end split",
+    "expression": "$count($split('a',/a*/))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex finite zero width at end replace",
+    "expression": "$replace('a',/a*/,'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "x",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "x",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex zero width continuation match",
+    "expression": "$count($match('ab',/a*/))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex zero width continuation split",
+    "expression": "$count($split('ab',/a*/))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex zero width continuation replace",
+    "expression": "$replace('ab',/a*/,'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex initial zero width match",
+    "expression": "$count($match('b',/a*/))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex initial zero width split",
+    "expression": "$count($split('b',/a*/))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex initial zero width replace",
+    "expression": "$replace('b',/a*/,'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex nested eval error",
+    "expression": "$eval(\"$count($match('ab',/a*/))\")",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3121",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex alias error",
+    "expression": "($r:=/a*/; $count($split('ab',$r)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D1004",
+      "state": "down"
+    }
+  },
+  {
+    "name": "regex captures",
+    "expression": "$join($match('ab',/(a)(b)/).groups,',')",
+    "document": {},
+    "operator": "==",
+    "expected": "a,b",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a,b",
+      "state": "up"
+    }
+  },
+  {
+    "name": "matcher HOF callback error",
+    "expression": "$sum($map(['ab'],function($s){$count($match($s,function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('repair-private-marker')}}}))}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort native contains",
+    "expression": "$sort(['ab','a'],$contains)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort native contains false UP",
+    "expression": "$sort(['ab','a'],$contains)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "ab",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort native power",
+    "expression": "$sort([2,1],$power)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort native alias",
+    "expression": "($f:=$contains; $sort(['ab','a'],$f)[0])",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort native partial",
+    "expression": "$sort([2,1],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort finite partial sum",
+    "expression": "$count($sort([[1,2],[3]],$sum(?)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort partial sum overflow",
+    "expression": "$count($sort([[1e308,1e308],[1]],$sum(?)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "safe-profile",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort partial overflow alias",
+    "expression": "($f:=$sum(?); $count($sort([[1e308,1e308],[1]],$f)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "safe-profile",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort partial overflow nested eval",
+    "expression": "$eval('$count($sort([[1e308,1e308],[1]],$sum(?)))')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "safe-profile",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort native power error",
+    "expression": "$sort([-1,0.5],$power)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": -1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort native wrong arity",
+    "expression": "$sort([2,1],$number)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort native wrong types",
+    "expression": "$sort([2,1],$contains)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort lambda error",
+    "expression": "$sort([2,1],function($a,$b){$error('repair-private-marker')})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort later comparator error",
+    "expression": "$sort([4,3,2,1],function($a,$b){$a=4 ? $error('repair-private-marker') : $a>$b})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort unsupported number",
+    "expression": "$sort([2,1],42)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort unsupported object",
+    "expression": "$sort([2,1],{})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort unsupported null",
+    "expression": "$sort([2,1],null)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort unsupported false",
+    "expression": "$sort([2,1],false)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sort finite lambda",
+    "expression": "$sort([3,1,2],function($a,$b){$a>$b})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort two arguments",
+    "expression": "$sort([2,1],function($a,$b){$b=1})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort regex callable",
+    "expression": "$sort(['ab','a'],/a/)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort nested eval native",
+    "expression": "$eval(\"$sort(['ab','a'],$contains)[0]\")",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort HOF native",
+    "expression": "$map([['ab','a']],function($xs){$sort($xs,$contains)[0]})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "classification": "reference",
+    "reference": {
+      "kind": "string",
+      "value": "a",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort default comparator",
+    "expression": "$sort([3,1,2])[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort internal order by",
+    "expression": "[{'v':3},{'v':1},{'v':2}]^(v)[0].v",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort no comparator call needed",
+    "expression": "$sort([7],function($a,$b){$error('repair-private-marker')})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 7,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness false",
+    "expression": "$sort([2,1],function($a,$b){false})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness true",
+    "expression": "$sort([2,1],function($a,$b){true})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness zero",
+    "expression": "$sort([2,1],function($a,$b){0})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness positive",
+    "expression": "$sort([2,1],function($a,$b){2})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness negative",
+    "expression": "$sort([2,1],function($a,$b){-1})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness empty text",
+    "expression": "$sort([2,1],function($a,$b){''})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness text",
+    "expression": "$sort([2,1],function($a,$b){'yes'})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness null",
+    "expression": "$sort([2,1],function($a,$b){null})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness undefined",
+    "expression": "$sort([2,1],function($a,$b){missing})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness empty array",
+    "expression": "$sort([2,1],function($a,$b){[]})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness false array",
+    "expression": "$sort([2,1],function($a,$b){[false]})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness empty object",
+    "expression": "$sort([2,1],function($a,$b){{}})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort JS truthiness function",
+    "expression": "$sort([2,1],function($a,$b){function(){false}})[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "classification": "reference",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  }
+]

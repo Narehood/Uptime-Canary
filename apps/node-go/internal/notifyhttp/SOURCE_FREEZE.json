@@ -1,0 +1,274 @@
+{
+  "formatVersion": 3,
+  "frozenAtUTC": "2026-10-23T01:35:17.398153+00:00",
+  "scope": "apps/node-go/internal/notifyhttp",
+  "contractFrozen": true,
+  "contractFile": "types.go",
+  "entryPoints": [
+    "Validate(Config) error",
+    "Identity(Config) (string, error)",
+    "New(Options) (*Engine, error)",
+    "(*Engine).Send(context.Context, Config, Message) Result",
+    "Send(context.Context, Config, Message) Result",
+    "(*Engine).CloseIdleConnections()"
+  ],
+  "nativeAdapterCount": 5,
+  "providers": [
+    "slack",
+    "telegram",
+    "ntfy",
+    "gotify",
+    "pushover"
+  ],
+  "states": [
+    "accepted",
+    "retryable",
+    "rejected",
+    "unknown"
+  ],
+  "acceptance": "Provider acknowledgement only; never inbox/device delivery or deduplication",
+  "integrationOwner": "root",
+  "rootIntegrationValidated": true,
+  "rootConfigurationResourceIDBindingRequired": true,
+  "stdlibOnly": true,
+  "realProviderRequests": false,
+  "internalRetries": false,
+  "validation": {
+    "owner": "root",
+    "runner": "scripts/bounded_validation.py",
+    "goVersion": "go1.27.3",
+    "platform": "windows/amd64",
+    "CGO_ENABLED": "0",
+    "native": {
+      "command": "go test -mod=readonly ./internal/canary ./internal/delivery ./internal/notifyhttp -count=1 -timeout=240s",
+      "cwd": "apps/node-go",
+      "exitCode": 0,
+      "topLevelLeafTestGroups": 26,
+      "packageSeconds": {
+        "notifyhttp": 1.384,
+        "delivery": 1.939,
+        "canary": 143.604
+      }
+    },
+    "vet": {
+      "packages": [
+        "canary",
+        "delivery",
+        "notifyhttp"
+      ],
+      "exitCode": 0
+    },
+    "crossCompilation": {
+      "packages": [
+        "notifyhttp",
+        "delivery"
+      ],
+      "GOOS": "linux",
+      "GOARCH": [
+        "amd64",
+        "arm64"
+      ],
+      "exitCode": 0,
+      "libraryOnly": true,
+      "runtimeTests": false
+    },
+    "enclosingGuard": {
+      "exitCode": 1,
+      "seconds": 267.188,
+      "failedStage": "frontend typecheck TS1161; backend stages passed",
+      "sourceScope": "apps/node-go Go/JS/JSON before this metadata refresh",
+      "sourceUnchangedSha256": "7ab622b641f7b2d33928daebab2d60b5c5c68b8f4ac4d09943f4e10e8f2879c7",
+      "scratchBytesAfter": 0,
+      "moduleCacheGrowth": 0,
+      "pauseRequired": false
+    },
+    "review": {
+      "round1": "docs/notifyhttp-review.md",
+      "round2": "docs/notifyhttp-review-round2.md",
+      "response": "all source findings reproduced and repaired; strict-date regression added; no additional independent integration review"
+    },
+    "network": "loopback fixtures only",
+    "alpineValidated": false,
+    "liveProvidersValidated": false,
+    "releaseValidated": false
+  },
+  "sourceReviewDate": "2026-10-22",
+  "primarySources": [
+    "https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/",
+    "https://docs.slack.dev/messaging/formatting-message-text/",
+    "https://docs.slack.dev/apis/web-api/rate-limits/",
+    "https://core.telegram.org/bots/api#sendmessage",
+    "https://docs.ntfy.sh/publish/",
+    "https://gotify.net/docs/pushmsg",
+    "https://raw.githubusercontent.com/gotify/server/master/docs/spec.json",
+    "https://raw.githubusercontent.com/gotify/server/master/api/message.go",
+    "https://pushover.net/api"
+  ],
+  "filesExclude": [
+    "SOURCE_FREEZE.json"
+  ],
+  "files": [
+    {
+      "path": "acknowledgement_review_test.go",
+      "sha256": "e09f91a83018f66244fec287cb0c85ba4b48a3e2997d961b424602dbd681685e",
+      "bytes": 5634
+    },
+    {
+      "path": "config.go",
+      "sha256": "b8a30e6d4e637c642686cf6976589c4e55732eadf104dc3f6021ce25f8a5890c",
+      "bytes": 12064
+    },
+    {
+      "path": "config_test.go",
+      "sha256": "9e0d24326923d251d838d03ee40e5045997f3a41613beec5389cbb89c9ef46f1",
+      "bytes": 15427
+    },
+    {
+      "path": "engine.go",
+      "sha256": "9f8c00c23d024512716b873c29a1d4d44140a31ceb07ce41aca62773423add92",
+      "bytes": 9353
+    },
+    {
+      "path": "engine_test.go",
+      "sha256": "0a44870a75cae996c5ca05e34103affc0a7b914e347aae975deb93c2cc701d75",
+      "bytes": 15541
+    },
+    {
+      "path": "json.go",
+      "sha256": "deb150595da07c97a4310a19f7cb7e0cc8641005a61d8ea0ed8993ae55742103",
+      "bytes": 2981
+    },
+    {
+      "path": "providers.go",
+      "sha256": "41e3dc18027ca24a2eba28876575a4a26fdde813f192e8c3cd5ad37e0432a046",
+      "bytes": 7331
+    },
+    {
+      "path": "providers_test.go",
+      "sha256": "07761aa9268a83441bab36733e292d68b66adbe7738aa891552f95ebe7dc930c",
+      "bytes": 18907
+    },
+    {
+      "path": "README.md",
+      "sha256": "b33f5722cbf3be94dd58fe8767a26e4b5f9a9e0f73f6fab1f39b1d9c4af846fd",
+      "bytes": 21590
+    },
+    {
+      "path": "types.go",
+      "sha256": "1bbd268564e8bd2c188a7e8557d03490d909320202aa5cb402d9a442ad552edc",
+      "bytes": 4868
+    }
+  ],
+  "previousFreezeSha256": "a2a519cc2219eb618a7438f45707c8b32966e5a6de3fb446e4f236e6976c6893",
+  "historicalValidation": {
+    "owner": "root",
+    "runner": "scripts/bounded_validation.py",
+    "goVersion": "go1.27.3",
+    "childEnvironment": {
+      "CGO_ENABLED": "0",
+      "GOTOOLCHAIN": "local"
+    },
+    "native": {
+      "platform": "windows/amd64",
+      "command": "go test -mod=readonly -count=1 -run . -timeout=60s ./apps/node-go/internal/notifyhttp",
+      "exitCode": 0,
+      "topLevelTestGroups": 21,
+      "packageElapsedSeconds": 1.105,
+      "guardedElapsedSeconds": 15.11,
+      "network": "Literal loopback fixtures only; private CA/key material generated in memory"
+    },
+    "vet": {
+      "command": "go vet -mod=readonly ./apps/node-go/internal/notifyhttp",
+      "exitCode": 0
+    },
+    "crossCompilation": {
+      "command": "go build -mod=readonly ./apps/node-go/internal/notifyhttp",
+      "targets": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "exitCode": 0,
+      "libraryCompilationOnly": true,
+      "runtimeTests": false,
+      "standaloneBinariesRetained": false,
+      "vetAndCrossCompilationGuardedElapsedSeconds": 48.032
+    },
+    "unchangedRepositoryGoJSJSONInputFingerprint": "6499fa0bddf04fef12eb85475eafefe0e1d38d1caf468e8c7a08cf12316cbc35",
+    "inputFingerprintUnchangedInBothGuardedCommands": true,
+    "rootEvidence": [
+      ".canary/bounded-checks.json",
+      ".canary/work/current/latest.json"
+    ],
+    "atRootValidationEnd": {
+      "projectBytes": 1226068524,
+      "ownedBuildCacheBytes": 244855387,
+      "scratchBytes": 0,
+      "moduleCacheBytes": 796243196,
+      "moduleCacheGrowthBytes": 0,
+      "externalBuildCacheBytes": 14702,
+      "pauseRequired": false
+    },
+    "alpineValidated": false,
+    "liveProvidersValidated": false,
+    "independentReview": false,
+    "coverageGenerated": false,
+    "prePauseEvidence": "Historical only; superseded by the guarded native fixture and compilation results recorded here"
+  },
+  "priorReviewRepairValidation": {
+    "owner": "root",
+    "runner": "scripts/bounded_validation.py",
+    "goVersion": "go1.27.3",
+    "childEnvironment": {
+      "CGO_ENABLED": "0",
+      "GOTOOLCHAIN": "local"
+    },
+    "native": {
+      "platform": "windows/amd64",
+      "command": "go test -mod=readonly ./apps/node-go/internal/notifyhttp -count=1 -timeout=60s",
+      "exitCode": 0,
+      "topLevelTestGroups": 25,
+      "packageElapsedSeconds": 1.246,
+      "guardedElapsedSeconds": 9.969,
+      "network": "loopback fixtures only"
+    },
+    "vet": {
+      "command": "go vet -mod=readonly ./apps/node-go/internal/notifyhttp",
+      "exitCode": 0,
+      "guardedElapsedSeconds": 15.625
+    },
+    "crossCompilation": {
+      "command": "go build -mod=readonly ./apps/node-go/internal/notifyhttp",
+      "targets": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "exitCode": 0,
+      "libraryCompilationOnly": true,
+      "runtimeTests": false,
+      "standaloneBinariesRetained": false,
+      "guardedElapsedSeconds": 30.5
+    },
+    "unchangedRepositoryGoJSJSONInputFingerprint": "215d0bb84b1bba7580aa54aabdae48b3eb55a4ea4c1ac15e7cda33f0c6c9cfc5",
+    "inputFingerprintScope": "before current manifest refresh; all three commands unchanged",
+    "review": {
+      "round1": "docs/notifyhttp-review.md",
+      "rootRepairs": "three reproduced findings; original fixtures unchanged",
+      "round2": "pending"
+    },
+    "alpineValidated": false,
+    "liveProvidersValidated": false,
+    "scratchBytesAfter": 0,
+    "moduleCacheGrowthBytes": 0,
+    "pauseRequired": false
+  },
+  "rootIntegrationScope": "Windows source fixtures: channel CRUD/RBAC/redaction, delayed proof, 5 native provider acknowledgements, peer pages, down/recovery receipt exchange and SQLite reopen; no release artifact/runtime platform claim",
+  "dashboardValidation": {
+    "owner": "root",
+    "typecheck": "pass",
+    "pureBuilderChecks": 8,
+    "build": "pass",
+    "windowsBrowserChecks": 21,
+    "network": "local fixtures only",
+    "releaseApproval": false
+  }
+}

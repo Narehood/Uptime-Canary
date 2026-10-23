@@ -1,0 +1,483 @@
+{
+  "target": "linux/amd64, CGO=0; dashboard runtime",
+  "packages": [
+    {
+      "name": "Go standard library",
+      "version": "go1.27.3",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        },
+        {
+          "file": "PATENTS",
+          "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+        }
+      ]
+    },
+    {
+      "name": "filippo.io/edwards25519",
+      "version": "v1.2.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067"
+        }
+      ]
+    },
+    {
+      "name": "github.com/dustin/go-humanize",
+      "version": "v1.1.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "a973b4498c13eb74baa2a8e5c351426a6826f2fcdd909916dbe53ee2e755fd71"
+        }
+      ]
+    },
+    {
+      "name": "github.com/go-sql-driver/mysql",
+      "version": "v1.10.1",
+      "notices": [
+        {
+          "file": "AUTHORS",
+          "sha256": "ccb046784741000e0704273e837d4a3c310cb52d357adc09d47f93c06e46d6ed"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+        }
+      ]
+    },
+    {
+      "name": "github.com/golang-sql/civil",
+      "version": "v0.0.0-20220223132316-b832511892a9",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+        }
+      ]
+    },
+    {
+      "name": "github.com/golang-sql/sqlexp",
+      "version": "v0.1.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "17b5d209ba8f9684257ecfcff87df6ceda6194143a8fbd074f29727cff6f0c40"
+        }
+      ]
+    },
+    {
+      "name": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d"
+        }
+      ]
+    },
+    {
+      "name": "github.com/gosnmp/gosnmp",
+      "version": "v1.46.0",
+      "notices": [
+        {
+          "file": "AUTHORS.md",
+          "sha256": "15fd47551d16b923f316ba5161ded15c095b0456210eb19e6ca59e44535d4db0"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "28b63cdfceda72f7b8c9a8db2d7ab07661eb4d6bb9fc020077925b6b4faf84fa"
+        }
+      ]
+    },
+    {
+      "name": "github.com/jackc/pgpassfile",
+      "version": "v1.0.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "adb1663fda031df8f4344aa68f299fd87d80353e31339406742ded21dae65702"
+        }
+      ]
+    },
+    {
+      "name": "github.com/jackc/pgservicefile",
+      "version": "v0.0.0-20240606120523-5a60cdf6a761",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "fc505773403fe869ed64cc2235cdd13988a427bb7e3a7e7004a3f4b27420f8fc"
+        }
+      ]
+    },
+    {
+      "name": "github.com/jackc/pgx/v5",
+      "version": "v5.11.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "467f95e074fe23079a5623ed652619682692041b8551da27e3c2ddb9659a1507"
+        }
+      ]
+    },
+    {
+      "name": "github.com/klauspost/compress",
+      "version": "v1.20.3",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf"
+        }
+      ]
+    },
+    {
+      "name": "github.com/kr/fs",
+      "version": "v0.1.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d"
+        }
+      ]
+    },
+    {
+      "name": "github.com/microsoft/go-mssqldb",
+      "version": "v1.11.2",
+      "notices": [
+        {
+          "file": "LICENSE.txt",
+          "sha256": "7d0793489653bfe020de7ea32047bad266f5e2e204ba12025d5300f39555addc"
+        }
+      ]
+    },
+    {
+      "name": "github.com/pierrec/lz4/v4",
+      "version": "v4.1.33",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "6a358d2540ca14048f02d366f23787c0a480157e58f058113f0e27168dd4e447"
+        }
+      ]
+    },
+    {
+      "name": "github.com/pkg/sftp",
+      "version": "v1.13.11",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "f5b5087b8e596d015cfea7db26527fe67a196c18ca37415c288dd2534ff74c37"
+        }
+      ]
+    },
+    {
+      "name": "github.com/remyoudompheng/bigfft",
+      "version": "v0.0.0-20230129092748-24d4a6f8daec",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d"
+        }
+      ]
+    },
+    {
+      "name": "github.com/shopspring/decimal",
+      "version": "v1.4.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "b92ba0f6ee02f2309628bfdadb123668a17c016e475ba477b857d33470d9d625"
+        }
+      ]
+    },
+    {
+      "name": "github.com/sijms/go-ora/v3",
+      "version": "v3.0.1",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "86b6a31a08af7288285c3f242fd257d8d985587182c6af3796cb421daa0b8339"
+        }
+      ]
+    },
+    {
+      "name": "github.com/twmb/franz-go",
+      "version": "v1.22.2",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "9ed9133de92870659a93ee70f11102dac696c23a65d68161fa292f1a23831be6"
+        }
+      ]
+    },
+    {
+      "name": "github.com/twmb/franz-go/pkg/kmsg",
+      "version": "v1.15.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "9ed9133de92870659a93ee70f11102dac696c23a65d68161fa292f1a23831be6"
+        }
+      ]
+    },
+    {
+      "name": "github.com/xdg-go/scram",
+      "version": "v1.2.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b"
+        }
+      ]
+    },
+    {
+      "name": "github.com/xdg-go/stringprep",
+      "version": "v1.0.4",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b"
+        }
+      ]
+    },
+    {
+      "name": "github.com/youmark/pkcs8",
+      "version": "v0.0.0-20240726163527-a2c0da244d78",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "6d13d89b6c33df37f92553cc95cec278d8770ddc78c9de84620cc16dfb48cef6"
+        }
+      ]
+    },
+    {
+      "name": "go.mongodb.org/mongo-driver/v2",
+      "version": "v2.9.2",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/crypto",
+      "version": "v0.58.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/net",
+      "version": "v0.60.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/sync",
+      "version": "v0.24.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/sys",
+      "version": "v0.49.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/text",
+      "version": "v0.43.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/genproto/googleapis/rpc",
+      "version": "v0.0.0-20260706201446-f0a921348800",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/grpc",
+      "version": "v1.84.0",
+      "notices": [
+        {
+          "file": "AUTHORS",
+          "sha256": "627c695f80fdac6412d66e6ad4160a4acb41923ca7ee3fd7e112e105f0ff46b9"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "file": "NOTICE.txt",
+          "sha256": "693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/protobuf",
+      "version": "v1.36.12",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20"
+        }
+      ]
+    },
+    {
+      "name": "modernc.org/libc",
+      "version": "v1.79.0",
+      "notices": [
+        {
+          "file": "AUTHORS",
+          "sha256": "40224528f3c7363534f59521d803a4eb627966b334d732bfc68a788655cb2545"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "95ff867eb55a56935fa7492406cfa953fb7c13ca73f4c0a86ae05756b4605600"
+        },
+        {
+          "file": "LICENSE-3RD-PARTY.md",
+          "sha256": "f597097efe3d97021f89170746bd3a0fb9a8b6fb26b82043ed68a4e0283bee6c"
+        }
+      ]
+    },
+    {
+      "name": "modernc.org/mathutil",
+      "version": "v1.7.1",
+      "notices": [
+        {
+          "file": "AUTHORS",
+          "sha256": "51fcdd68bb605f080283bb6eabb72452591289650599d3d67603381834e536af"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "bfa9bf72a72ca009fd62a8f84fca3dca67e51d93af96352723646599898b6cf5"
+        }
+      ]
+    },
+    {
+      "name": "modernc.org/memory",
+      "version": "v1.12.1",
+      "notices": [
+        {
+          "file": "AUTHORS",
+          "sha256": "df1f424436f279309de85b82e494d548297a2570e9b5794630d7e72c9eb50b6a"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "59895e669f48f168b6b858358f6005779cdf40a265f7828813061b56af67b496"
+        },
+        {
+          "file": "LICENSE-GO",
+          "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067"
+        },
+        {
+          "file": "LICENSE-LOGO",
+          "sha256": "5ae5bee3072a841376451b48d8cfcec7188e10543926d5870828d36c8a750dc5"
+        },
+        {
+          "file": "LICENSE-MMAP-GO",
+          "sha256": "c2eba69f20d05414538c3a5df7694dde392e065ff70882e1625e90f5d6659fff"
+        }
+      ]
+    },
+    {
+      "name": "modernc.org/sqlite",
+      "version": "v1.61.0",
+      "notices": [
+        {
+          "file": "AUTHORS",
+          "sha256": "90dd3ccbaf8110a6750eb095d0e603ba711109e60896cdeb1776eaa5b0bbd4c0"
+        },
+        {
+          "file": "LICENSE",
+          "sha256": "c6fe05491a60ae13bcd223088d2705e36dede24e5587226231d2459ada5c4822"
+        },
+        {
+          "file": "LICENSE-3RD-PARTY.md",
+          "sha256": "4194f8e7119be72babd499db4f6f1f7547e36e8a7bffcb2b9c8df241b8f1576a"
+        },
+        {
+          "file": "LICENSE-SQLITE",
+          "sha256": "8438c9c89b849131ead81d5435cb97fcf052df5b0b286dda8a2d4c29e6cb3fd0"
+        },
+        {
+          "file": "LICENSE-SQLITE_VEC",
+          "sha256": "6ce72bbe12d975bd5286e5ab0a064c069693300c47bccbc57bec18485f1621ea"
+        }
+      ]
+    },
+    {
+      "name": "vendored:github.com/jsonata-go/jsonata/v206",
+      "version": "599f35f32e5f31297f8b2153b5da44ddbb330e28 + Canary finite-profile patch",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "188e548d24101b7580e507e48e1a71d76e8c8add79d2e0855f3d78555637ff3f"
+        },
+        {
+          "file": "source-NOTICE.txt",
+          "sha256": "f6755b3f3fbf8d2a5eb56ea6a117e42a03bdc3437cb04397566c1743b48bfd2f"
+        }
+      ]
+    },
+    {
+      "name": "npm:react",
+      "version": "19.3.1",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "npm:react-dom",
+      "version": "19.3.1",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "npm:scheduler",
+      "version": "0.28.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    }
+  ]
+}

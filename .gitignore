@@ -1,0 +1,36 @@
+# Dependencies, generated builds and private development/validation state.
+node_modules/
+dist/
+coverage/
+.canary/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+
+# Local environment and application data. Examples may be versioned explicitly.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+/data/
+/identity/
+/backups/
+
+# Compiler, profiler and temporary outputs.
+*.exe
+*.dll
+*.pdb
+*.test
+*.test.exe
+*.prof
+*.log
+*.tmp
+*.dmp
+.DS_Store
+Thumbs.db

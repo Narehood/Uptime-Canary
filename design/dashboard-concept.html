@@ -1,0 +1,1461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Uptime Canary dashboard concept. Sample data only; nothing on this page is live.">
+<title>Uptime Canary · Dashboard concept (sample data, not live)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23151514'/%3E%3Cpath d='M31.2 13.4C31.2 9.3 28.2 6 24.4 6C20.6 6 17.6 9.1 17.6 12.9C17.6 14.6 18.1 16 18.9 17.1C13.6 18.4 9.6 22.6 8.4 27.6L4 30.6L10.6 30.6C12.8 31.8 15.6 32.4 18.6 32.4C26.2 32.4 32.2 27.2 32.2 20.4C32.2 17.8 31.9 15.4 31.2 13.4Z' fill='%23ffd23f'/%3E%3Cpath d='M31 11.4L36.4 13.6L31.1 15.6Z' fill='%23f28c28'/%3E%3C/svg%3E">
+<style>
+/* =====================================================================
+   Uptime Canary — dashboard concept
+   Self-contained: no network requests, no external fonts or libraries.
+   Embedding rules honoured: no viewport-height units, no height:100% on
+   html/body, outermost element has no background or horizontal padding.
+   ===================================================================== */
+*,*::before,*::after{box-sizing:border-box}
+:root{color-scheme:light dark}
+body{margin:0}
+
+.uc{
+  container:app/inline-size;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+  /* light surfaces + ink (warm neutral, validated contrast in docs/design.md) */
+  --page:#f3f2ee; --surface:#fcfcfb; --surface-2:#f1f0ec; --surface-3:#e8e7e1;
+  --text-1:#0b0b0b; --text-2:#52514e; --text-3:#6f6d68; --tick:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --border-2:rgba(11,11,11,.18);
+  /* single data/interactive hue */
+  --accent:#2a78d6; --accent-text:#1c5cab; --accent-btn:#256abf; --accent-wash:rgba(42,120,214,.10);
+  /* status: reserved meaning, always shape + label */
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b; --neutral:#898781;
+  --warn-edge:#a86f00; --serious-edge:#b5532c; /* lift sub-3:1 fills to non-text contrast */
+  --good-wash:rgba(12,163,12,.11); --warning-wash:rgba(250,178,25,.18); --serious-wash:rgba(236,131,90,.17);
+  --critical-wash:rgba(208,59,59,.10); --neutral-wash:rgba(137,135,129,.13);
+  --up-cell:rgba(12,163,12,.30); --hatch:rgba(11,11,11,.20); --hatch-soft:rgba(11,11,11,.09);
+  /* concept annotations (not product UI) */
+  --note:#6250d6; --note-text:#4a3aa7; --note-wash:rgba(98,80,214,.07);
+  /* brand: canary yellow lives only on the ink rail and in illustrations */
+  --ink:#151514; --ink-text:#c3c2b7; --ink-text-1:#f0efec; --ink-muted:#a3a198;
+  --canary:#ffd23f; --canary-deep:#e9a800; --beak:#f28c28;
+  --tip-bg:#1c1c1b; --tip-fg:#f0efec; --tip-2:#c3c2b7;
+  --shadow:0 1px 2px rgba(11,11,11,.06),0 12px 32px -14px rgba(11,11,11,.28);
+  font:14px/1.45 var(--font); color:var(--text-1);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+.uc[data-mode="dark"]{
+  --page:#0d0d0d; --surface:#1a1a19; --surface-2:#222220; --surface-3:#2c2c2a;
+  --text-1:#f0efec; --text-2:#c3c2b7; --text-3:#a3a198; --tick:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --border-2:rgba(255,255,255,.18);
+  --accent:#3987e5; --accent-text:#6da7ec; --accent-btn:#256abf; --accent-wash:rgba(57,135,229,.14);
+  --warn-edge:#fab219; --serious-edge:#ec835a;
+  --good-wash:rgba(12,163,12,.16); --warning-wash:rgba(250,178,25,.13); --serious-wash:rgba(236,131,90,.15);
+  --critical-wash:rgba(208,59,59,.20); --neutral-wash:rgba(137,135,129,.16);
+  --up-cell:rgba(12,163,12,.40); --hatch:rgba(255,255,255,.22); --hatch-soft:rgba(255,255,255,.08);
+  --note:#9085e9; --note-text:#b2a9f3; --note-wash:rgba(144,133,233,.09);
+  --ink:#111110;
+  --tip-bg:#2c2c2a; --tip-fg:#f0efec; --tip-2:#c3c2b7;
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px -14px rgba(0,0,0,.8);
+}
+.uc button,.uc input,.uc select{font:inherit;color:inherit}
+.uc a{color:var(--accent-text);text-decoration:none}
+.uc a:hover{text-decoration:underline}
+.uc :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.uc h1,.uc h2,.uc h3{margin:0}
+.vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.mono{font-family:var(--mono);font-size:.92em}
+.muted{color:var(--text-3)}
+.sec{color:var(--text-2)}
+.nowrap{white-space:nowrap}
+.skip{position:absolute;left:12px;top:-60px;z-index:200;background:var(--accent-btn);color:#fff!important;padding:8px 12px;border-radius:8px}
+.skip:focus{top:12px}
+
+/* ---------- frame ---------- */
+.frame{background:var(--page);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:14px}
+
+/* ---------- concept bar (not product UI) ---------- */
+.concept{border:1.5px dashed var(--note);background:var(--note-wash);border-radius:12px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;font-size:12.5px;color:var(--text-2)}
+.concept .tag{font:700 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--note-text);border:1.5px solid var(--note);border-radius:5px;padding:4px 6px}
+.concept .lead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.concept .lead b{color:var(--text-1);font-weight:650}
+.cgrp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cgrp>.cl{color:var(--note-text);font-weight:650}
+.seg{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px;flex-wrap:wrap}
+.seg button{border:0;background:transparent;padding:4px 10px;border-radius:7px;cursor:pointer;color:var(--text-2);font-size:12.5px;min-height:30px;white-space:nowrap}
+.seg button:hover{background:var(--surface-2);color:var(--text-1)}
+.seg button[aria-pressed="true"]{background:var(--text-1);color:var(--surface);font-weight:600}
+.seg.note button[aria-pressed="true"]{background:var(--note);color:#fff}
+.uc[data-mode="dark"] .seg.note button[aria-pressed="true"]{color:#141413}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:0;background:none;padding:4px 2px;color:var(--text-2);font-size:12.5px;min-height:30px}
+.switch .tr{width:30px;height:18px;border-radius:999px;background:var(--surface-3);position:relative;border:1px solid var(--border-2);transition:background .15s}
+.switch .tr::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.switch[aria-checked="true"] .tr{background:var(--note)}
+.switch[aria-checked="true"] .tr::after{transform:translateX(12px)}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:228px minmax(0,1fr);gap:16px;align-items:start}
+.rail{position:sticky;top:12px;z-index:20;background:var(--ink);color:var(--ink-text);border-radius:14px;padding:14px 10px 12px;display:flex;flex-direction:column;gap:14px;border:1px solid rgba(255,255,255,.05)}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 6px 4px;color:var(--ink-text-1)!important;text-decoration:none!important}
+.brand svg{width:38px;height:38px;flex:none}
+.wordmark{display:flex;flex-direction:column;line-height:1.1}
+.wordmark b{font-size:16px;letter-spacing:-.01em;color:var(--ink-text-1);font-weight:700}
+.wordmark b span{font-weight:450;color:var(--ink-text)}
+.wordmark small{font:11px var(--mono);color:var(--ink-muted);margin-top:2px}
+.nav{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none}
+.nav a{position:relative;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;color:var(--ink-text);font-weight:500;text-decoration:none!important;min-height:40px}
+.nav a:hover{background:rgba(255,255,255,.06);color:var(--ink-text-1)}
+.nav a[aria-current="page"]{background:rgba(255,255,255,.10);color:var(--ink-text-1)}
+.nav a[aria-current="page"]::before{content:"";position:absolute;left:-10px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--canary)}
+.nav .ic{width:18px;height:18px;flex:none}
+.nav .badge{margin-left:auto;font-size:11px;font-weight:700;min-width:20px;padding:1px 6px;border-radius:999px;background:#d03b3b;color:#fff;text-align:center;line-height:1.5}
+.nav .badge.soft{background:rgba(255,255,255,.14);color:var(--ink-text-1)}
+.nav .uc-focus:focus-visible{outline-color:#6da7ec}
+.rail :focus-visible{outline-color:#6da7ec}
+.rail-foot{margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding:12px 8px 2px;font-size:12px;color:var(--ink-muted);display:flex;flex-direction:column;gap:6px}
+.rail-foot .row{display:flex;align-items:center;gap:8px;color:var(--ink-text)}
+.rail-foot .g{width:14px;height:14px}
+
+/* ---------- topbar ---------- */
+.work{min-width:0;display:flex;flex-direction:column;gap:16px}
+.topbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:relative}
+.tb-btn{display:inline-flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:5px 10px 5px 6px;cursor:pointer;min-height:42px;text-align:left}
+.tb-btn:hover{border-color:var(--border-2)}
+.tb-btn .ic{width:16px;height:16px;color:var(--text-3)}
+.ep-mark{width:30px;height:30px;border-radius:8px;background:var(--ink);display:grid;place-items:center;flex:none}
+.ep-mark svg{width:22px;height:22px}
+.tb-btn .t1{display:block;font-weight:650;font-size:13.5px;line-height:1.2}
+.tb-btn .t2{display:block;font-size:12px;color:var(--text-3);line-height:1.2}
+.search{flex:1;min-width:160px;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:0 10px;min-height:42px}
+.search .ic{width:16px;height:16px;color:var(--text-3);flex:none}
+.search input{border:0;background:transparent;outline:0;flex:1;min-width:0;height:40px;font-size:13.5px}
+.search input::placeholder{color:var(--text-3)}
+.search:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.snap{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);padding:0 6px;white-space:nowrap}
+.snap .ic{width:14px;height:14px}
+.icon-btn{width:42px;height:42px;display:grid;place-items:center;border-radius:11px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--text-2)}
+.icon-btn:hover{color:var(--text-1);border-color:var(--border-2)}
+.icon-btn .ic{width:18px;height:18px}
+.me{display:inline-flex;align-items:center;gap:8px;padding:0 4px 0 2px;font-size:12.5px}
+.me .av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--surface-3);font-weight:700;font-size:12px;color:var(--text-1)}
+.me .who b{display:block;font-size:13px;line-height:1.2}
+.me .who span{display:block;color:var(--text-3);font-size:12px;line-height:1.2}
+.pop{position:absolute;z-index:40;top:calc(100% + 6px);left:0;width:min(380px,100%);background:var(--surface);border:1px solid var(--border-2);border-radius:14px;box-shadow:var(--shadow);padding:8px}
+.pop h3{font-size:12px;color:var(--text-3);font-weight:600;padding:6px 8px 4px}
+.pop-item{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:9px;padding:8px;cursor:pointer;text-align:left;min-height:44px}
+.pop-item:hover{background:var(--surface-2)}
+.pop-item[aria-current="true"]{background:var(--accent-wash)}
+.pop-item .grow{flex:1;min-width:0}
+.pop-item .t2{font-size:12px;color:var(--text-3)}
+.pop-foot{border-top:1px solid var(--grid);margin-top:6px;padding:8px 8px 4px;font-size:12px;color:var(--text-2)}
+
+/* ---------- views ---------- */
+main{outline:none;min-width:0}
+.view{display:flex;flex-direction:column;gap:16px}
+.vhead{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 16px}
+.vhead h1{font-size:24px;line-height:1.2;letter-spacing:-.015em;font-weight:700;outline:none}
+.vhead .sub{color:var(--text-2);font-size:13px;margin-top:4px}
+.vhead .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.crumbs{font-size:12.5px;color:var(--text-3);margin-bottom:6px;display:flex;gap:6px;align-items:center}
+.crumbs .ic{width:12px;height:12px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-width:0}
+.card-h{display:flex;align-items:flex-start;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin-bottom:12px}
+.card-h h2{font-size:15px;letter-spacing:-.005em;font-weight:650}
+.card-h .hint{font-size:12.5px;color:var(--text-3);margin-top:2px}
+.card-h .r{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.g2{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px;align-items:start}
+.g2e{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.vstack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.row-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.divider{height:1px;background:var(--grid);margin:12px 0}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-2);background:var(--surface);border-radius:9px;padding:6px 12px;font-weight:600;font-size:13px;cursor:pointer;min-height:36px;color:var(--text-1);text-decoration:none!important;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn .ic{width:15px;height:15px}
+.btn.primary{background:var(--accent-btn);border-color:transparent;color:#fff}
+.btn.primary:hover{filter:brightness(1.08);background:var(--accent-btn)}
+.btn[disabled],.btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+.btn.sm{min-height:30px;padding:4px 10px;font-size:12.5px}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent-text);cursor:pointer;font-weight:600;font-size:inherit}
+.linkbtn:hover{text-decoration:underline}
+
+/* filter row */
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.fchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:4px 11px;font-size:12.5px;cursor:pointer;min-height:32px;color:var(--text-2)}
+.fchip:hover{border-color:var(--border-2);color:var(--text-1)}
+.fchip[aria-pressed="true"]{background:var(--text-1);border-color:var(--text-1);color:var(--surface);font-weight:600}
+.fchip .n{font-variant-numeric:tabular-nums;opacity:.8}
+
+/* status glyphs: shape carries meaning, colour reinforces */
+.g{display:inline-flex;width:16px;height:16px;flex:none;vertical-align:-3px;forced-color-adjust:none}
+.g svg{width:100%;height:100%;overflow:visible}
+.g-up{color:var(--good)} .g-down{color:var(--critical)} .g-warn{color:var(--warning)} .g-serious{color:var(--serious)}
+.g-unknown,.g-paused,.g-none{color:var(--neutral)}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px 3px 5px;font-size:12.5px;line-height:1.35;white-space:nowrap;background:var(--neutral-wash);color:var(--text-1)}
+.chip b{font-weight:650}
+.chip>span:not(.g){color:var(--text-2)}
+.chip.c-down{background:var(--critical-wash)} .chip.c-warn{background:var(--warning-wash)}
+.chip.c-serious{background:var(--serious-wash)} .chip.c-up{background:var(--good-wash)}
+.chip.plain{background:var(--surface-2)}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:6px;padding:1px 7px;background:var(--surface-2);color:var(--text-2);white-space:nowrap;border:1px solid var(--border)}
+.tag.dup{background:var(--accent-wash);color:var(--text-1);border-color:transparent}
+.tag .ic{width:12px;height:12px}
+
+/* open-decision annotations */
+.od{display:inline-flex;align-items:center;gap:6px;border:1.5px dashed var(--note);background:var(--note-wash);color:var(--note-text);border-radius:999px;padding:2px 10px 2px 8px;font-size:11.5px;font-weight:650;cursor:help;white-space:nowrap;min-height:26px;line-height:1.2}
+.od::before{content:"";width:7px;height:7px;transform:rotate(45deg);border:1.5px solid currentColor;border-radius:1.5px;flex:none}
+.uc[data-notes="off"] .od{display:none}
+.flash{display:inline-flex;align-items:center;gap:6px;background:var(--note-wash);border:1.5px dashed var(--note);color:var(--note-text);border-radius:8px;padding:4px 9px;font-size:12px;font-weight:600}
+
+/* headline + KPI */
+.headline{font-size:20px;line-height:1.35;font-weight:650;letter-spacing:-.012em;margin:0;max-width:62ch}
+.headline .q{color:var(--text-2);font-weight:500}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+.kpi{background:var(--surface-2);border-radius:11px;padding:12px 13px;min-width:0}
+.kpi .l{font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:6px}
+.kpi .v{font-size:28px;font-weight:650;letter-spacing:-.02em;line-height:1.15;margin-top:6px}
+.kpi .v small{font-size:15px;font-weight:550;color:var(--text-2);letter-spacing:0}
+.kpi .s{font-size:12px;color:var(--text-3);margin-top:2px}
+
+/* banners */
+.banner{display:flex;gap:12px;align-items:flex-start;border-radius:13px;padding:12px 14px;background:var(--warning-wash);border:1px solid rgba(250,178,25,.55)}
+.banner .g{width:20px;height:20px;margin-top:1px}
+.banner .bt{display:block;font-size:14px;margin-bottom:2px}
+.banner p{margin:0;color:var(--text-2);font-size:13px;max-width:80ch}
+.banner .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.banner.info{background:var(--surface);border-color:var(--border)}
+
+/* ---------- status board (matrix) ---------- */
+.mx-wrap{overflow-x:auto;margin:0 -4px;padding:0 4px}
+.mx{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.mx th,.mx td{border-bottom:1px solid var(--grid);padding:9px 6px}
+.mx thead th{font-weight:600;font-size:12px;color:var(--text-3);text-align:center;vertical-align:bottom;border-bottom-color:var(--axis);padding-top:4px}
+.mx thead th.l{text-align:left}
+.nh{display:inline-flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none;cursor:pointer;color:var(--text-2);padding:3px 4px;border-radius:7px;min-width:52px}
+.nh:hover{background:var(--surface-2);color:var(--text-1)}
+.nh .mono{font-size:11.5px;font-weight:600;white-space:nowrap}
+.nh .g{width:12px;height:12px}
+.nh.ep .mono{color:var(--text-1)}
+.nh.ep::after{content:"endpoint";font-size:10px;color:var(--text-3);font-weight:500}
+.mx tbody tr{cursor:pointer}
+.mx tbody tr:hover>*{background:var(--surface-2)}
+.mx th.mon{text-align:left;font-weight:500;min-width:190px}
+.mx th.mon a{color:var(--text-1);font-weight:650}
+.mx th.mon .tgt{display:block;font:11.5px var(--mono);color:var(--text-3);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mx td.st{white-space:nowrap}
+.mx .st-inline{display:none}
+.mx td.c{text-align:center;width:64px}
+.mx td.c .g{width:18px;height:18px}
+.mx td.c.out{background-image:repeating-linear-gradient(135deg,var(--hatch) 0 1px,transparent 1px 6px)}
+.mx tbody tr:hover>td.c.out{background-color:var(--surface-2)}
+.ttype{font:600 10px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);border:1px solid var(--border-2);border-radius:4px;padding:2px 4px;margin-left:6px;vertical-align:1px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--text-2);align-items:center;margin-top:12px}
+.legend>span{display:inline-flex;align-items:center;gap:6px}
+.legend .sw{width:14px;height:12px;border-radius:3px;display:inline-block}
+.sw.up{background:var(--up-cell)} .sw.down{background:var(--critical)} .sw.part{background:var(--warning)}
+.sw.out{background:repeating-linear-gradient(135deg,var(--hatch) 0 1.5px,transparent 1.5px 4px);box-shadow:inset 0 0 0 1px var(--hatch)}
+.sw.line{height:2px;width:16px;background:var(--accent);border-radius:2px}
+.sw.band{background:var(--critical-wash);box-shadow:inset 0 0 0 1px rgba(208,59,59,.35)}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:28px 12px;color:var(--text-2)}
+.empty svg{width:64px;height:64px}
+.empty b{color:var(--text-1);font-size:15px}
+
+/* incident list */
+.inc-list{display:flex;flex-direction:column}
+.inc{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:4px 12px;padding:12px 6px;border-bottom:1px solid var(--grid);color:inherit!important;text-decoration:none!important;border-radius:8px}
+.inc:last-child{border-bottom:0}
+.inc:hover{background:var(--surface-2)}
+.inc>.g{width:18px;height:18px;margin-top:2px}
+.inc .t{font-weight:650;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.inc .m{font-size:12.5px;color:var(--text-2);margin-top:2px}
+.inc .d{font-size:12.5px;color:var(--text-2);margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.inc .d .ic{width:14px;height:14px;color:var(--text-3)}
+.inc .ch{color:var(--text-3);align-self:center}
+.inc .ch .ic{width:16px;height:16px}
+.dots{display:inline-flex;gap:3px;align-items:center;vertical-align:middle}
+.dots i{width:9px;height:9px;border-radius:2px;background:var(--up-cell);display:block;forced-color-adjust:none}
+.dots i.down{background:var(--critical)} .dots i.unknown{background:transparent;box-shadow:inset 0 0 0 1.5px var(--neutral)}
+.dots i.paused{background:var(--neutral-wash)} .dots i.warn{background:var(--warning)}
+
+/* node minis */
+.nodes-mini{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.nm{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);border-radius:11px;padding:10px;background:var(--surface);color:inherit!important;text-decoration:none!important}
+.nm:hover{border-color:var(--border-2)}
+.nm.out{background-image:repeating-linear-gradient(135deg,var(--hatch-soft) 0 1px,transparent 1px 7px)}
+.nm .g{margin-top:2px}
+.nm b{display:block;font:650 13px var(--mono)}
+.nm>span:not(.g){display:block;font-size:12px;color:var(--text-3)}
+.nm>span:not(.g)>span{display:block}
+
+/* tables */
+.tbl-wrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font-size:12px;font-weight:600;color:var(--text-3);text-align:left;padding:8px 10px;border-bottom:1px solid var(--axis);white-space:nowrap}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--grid);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl .mono{white-space:nowrap}
+.tbl td.tn{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl tr.out td{background-image:repeating-linear-gradient(135deg,var(--hatch-soft) 0 1px,transparent 1px 7px)}
+.tbl tr.ep td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.tbl .msg{color:var(--text-2);font-size:12.5px}
+.rowlink{cursor:pointer}
+.rowlink:hover td{background-color:var(--surface-2)}
+
+/* history strip */
+.strip{display:flex;gap:2px;height:26px;align-items:stretch;forced-color-adjust:none}
+.strip i{flex:1;min-width:2px;border-radius:2px;background:var(--up-cell)}
+.strip i.d{background:var(--critical)} .strip i.p{background:var(--warning)}
+.strip i.z{background:var(--neutral-wash)} .strip i.n{background:transparent;box-shadow:inset 0 0 0 1px var(--grid)}
+.strip i:hover{outline:2px solid var(--text-1);outline-offset:0}
+.axis-row{display:flex;justify-content:space-between;font-size:11px;color:var(--tick);margin-top:4px;font-variant-numeric:tabular-nums}
+
+/* charts */
+.chart{position:relative;outline:none}
+.chart:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:8px}
+.chart svg{display:block;width:100%;overflow:visible}
+.chart .tick{font:11px var(--font);fill:var(--tick);font-variant-numeric:tabular-nums}
+.chart .lbl{font:600 12px var(--font);fill:var(--text-1)}
+.chart .lbl2{font:11.5px var(--font);fill:var(--text-2)}
+.chart .gridl{stroke:var(--grid);stroke-width:1;shape-rendering:crispEdges}
+.chart .base{stroke:var(--axis);stroke-width:1;shape-rendering:crispEdges}
+.chart .line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .area{fill:var(--accent);opacity:.10}
+.chart .band{fill:var(--critical-wash)}
+.chart .bandedge{stroke:var(--critical);stroke-width:1;opacity:.5}
+.chart .xh{stroke:var(--text-2);stroke-width:1;shape-rendering:crispEdges}
+.chart .dot{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+.chart .s-up{fill:var(--up-cell)} .chart .s-down{fill:var(--critical)} .chart .s-paused{fill:var(--neutral-wash)}
+.chart .s-unknown{fill:url(#uc-hatch)} .chart .s-none{fill:transparent}
+.chart .hatch-bg{fill:var(--neutral-wash)} .chart .hatch-ln{stroke:var(--hatch);stroke-width:1.6}
+.chart .mk{stroke:var(--surface);stroke-width:2;cursor:pointer}
+.chart .mk:focus-visible{outline:none;stroke:var(--text-1)}
+.chart .mk-fail{fill:var(--critical)} .chart .mk-send{fill:var(--accent)} .chart .mk-ok{fill:var(--good)}
+.chart .mk-info{fill:var(--text-3)} .chart .mk-dup{fill:var(--accent)}
+.chart .partbar{fill:var(--text-3);opacity:.55}
+.chart .hit{fill:transparent}
+.chart .edge-ok{stroke:var(--axis);stroke-width:1.6}
+.chart .edge-down{stroke:var(--critical);stroke-width:1.8}
+.chart .edge-unknown{stroke:var(--neutral);stroke-width:1.4;stroke-dasharray:2 4}
+.chart .nodec{fill:var(--surface);stroke:var(--text-2);stroke-width:1.5}
+.chart .nodec.ep{stroke:var(--accent);stroke-width:2.5}
+.chart .nodec.out{stroke:var(--neutral);stroke-dasharray:3 3}
+.chart .dim{opacity:.18}
+.chart-foot{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-top:10px}
+.tip{position:absolute;z-index:100;pointer-events:none;max-width:300px;background:var(--tip-bg);color:var(--tip-fg);border-radius:9px;padding:8px 10px;font:12.5px/1.45 var(--font);box-shadow:0 8px 24px rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.08)}
+.tip[hidden]{display:none}
+.tip b{display:block;font-weight:650;margin-bottom:2px}
+.tip .r{display:flex;align-items:center;gap:8px;color:var(--tip-2);font-variant-numeric:tabular-nums}
+.tip .r strong{color:var(--tip-fg);min-width:54px}
+.tip .r .k{width:10px;height:2px;border-radius:2px;background:var(--tip-2)}
+.tip .r .k.focus{background:#6da7ec}
+.tip .s{color:var(--tip-2)}
+
+/* event log */
+.evlog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.evlog li{display:grid;grid-template-columns:62px 18px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px solid var(--grid);font-size:13px;align-items:start}
+.evlog li:last-child{border-bottom:0}
+.evlog time{font-variant-numeric:tabular-nums;color:var(--text-3);font-size:12.5px;padding-top:1px}
+.evlog .ev-ic{width:10px;height:10px;border-radius:50%;margin-top:5px;margin-left:4px;forced-color-adjust:none}
+.ev-fail{background:var(--critical)} .ev-send{background:var(--accent)} .ev-ok{background:var(--good)} .ev-info{background:var(--text-3)} .ev-dup{background:var(--accent);box-shadow:0 0 0 2px var(--surface),0 0 0 3.5px var(--accent)}
+.evlog .det{display:block;color:var(--text-3);font-size:12.5px}
+.evlog li.future time,.evlog li.future .tx{opacity:.75}
+
+/* nodes */
+.nodes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.ncard{border:1px solid var(--border);border-radius:13px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:10px}
+.ncard.ep{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.ncard.out .nc-h{background-image:repeating-linear-gradient(135deg,var(--hatch-soft) 0 1px,transparent 1px 7px);margin:-14px -14px 0;padding:14px;border-radius:13px 13px 0 0}
+.nc-h{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.nc-h>div>b{font:700 15px var(--mono)}
+.nc-h>div>span{display:block;font-size:12.5px;color:var(--text-3)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 12px;font-size:12.5px;margin:0}
+.kv dt{color:var(--text-3)}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.mesh{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:20px;align-items:center}
+.reach th,.reach td{text-align:center;padding:7px 6px}
+.reach th.l{text-align:right}
+.reach td .g{width:16px;height:16px}
+.reach td.self{color:var(--text-3)}
+.reach td.out{background-image:repeating-linear-gradient(135deg,var(--hatch) 0 1px,transparent 1px 6px)}
+.reach small{display:block;font-size:10.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.path{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px}
+.path .box{border:1px solid var(--border-2);border-radius:9px;padding:6px 10px;background:var(--surface);display:flex;gap:6px;align-items:center}
+.path .box.opt{border-style:dashed}
+.path .arr{color:var(--text-3)}
+
+/* config */
+.diff th,.diff td{padding:9px 10px}
+.diff td.ch{background:var(--accent-wash);font-weight:600}
+.diff label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.diff input[type=radio]{accent-color:var(--accent-btn);width:16px;height:16px}
+.result{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;margin-top:12px;padding:12px;border-radius:11px;background:var(--surface-2)}
+.rev{font:600 11.5px var(--mono);background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;white-space:nowrap}
+.cfg td.c{text-align:center}
+.cfg td.c .rev{display:inline-block;margin-top:2px}
+.cfg td.c.out{background-image:repeating-linear-gradient(135deg,var(--hatch) 0 1px,transparent 1px 6px)}
+
+/* forms */
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+.form .full{grid-column:1/-1}
+.fld{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--text-2)}
+.fld>span{font-weight:600;color:var(--text-1)}
+.fld input[type=text],.fld input[type=url],.fld input[type=password],.fld select{border:1px solid var(--border-2);background:var(--surface);border-radius:9px;padding:0 10px;min-height:38px;font-size:13.5px;color:var(--text-1)}
+.fld small{color:var(--text-3)}
+.nodepick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.nodepick label{display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:9px;padding:8px 10px;cursor:pointer;min-height:44px;font-size:12.5px}
+.nodepick label:has(input:checked){border-color:var(--accent);background:var(--accent-wash)}
+.nodepick input{accent-color:var(--accent-btn);width:16px;height:16px}
+.nodepick b{font:650 12.5px var(--mono);display:block;color:var(--text-1)}
+.order{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12.5px}
+.order .o{display:inline-flex;align-items:center;gap:5px;font:600 12px var(--mono);border:1px solid var(--border);border-radius:7px;padding:2px 7px;background:var(--surface)}
+.order .o i{font-style:normal;font:700 10px var(--font);color:var(--text-3)}
+.order .o.sent{border-color:var(--accent);background:var(--accent-wash)}
+.order .o.out{background-image:repeating-linear-gradient(135deg,var(--hatch) 0 1px,transparent 1px 6px)}
+.order .sep{color:var(--text-3)}
+
+.ic{width:16px;height:16px;flex:none}
+.prose{font-size:13px;color:var(--text-2);max-width:72ch}
+.prose p{margin:0 0 8px}
+.prose b{color:var(--text-1)}
+.guar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.guar>div{background:var(--surface-2);border-radius:11px;padding:12px}
+.guar b{display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:13.5px}
+.guar p{margin:0;font-size:12.5px;color:var(--text-2)}
+
+/* ---------- container-based responsive layout ---------- */
+@container app (max-width:1179px){
+  .g2{grid-template-columns:minmax(0,1fr)}
+}
+@container app (max-width:1059px){
+  .shell{grid-template-columns:64px minmax(0,1fr)}
+  .rail{padding:12px 8px;align-items:center}
+  .brand{padding:2px 0 4px}
+  .wordmark,.nav .lbl,.rail-foot .txt{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .nav a{justify-content:center;padding:10px 0;width:46px}
+  .nav a[aria-current="page"]::before{left:-8px}
+  .nav .badge{position:absolute;top:1px;right:0;margin:0;min-width:17px;padding:0 4px;font-size:10px}
+  .rail-foot{align-items:center;padding:10px 0 2px}
+  .g2e{grid-template-columns:minmax(0,1fr)}
+  .mx th.mon{min-width:0}
+  .mx td.c{width:46px}
+  .mx .st-col,.mx td.st{display:none}
+  .mx .st-inline{display:block;margin-top:6px}
+  .mx th.mon .tgt{max-width:220px}
+  .nh{min-width:40px;padding:3px 0}
+  .mx thead th{padding-left:2px;padding-right:2px}
+  .me .who{display:none}
+  .mesh{grid-template-columns:minmax(0,1fr)}
+  .guar{grid-template-columns:minmax(0,1fr)}
+}
+@container app (max-width:699px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:12px}
+  .rail{flex-direction:row;align-items:center;padding:8px;gap:6px;top:0;border-radius:12px}
+  .brand svg{width:32px;height:32px}
+  .nav{flex-direction:row;overflow-x:auto;flex:1;scrollbar-width:none;gap:2px;mask-image:linear-gradient(90deg,#000 85%,transparent)}
+  .nav::-webkit-scrollbar{display:none}
+  .nav .lbl{position:static!important;width:auto;height:auto;overflow:visible;clip:auto;clip-path:none}
+  .nav a{width:auto;padding:8px 10px;white-space:nowrap;min-height:44px}
+  .nav a[aria-current="page"]::before{left:10px;right:10px;top:auto;bottom:2px;width:auto;height:3px;border-radius:3px}
+  .nav .badge{position:static;margin-left:2px}
+  .rail-foot{display:none}
+  .vhead h1{font-size:21px}
+  .headline{font-size:17px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi .v{font-size:24px}
+  .snap{display:none}
+  .me .who{display:none}
+  .search{order:5;flex-basis:100%}
+  .form{grid-template-columns:minmax(0,1fr)}
+  /* status board becomes one card per monitor */
+  .mx thead{display:none}
+  .mx,.mx tbody{display:block}
+  .mx tr{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding:12px 4px;border-bottom:1px solid var(--grid)}
+  .mx th,.mx td{border:0;padding:0}
+  .mx th.mon{grid-column:1/-1;min-width:0}
+  .mx td.st{display:block;grid-column:1/-1;margin:4px 0 6px}
+  .mx .st-inline{display:none}
+  .mx td.c{display:flex;flex-direction:column;align-items:center;gap:3px;width:auto;padding:6px 0;border-radius:7px;background-color:var(--surface-2)}
+  .mx td.c::before{content:attr(data-node);font:600 10.5px var(--mono);color:var(--text-3)}
+  /* quiet when healthy: up and paused rows collapse to one line */
+  .mx tr.ok{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+  .mx tr.ok th.mon{grid-column:1}
+  .mx tr.ok td.st{grid-column:2;margin:0}
+  .mx tr.ok td.c{display:none}
+  /* generic stacked tables */
+  .tbl.stack thead{display:none}
+  .tbl.stack,.tbl.stack tbody,.tbl.stack tr,.tbl.stack td{display:block;width:100%}
+  .tbl.stack tr{padding:10px 0;border-bottom:1px solid var(--grid)}
+  .tbl.stack tr:last-child{border-bottom:0}
+  .tbl.stack td{border:0;padding:3px 0;text-align:right;overflow:hidden}
+  .tbl.stack td::before{content:attr(data-label);float:left;margin-right:12px;color:var(--text-3);font-size:12px;text-align:left}
+  .tbl.stack td.lead{font-weight:650;text-align:left}
+  .tbl.stack td.lead::before{display:none}
+  .tbl.stack td.full{text-align:left}
+  .tbl.stack td.full::before{float:none;display:block;margin-bottom:4px}
+  .tbl.stack .num{text-align:right}
+  .tbl.stack td.nil{display:none}
+  .inc{grid-template-columns:20px minmax(0,1fr)}
+  .inc .ch{display:none}
+  .evlog li{grid-template-columns:54px 16px minmax(0,1fr);gap:8px}
+}
+
+@media (prefers-reduced-motion:reduce){.uc *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+@media (forced-colors:active){
+  .chip,.kpi,.card,.fchip,.seg,.tb-btn,.ncard,.nm{border:1px solid CanvasText}
+  .seg button[aria-pressed="true"],.fchip[aria-pressed="true"]{outline:2px solid Highlight}
+  .nav a[aria-current="page"]{outline:2px solid Highlight}
+}
+@media print{.concept,.rail,.topbar{display:none}.shell{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="uc" id="uc" data-mode="light" data-notes="on">
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- Icon + status-glyph sprite. Status shapes: up = circle, down = square, warn = triangle,
+     serious = diamond, unknown = dashed ring, paused = ring with bars, none = dash. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<symbol id="i-overview" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></g></symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2.5 12.5h4l2.2-5.5 4.2 11 2.4-5.5h6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-incident" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.8 21 19.5H3z"/><path d="M12 10v4.2"/><path d="M12 17.2h.01"/></g></symbol>
+<symbol id="i-nodes" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6.5" r="2.6"/><circle cx="18" cy="6.5" r="2.6"/><circle cx="12" cy="17.5" r="2.6"/><path d="M8.6 6.5h6.8M7.3 8.8l3.4 6.4M16.7 8.8l-3.4 6.4"/></g></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.8h-15z"/><path d="M10 20.8a2.2 2.2 0 0 0 4 0"/></g></symbol>
+<symbol id="i-config" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h8.5M17.5 7H20M4 17h2.5M11.5 17H20"/><circle cx="15" cy="7" r="2.4"/><circle cx="9" cy="17" r="2.4"/></g></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8.5" r="3.3"/><path d="M3 19.5c.7-3.3 3.2-5.2 6-5.2s5.3 1.9 6 5.2"/><path d="M15.5 5.4a3.2 3.2 0 0 1 0 6.2M17.6 14.6c1.8.7 3 2.4 3.4 4.9"/></g></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></g></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.6A7.6 7.6 0 0 1 9.4 4.5a7.6 7.6 0 1 0 10.1 10.1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+<symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3.5 11.2 20.5 4l-7 16.5-2.6-6.6z"/><path d="M10.9 13.9 20.5 4"/></g></symbol>
+<symbol id="i-repeat" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V9.5A3.5 3.5 0 0 1 7.5 6H19"/><path d="m16 3 3 3-3 3"/><path d="M20 13v1.5a3.5 3.5 0 0 1-3.5 3.5H5"/><path d="m8 21-3-3 3-3"/></g></symbol>
+<symbol id="i-branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.2"/><circle cx="6" cy="18.5" r="2.2"/><circle cx="18" cy="7.5" r="2.2"/><path d="M6 7.7v8.6M18 9.7c0 4.3-6.5 3.4-11 6.8"/></g></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></g></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4M15 3v4"/><path d="M6.5 7h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16v5"/></g></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></g></symbol>
+<symbol id="i-merge" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3.5c0 5.5 7 5 7 10.5v6.5M19 3.5c0 5.5-7 5-7 10.5"/><path d="m8.8 17.6 3.2 3.2 3.2-3.2"/></g></symbol>
+<symbol id="i-table" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/></g></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+<symbol id="s-up" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.9 8.3l2.1 2.1 4.1-4.4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="s-down" viewBox="0 0 16 16"><rect x="1.3" y="1.3" width="13.4" height="13.4" rx="3" fill="currentColor"/><path d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="s-warn" viewBox="0 0 16 16"><path d="M8 1.4l7 12.4H1z" fill="currentColor" style="stroke:var(--warn-edge,currentColor)" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 5.9v3.8" stroke="#151514" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.9" r="1" fill="#151514"/></symbol>
+<symbol id="s-serious" viewBox="0 0 16 16"><path d="M8 .9l7.1 7.1L8 15.1.9 8z" fill="currentColor" style="stroke:var(--serious-edge,currentColor)" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 4.6v4.2" stroke="#151514" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.1" r="1" fill="#151514"/></symbol>
+<symbol id="s-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 1.8"/><path d="M6.3 6.4a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.9.6-.9 1.2v.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r=".9" fill="currentColor"/></symbol>
+<symbol id="s-paused" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.4 5.6v4.8M9.6 5.6v4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+<symbol id="s-none" viewBox="0 0 16 16"><path d="M5 8h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+</defs>
+</svg>
+
+<div class="frame">
+  <!-- CONCEPT CONTROLS: reviewer tooling, not product UI -->
+  <section class="concept" aria-label="Concept controls (not part of the product)">
+    <div class="lead"><span class="tag">Concept</span><span><b>Sample data, frozen at 21 Oct 2026 14:32 UTC.</b> Nothing here is live and no action changes anything.</span></div>
+    <div class="cgrp"><span class="cl" id="cl-scen">Scenario</span>
+      <div class="seg note" role="group" aria-labelledby="cl-scen">
+        <button type="button" data-act="scen" data-v="connected">Peers connected</button>
+        <button type="button" data-act="scen" data-v="partition">Partition</button>
+      </div></div>
+    <div class="cgrp"><span class="cl" id="cl-pol">Outage policy</span>
+      <div class="seg note" role="group" aria-labelledby="cl-pol">
+        <button type="button" data-act="policy" data-v="any">Any location (milestone)</button>
+        <button type="button" data-act="policy" data-v="thr">≥ 2 (idea)</button>
+        <button type="button" data-act="policy" data-v="all">All (idea)</button>
+      </div></div>
+    <div class="cgrp"><span class="cl" id="cl-role">View as</span>
+      <div class="seg note" role="group" aria-labelledby="cl-role">
+        <button type="button" data-act="role" data-v="admin">Admin</button>
+        <button type="button" data-act="role" data-v="editor">Editor</button>
+        <button type="button" data-act="role" data-v="viewer">Viewer</button>
+      </div></div>
+    <button type="button" class="switch" role="switch" aria-checked="true" data-act="notes"><span class="tr" aria-hidden="true"></span>Design notes</button>
+  </section>
+
+  <div class="shell">
+    <nav class="rail" aria-label="Primary">
+      <a class="brand" href="#/overview" aria-label="Uptime Canary, overview">
+        <svg viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+          <path d="M1.6 35.5H23.2L25.8 31.4L28.8 38.2L31.4 35.5H38.4" fill="none" stroke="#a3a198" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M16.6 32.2V35.4M20.4 32V35.4" stroke="#f28c28" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M31.2 13.4C31.2 9.3 28.2 6 24.4 6C20.6 6 17.6 9.1 17.6 12.9C17.6 14.6 18.1 16 18.9 17.1C13.6 18.4 9.6 22.6 8.4 27.6L4 30.6L10.6 30.6C12.8 31.8 15.6 32.4 18.6 32.4C26.2 32.4 32.2 27.2 32.2 20.4C32.2 17.8 31.9 15.4 31.2 13.4Z" fill="#ffd23f"/>
+          <path d="M13.6 24C17.4 21.2 23.4 21.4 27 25.2C22.6 27.4 17.2 27.2 13.6 24Z" fill="#e9a800"/>
+          <path d="M31 11.2L36.6 13.5L31.1 15.7Z" fill="#f28c28"/>
+          <circle cx="26.3" cy="11.6" r="1.6" fill="#151514"/>
+        </svg>
+        <span class="wordmark"><b>Uptime <span>Canary</span></b><small>concept · v0</small></span>
+      </a>
+      <ul class="nav" id="nav"></ul>
+      <div class="rail-foot" id="rail-foot"></div>
+    </nav>
+
+    <div class="work">
+      <header class="topbar" id="topbar">
+        <button type="button" class="tb-btn" id="conn-btn" data-act="pop" data-v="conn" aria-haspopup="true" aria-expanded="false"></button>
+        <label class="search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="vh">Search monitors</span><input id="q" type="search" placeholder="Search monitors, targets, nodes" autocomplete="off"></label>
+        <span class="snap" id="snap"></span>
+        <button type="button" class="icon-btn" id="theme-btn" data-act="theme"></button>
+        <span class="me" id="me"></span>
+        <div class="pop" id="pop" hidden></div>
+      </header>
+      <main id="main" tabindex="-1"></main>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<div class="vh" id="live" aria-live="polite"></div>
+</div>
+
+<noscript><p style="font:14px system-ui;padding:16px">This concept needs JavaScript to render its sample views.</p></noscript>
+
+<script>
+(function () {
+'use strict';
+/* =====================================================================
+   SAMPLE DATA — fictional. Shapes follow packages/shared/src/index.ts
+   (MonitorView, NodeView, IncidentView, NotificationView) where the API
+   already provides them; items marked "proposal" in the UI need API work.
+   ===================================================================== */
+const uc = document.getElementById('uc');
+const main = document.getElementById('main');
+const tip = document.getElementById('tip');
+const live = document.getElementById('live');
+const pop = document.getElementById('pop');
+
+const pad = n => String(n).padStart(2, '0');
+const T = (hm, s = 0) => { const [h, m] = hm.split(':').map(Number); return Date.UTC(2026, 9, 21, h, m, s); };
+const NOW = T('14:32'), MIN = 60000;
+const hm = t => { const d = new Date(t); return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()); };
+const hms = t => hm(t) + ':' + pad(new Date(t).getUTCSeconds());
+const dur = ms => { const m = Math.max(0, Math.round(ms / MIN)); if (m < 1) return 'under 1 min'; if (m < 60) return m + ' min'; const h = Math.floor(m / 60), r = m % 60; return r ? `${h} h ${r} min` : `${h} h`; };
+const ago = t => { const s = Math.max(0, Math.round((NOW - t) / 1000)); return s < 60 ? s + ' s ago' : dur(NOW - t) + ' ago'; };
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const andList = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+const plural = (n, one, many) => n === 1 ? one : (many || one + 's');
+function rnd(a, b, c) { let h = Math.imul(a + 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(c + 0x27d4eb2f, 0x165667b1); h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15; return (h >>> 0) / 4294967296; }
+
+/* Nodes are always listed by ID: it is also the notification candidate order. */
+const NODES = [
+  { id: 'fra-1', name: 'Frankfurt', kind: 'VPS', base: 28, skew: 0.1, db: '412 MB', up: '12 d 4 h' },
+  { id: 'home-1', name: 'Homelab, Berlin', kind: 'Home server', base: 21, skew: 3.4, db: '1.2 GB', up: '41 d 2 h' },
+  { id: 'iad-1', name: 'Ashburn', kind: 'VPS', base: 94, skew: 0.0, db: '405 MB', up: '3 d 19 h' },
+  { id: 'lhr-1', name: 'London', kind: 'VPS', base: 34, skew: -0.2, db: '398 MB', up: '12 d 4 h' },
+  { id: 'sgp-1', name: 'Singapore', kind: 'VPS', base: 181, skew: 0.3, db: '377 MB', up: '12 d 4 h' },
+  { id: 'syd-1', name: 'Sydney', kind: 'VPS', base: 236, skew: -0.4, db: '380 MB', up: '8 d 11 h' },
+];
+const NID = NODES.map(n => n.id);
+const NODE = Object.fromEntries(NODES.map(n => [n.id, n]));
+const RTT = { 'fra-1|home-1': 9, 'fra-1|iad-1': 88, 'fra-1|lhr-1': 15, 'fra-1|sgp-1': 158, 'fra-1|syd-1': 281, 'home-1|iad-1': 96, 'home-1|lhr-1': 21, 'home-1|sgp-1': 171, 'home-1|syd-1': 292, 'iad-1|lhr-1': 74, 'iad-1|sgp-1': 221, 'iad-1|syd-1': 198, 'lhr-1|sgp-1': 169, 'lhr-1|syd-1': 268, 'sgp-1|syd-1': 93 };
+const rtt = (a, b) => RTT[a + '|' + b] || RTT[b + '|' + a];
+const GA = ['fra-1', 'home-1', 'iad-1', 'lhr-1'], GB = ['sgp-1', 'syd-1'];
+const PAST_PART = { since: T('13:20'), until: T('13:40', 12), groups: [GA, GB] };
+const SCEN = {
+  connected: { label: 'Peers connected', part: null },
+  partition: { label: 'Partition', part: { since: T('14:05'), until: null, groups: [GA, GB] } },
+};
+const HOOKS = {
+  ops: { label: 'Ops webhook', host: 'hooks.example.org', masked: 'https://hooks.example.org/uptime/••••••••' },
+  home: { label: 'Homelab ntfy', host: 'ntfy.home.arpa', masked: 'https://ntfy.home.arpa/canary-••••' },
+};
+const ALLN = NID.slice();
+const MON = [
+  { k: 'api', id: 'mon_01JB2K7Q9Z4M', name: 'API gateway', type: 'http', target: 'https://api.example.org/health', nodes: ALLN, every: 30, timeout: 10, expect: '200–299', hook: 'ops', repeat: 30, rev: '4f1c9a2e', upd: T('09:12'), by: 'alice', lat: 40,
+    fail: [{ start: T('14:08', 40), nodes: ALLN, stagger: { 'iad-1': 0, 'fra-1': 22, 'lhr-1': 31, 'home-1': 38, 'sgp-1': 47, 'syd-1': 52 }, msg: 'HTTP 502 Bad Gateway' }] },
+  { k: 'auth', id: 'mon_01JB2K8D3MXA', name: 'Auth service', type: 'http', target: 'https://auth.example.org/healthz', nodes: ALLN, every: 30, timeout: 10, expect: '200–299', hook: 'ops', repeat: 30, rev: 'b7d03e11', upd: T('08:40'), by: 'ben', lat: 55,
+    fail: [{ start: T('13:51', 5), nodes: ['sgp-1', 'syd-1'], stagger: { 'syd-1': 14 }, msg: 'TLS handshake timed out after 10 s' }] },
+  { k: 'cdn', id: 'mon_01JB2KA1VXQ2', name: 'CDN edge · APAC', type: 'http', target: 'https://cdn.example.org/edge-check', nodes: ALLN, every: 60, timeout: 10, expect: '200–299', hook: 'ops', repeat: 0, rev: '0c55e6f3', upd: T('07:58'), by: 'alice', lat: 20,
+    fail: [{ start: T('14:02', 10), nodes: ['syd-1'], msg: 'HTTP 503 Service Unavailable' }] },
+  { k: 'billing', id: 'mon_01JB2KB6RT8N', name: 'Billing API', type: 'http', target: 'https://billing.example.org/ping', nodes: ALLN, every: 30, timeout: 10, expect: '200', hook: 'ops', repeat: 0, rev: 'c21f8b07', upd: T('13:26'), by: 'alice', lat: 62,
+    conflict: { since: T('13:40', 12),
+      base: { rev: '5a7d20c4', at: T('10:02'), by: 'alice', on: 'fra-1', every: '30 s', timeout: '10 s', expect: '200' },
+      a: { rev: 'c21f8b07', at: T('13:26'), by: 'alice', on: 'fra-1', every: '15 s', timeout: '10 s', expect: '200' },
+      b: { rev: '9e04d6aa', at: T('13:29'), by: 'ben', on: 'sgp-1', every: '30 s', timeout: '20 s', expect: '200, 204' } } },
+  { k: 'web', id: 'mon_01JB2KC2PLW7', name: 'Public website', type: 'http', target: 'https://www.example.org', nodes: ALLN, every: 60, timeout: 10, expect: '200–299', hook: 'ops', repeat: 0, rev: '7e9b1d04', upd: T('06:15'), by: 'alice', lat: 35 },
+  { k: 'docs', id: 'mon_01JB2KD8HW3C', name: 'Docs', type: 'http', target: 'https://docs.example.org', nodes: ALLN, every: 60, timeout: 10, expect: '200–299', hook: 'ops', repeat: 0, rev: '3d02aa9c', upd: T('06:15'), by: 'alice', lat: 48,
+    fail: [{ start: T('13:24', 10), until: T('13:31', 30), resolvedAt: T('13:40', 20), nodes: ALLN, stagger: { 'fra-1': 0, 'home-1': 6, 'iad-1': 11, 'lhr-1': 3, 'sgp-1': 18, 'syd-1': 25 }, msg: 'HTTP 500 Internal Server Error' }] },
+  { k: 's3', id: 'mon_01JB2KE4NBV6', name: 'Object storage', type: 'http', target: 'https://s3.example.org/minio/health/live', nodes: ['fra-1', 'home-1', 'iad-1', 'lhr-1'], every: 60, timeout: 10, expect: '200–299', hook: null, repeat: 0, rev: '61f0c2d8', upd: T('11:02'), by: 'ben', lat: 30 },
+  { k: 'lb', id: 'mon_01JB2KF9GCK1', name: 'Edge load balancer', type: 'ping', target: '203.0.113.10', nodes: ALLN, every: 30, timeout: 3, expect: 'reply', hook: 'ops', repeat: 0, rev: '71be09f5', upd: T('05:30'), by: 'alice', lat: 6,
+    pEdit: { rev: 'd3a14c70', at: T('14:20'), by: 'alice', on: 'fra-1', what: 'timeout 3 s → 5 s' } },
+  { k: 'status', id: 'mon_01JB2KG5YSD9', name: 'Status page', type: 'http', target: 'https://status.example.org', nodes: ALLN, every: 120, timeout: 10, expect: '200–299', hook: 'ops', repeat: 0, rev: '9a6e3b21', upd: T('06:15'), by: 'alice', lat: 33,
+    fail: [{ start: T('12:02', 5), until: T('12:09', 15), resolvedAt: T('12:09', 30), nodes: ALLN, msg: 'HTTP 500 Internal Server Error' }] },
+  { k: 'mail', id: 'mon_01JB2KH2QE5T', name: 'Mail admin', type: 'http', target: 'https://mail.example.org/admin', nodes: ['fra-1', 'iad-1', 'lhr-1'], every: 60, timeout: 10, expect: '200–299', hook: 'ops', repeat: 0, rev: '2c8d7f16', upd: T('11:40'), by: 'ben', lat: 70, enabled: false, pausedAt: T('11:40'), pauseNote: 'Paused by ben for a maintenance window' },
+  { k: 'router', id: 'mon_01JB2KJ7WA0R', name: 'Home router', type: 'ping', target: '192.168.1.1', nodes: ['home-1'], every: 30, timeout: 3, expect: 'reply', hook: 'home', repeat: 0, rev: 'e4f2b8a1', upd: T('02:10'), by: 'alice', lat: 1,
+    fail: [{ start: T('09:10'), until: T('09:14', 30), resolvedAt: T('09:14', 50), nodes: ['home-1'], msg: '100% packet loss (3 of 3)' }] },
+  { k: 'grafana', id: 'mon_01JB2KK3DFZ8', name: 'Grafana', type: 'http', target: 'https://grafana.home.arpa', nodes: ['fra-1', 'home-1'], every: 60, timeout: 10, expect: '200–299', hook: 'home', repeat: 0, rev: '58c1e0b3', upd: T('02:10'), by: 'alice', lat: 12 },
+];
+const MONK = Object.fromEntries(MON.map(m => [m.k, m]));
+/* Notification receipts (NotificationView). pol = outage policies under which the send exists. */
+const RC_BASE = [
+  { mon: 'router', kind: 'down', node: 'home-1', t: T('09:11', 20) },
+  { mon: 'router', kind: 'recovery', node: 'home-1', t: T('09:15', 2) },
+  { mon: 'status', kind: 'down', node: 'fra-1', t: T('12:03', 10) },
+  { mon: 'status', kind: 'recovery', node: 'fra-1', t: T('12:09', 40) },
+  { mon: 'docs', kind: 'down', node: 'fra-1', t: T('13:25', 2) },
+  { mon: 'docs', kind: 'down', node: 'sgp-1', t: T('13:25', 42) },
+  { mon: 'docs', kind: 'recovery', node: 'fra-1', t: T('13:40', 31) },
+  { mon: 'auth', kind: 'down', node: 'fra-1', t: T('13:52', 20), pol: ['any', 'thr'] },
+  { mon: 'cdn', kind: 'down', node: 'fra-1', t: T('14:03', 12), pol: ['any'] },
+  { mon: 'api', kind: 'down', node: 'fra-1', t: T('14:10', 5) },
+];
+const RC = {
+  connected: RC_BASE.concat([{ mon: 'auth', kind: 'repeat', slot: 1, node: 'fra-1', t: T('14:22', 21), pol: ['any', 'thr'] }]),
+  partition: RC_BASE.concat([
+    { mon: 'api', kind: 'down', node: 'sgp-1', t: T('14:10', 45) },
+    { mon: 'auth', kind: 'repeat', slot: 1, node: 'sgp-1', t: T('14:23', 1), pol: ['any', 'thr'] },
+  ]),
+};
+const ACCOUNTS = [
+  { name: 'alice', role: 'admin', note: 'Operator' },
+  { name: 'ben', role: 'editor', note: 'Operator' },
+  { name: 'ops-viewer', role: 'viewer', note: 'Wall display' },
+  { name: 'ci-deploy', role: 'editor', note: 'Automation token' },
+];
+const ROLE_USER = { admin: 'alice', editor: 'ben', viewer: 'ops-viewer' };
+const ROLE_LABEL = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
+const POL = {
+  any: { label: 'Any location', short: 'any location', test: (f, r) => f >= 1 },
+  thr: { label: 'At least 2 locations', short: '≥ 2 locations', test: (f, r) => f >= Math.min(2, r) },
+  all: { label: 'All reporting locations', short: 'all locations', test: (f, r) => r > 0 && f === r },
+};
+const RANGES = { '1h': { ms: 60 * MIN, lat: MIN, strip: 2 * MIN, tick: 10 * MIN }, '6h': { ms: 360 * MIN, lat: 5 * MIN, strip: 10 * MIN, tick: 60 * MIN }, '24h': { ms: 1440 * MIN, lat: 15 * MIN, strip: 30 * MIN, tick: 240 * MIN } };
+
+/* ---------- UI state ---------- */
+const S = { scen: 'connected', policy: 'any', role: 'admin', notes: true, theme: 'system', ep: 'fra-1', route: '/overview', q: '', filt: 'all', lfilt: 'all', range: '6h', table: {}, newMon: false, pick: {}, pop: null, nm: { nodes: new Set(NID), type: 'http' }, reveal: false };
+
+/* ---------- derived model ---------- */
+const curPart = () => SCEN[S.scen].part;
+const parts = () => [PAST_PART, curPart()].filter(Boolean);
+function groupAt(n, t) { for (const p of parts()) if (t >= p.since && (p.until == null || t < p.until)) return p.groups.findIndex(g => g.includes(n)); return 0; }
+const reachAt = (a, b, t) => groupAt(a, t) === groupAt(b, t);
+const visible = n => reachAt(S.ep, n, NOW);
+const lastSeen = n => visible(n) ? NOW : curPart().since;
+const outNodes = () => NID.filter(n => !visible(n));
+const can = what => what === 'edit' ? S.role !== 'viewer' : S.role === 'admin';
+const startFor = (f, n) => f.start + ((f.stagger && f.stagger[n]) || 0) * 1000;
+const failAt = (m, n, t) => (m.fail || []).find(f => f.nodes.includes(n) && startFor(f, n) <= t && (f.until == null || t < f.until));
+function trueState(m, n, t) { if (!m.nodes.includes(n)) return 'none'; if (m.enabled === false && t >= m.pausedAt) return 'paused'; return failAt(m, n, t) ? 'down' : 'up'; }
+const checkedAt = (m, n) => NOW - 1000 - Math.floor(rnd(MON.indexOf(m), NID.indexOf(n), 7) * m.every) * 1000;
+function latAt(m, n, t) {
+  if (trueState(m, n, t) !== 'up') return null;
+  if (!visible(n) && t > lastSeen(n)) return null;
+  const nd = NODE[n], mi = MON.indexOf(m), ni = NID.indexOf(n), b = Math.floor(t / MIN);
+  let v = m.lat + nd.base * (m.type === 'ping' ? 0.6 : 0.92) + (rnd(mi, ni, b) - 0.5) * nd.base * 0.22 + (rnd(mi + 17, ni + 3, b >> 3) - 0.5) * 10;
+  if (rnd(mi + 5, ni + 11, b) > 0.975) v += nd.base * 0.7 + 40;
+  return Math.max(1, Math.round(v));
+}
+function obs(m, n) {
+  const st = trueState(m, n, NOW);
+  if (st === 'none') return { st: 'none' };
+  if (st === 'paused') return { st: 'paused', since: m.pausedAt };
+  if (!visible(n)) { const ls = lastSeen(n); return { st: 'unknown', why: 'out', last: trueState(m, n, ls), at: ls }; }
+  const at = checkedAt(m, n);
+  if (m.conflict) return { st: 'unknown', why: 'conflict', last: st, at, rev: GA.includes(n) ? m.conflict.a.rev : m.conflict.b.rev };
+  const f = failAt(m, n, NOW);
+  if (f) return { st: 'down', since: startFor(f, n), msg: f.msg, at };
+  return { st: 'up', at, lat: latAt(m, n, at) || latAt(m, n, NOW - MIN) };
+}
+function agg(m) {
+  const os = m.nodes.map(n => [n, obs(m, n)]);
+  const failing = os.filter(([, o]) => o.st === 'down').map(([n]) => n);
+  const reporting = os.filter(([, o]) => o.st === 'down' || o.st === 'up').map(([n]) => n);
+  const unknown = os.filter(([, o]) => o.st === 'unknown').map(([n]) => n);
+  const lastDown = os.filter(([, o]) => o.st === 'unknown' && o.why === 'out' && o.last === 'down').map(([n]) => n);
+  const b = { os, failing, reporting, unknown, lastDown, f: failing.length, r: reporting.length, u: unknown.length, n: m.nodes.length };
+  if (m.enabled === false) return Object.assign(b, { k: 'paused', sev: 7 });
+  if (m.conflict) return Object.assign(b, { k: 'conflict', sev: 3 });
+  if (b.f > 0) {
+    if (!POL[S.policy].test(b.f, b.r)) return Object.assign(b, { k: 'location', sev: 2 });
+    return Object.assign(b, { k: b.f === b.n ? 'everywhere' : 'partial', sev: b.f === b.n ? 0 : 1, outage: true });
+  }
+  if (b.u > 0) return Object.assign(b, { k: 'unknown', sev: lastDown.length ? 4 : 5 });
+  return Object.assign(b, { k: 'up', sev: 6 });
+}
+function chipInfo(a) {
+  const nv = a.u ? ` · ${a.u} not in view` : '';
+  switch (a.k) {
+    case 'everywhere': return ['down', 'Down', 'everywhere'];
+    case 'partial': return ['down', 'Down', `${a.f} of ${a.n} locations${nv}`];
+    case 'location': return ['warn', 'Location issue', `${a.f} of ${a.n}${nv}`];
+    case 'conflict': return ['serious', 'Unknown', 'config conflict'];
+    case 'unknown': return ['unknown', 'Unknown', `${a.u} of ${a.n} not in view`];
+    case 'up': return ['up', 'Up', ''];
+    default: return ['paused', 'Paused', ''];
+  }
+}
+const mons = () => { const q = S.q.trim().toLowerCase(); return MON.filter(m => !q || (m.name + ' ' + m.target + ' ' + m.nodes.join(' ') + ' ' + m.id).toLowerCase().includes(q)); };
+const bySev = (x, y) => x.a.sev - y.a.sev || x.m.name.localeCompare(y.m.name);
+function receipts() {
+  const p = curPart();
+  return RC[S.scen].filter(r => (!r.pol || r.pol.includes(S.policy)) && (!p || r.t < p.since || visible(r.node))).sort((a, b) => b.t - a.t);
+}
+function dupKey(r) { return r.mon + '|' + r.kind + '|' + (r.slot || 0) + '|' + episodeOf(r).id; }
+function episodeOf(r) { const m = MONK[r.mon]; const eps = (m.fail || []).map((f, i) => ({ f, i })); const e = eps.filter(e => r.t >= e.f.start - MIN).pop(); return { id: m.id + ':' + (e ? e.i : 0) }; }
+function dupMap() { const g = {}; receipts().forEach(r => { const k = dupKey(r); (g[k] = g[k] || []).push(r); }); return g; }
+function episodes() {
+  const out = [];
+  MON.forEach(m => (m.fail || []).forEach((f, i) => out.push({ m, f, i, id: 'inc_' + m.id.slice(4, 10).toLowerCase() + (i + 1) + 'x' + (f.start / 1000 % 9973).toString(36), open: f.resolvedAt == null })));
+  return out;
+}
+function epClass(ep) {
+  if (ep.open) return agg(ep.m);
+  const f = ep.f.nodes.filter(n => ep.m.nodes.includes(n)).length, n = ep.m.nodes.length;
+  const outage = POL[S.policy].test(f, n);
+  return { k: outage ? (f === n ? 'everywhere' : 'partial') : 'location', f, r: n, n, u: 0, outage, failing: ep.f.nodes, unknown: [], lastDown: [] };
+}
+const epEnd = ep => ep.open ? NOW : ep.f.resolvedAt;
+function epReceipts(ep) { const end = epEnd(ep) + 2 * MIN; return receipts().filter(r => r.mon === ep.m.k && r.t >= ep.f.start - MIN && r.t <= end); }
+const firstNode = ep => ep.f.nodes.filter(n => ep.m.nodes.includes(n)).reduce((a, n) => startFor(ep.f, n) < startFor(ep.f, a) ? n : a);
+function nextRepeat(ep) {
+  if (!ep.open || !ep.m.repeat) return null;
+  const rs = epReceipts(ep).filter(r => r.kind !== 'recovery');
+  if (!rs.length) return null;
+  const last = Math.max(...rs.map(r => r.t)); return last + ep.m.repeat * MIN;
+}
+function openIncidents() { return episodes().filter(e => e.open).map(e => ({ ep: e, a: epClass(e) })).filter(x => x.a.k !== 'up'); }
+
+/* ---------- markup helpers ---------- */
+const ic = (id, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" aria-hidden="true" focusable="false"><use href="#${id}"/></svg>`;
+const SYM = { up: 's-up', down: 's-down', warn: 's-warn', serious: 's-serious', unknown: 's-unknown', paused: 's-paused', none: 's-none' };
+const glyph = (k, label) => `<span class="g g-${k}"${label ? ` role="img" aria-label="${esc(label)}"` : ' aria-hidden="true"'}><svg focusable="false" aria-hidden="true"><use href="#${SYM[k]}"/></svg></span>`;
+function chip(a) { const [g, l, s] = chipInfo(a); return `<span class="chip c-${g}">${glyph(g)}<b>${esc(l)}</b>${s ? `<span>${esc(s)}</span>` : ''}</span>`; }
+const od = (title, text) => `<button type="button" class="od" data-tip="${esc(title + '\n' + text)}" aria-label="Design note: ${esc(title)}. ${esc(text)}">${esc(title)}</button>`;
+const ttype = m => `<span class="ttype">${m.type === 'ping' ? 'ping' : 'http'}</span>`;
+const rev = r => `<span class="rev" title="Revision ${esc(r)}">${esc(r.slice(0, 4))}</span>`;
+function obsTip(m, n, o) {
+  const nd = NODE[n], head = `${n} · ${nd.name}`;
+  if (o.st === 'none') return `${head}\nNot assigned. This node does not run ${m.name}.`;
+  if (o.st === 'paused') return `${head}\nPaused since ${hm(o.since)} UTC`;
+  if (o.st === 'unknown' && o.why === 'conflict') return `${head}\nUnknown: config conflict\nStill checking with revision ${o.rev.slice(0, 4)}; last result ${o.last} at ${hms(o.at)}`;
+  if (o.st === 'unknown') return `${head}\nNot in view since ${hm(o.at)} UTC\nLast known: ${o.last}. ${S.ep} cannot reach ${n}; ${n} keeps monitoring on its own.`;
+  if (o.st === 'down') return `${head}\nDown since ${hms(o.since)} UTC\n${o.msg}\nLast check ${hms(o.at)}`;
+  return `${head}\nUp · ${o.lat} ms\nLast check ${hms(o.at)}`;
+}
+function cellGlyph(o) { return o.st === 'up' ? 'up' : o.st === 'down' ? 'down' : o.st === 'paused' ? 'paused' : o.st === 'none' ? 'none' : 'unknown'; }
+function cellLabel(m, n, o) {
+  if (o.st === 'none') return `${n}: not assigned`;
+  if (o.st === 'unknown') return o.why === 'conflict' ? `${n}: unknown, config conflict` : `${n}: unknown, not in view since ${hm(o.at)}, last known ${o.last}`;
+  if (o.st === 'down') return `${n}: down since ${hm(o.since)}, ${o.msg}`;
+  if (o.st === 'paused') return `${n}: paused`;
+  return `${n}: up, ${o.lat} milliseconds`;
+}
+function dots(m) {
+  const items = m.nodes.map(n => { const o = obs(m, n); return `<i class="${o.st === 'up' ? '' : o.st}"></i>`; }).join('');
+  const a = agg(m); const lbl = `${a.f} down, ${a.r - a.f} up, ${a.u} unknown of ${a.n} locations`;
+  return `<span class="dots" role="img" aria-label="${esc(lbl)}">${items}</span>`;
+}
+function nodeStateFromEp(n) {
+  if (n === S.ep) return { st: 'local', g: 'up', label: 'Endpoint (this dashboard talks to it)' };
+  if (visible(n)) return { st: 'connected', g: 'up', label: `Connected · last sync ${hms(NOW - 2000 - Math.floor(rnd(NID.indexOf(n), 3, 9) * 4000))}` };
+  return { st: 'unreachable', g: 'unknown', label: `Unreachable from ${S.ep} since ${hm(curPart().since)} UTC` };
+}
+function pageHead(title, sub, acts, crumbs) {
+  return `<div class="vhead"><div>${crumbs ? `<div class="crumbs">${crumbs}</div>` : ''}<h1 tabindex="-1">${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
+}
+function partitionBanner() {
+  const out = outNodes(); if (!out.length) return '';
+  const inView = NID.filter(visible);
+  const other = out[0] === 'sgp-1' || out.includes('sgp-1') ? 'sgp-1' : 'fra-1';
+  return `<div class="banner" role="status">${glyph('warn')}<div><b class="bt">${esc(S.ep)} can’t reach ${esc(andList(out))} (since ${hm(curPart().since)} UTC)</b>
+  <p>Every node keeps monitoring on its own. Locations out of view show as <b>unknown</b>, never as up or down. Until peers reconnect, each side may send its own notifications, so a duplicate is possible.</p>
+  <div class="acts"><a class="btn sm" href="#/nodes">${ic('i-nodes')}Open nodes</a><button type="button" class="btn sm" data-act="endpoint" data-v="${other}">${ic('i-plug')}View from ${other}</button>${od('Delivery over deduplication', 'Agreed requirement: during a partition, delivery wins. Each communicating group can notify; the UI marks duplicates once receipts reconcile.')}</div></div></div>`;
+}
+
+/* ---------- views ---------- */
+function vOverview() {
+  const all = MON.map(m => ({ m, a: agg(m) }));
+  const down = all.filter(x => x.a.outage), loc = all.filter(x => x.a.k === 'location');
+  const unk = all.filter(x => x.a.k === 'unknown' || x.a.k === 'conflict'), up = all.filter(x => x.a.k === 'up'), paused = all.filter(x => x.a.k === 'paused');
+  const every = down.filter(x => x.a.k === 'everywhere');
+  const probs = all.filter(x => ['everywhere', 'partial', 'location', 'conflict'].includes(x.a.k) || (x.a.k === 'unknown' && x.a.lastDown.length)).sort(bySev);
+  const sentences = probs.slice(0, 3).map(({ m, a }) => {
+    if (a.k === 'everywhere') return `<b>${esc(m.name)}</b> is down everywhere.`;
+    if (a.k === 'partial') return `<b>${esc(m.name)}</b> is down from ${a.f === 1 ? esc(a.failing[0]) + ' only' : `${a.f} of ${a.n} locations`}${a.u ? ` (${a.u} not in view)` : ''}.`;
+    if (a.k === 'location') return `<b>${esc(m.name)}</b> fails from ${esc(andList(a.failing))}, below the outage policy.`;
+    if (a.k === 'conflict') return `<b>${esc(m.name)}</b> has a config conflict to resolve.`;
+    return `<b>${esc(m.name)}</b>: the last failing ${a.lastDown.length > 1 ? 'locations' : 'location'} (${esc(andList(a.lastDown))}) ${a.lastDown.length > 1 ? 'are' : 'is'} out of view.`;
+  });
+  const more = probs.length > 3 ? ` <span class="q">+${probs.length - 3} more</span>` : '';
+  const headline = sentences.length ? sentences.join(' ') + more : 'All quiet. Every canary is singing.';
+  const rcs = receipts().filter(r => r.t > NOW - 1440 * MIN), dm = dupMap();
+  const dupCount = Object.values(dm).filter(g => g.length > 1).length;
+  const peersIn = NID.filter(n => n !== S.ep && visible(n)).length;
+  const kpi = (l, g, v, s) => `<div class="kpi"><div class="l">${g ? glyph(g) : ''}${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const conflicts = MON.filter(m => m.conflict).length;
+  const k = [
+    kpi('Down', down.length ? 'down' : 'up', down.length, down.length ? `${every.length} everywhere · ${down.length - every.length} partial` : 'no outages'),
+    S.policy !== 'any' ? kpi('Location issues', loc.length ? 'warn' : null, loc.length, 'below outage policy') : '',
+    kpi('Unknown', unk.length ? 'unknown' : null, unk.length, `${conflicts} config conflict${outNodes().length ? ` · ${outNodes().length} ${plural(outNodes().length, 'node')} out of view` : ''}`),
+    kpi('Up', up.length ? 'up' : null, `${up.length}<small> of ${MON.length}</small>`, `${paused.length} paused`),
+    kpi('Peers in view', peersIn === NID.length - 1 ? 'up' : 'warn', `${peersIn}<small> of ${NID.length - 1}</small>`, `as seen from ${esc(S.ep)}`),
+    kpi('Notifications · 24 h', null, rcs.length, dupCount ? `${dupCount} duplicate ${plural(dupCount, 'send')} (partition)` : 'no duplicates'),
+  ].join('');
+
+  const opens = openIncidents().sort((x, y) => x.a.sev - y.a.sev);
+  return `<div class="view">
+  ${pageHead('Overview', `Everything ${esc(S.ep)} knows right now · ${MON.length} monitors on ${NID.length} nodes`, `${od('Outage policy', 'Milestone rule: any fresh failure opens an incident; recovery needs fresh “up” from every assigned node. Threshold and all-location policies are later options; preview them with the concept control.')}`)}
+  ${partitionBanner()}
+  <section class="card" aria-labelledby="sit-h"><h2 id="sit-h" class="vh">Situation</h2>
+    <p class="headline">${headline}</p>
+    <div class="kpis">${k}</div>
+  </section>
+  ${statusBoard(true)}
+  <div class="g2">
+    <section class="card" aria-labelledby="oi-h"><div class="card-h"><div><h2 id="oi-h">Open incidents</h2><div class="hint">Merged by monitor ID across nodes</div></div><a class="btn sm" href="#/incidents">All incidents ${ic('i-chev-r')}</a></div>
+      ${opens.length ? `<div class="inc-list">${opens.map(x => incRow(x.ep, x.a)).join('')}</div>` : emptyState('No open incidents', 'Every assigned location reports fresh “up”.')}
+    </section>
+    <div class="vstack">
+      <section class="card" aria-labelledby="pv-h"><div class="card-h"><div><h2 id="pv-h">Nodes</h2><div class="hint">As seen from ${esc(S.ep)}</div></div><a class="btn sm" href="#/nodes">Details ${ic('i-chev-r')}</a></div>
+        <div class="nodes-mini">${NID.map(n => { const s = nodeStateFromEp(n); return `<a class="nm${s.st === 'unreachable' ? ' out' : ''}" href="#/nodes" data-tip="${esc(n + ' · ' + NODE[n].name + '\n' + s.label)}">${glyph(s.g, s.st)}<span><b>${n}</b><span>${s.st === 'local' ? 'endpoint' : s.st === 'connected' ? 'connected' : 'last seen ' + hm(lastSeen(n))}</span></span></a>`; }).join('')}</div>
+      </section>
+      <section class="card" aria-labelledby="rn-h"><div class="card-h"><div><h2 id="rn-h">Recent notifications</h2><div class="hint">Receipts known to ${esc(S.ep)}</div></div><a class="btn sm" href="#/alerts">Ledger ${ic('i-chev-r')}</a></div>
+        ${receiptList(receipts().slice(0, 5), true)}
+      </section>
+    </div>
+  </div></div>`;
+}
+function emptyState(t, s) {
+  return `<div class="empty"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M1.6 35.5H38.4" stroke="var(--axis)" stroke-width="2" stroke-linecap="round"/><path d="M16.6 32.2V35.4M20.4 32V35.4" stroke="#f28c28" stroke-width="1.6" stroke-linecap="round"/><path d="M31.2 13.4C31.2 9.3 28.2 6 24.4 6C20.6 6 17.6 9.1 17.6 12.9C17.6 14.6 18.1 16 18.9 17.1C13.6 18.4 9.6 22.6 8.4 27.6L4 30.6L10.6 30.6C12.8 31.8 15.6 32.4 18.6 32.4C26.2 32.4 32.2 27.2 32.2 20.4C32.2 17.8 31.9 15.4 31.2 13.4Z" fill="#ffd23f"/><path d="M13.6 24C17.4 21.2 23.4 21.4 27 25.2C22.6 27.4 17.2 27.2 13.6 24Z" fill="#e9a800"/><path d="M31 11.2L36.6 13.5L31.1 15.7Z" fill="#f28c28"/><circle cx="26.3" cy="11.6" r="1.6" fill="#151514"/></svg><b>${esc(t)}</b><span>${esc(s)}</span></div>`;
+}
+function statusBoard(withNote) {
+  const all = mons().map(m => ({ m, a: agg(m) })).sort(bySev);
+  const cnt = { all: all.length, down: all.filter(x => x.a.outage || x.a.k === 'location').length, unknown: all.filter(x => x.a.k === 'unknown' || x.a.k === 'conflict').length, up: all.filter(x => x.a.k === 'up').length, paused: all.filter(x => x.a.k === 'paused').length };
+  const keep = x => S.filt === 'all' || (S.filt === 'down' && (x.a.outage || x.a.k === 'location')) || (S.filt === 'unknown' && (x.a.k === 'unknown' || x.a.k === 'conflict')) || S.filt === x.a.k;
+  const rows = all.filter(keep);
+  const f = (v, l) => `<button type="button" class="fchip" data-act="filt" data-v="${v}" aria-pressed="${S.filt === v}">${l} <span class="n">${cnt[v]}</span></button>`;
+  const head = NID.map(n => { const s = nodeStateFromEp(n); return `<th scope="col"><button type="button" class="nh${n === S.ep ? ' ep' : ''}" data-href="/nodes" data-tip="${esc(n + ' · ' + NODE[n].name + '\n' + s.label)}">${glyph(s.g)}<span class="mono">${n}</span><span class="vh">, ${esc(s.label)}</span></button></th>`; }).join('');
+  const body = rows.map(({ m, a }) => `<tr data-href="/monitors/${m.id}"${a.k === 'up' || a.k === 'paused' ? ' class="ok"' : ''}><th scope="row" class="mon"><a href="#/monitors/${m.id}">${esc(m.name)}</a>${ttype(m)}<span class="tgt">${esc(m.target)}</span><span class="st-inline">${chip(a)}</span></th><td class="st">${chip(a)}</td>${NID.map(n => { const o = obs(m, n); return `<td class="c${o.st === 'unknown' && o.why === 'out' ? ' out' : ''}" data-node="${n}" data-tip="${esc(obsTip(m, n, o))}">${glyph(cellGlyph(o), cellLabel(m, n, o))}</td>`; }).join('')}</tr>`).join('');
+  return `<section class="card" aria-labelledby="sb-h"><div class="card-h"><div><h2 id="sb-h">Status by location</h2><div class="hint">Latest fresh observation from each node, as known to ${esc(S.ep)}</div></div><div class="r">${withNote ? od('Peer snapshots, local history', 'Cells use each node’s latest observation shared with peers. Measurement history never leaves the node that measured it.') : ''}</div></div>
+    <div class="filters" role="group" aria-label="Filter monitors by state">${f('all', 'All')}${f('down', 'Failing')}${f('unknown', 'Unknown')}${f('up', 'Up')}${f('paused', 'Paused')}</div>
+    <div class="mx-wrap"><table class="mx"><caption class="vh">Monitors by node. Rows are monitors, columns are nodes.</caption><thead><tr><th scope="col" class="l">Monitor</th><th scope="col" class="l st-col">State</th>${head}</tr></thead><tbody>${body || `<tr><td colspan="${NID.length + 2}">${emptyState('Nothing matches', 'Try another filter or search.')}</td></tr>`}</tbody></table></div>
+    <div class="legend" aria-label="Legend">${'<span>' + glyph('up') + 'Up</span><span>' + glyph('down') + 'Down</span>' + (S.policy !== 'any' ? '<span>' + glyph('warn') + 'Location issue</span>' : '') + '<span>' + glyph('serious') + 'Config conflict</span><span>' + glyph('unknown') + 'Unknown</span><span><i class="sw out"></i>Out of view</span><span>' + glyph('paused') + 'Paused</span><span>' + glyph('none') + 'Not assigned</span>'}</div>
+  </section>`;
+}
+function deliveryLine(ep) {
+  const a = epClass(ep), rs = epReceipts(ep);
+  if (!ep.m.hook) return `${ic('i-bell')}<span>No webhook configured. Checks are recorded without notifications.</span>`;
+  if (!a.outage && a.k === 'location') return `${ic('i-bell')}<span>Not notified: below the outage policy (${POL[S.policy].short})</span>`;
+  const by = kind => { const g = rs.filter(r => r.kind === kind); if (!g.length) return ''; const nodes = [...new Set(g.map(r => r.node))]; const lab = { down: 'Down alert', repeat: 'Repeat', recovery: 'Recovery' }[kind]; return `${lab} by ${andList(nodes)}${nodes.length > 1 ? ' <span class="tag dup">duplicate · partition</span>' : ''}`; };
+  const parts = ['down', 'repeat', 'recovery'].map(by).filter(Boolean);
+  const nr = nextRepeat(ep);
+  if (nr) parts.push(`next repeat due ${hm(nr)}`);
+  if (ep.open && outNodes().some(n => ep.m.nodes.includes(n))) parts.push(`${andList(outNodes().filter(n => ep.m.nodes.includes(n)))} may notify separately`);
+  return `${ic('i-bell')}<span>${parts.length ? parts.join(' · ') : 'No receipt in view yet'}</span>`;
+}
+function incTitle(ep, a) {
+  if (!ep.open) return `${ep.m.name} was down`;
+  if (a.k === 'unknown') return `${ep.m.name}: failing location out of view`;
+  if (a.k === 'location') return `${ep.m.name} failing from ${andList(a.failing)}`;
+  return `${ep.m.name} down`;
+}
+function incRow(ep, a) {
+  const g = chipInfo(a)[0];
+  const meta = ep.open ? `Opened ${hm(ep.f.start)} UTC · open ${dur(NOW - ep.f.start)} · first failure ${firstNode(ep)}` : `${hm(ep.f.start)}–${hm(ep.f.resolvedAt)} UTC · ${dur(ep.f.resolvedAt - ep.f.start)}`;
+  return `<a class="inc" href="#/incidents/${ep.id}">${glyph(ep.open ? g : 'up')}<div><div class="t">${esc(incTitle(ep, a))} ${ep.open ? chip(a) : `<span class="chip plain">${glyph('up')}<b>Resolved</b></span>`} ${dots(ep.m)}</div><div class="m">${meta}</div><div class="d">${deliveryLine(ep)}</div></div><span class="ch">${ic('i-chev-r')}</span></a>`;
+}
+function receiptList(rs, compact) {
+  if (!rs.length) return emptyState('No notifications', 'Nothing has been sent in this window.');
+  const dm = dupMap();
+  return `<ul class="evlog">${rs.map(r => { const m = MONK[r.mon]; const dup = dm[dupKey(r)].length > 1; const kind = { down: 'Down alert', repeat: `Repeat #${r.slot || 1}`, recovery: 'Recovery' }[r.kind]; return `<li><time datetime="${new Date(r.t).toISOString()}">${hm(r.t)}</time><span class="ev-ic ${r.kind === 'recovery' ? 'ev-ok' : dup ? 'ev-dup' : 'ev-send'}" aria-hidden="true"></span><span class="tx">${kind} · <a href="#/monitors/${m.id}">${esc(m.name)}</a> <span class="det">sent by ${r.node} to ${esc(HOOKS[m.hook].label)}${dup ? ' · <span class="tag dup">duplicate · partition</span>' : ''}</span></span></li>`; }).join('')}</ul>`;
+}
+
+function vMonitors() {
+  const rows = mons().map(m => ({ m, a: agg(m) })).sort(bySev);
+  const act = can('edit') ? `<button type="button" class="btn primary" data-act="newmon" aria-expanded="${S.newMon}">${ic('i-plus')}New monitor</button>` : `<span class="tag">${ic('i-lock')}Viewers can’t edit monitors</span>`;
+  return `<div class="view">${pageHead('Monitors', `${MON.length} monitors · HTTP(S) and ping · placement per monitor`, act)}
+  ${S.newMon && can('edit') ? newMonitorForm() : ''}
+  <section class="card"><div class="tbl-wrap"><table class="tbl stack"><caption class="vh">Monitors</caption><thead><tr><th>Monitor</th><th>State</th><th>Locations</th><th>Interval</th><th>Revision</th><th>Notifies</th></tr></thead><tbody>
+  ${rows.map(({ m, a }) => `<tr class="rowlink" data-href="/monitors/${m.id}"><td class="lead" data-label="Monitor"><a href="#/monitors/${m.id}">${esc(m.name)}</a>${ttype(m)}<div class="mono muted">${esc(m.target)}</div></td><td data-label="State">${chip(a)}</td><td data-label="Locations">${dots(m)} <span class="muted">${m.nodes.length} ${plural(m.nodes.length, 'node')}</span></td><td data-label="Interval" class="tn">${m.every} s · timeout ${m.timeout} s</td><td data-label="Revision">${m.conflict ? `<a href="#/config">${glyph('serious')} 2 heads</a>` : rev(revOn(m, S.ep, NOW))}</td><td data-label="Notifies">${m.hook ? esc(HOOKS[m.hook].label) + (m.repeat ? `<span class="muted"> · repeat ${m.repeat} min</span>` : '') : '<span class="muted">records only</span>'}</td></tr>`).join('')}
+  </tbody></table></div></section></div>`;
+}
+function newMonitorForm() {
+  const sel = [...S.nm.nodes].sort();
+  return `<section class="card" aria-labelledby="nm-h"><div class="card-h"><div><h2 id="nm-h">New monitor</h2><div class="hint">Creates revision 1 with a new stable monitor ID on ${esc(S.ep)}, then shares it with the selected nodes</div></div>${od('Write target', 'Writes go to the endpoint. Nodes out of view receive the monitor when they reconnect. Should the UI warn before creating a monitor for unreachable nodes?')}</div>
+  <form class="form" data-form="newmon" onsubmit="return false">
+    <label class="fld"><span>Name</span><input type="text" value="Payments webhook" aria-describedby="nm-name-h"><small id="nm-name-h">Shown in notifications</small></label>
+    <div class="fld"><span id="nm-type">Check type</span><div class="seg" role="group" aria-labelledby="nm-type"><button type="button" data-act="nmtype" data-v="http" aria-pressed="${S.nm.type === 'http'}">HTTP(S)</button><button type="button" data-act="nmtype" data-v="ping" aria-pressed="${S.nm.type === 'ping'}">Ping (ICMP)</button></div><small>More check types later</small></div>
+    <label class="fld full"><span>${S.nm.type === 'http' ? 'URL' : 'Host or IP address'}</span><input type="text" class="mono" value="${S.nm.type === 'http' ? 'https://pay.example.org/healthz' : '203.0.113.20'}"></label>
+    <label class="fld"><span>Interval</span><select><option>15 s</option><option selected>30 s</option><option>60 s</option><option>5 min</option></select></label>
+    <label class="fld"><span>Timeout</span><select><option>3 s</option><option>5 s</option><option selected>10 s</option></select></label>
+    ${S.nm.type === 'http' ? '<label class="fld"><span>Expected status</span><input type="text" value="200–299" class="mono"><small>Default when empty: 200–299</small></label>' : ''}
+    <label class="fld"><span>Repeat while down</span><select><option selected>Off (default)</option><option>Every 15 min</option><option>Every 30 min</option><option>Every 60 min</option></select></label>
+    <label class="fld full"><span>Webhook URL</span><input type="password" value="https://hooks.example.org/uptime/abcd" autocomplete="off"><small>${ic('i-lock')} May contain credentials. Stored on nodes, never shown to viewers, never logged.</small></label>
+    <fieldset class="fld full" style="border:0;padding:0;margin:0"><legend style="font-weight:600;color:var(--text-1);padding:0;margin-bottom:6px">Run on <span class="muted" style="font-weight:400">(${sel.length} of ${NID.length})</span> ${od('Node selection', 'A checkbox per node suits about six nodes. Larger fleets may need tags or regions. Nodes out of view can be chosen and receive the monitor on reconnect.')}</legend>
+      <div class="nodepick">${NID.map(n => { const s = nodeStateFromEp(n); return `<label><input type="checkbox" data-act="nmnode" data-v="${n}" ${S.nm.nodes.has(n) ? 'checked' : ''}>${glyph(s.g)}<span><b>${n}</b>${esc(NODE[n].name)}${s.st === 'unreachable' ? ' · out of view' : ''}</span></label>`; }).join('')}</div>
+    </fieldset>
+    <div class="fld full"><span>Notification order if it goes down</span><div class="order" aria-label="Candidate order">${sel.length ? sel.map((n, i) => `<span class="o${visible(n) ? '' : ' out'}"><i>${i + 1}</i>${n}</span>`).join('<span class="sep" aria-hidden="true">→</span>') : '<span class="muted">Select at least one node</span>'}</div><small>Candidates are the selected nodes sorted by ID. The first reachable one sends; the rest stand down after they see its receipt.</small></div>
+    <div class="full row-wrap"><button type="button" class="btn primary" data-act="flash" data-v="Concept only. No monitor was created.">Create monitor</button><button type="button" class="btn" data-act="newmon">Cancel</button></div>
+  </form></section>`;
+}
+
+function vMonitor(id) {
+  const m = MON.find(x => x.id === id); if (!m) return notFound();
+  const a = agg(m), ep = episodes().find(e => e.m === m && e.open);
+  const ev = POL;
+  const polRows = Object.keys(POL).map(k => { const out = a.r ? POL[k].test(a.f, a.r) : false; return `<tr${k === S.policy ? ' class="ep"' : ''}><td class="lead" data-label="Policy">${esc(POL[k].label)}${k === 'any' ? ' <span class="muted">(milestone)</span>' : ' <span class="muted">(idea)</span>'}${k === S.policy ? ' <span class="tag">previewing</span>' : ''}</td><td data-label="Result">${m.enabled === false ? 'Paused' : m.conflict ? 'Unknown until the conflict is resolved' : a.f === 0 ? (a.u ? 'No outage in view (unknown locations stay open)' : 'No outage') : out ? `<b>Outage</b>: notify` : 'Location issue: record, don’t notify'}</td></tr>`; }).join('');
+  const editAct = can('edit') ? `<button type="button" class="btn" data-act="flash" data-v="Concept only. Editing needs the current revision (${m.rev.slice(0, 4)}); if someone saves first, you’ll be asked to review.">Edit</button><button type="button" class="btn" data-act="flash" data-v="Concept only. Pausing sets enabled:false on a new revision.">${m.enabled === false ? 'Resume' : 'Pause'}</button>` : `<span class="tag">${ic('i-lock')}Read only</span>`;
+  const status = (() => {
+    if (m.enabled === false) return `${esc(m.pauseNote)} at ${hm(m.pausedAt)} UTC. No checks or notifications run while paused.`;
+    if (m.conflict) return `Two revisions were saved while peers were split (13:20–13:40). Until someone resolves it, nodes keep checking with their own revision and the combined state is <b>unknown</b>. <a href="#/config">Resolve the conflict</a>`;
+    if (a.k === 'everywhere') return `Failing from <b>every assigned location</b> (${a.n} of ${a.n}) since ${hm(Math.min(...a.failing.map(n => obs(m, n).since)))} UTC. Likely a problem with the service itself, not the network path.`;
+    if (a.k === 'partial' || a.k === 'location') return `Failing from <b>${andList(a.failing)}</b>, passing from ${a.r - a.f} ${plural(a.r - a.f, 'location')}${a.u ? `, ${a.u} not in view` : ''}. Probably a regional path or edge problem rather than a full outage.`;
+    if (a.k === 'unknown') return a.lastDown.length ? `${andList(a.lastDown)} ${a.lastDown.length > 1 ? 'were' : 'was'} failing when ${S.ep} lost contact. The incident stays open: recovery needs fresh “up” from every assigned node.` : `${a.u} of ${a.n} locations are out of view; the rest pass.`;
+    return `Passing from all ${a.n} assigned ${plural(a.n, 'location')}.`;
+  })();
+  const locRows = m.nodes.map(n => { const o = obs(m, n); const s = nodeStateFromEp(n);
+    const stateTxt = o.st === 'unknown' ? (o.why === 'conflict' ? `${glyph('serious')} Unknown <span class="muted">· rev ${o.rev.slice(0, 4)}</span>` : `${glyph('unknown')} Unknown <span class="muted">· not in view</span>`) : `${glyph(cellGlyph(o))} ${o.st === 'down' ? 'Down' : o.st === 'paused' ? 'Paused' : 'Up'}`;
+    return `<tr class="${n === S.ep ? 'ep' : ''}${o.st === 'unknown' && o.why === 'out' ? ' out' : ''}"><td class="lead" data-label="Location"><span class="mono">${n}</span> <span class="muted">${esc(NODE[n].name)}</span>${n === S.ep ? ' <span class="tag">endpoint</span>' : ''}</td><td data-label="State" class="nowrap">${stateTxt}</td><td data-label="Since" class="tn${o.st === 'down' || (o.st === 'unknown' && o.why === 'out') || o.st === 'paused' ? '' : ' nil'}">${o.st === 'down' ? hm(o.since) + ' · ' + dur(NOW - o.since) : o.st === 'unknown' && o.why === 'out' ? 'last seen ' + hm(o.at) : o.st === 'paused' ? hm(o.since) : '—'}</td><td data-label="Last check" class="tn">${o.at ? `<time datetime="${new Date(o.at).toISOString()}" data-tip="Checked at ${hms(o.at)} UTC" tabindex="0">${ago(o.at)}</time>` : '—'}</td><td data-label="Latency" class="num${o.lat ? '' : ' nil'}">${o.lat ? o.lat + ' ms' : '—'}</td><td data-label="Result" class="msg">${o.st === 'down' ? esc(o.msg) : o.st === 'unknown' && o.why === 'out' ? `Last known ${o.last}. History stays on ${n}.` : o.st === 'unknown' ? 'Config conflict' : o.st === 'up' ? (m.type === 'ping' ? 'Reply received' : 'HTTP 200 OK') : '—'}</td></tr>`; }).join('');
+  const mrcs = receipts().filter(r => r.mon === m.k);
+  const order = [...m.nodes].sort();
+  return `<div class="view">${pageHead(esc(m.name) + ' ' + chip(a), `<span class="mono">${esc(m.target)}</span>`, editAct, `<a href="#/monitors">Monitors</a>${ic('i-chev-r')}<span>${esc(m.name)}</span>`)}
+  ${partitionBanner()}
+  <section class="card"><div class="g2e" style="gap:12px 24px">
+    <div><p class="prose" style="font-size:14px;color:var(--text-1);margin:0 0 12px">${status}</p>
+      <dl class="kv" style="max-width:420px"><dt>Monitor ID</dt><dd><span class="mono">${m.id}</span> <span class="muted">same on every node</span></dd><dt>Check</dt><dd>${m.type === 'ping' ? 'ICMP ping' : 'HTTP GET'} every ${m.every} s · timeout ${m.timeout} s</dd><dt>Expects</dt><dd>${esc(m.expect)}</dd><dt>Revision</dt><dd>${m.conflict ? `${rev(m.conflict.a.rev)} and ${rev(m.conflict.b.rev)} <span class="muted">conflict</span>` : `${revOn(m, S.ep, NOW) === m.rev ? `${rev(m.rev)} <span class="muted">by ${m.by}, ${hm(m.upd)} UTC</span>` : `${rev(m.pEdit.rev)} <span class="muted">by ${m.pEdit.by}, ${hm(m.pEdit.at)} UTC (${esc(m.pEdit.what)})</span>`}`}</dd><dt>Webhook</dt><dd>${m.hook ? (S.role === 'viewer' ? '<span class="muted">hidden from viewers</span>' : `<span class="mono">${esc(HOOKS[m.hook].masked)}</span>`) : '<span class="muted">none: records only</span>'}</dd><dt>Repeat</dt><dd>${m.repeat ? `every ${m.repeat} min while down` : 'off'}</dd></dl></div>
+    <div><div class="card-h" style="margin-bottom:6px"><div><h2 style="font-size:13.5px">How the outage policy reads this</h2><div class="hint">${a.f} failing · ${a.r - a.f} passing · ${a.u} unknown</div></div></div>
+      <table class="tbl stack" style="font-size:12.5px"><tbody>${polRows}</tbody></table>
+      <div style="margin-top:12px"><div class="hint" style="font-size:12.5px;color:var(--text-3);margin-bottom:6px">Notification candidates (assigned nodes, sorted by ID)</div><div class="order">${order.map((n, i) => { const sent = mrcs.some(r => r.node === n); return `<span class="o${sent ? ' sent' : ''}${visible(n) ? '' : ' out'}" data-tip="${esc(n + (sent ? '\nHas sent for this monitor' : '') + (visible(n) ? '' : '\nOut of view'))}"><i>${i + 1}</i>${n}</span>`; }).join('<span class="sep" aria-hidden="true">→</span>')}</div></div>
+    </div></div></section>
+  <section class="card" aria-labelledby="loc-h"><div class="card-h"><div><h2 id="loc-h">Now, by location</h2><div class="hint">Latest observation per node · fresh within 2 check intervals</div></div></div>
+    <div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Location</th><th>State</th><th>Since</th><th>Last check</th><th class="num">Latency</th><th>Result</th></tr></thead><tbody>${locRows}</tbody></table></div></section>
+  ${historyCard(m)}
+  <div class="g2e">
+    <section class="card"><div class="card-h"><div><h2>Notifications for this monitor</h2><div class="hint">Receipts known to ${esc(S.ep)}</div></div></div>${receiptList(mrcs, true)}</section>
+    <section class="card"><div class="card-h"><div><h2>Incidents</h2><div class="hint">Last 24 hours</div></div></div>${(m.fail || []).length ? `<div class="inc-list">${episodes().filter(e => e.m === m).map(e => incRow(e, epClass(e))).join('')}</div>` : emptyState('No incidents', 'No failures in the last 24 hours.')}</section>
+  </div></div>`;
+}
+function historyCard(m) {
+  const n = S.ep, R = RANGES[S.range];
+  const rangeBtns = Object.keys(RANGES).map(r => `<button type="button" data-act="range" data-v="${r}" aria-pressed="${S.range === r}">${r}</button>`).join('');
+  const others = m.nodes.filter(x => x !== n);
+  const switchList = others.length ? `<div class="row-wrap" style="margin-top:12px;font-size:12.5px;color:var(--text-2)">History from other locations stays on those nodes: ${others.map(x => `<button type="button" class="btn sm" data-act="endpoint" data-v="${x}" ${visible(x) ? '' : 'data-out="1"'}>${ic('i-plug')}${x}</button>`).join('')}</div>` : '';
+  if (!m.nodes.includes(n)) {
+    return `<section class="card"><div class="card-h"><div><h2>History</h2><div class="hint">Measured and stored by each node</div></div></div>${emptyState(`${n} doesn’t run this monitor`, `History is kept by the nodes that measure it: ${m.nodes.join(', ')}. Switch endpoint to read it.`)}${switchList}</section>`;
+  }
+  const t0 = NOW - R.ms; const buckets = []; for (let t = t0; t < NOW; t += R.strip) buckets.push(t);
+  const up = uptime(m, n, t0, NOW);
+  const cells = buckets.map(b => { const s = bucketState(m, n, b, b + R.strip); return `<i class="${s.c}" data-tip="${esc(`${hm(b)}–${hm(b + R.strip)} UTC\n${s.t}`)}"></i>`; }).join('');
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(p => `<span>${hm(t0 + p * R.ms)}</span>`).join('');
+  const tv = S.table[m.id];
+  return `<section class="card" aria-labelledby="hist-h"><div class="card-h"><div><h2 id="hist-h">History measured by ${esc(n)}</h2><div class="hint">${up.toFixed(2)}% up over ${S.range} · stored only on ${esc(n)}</div></div>
+    <div class="r">${od('Local history', 'The milestone dashboard reads history from its endpoint only. Merging history from several nodes would mean querying each node: a later decision.')}${od('Time-window API', '/history is limit-based today (latest N). 6 h and 24 h views need a time-window or downsampled query.')}<div class="seg" role="group" aria-label="Time range">${rangeBtns}</div></div></div>
+    <div class="strip" role="img" aria-label="${esc(`Status history for ${n}, ${S.range}: ${up.toFixed(2)} percent up`)}">${cells}</div><div class="axis-row" aria-hidden="true">${ticks}</div>
+    <div class="legend"><span><i class="sw up"></i>Up</span><span><i class="sw part"></i>Some failed checks</span><span><i class="sw down"></i>Down</span><span><i class="sw" style="background:var(--neutral-wash)"></i>Paused</span></div>
+    <div class="divider"></div>
+    <div class="card-h" style="margin-bottom:4px"><div><h3 style="font-size:13.5px">Response time</h3><div class="hint">${m.type === 'ping' ? 'Round trip' : 'Time to response'}, ${esc(n)} → ${esc(m.target.replace(/^https?:\/\//, ''))}</div></div><button type="button" class="btn sm" data-act="table" data-v="${m.id}" aria-pressed="${!!tv}">${ic('i-table')}${tv ? 'Hide table' : 'Show as table'}</button></div>
+    <div class="chart" data-chart="lat" data-mon="${m.id}" tabindex="0" role="img" aria-label="${esc(`Response time from ${n} over ${S.range}. Use left and right arrow keys to read values.`)}"></div>
+    <div class="legend"><span><i class="sw line"></i>Response time (ms)</span><span><i class="sw band"></i>Failing</span></div>
+    ${tv ? latTable(m) : ''}${switchList}</section>`;
+}
+function bucketState(m, n, b0, b1) {
+  let down = 0, paused = 0, tot = 0; const steps = 12;
+  for (let i = 0; i < steps; i++) { const t = b0 + (b1 - b0) * (i + 0.5) / steps; const s = trueState(m, n, t); tot++; if (s === 'down') down++; else if (s === 'paused') paused++; }
+  if (paused === tot) return { c: 'z', t: 'Paused' };
+  if (down === 0) return { c: '', t: 'All checks passed' };
+  if (down === tot) return { c: 'd', t: 'Down for the whole interval' };
+  return { c: 'p', t: `Failing for part of the interval (~${Math.round(down / tot * 100)}%)` };
+}
+function uptime(m, n, t0, t1) { let u = 0, k = 0; for (let t = t0; t < t1; t += 15000) { const s = trueState(m, n, t); if (s === 'paused') continue; k++; if (s === 'up') u++; } return k ? u / k * 100 : 100; }
+function latSeries(m) { const R = RANGES[S.range], n = S.ep, xs = []; for (let t = NOW - R.ms; t <= NOW; t += R.lat) xs.push(t); return xs.map(t => ({ t, v: latAt(m, n, t), st: trueState(m, n, t) })); }
+function latTable(m) {
+  const pts = latSeries(m); const step = Math.max(1, Math.ceil(pts.length / 12)); const rows = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+  return `<div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><caption class="vh">Response time table</caption><thead><tr><th>Time (UTC)</th><th>State</th><th class="num">Response time</th></tr></thead><tbody>${rows.map(p => `<tr><td class="tn">${hm(p.t)}</td><td>${p.st === 'down' ? glyph('down') + ' Down' : p.st === 'paused' ? 'Paused' : glyph('up') + ' Up'}</td><td class="num">${p.v != null ? p.v + ' ms' : '—'}</td></tr>`).join('')}</tbody></table><div class="hint" style="font-size:12px;color:var(--text-3);margin-top:6px">Every ${step > 1 ? step + 'th' : ''} sample shown. A product export would include all.</div></div>`;
+}
+
+function vIncidents() {
+  const eps = episodes().map(e => ({ ep: e, a: epClass(e) }));
+  const open = eps.filter(x => x.ep.open && x.a.k !== 'up').sort((x, y) => x.a.sev - y.a.sev);
+  const closed = eps.filter(x => !x.ep.open).sort((x, y) => y.ep.f.start - x.ep.f.start);
+  return `<div class="view">${pageHead('Incidents', `Each node records incidents locally. Records with the same monitor ID are merged here.`, od('Incident identity', 'IDs are opaque and created on the nodes. No central counter, so no sequential “INC-42” numbers.'))}
+  ${partitionBanner()}
+  <section class="card"><div class="card-h"><div><h2>Open</h2><div class="hint">${open.length} open</div></div></div>${open.length ? `<div class="inc-list">${open.map(x => incRow(x.ep, x.a)).join('')}</div>` : emptyState('No open incidents', 'Every assigned location reports fresh “up”.')}</section>
+  <section class="card"><div class="card-h"><div><h2>Resolved · last 24 h</h2></div></div><div class="inc-list">${closed.map(x => incRow(x.ep, x.a)).join('')}</div></section></div>`;
+}
+function vIncident(id) {
+  const ep = episodes().find(e => e.id === id); if (!ep) return notFound();
+  const m = ep.m, a = epClass(ep);
+  const evs = incEvents(ep);
+  const rs = epReceipts(ep).filter(r => r.kind !== 'recovery');
+  const senders = [...new Set(rs.filter(r => r.kind === 'down').map(r => r.node))];
+  const firstAlert = rs.filter(r => r.kind === 'down').map(r => r.t).sort()[0];
+  const decide = n => {
+    if (senders.includes(n)) { const r = rs.find(x => x.node === n && x.kind === 'down'); return [`${glyph('up')} Sent`, `${hms(r.t)} · receipt shared with peers in view`]; }
+    if (!visible(n) && (!firstAlert || firstAlert >= lastSeen(n))) return [`${glyph('unknown')} Unknown`, `Out of view since ${hm(lastSeen(n))}; arrives on reconnect`];
+    if (!firstAlert) return a.outage ? [`${glyph('unknown')} Waiting`, 'No receipt yet'] : [`${glyph('none')} No send`, 'Below outage policy'];
+    const g = groupAt(n, firstAlert); const by = senders.find(s => groupAt(s, firstAlert) === g);
+    return by ? [`${glyph('none')} Stood down`, `Saw ${by}’s receipt`] : [`${glyph('unknown')} Unknown`, 'No receipt in its group'];
+  };
+  const order = [...m.nodes].sort();
+  return `<div class="view">${pageHead(esc(incTitle(ep, a)) + ' ' + (ep.open ? chip(a) : `<span class="chip plain">${glyph('up')}<b>Resolved</b></span>`), `<span class="mono">${ep.id}</span> · <a href="#/monitors/${m.id}">${esc(m.name)}</a> · ${ep.open ? `opened ${hms(ep.f.start)} UTC, open ${dur(NOW - ep.f.start)}` : `${hm(ep.f.start)}–${hm(ep.f.resolvedAt)} UTC`}`, can('edit') && ep.open ? `<button type="button" class="btn" data-act="flash" data-v="Concept only. Acknowledge/notes are not in the milestone API.">Add note</button>` : '', `<a href="#/incidents">Incidents</a>${ic('i-chev-r')}<span>${esc(m.name)}</span>`)}
+  ${ep.open ? partitionBanner() : ''}
+  <section class="card" aria-labelledby="tl-h"><div class="card-h"><div><h2 id="tl-h">Timeline by location</h2><div class="hint">${a.k === 'everywhere' ? 'Every location failed: points at the service, not the path' : a.f ? `${a.f} of ${a.n} locations failed: points at a regional or path problem` : 'Failing locations are out of view'}</div></div>${od('Needs state-change records', 'Per-location lanes need each node’s up/down transitions. They are small operational records, not raw history, so they could ride along with peer snapshots.')}</div>
+    <div class="chart" data-chart="lanes" data-inc="${ep.id}" role="img" aria-label="${esc('Per-location timeline. The same events are listed in the event log below.')}"></div>
+    <div class="legend"><span><i class="sw up"></i>Up</span><span><i class="sw down"></i>Down</span><span><i class="sw out"></i>Out of view</span><span><i class="ev-ic ev-send" style="display:inline-block;width:10px;height:10px;border-radius:50%"></i>Notification sent</span><span><i class="ev-ic ev-fail" style="display:inline-block;width:10px;height:10px;border-radius:50%"></i>Failure</span><span><i class="ev-ic ev-ok" style="display:inline-block;width:10px;height:10px;border-radius:50%"></i>Recovery</span><span><i style="display:inline-block;width:16px;height:4px;border-radius:2px;background:var(--text-3);opacity:.55"></i>Peer partition</span></div>
+  </section>
+  <div class="g2">
+    <section class="card" aria-labelledby="ev-h"><div class="card-h"><div><h2 id="ev-h">Event log</h2><div class="hint">UTC · node clocks may differ slightly (home-1 is +3.4 s)</div></div></div>
+      <ol class="evlog">${evs.map(e => `<li class="${e.future ? 'future' : ''}"><time>${e.t ? hms(e.t) : ''}</time><span class="ev-ic ev-${e.c}" aria-hidden="true"></span><span class="tx">${e.txt}${e.det ? `<span class="det">${e.det}</span>` : ''}</span></li>`).join('')}</ol></section>
+    <div class="vstack">
+      <section class="card" aria-labelledby="nd-h"><div class="card-h"><div><h2 id="nd-h">Who notified</h2><div class="hint">Down alert · candidates in ID order</div></div></div>
+        <div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>#</th><th>Node</th><th>Decision</th></tr></thead><tbody>${order.map((n, i) => { const [d, s] = decide(n); return `<tr class="${visible(n) ? '' : 'out'}"><td data-label="Order" class="tn">${i + 1}</td><td class="lead" data-label="Node"><span class="mono">${n}</span></td><td data-label="Decision"><span class="nowrap">${d}</span> <span class="muted" style="font-size:12px">${esc(s)}</span></td></tr>`; }).join('')}</tbody></table></div>
+        ${senders.length > 1 ? `<p class="prose" style="margin-top:10px">${glyph('unknown')} <b>Sent ${senders.length} times.</b> The groups couldn’t see each other’s receipts during the partition. That trade is deliberate: you get a duplicate instead of missing the alert.</p>` : ''}
+      </section>
+      <section class="card"><div class="card-h"><div><h2>Notification state</h2></div></div>${reconcileNote(ep)}</section>
+    </div>
+  </div></div>`;
+}
+function reconcileNote(ep) {
+  const out = outNodes().filter(n => ep.m.nodes.includes(n));
+  if (ep.open && out.length) return `<p class="prose">${glyph('warn')} <b>Split view.</b> ${esc(andList(out))} ${out.length > 1 ? 'are' : 'is'} out of view. Their receipts, repeats and recoveries merge when peers reconnect. Until then, each side decides on its own.</p>`;
+  const touched = ep.f.start < PAST_PART.until && epEnd(ep) > PAST_PART.since;
+  if (touched) return `<p class="prose">${glyph('up')} <b>Reconciled at ${hms(PAST_PART.until)} UTC.</b> The incident overlapped the 13:20–13:40 partition. After peers reconnected they merged incident records and receipts, so the recovery went out once.</p>`;
+  return `<p class="prose">${glyph('up')} <b>In agreement.</b> Every node in view holds the same incident and receipt state.</p>`;
+}
+function incEvents(ep) {
+  const { m, f } = ep, E = [];
+  const nodes = f.nodes.filter(n => m.nodes.includes(n));
+  const first = firstNode(ep);
+  E.push({ t: startFor(f, first), c: 'fail', txt: `${first} saw the first failed check`, det: esc(f.msg) });
+  if (nodes.length > 1) { const last = nodes.reduce((x, n) => startFor(f, n) > startFor(f, x) ? n : x); E.push({ t: startFor(f, last), c: 'fail', txt: nodes.length === m.nodes.length ? `All ${nodes.length} locations failing` : `${nodes.length} of ${m.nodes.length} locations failing`, det: esc(nodes.join(', ')) }); }
+  E.push({ t: startFor(f, first) + 1000, c: 'info', txt: `Incident opened on ${first}`, det: 'Milestone rule: any fresh failure opens an incident' });
+  for (const p of parts()) {
+    if (p.since > (epEnd(ep)) || (p.until && p.until < f.start - 10 * MIN)) continue;
+    E.push({ t: p.since, c: 'info', txt: 'Peers split into two groups', det: `${p.groups[0].join(', ')} | ${p.groups[1].join(', ')}` });
+    if (p.until && p.until <= epEnd(ep) + 2 * MIN) E.push({ t: p.until, c: 'info', txt: 'Peers reconnected; incidents and receipts reconciled' });
+  }
+  const dm = dupMap();
+  epReceipts(ep).forEach(r => { const dup = dm[dupKey(r)].length > 1; const rank = [...m.nodes].sort().indexOf(r.node) + 1;
+    E.push({ t: r.t, c: r.kind === 'recovery' ? 'ok' : dup ? 'dup' : 'send', txt: `${{ down: 'Down alert', repeat: 'Repeat #' + (r.slot || 1), recovery: 'Recovery' }[r.kind]} sent by ${r.node}`, det: `Candidate ${rank} · ${esc(HOOKS[m.hook].label)}${dup ? ' · duplicate (the other group couldn’t see this receipt)' : ''}` }); });
+  if (f.until) E.push({ t: f.until, c: 'ok', txt: 'All locations passing again' });
+  if (f.resolvedAt) E.push({ t: f.resolvedAt, c: 'ok', txt: 'Incident resolved', det: f.resolvedAt - f.until > 2 * MIN ? 'Waited for fresh “up” from every assigned node, after peers reconnected' : 'Fresh “up” from every assigned node' });
+  const out = outNodes().filter(n => m.nodes.includes(n));
+  if (ep.open && out.length) E.push({ t: curPart().since, c: 'info', txt: `${S.ep} lost contact with ${andList(out)}`, det: 'Their observations now count as unknown' });
+  const nr = nextRepeat(ep); if (nr) E.push({ t: nr, c: 'info', txt: 'Next repeat due if still failing', future: true });
+  return E.sort((x, y) => x.t - y.t);
+}
+
+function vNodes() {
+  const cards = NID.map(n => { const s = nodeStateFromEp(n), nd = NODE[n]; const runs = MON.filter(m => m.nodes.includes(n) && m.enabled !== false); const cpm = runs.reduce((x, m) => x + 60 / m.every, 0);
+    const peers = NID.filter(x => x !== n && reachAt(n, x, visible(n) ? NOW : lastSeen(n) - 1000)).length;
+    return `<article class="ncard${n === S.ep ? ' ep' : ''}${s.st === 'unreachable' ? ' out' : ''}"><div class="nc-h"><div><b>${n}</b><span>${esc(nd.name)} · ${esc(nd.kind)}</span></div>${chip({ k: s.st === 'unreachable' ? 'unknown' : 'up', u: 0, n: 0 }).replace('Unknown</b><span>0 of 0 not in view</span>', 'Out of view</b>').replace('<b>Up</b>', `<b>${s.st === 'local' ? 'Endpoint' : 'Connected'}</b>`)}</div>
+      <dl class="kv"><dt>Seen by ${esc(S.ep)}</dt><dd>${s.st === 'local' ? 'this endpoint' : s.st === 'connected' ? 'now' : 'last ' + hm(lastSeen(n)) + ' UTC'}</dd><dt>Peers it reaches</dt><dd>${s.st === 'unreachable' ? `${peers} of ${NID.length - 1} <span class="muted">(at ${hm(lastSeen(n))})</span>` : `${peers} of ${NID.length - 1}`}</dd><dt>Runs</dt><dd>${runs.length} monitors</dd><dt>Checks</dt><dd>${cpm.toFixed(0)} per minute</dd><dt>History</dt><dd>local · 30 days · ${nd.db}</dd><dt>Clock offset</dt><dd>${Math.abs(nd.skew) > 2 ? glyph('warn') + ' ' : ''}${nd.skew > 0 ? '+' : ''}${nd.skew.toFixed(1)} s</dd><dt>Process uptime</dt><dd>${nd.up}</dd></dl><div class="muted" style="font-size:12px">API <span class="mono">${n}.canary.internal:3100</span></div>
+      ${n !== S.ep ? `<button type="button" class="btn sm" data-act="endpoint" data-v="${n}">${ic('i-plug')}Use as endpoint</button>` : `<span class="muted" style="font-size:12.5px">This dashboard is connected here.</span>`}</article>`; }).join('');
+  const rowsM = NID.map(o => `<tr><th scope="row" class="l"><span class="mono">${o}</span></th>${NID.map(t => { if (o === t) return '<td class="self" aria-label="self">·</td>'; const ov = visible(o), at = ov ? NOW : lastSeen(o) - 1000; const ok = reachAt(o, t, at); const lab = `${o} → ${t}: ${ov ? (ok ? 'reachable, ' + rtt(o, t) + ' ms' : 'unreachable since ' + hm(curPart().since)) : 'unknown, last report ' + hm(at) + (ok ? ' said reachable' : ' said unreachable')}`;
+    return `<td class="${ov ? '' : 'out'}" data-tip="${esc(lab)}">${ov ? glyph(ok ? 'up' : 'down', lab) : glyph('unknown', lab)}<small>${ov && ok ? rtt(o, t) + ' ms' : ov ? 'no link' : 'stale'}</small></td>`; }).join('')}</tr>`).join('');
+  return `<div class="view">${pageHead('Nodes', `Six independent nodes. Each one schedules checks, stores its own history and sends notifications. This page shows what ${esc(S.ep)} can see.`)}
+  ${partitionBanner()}
+  <section class="card" aria-labelledby="conn-h"><div class="card-h"><div><h2 id="conn-h">How this dashboard is connected</h2><div class="hint">The dashboard is optional. Closing it never affects monitoring or notifications.</div></div>${od('Endpoint switching', 'Milestone: the dashboard talks to one node at a time and can switch. Accounts are local to each node, so switching needs a token valid on that node.')}</div>
+    <div class="path"><span class="box">${ic('i-eye')}Your browser</span><span class="arr" aria-hidden="true">→</span><span class="box opt" data-tip="Optional web container&#10;Serves the dashboard. Stores no monitoring data and runs no checks.">Web container <span class="muted">(optional)</span></span><span class="arr" aria-hidden="true">→</span><span class="box" style="border-color:var(--accent)">${ic('i-plug')}<span class="mono">${esc(S.ep)}</span> management API</span><span class="arr" aria-hidden="true">⇄</span><span class="box">${NID.filter(n => n !== S.ep && visible(n)).length} peers in view${outNodes().length ? ` · <b>${outNodes().length} out of view</b>` : ''}</span></div>
+  </section>
+  <section class="card" aria-labelledby="mesh-h"><div class="card-h"><div><h2 id="mesh-h">Peer reachability</h2><div class="hint">Who can reach whom. Rows report; columns are targets.</div></div>${od('Needs peer views', 'Today each node knows only its own peer links. The full matrix needs peers to share their link view in snapshots (proposal). The row for ' + S.ep + ' works with the milestone API.')}</div>
+    <div class="mesh"><div class="chart" data-chart="ring" role="img" aria-label="Peer link diagram. The matrix next to it holds the same information."></div>
+      <div class="tbl-wrap"><table class="tbl reach"><caption class="vh">Peer reachability matrix</caption><thead><tr><th scope="col"><span class="vh">Observer</span></th>${NID.map(n => `<th scope="col"><span class="mono">${n}</span></th>`).join('')}</tr></thead><tbody>${rowsM}</tbody></table>
+      <div class="legend"><span>${glyph('up')}Reachable</span><span>${glyph('down')}No link</span><span>${glyph('unknown')}Report not in view</span></div></div></div>
+  </section>
+  <div class="nodes-grid">${cards}</div></div>`;
+}
+
+function vAlerts() {
+  const all = receipts(), dm = dupMap();
+  const keep = r => S.lfilt === 'all' || S.lfilt === r.kind || (S.lfilt === 'dup' && dm[dupKey(r)].length > 1);
+  const rs = all.filter(keep);
+  const f = (v, l) => `<button type="button" class="fchip" data-act="lfilt" data-v="${v}" aria-pressed="${S.lfilt === v}">${l}</button>`;
+  const hooks = Object.entries(HOOKS).map(([k, h]) => { const ms = MON.filter(m => m.hook === k); const last = all.filter(r => MONK[r.mon].hook === k)[0];
+    return `<article class="ncard"><div class="nc-h"><div><b style="font-family:var(--font)">${esc(h.label)}</b><span>Webhook · POST JSON with Idempotency-Key</span></div><span class="chip plain">${ms.length} monitors</span></div><dl class="kv"><dt>Destination</dt><dd class="mono">${S.role === 'viewer' ? 'hidden from viewers' : esc(S.reveal ? h.masked.replace(/•+/, 'k3J9…') : h.masked)}</dd><dt>Last receipt</dt><dd>${last ? hm(last.t) + ' UTC by ' + last.node : '—'}</dd></dl></article>`; }).join('');
+  const out = outNodes();
+  const state = out.length ? `${glyph('warn')} <b>Split since ${hm(curPart().since)} UTC.</b> ${esc(S.ep)}’s group and ${esc(andList(out))} decide on their own until they reconnect. Receipts from out-of-view nodes aren’t shown yet.`
+    : `${glyph('up')} <b>In agreement.</b> All ${NID.length} nodes hold the same receipts. The last partition (13:20–13:40) was reconciled at ${hms(PAST_PART.until)} UTC.`;
+  return `<div class="view">${pageHead('Notifications', 'Delivery receipts across nodes, with duplicates marked.')}
+  ${partitionBanner()}
+  <section class="card" aria-labelledby="g-h"><h2 id="g-h" class="vh">How delivery works</h2><div class="guar">
+    <div><b>${ic('i-send')}Usually one</b><p>While nodes reach each other, the first candidate sends and shares a receipt. The others stand down.</p></div>
+    <div><b>${ic('i-branch')}Duplicates are possible</b><p>If nodes are split, each group may send. A duplicate beats a missed alert. A crash right after sending can also repeat a send; receivers can use the Idempotency-Key.</p></div>
+    <div><b>${ic('i-merge')}Reconciled afterwards</b><p>When peers reconnect they merge incidents and receipts, so repeats and recoveries continue from the merged state.</p></div>
+  </div></section>
+  <div class="g2">
+    <section class="card" aria-labelledby="led-h"><div class="card-h"><div><h2 id="led-h">Receipts</h2><div class="hint">Successful sends known to ${esc(S.ep)} · newest first</div></div></div>
+      <div class="filters" role="group" aria-label="Filter receipts" style="margin-bottom:8px">${f('all', 'All')}${f('down', 'Down alerts')}${f('repeat', 'Repeats')}${f('recovery', 'Recoveries')}${f('dup', 'Duplicates')}</div>
+      <div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Time</th><th>Monitor</th><th>Kind</th><th>Sent by</th><th>Destination</th></tr></thead><tbody>${rs.map(r => { const m = MONK[r.mon], dup = dm[dupKey(r)].length > 1; return `<tr><td data-label="Time" class="tn">${hms(r.t)}</td><td class="lead" data-label="Monitor"><a href="#/monitors/${m.id}">${esc(m.name)}</a></td><td data-label="Kind" class="nowrap">${{ down: 'Down alert', repeat: 'Repeat #' + (r.slot || 1), recovery: 'Recovery' }[r.kind]}${dup ? ' <span class="tag dup">duplicate</span>' : ''}</td><td data-label="Sent by"><span class="mono">${r.node}</span> <span class="muted">#${[...m.nodes].sort().indexOf(r.node) + 1}</span></td><td data-label="Destination">${esc(HOOKS[m.hook].label)}</td></tr>`; }).join('') || `<tr><td colspan="5">${emptyState('No receipts', 'Nothing matches this filter.')}</td></tr>`}</tbody></table></div>
+      ${out.length ? `<p class="prose" style="margin-top:10px">${glyph('unknown')} Sends by ${esc(andList(out))} after ${hm(curPart().since)} UTC are unknown here.</p>` : ''}
+    </section>
+    <div class="vstack">
+      <section class="card"><div class="card-h"><div><h2>Notification state</h2></div></div><p class="prose" style="margin:0">${state}</p></section>
+      <section class="card"><div class="card-h"><div><h2>Destinations</h2><div class="hint">Webhooks first; more integrations later</div></div>${S.role !== 'viewer' ? `<button type="button" class="btn sm" data-act="reveal" aria-pressed="${S.reveal}">${ic('i-eye')}${S.reveal ? 'Mask' : 'Reveal'}</button>` : ''}</div><div class="vstack" style="gap:10px">${hooks}</div></section>
+      <section class="card"><div class="card-h"><div><h2>Failed attempts</h2></div>${od('Needs attempt records', 'Receipts only cover successful sends. Showing retries and provider errors (e.g. HTTP 503 from the webhook) needs attempt records in the API.')}</div>
+        ${visible('fra-1') ? '<ul class="evlog"><li><time>14:09:58</time><span class="ev-ic ev-fail" aria-hidden="true"></span><span class="tx">API gateway · fra-1 → Ops webhook <span class="det">HTTP 503 from receiver · retried and delivered at 14:10:05</span></span></li></ul>' : emptyState('None known to ' + S.ep, 'Attempts by nodes out of view arrive when peers reconnect.')}</section>
+    </div>
+  </div></div>`;
+}
+
+function vConfig() {
+  const c = MONK.billing.conflict, pk = S.pick;
+  const fields = [['every', 'Check interval'], ['timeout', 'Timeout'], ['expect', 'Expected status']];
+  const changedA = k => c.a[k] !== c.base[k], changedB = k => c.b[k] !== c.base[k];
+  const allPicked = fields.every(([k]) => pk[k]);
+  const resVal = k => pk[k] === 'a' ? c.a[k] : pk[k] === 'b' ? c.b[k] : null;
+  const diffRows = fields.map(([k, l]) => `<tr><th scope="row">${l}</th><td class="tn">${esc(c.base[k])}</td><td class="${changedA(k) ? 'ch' : ''}"><label><input type="radio" name="pk-${k}" data-act="pick" data-f="${k}" data-v="a" ${pk[k] === 'a' ? 'checked' : ''} ${can('edit') ? '' : 'disabled'}>${esc(c.a[k])}${changedA(k) ? ' <span class="tag">changed</span>' : ''}</label></td><td class="${changedB(k) ? 'ch' : ''}"><label><input type="radio" name="pk-${k}" data-act="pick" data-f="${k}" data-v="b" ${pk[k] === 'b' ? 'checked' : ''} ${can('edit') ? '' : 'disabled'}>${esc(c.b[k])}${changedB(k) ? ' <span class="tag">changed</span>' : ''}</label></td></tr>`).join('');
+  const cfgRows = MON.map(m => `<tr><th scope="row" class="mono" style="text-align:left;font-family:var(--font)"><a href="#/monitors/${m.id}">${esc(m.name)}</a></th>${NID.map(n => { const s = cfgCell(m, n); return `<td class="c${s.st === 'unknown' ? ' out' : ''}" data-tip="${esc(s.tip)}">${s.g ? glyph(s.g, s.tip) : glyph('none', 'not assigned')}${s.v ? `<br>${rev(s.v)}` : ''}</td>`; }).join('')}</tr>`).join('');
+  return `<div class="view">${pageHead('Configuration', 'Every save creates a new revision. Concurrent edits are kept side by side until someone resolves them; nothing is overwritten silently.')}
+  ${partitionBanner()}
+  <section class="card" aria-labelledby="cf-h" style="border-color:rgba(236,131,90,.6)"><div class="card-h"><div><h2 id="cf-h">${glyph('serious')} Conflict: Billing API</h2><div class="hint">Two heads since peers reconnected at ${hm(c.since)} UTC · base ${rev(c.base.rev)} (${c.base.by}, ${hm(c.base.at)})</div></div><span class="chip c-serious">${glyph('serious')}<b>Unknown</b><span>until resolved</span></span></div>
+    <p class="prose">While peers were split (13:20–13:40), <b>${c.a.by}</b> saved on ${c.a.on} and <b>${c.b.by}</b> saved on ${c.b.on}. The two changes touch different fields, so you can keep both. You still choose explicitly; nothing is merged for you.</p>
+    <div class="tbl-wrap"><table class="tbl diff"><caption class="vh">Field differences between the two revisions</caption><thead><tr><th>Field</th><th>Base ${rev(c.base.rev)}</th><th>${rev(c.a.rev)} ${c.a.by} on ${c.a.on}, ${hm(c.a.at)}</th><th>${rev(c.b.rev)} ${c.b.by} on ${c.b.on}, ${hm(c.b.at)}</th></tr></thead><tbody>${diffRows}</tbody></table></div>
+    ${can('edit') ? `<div class="row-wrap" style="margin-top:10px"><button type="button" class="btn sm" data-act="pickall" data-v="a">Use ${c.a.on}’s version</button><button type="button" class="btn sm" data-act="pickall" data-v="b">Use ${c.b.on}’s version</button><button type="button" class="btn sm" data-act="pickall" data-v="both">Keep both changes</button></div>` : ''}
+    <div class="result"><div><b>Result:</b> ${allPicked ? `interval ${esc(resVal('every'))} · timeout ${esc(resVal('timeout'))} · expects ${esc(resVal('expect'))}` : '<span class="muted">pick a value for every field</span>'}<div class="muted" style="font-size:12.5px">Saves a new revision that names both heads (${c.a.rev.slice(0, 4)}, ${c.b.rev.slice(0, 4)})${outNodes().length ? `. Nodes out of view (${esc(andList(outNodes()))}) receive it on reconnect.` : ', then shares it with all 6 nodes.'}</div></div>
+      ${can('edit') ? `<button type="button" class="btn primary" data-act="flash" data-v="Concept only. Nothing was saved." ${allPicked ? '' : 'disabled aria-disabled="true"'}>${ic('i-merge')}Save resolution</button>` : `<span class="tag">${ic('i-lock')}Editors and admins can resolve</span>`}</div>
+  </section>
+  <section class="card" aria-labelledby="sync-h"><div class="card-h"><div><h2 id="sync-h">Revisions by node</h2><div class="hint">Short revision per monitor and node</div></div>${od('Needs per-peer heads', 'The API reports only a conflict flag. Showing each node’s revision (and who is behind) needs peers to report their heads.')}</div>
+    <div class="tbl-wrap"><table class="tbl cfg"><caption class="vh">Configuration revision by node</caption><thead><tr><th>Monitor</th>${NID.map(n => `<th style="text-align:center"><span class="mono">${n}</span></th>`).join('')}</tr></thead><tbody>${cfgRows}</tbody></table></div>
+    <div class="legend"><span>${glyph('up')}In sync</span><span>${glyph('warn')}Behind the endpoint</span><span>${glyph('serious')}Conflict</span><span>${glyph('unknown')}Out of view (last known)</span><span>${glyph('none')}Not assigned</span></div>
+  </section></div>`;
+}
+function revOn(m, n, t) {
+  if (m.conflict) return GA.includes(n) ? m.conflict.a.rev : m.conflict.b.rev;
+  if (m.pEdit && curPart() && t >= m.pEdit.at && groupAt(n, t) === groupAt(m.pEdit.on, t)) return m.pEdit.rev;
+  return m.rev;
+}
+function cfgCell(m, n) {
+  if (!m.nodes.includes(n)) return { st: 'none', tip: `${n}: not assigned` };
+  const vis = visible(n), at = vis ? NOW : lastSeen(n) - 1000;
+  const v = revOn(m, n, at), mine = revOn(m, S.ep, NOW), s4 = r => r.slice(0, 4);
+  if (m.conflict) return { st: vis ? 'conflict' : 'unknown', g: 'serious', v, tip: `${n}: conflict, holds ${s4(v)} (two heads)${vis ? '' : '. Out of view, last known at ' + hm(lastSeen(n))}` };
+  if (!vis && v !== mine) return { st: 'unknown', g: 'warn', v, tip: `${n}: out of view, last known ${s4(v)}. ${S.ep} holds ${s4(mine)}; it syncs when the peer link returns` };
+  if (!vis) return { st: 'unknown', g: 'unknown', v, tip: `${n}: out of view, last known ${s4(v)} at ${hm(lastSeen(n))}` };
+  return { st: 'sync', g: 'up', v, tip: `${n}: in sync at ${s4(v)}` };
+}
+
+function vAccounts() {
+  if (!can('admin')) return `<div class="view">${pageHead('Accounts', '')}<section class="card">${emptyState('Admins only', 'Your role (' + ROLE_LABEL[S.role] + ') can’t manage accounts. Ask an admin on ' + S.ep + '.')}</section></div>`;
+  return `<div class="view">${pageHead('Accounts', `Named token accounts on ${esc(S.ep)}. Each node keeps its own accounts.`, `<button type="button" class="btn primary" data-act="flash" data-v="Concept only. The token would be generated in the browser and shown once.">${ic('i-plus')}Add account</button>`)}
+  <section class="card"><div class="card-h"><div><h2>On ${esc(S.ep)}</h2><div class="hint">Tokens are never shown again after creation</div></div>${od('Account replication', 'Milestone: accounts are local to each node; admins provision the same account on other nodes. Automatic replication and interactive login are later decisions.')}</div>
+    <div class="tbl-wrap"><table class="tbl stack"><thead><tr><th>Account</th><th>Role</th><th>Can</th><th>Used for</th></tr></thead><tbody>${ACCOUNTS.map(a => `<tr><td class="lead" data-label="Account"><span class="mono">${a.name}</span>${a.name === ROLE_USER[S.role] ? ' <span class="tag">you</span>' : ''}</td><td data-label="Role"><span class="chip plain"><b>${ROLE_LABEL[a.role]}</b></span></td><td data-label="Can" class="msg">${{ admin: 'Everything, including accounts', editor: 'Read; create, edit, pause and resolve monitors', viewer: 'Read monitoring data; no webhook URLs' }[a.role]}</td><td data-label="Used for" class="msg">${esc(a.note)}</td></tr>`).join('')}</tbody></table></div>
+  </section>
+  <section class="card"><div class="card-h"><div><h2>Same account on other nodes</h2><div class="hint">Switching endpoints needs a token valid on that node</div></div></div>
+    <p class="prose">This dashboard can only list accounts on the node it talks to. To use another endpoint, make sure your account exists there too (CLI: <span class="mono">npm run canary -- add-account</span>).</p></section></div>`;
+}
+function notFound() { return `<div class="view">${pageHead('Not found', '')}<section class="card">${emptyState('Nothing here', 'This sample has no such page.')}</section></div>`; }
+
+/* ---------- charts (SVG, drawn after layout so they fit the card) ---------- */
+function niceMax(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const s of [1, 2, 2.5, 5, 10]) if (s * p >= v) return s * p; return 10 * p; }
+function drawLatency(box) {
+  const m = MON.find(x => x.id === box.dataset.mon); const pts = latSeries(m); const R = RANGES[S.range];
+  const W = Math.max(260, box.clientWidth), H = 210, ml = 50, mr = 58, mt = 12, mb = 24;
+  const t0 = NOW - R.ms; const X = t => ml + (t - t0) / (NOW - t0) * (W - ml - mr);
+  const vals = pts.filter(p => p.v != null).map(p => p.v); const yMax = niceMax((Math.max(...vals, 10)) * 1.1); const Y = v => mt + (1 - v / yMax) * (H - mt - mb);
+  let s = '';
+  for (let i = 0; i <= 4; i++) { const v = yMax * i / 4, y = Y(v); s += `<line class="${i ? 'gridl' : 'base'}" x1="${ml}" x2="${W - mr}" y1="${y}" y2="${y}"/><text class="tick" x="${ml - 8}" y="${y + 4}" text-anchor="end">${Math.round(v)}${i === 4 ? ' ms' : ''}</text>`; }
+  for (let t = Math.ceil(t0 / R.tick) * R.tick; t <= NOW; t += R.tick) { const x = X(t); if (x < ml + 14 || x > W - mr - 10) continue; s += `<text class="tick" x="${x}" y="${H - 6}" text-anchor="middle">${hm(t)}</text>`; }
+  // failing bands
+  let bs = null; const bands = [];
+  pts.forEach((p, i) => { if (p.st === 'down' && bs == null) bs = i; if ((p.st !== 'down' || i === pts.length - 1) && bs != null) { bands.push([pts[bs].t, p.st === 'down' ? p.t : p.t]); bs = null; } });
+  (m.fail || []).forEach(f => { const a = Math.max(t0, startFor(f, S.ep)), b = Math.min(NOW, f.until || NOW); if (f.nodes.includes(S.ep) && b > a) { const x0 = X(a), x1 = Math.max(X(b), x0 + 2); s += `<rect class="band" x="${x0}" y="${mt}" width="${x1 - x0}" height="${H - mt - mb}"/><line class="bandedge" x1="${x0}" x2="${x0}" y1="${mt}" y2="${H - mb}"/><text class="lbl2" x="${Math.min(x0 + 6, W - mr - 40)}" y="${mt + 14}">failing</text>`; } });
+  // area + line with gaps
+  let path = '', area = '', run = [];
+  const flush = () => { if (run.length > 1) { path += 'M' + run.map(p => `${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join('L'); area += `M${X(run[0].t).toFixed(1)},${Y(0)}L` + run.map(p => `${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join('L') + `L${X(run[run.length - 1].t).toFixed(1)},${Y(0)}Z`; } else if (run.length === 1) { path += `M${X(run[0].t) - 1},${Y(run[0].v)}h2`; } run = []; };
+  pts.forEach(p => { if (p.v == null) flush(); else run.push(p); }); flush();
+  s += `<path class="area" d="${area}"/><path class="line" d="${path}"/>`;
+  const lastP = [...pts].reverse().find(p => p.v != null);
+  if (lastP) s += `<circle class="dot" cx="${X(lastP.t)}" cy="${Y(lastP.v)}" r="4"/><text class="lbl" x="${X(lastP.t) + 8}" y="${Y(lastP.v) + 4}">${lastP.v} ms</text>`;
+  if (pts[pts.length - 1].st === 'down') s += `<text class="lbl" x="${W - mr + 6}" y="${mt + 14}">down</text>`;
+  s += `<g class="xhg" style="display:none"><line class="xh" y1="${mt}" y2="${H - mb}"/><circle class="dot" r="4"/></g><rect class="hit" x="${ml}" y="${mt}" width="${W - ml - mr}" height="${H - mt - mb}"/>`;
+  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${s}</svg>`;
+  const svg = box.firstChild, g = svg.querySelector('.xhg'), ln = g.querySelector('line'), dt = g.querySelector('circle');
+  const show = i => { i = Math.max(0, Math.min(pts.length - 1, i)); box._i = i; const p = pts[i]; const x = X(p.t); g.style.display = ''; ln.setAttribute('x1', x); ln.setAttribute('x2', x); if (p.v != null) { dt.style.display = ''; dt.setAttribute('cx', x); dt.setAttribute('cy', Y(p.v)); } else dt.style.display = 'none';
+    const r = box.getBoundingClientRect(); showTipAt(r.left + x, r.top + (p.v != null ? Y(p.v) : mt + 20), tipNode(`${hm(p.t)} UTC`, [[p.v != null ? p.v + ' ms' : p.st === 'down' ? 'Down' : p.st === 'paused' ? 'Paused' : 'No data', S.ep, true]])); };
+  const hide = () => { g.style.display = 'none'; hideTip(); };
+  svg.addEventListener('pointermove', e => { const r = svg.getBoundingClientRect(); const t = t0 + (e.clientX - r.left - ml) / (W - ml - mr) * (NOW - t0); show(Math.round((t - t0) / R.lat)); });
+  svg.addEventListener('pointerleave', hide);
+  box.onkeydown = e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); show((box._i == null ? pts.length - 1 : box._i) + (e.key === 'ArrowLeft' ? -1 : 1)); } else if (e.key === 'Escape') hide(); };
+  box.onblur = hide;
+}
+function laneState(m, n, t) { const p = curPart(); if (p && !visible(n) && t >= p.since) return 'unknown'; return trueState(m, n, t); }
+function drawLanes(box) {
+  const ep = episodes().find(e => e.id === box.dataset.inc); const m = ep.m, f = ep.f;
+  const t1 = ep.open ? NOW : Math.min(NOW, epEnd(ep) + 6 * MIN), t0 = Math.max(NOW - 1440 * MIN, Math.min(f.start - 8 * MIN, ep.open && curPart() ? curPart().since - 4 * MIN : Infinity));
+  const W = Math.max(280, box.clientWidth), L = 58, Rm = 12, top = 34, lh = 20, lg = 8, axis = 22;
+  const H = top + m.nodes.length * (lh + lg) - lg + axis + 4;
+  const X = t => L + (t - t0) / (t1 - t0) * (W - L - Rm);
+  let s = `<defs><pattern id="uc-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect class="hatch-bg" width="6" height="6"/><line class="hatch-ln" x1="0" y1="0" x2="0" y2="6"/></pattern></defs>`;
+  const span = t1 - t0, step = [2, 5, 10, 15, 30, 60, 120].map(x => x * MIN).find(x => span / x <= 7) || 240 * MIN;
+  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) { const x = X(t); s += `<line class="gridl" x1="${x}" x2="${x}" y1="${top - 4}" y2="${H - axis}"/><text class="tick" x="${x}" y="${H - 6}" text-anchor="middle">${hm(t)}</text>`; }
+  parts().forEach(p => { const a = Math.max(t0, p.since), b = Math.min(t1, p.until || t1); if (b > a) s += `<rect class="partbar" x="${X(a)}" y="${top - 12}" width="${Math.max(2, X(b) - X(a))}" height="4" rx="2" data-tip="${esc('Peer partition\n' + hm(p.since) + '–' + (p.until ? hm(p.until) : 'now') + ' UTC\n' + p.groups[0].join(', ') + ' | ' + p.groups[1].join(', '))}"/>`; });
+  m.nodes.forEach((n, i) => {
+    const y = top + i * (lh + lg);
+    s += `<text class="tick" x="${L - 8}" y="${y + lh / 2 + 4}" text-anchor="end" style="font-family:var(--mono)">${n}</text>`;
+    const steps = 480; let cur = null, from = t0;
+    const seg = (st, a, b) => { const x0 = X(a) + 1, x1 = X(b) - 1; if (x1 - x0 < 0.5) return ''; return `<rect class="s-${st}" x="${x0}" y="${y}" width="${x1 - x0}" height="${lh}" rx="3" data-tip="${esc(`${n} · ${st === 'unknown' ? 'out of view' : st}\n${hms(a)}–${b >= NOW ? 'now' : hms(b)} UTC`)}"/>`; };
+    for (let k = 0; k <= steps; k++) { const t = t0 + span * k / steps; const st = laneState(m, n, t); if (st !== cur) { if (cur != null) s += seg(cur, from, t); cur = st; from = t; } }
+    s += seg(cur, from, t1);
+  });
+  const evs = incEvents(ep).filter(e => e.t >= t0 && e.t <= t1 && !e.future && e.c !== 'info');
+  evs.forEach(e => { const x = X(e.t); s += `<circle class="mk mk-${e.c === 'dup' ? 'dup' : e.c}" cx="${x}" cy="${top - 22}" r="5.5" tabindex="0" data-tip="${esc(hms(e.t) + ' UTC\n' + e.txt.replace(/<[^>]+>/g, '') + (e.det ? '\n' + e.det.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&') : ''))}"/>`; });
+  if (ep.open) s += `<line class="base" x1="${X(NOW)}" x2="${X(NOW)}" y1="${top - 4}" y2="${H - axis}"/><text class="tick" x="${X(NOW) - 4}" y="${top - 30}" text-anchor="end">now</text>`;
+  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${s}</svg>`;
+}
+function drawRing(box) {
+  const W = Math.min(320, Math.max(240, box.clientWidth)), H = W * 0.9, cx = W / 2, cy = H / 2, R = W * 0.34;
+  const pos = NID.map((n, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / NID.length; return [n, cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
+  let s = '';
+  for (let i = 0; i < pos.length; i++) for (let j = i + 1; j < pos.length; j++) {
+    const [a, ax, ay] = pos[i], [b, bx, by] = pos[j];
+    const va = visible(a), vb = visible(b);
+    let cls = 'edge-ok', lab;
+    if (!va && !vb) { cls = 'edge-unknown'; lab = 'unknown: neither side in view'; }
+    else { const ok = reachAt(a, b, NOW); cls = ok ? 'edge-ok' : 'edge-down'; lab = ok ? `reachable · ${rtt(a, b)} ms` : 'no link since ' + hm(curPart().since); if ((!va || !vb) && ok) { cls = 'edge-unknown'; lab = 'reported by one side only'; } }
+    s += `<line class="${cls}" data-a="${a}" data-b="${b}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" data-tip="${esc(a + ' ↔ ' + b + '\n' + lab)}"/>`;
+  }
+  pos.forEach(([n, x, y]) => { const out = !visible(n); s += `<g data-node="${n}" data-tip="${esc(n + ' · ' + NODE[n].name + '\n' + nodeStateFromEp(n).label)}"><circle class="nodec${n === S.ep ? ' ep' : ''}${out ? ' out' : ''}" cx="${x}" cy="${y}" r="23"/><text class="lbl" x="${x}" y="${y + 3.5}" text-anchor="middle" style="font:600 9.5px var(--mono)">${n}</text></g>`; });
+  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="margin:0 auto">${s}</svg>`;
+  const svg = box.firstChild;
+  svg.querySelectorAll('g[data-node]').forEach(g => { g.addEventListener('pointerenter', () => { const n = g.dataset.node; svg.querySelectorAll('line').forEach(l => l.classList.toggle('dim', l.dataset.a !== n && l.dataset.b !== n)); }); g.addEventListener('pointerleave', () => svg.querySelectorAll('line').forEach(l => l.classList.remove('dim'))); });
+}
+const widths = new WeakMap();
+function drawCharts() {
+  main.querySelectorAll('.chart[data-chart]').forEach(box => { widths.set(box, box.clientWidth); const k = box.dataset.chart; if (k === 'lat') drawLatency(box); else if (k === 'lanes') drawLanes(box); else if (k === 'ring') drawRing(box); ro.observe(box); });
+}
+const ro = new ResizeObserver(entries => { entries.forEach(e => { const box = e.target; if (!box.isConnected) { ro.unobserve(box); return; } if (Math.abs((widths.get(box) || 0) - box.clientWidth) > 4) { widths.set(box, box.clientWidth); const k = box.dataset.chart; if (k === 'lat') drawLatency(box); else if (k === 'lanes') drawLanes(box); else if (k === 'ring') drawRing(box); } }); });
+
+/* ---------- tooltip (values via textContent) ---------- */
+function tipNode(title, rows) {
+  const f = document.createDocumentFragment(); const b = document.createElement('b'); b.textContent = title; f.appendChild(b);
+  rows.forEach(([v, l, focus]) => { const r = document.createElement('div'); r.className = 'r'; const k = document.createElement('span'); k.className = 'k' + (focus ? ' focus' : ''); const st = document.createElement('strong'); st.textContent = v; const sp = document.createElement('span'); sp.textContent = l; r.append(k, st, sp); f.appendChild(r); });
+  return f;
+}
+function textTip(text) { const f = document.createDocumentFragment(); const lines = String(text).split('\n'); const b = document.createElement('b'); b.textContent = lines[0]; f.appendChild(b); lines.slice(1).forEach(l => { const d = document.createElement('div'); d.className = 's'; d.textContent = l; f.appendChild(d); }); return f; }
+function showTipAt(x, y, content, below) {
+  tip.replaceChildren(content); tip.hidden = false;
+  const ur = uc.getBoundingClientRect(); const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = x - ur.left - tw / 2; left = Math.max(4, Math.min(left, ur.width - tw - 4));
+  let top = y - ur.top - th - 12; if (below || top < 4) top = y - ur.top + 16;
+  tip.style.left = left + 'px'; tip.style.top = top + 'px';
+}
+function hideTip() { tip.hidden = true; }
+function tipFor(el) { const r = el.getBoundingClientRect(); const below = r.top - uc.getBoundingClientRect().top < 90; showTipAt(r.left + r.width / 2, below ? r.bottom - 8 : r.top, textTip(el.getAttribute('data-tip')), below); }
+document.addEventListener('pointerover', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el && uc.contains(el)) tipFor(el); });
+document.addEventListener('pointerout', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el && !el.contains(e.relatedTarget)) hideTip(); });
+document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el && uc.contains(el)) tipFor(el); });
+document.addEventListener('focusout', hideTip);
+
+/* ---------- chrome ---------- */
+const NAV = [
+  ['/overview', 'Overview', 'i-overview'], ['/monitors', 'Monitors', 'i-pulse'], ['/incidents', 'Incidents', 'i-incident'], ['/nodes', 'Nodes', 'i-nodes'],
+  ['/alerts', 'Notifications', 'i-bell'], ['/config', 'Configuration', 'i-config'], ['/accounts', 'Accounts', 'i-users'],
+];
+function renderChrome() {
+  const sec = '/' + S.route.split('/')[1];
+  const nOpen = openIncidents().filter(x => x.a.outage || x.a.k === 'unknown').length;
+  const conflicts = MON.filter(m => m.conflict).length;
+  document.getElementById('nav').innerHTML = NAV.filter(([r]) => r !== '/accounts' || can('admin')).map(([r, l, i]) => {
+    const badge = r === '/incidents' && nOpen ? `<span class="badge" aria-label="${nOpen} open">${nOpen}</span>` : r === '/config' && conflicts ? `<span class="badge soft" aria-label="${conflicts} conflict">${conflicts}</span>` : r === '/nodes' && outNodes().length ? `<span class="badge soft" aria-label="${outNodes().length} out of view">${outNodes().length}</span>` : '';
+    return `<li><a href="#${r}" data-tip="${esc(l)}" ${sec === r ? 'aria-current="page"' : ''}>${ic(i)}<span class="lbl">${l}</span>${badge}</a></li>`; }).join('');
+  const inView = NID.filter(visible).length;
+  document.getElementById('rail-foot').innerHTML = `<div class="row">${glyph(inView === NID.length ? 'up' : 'warn')}<span class="txt">${inView} of ${NID.length} nodes in view</span></div><div class="txt">Endpoint <span class="mono">${esc(S.ep)}</span></div>`;
+  document.getElementById('conn-btn').innerHTML = `<span class="ep-mark" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="M31.2 13.4C31.2 9.3 28.2 6 24.4 6C20.6 6 17.6 9.1 17.6 12.9C17.6 14.6 18.1 16 18.9 17.1C13.6 18.4 9.6 22.6 8.4 27.6L4 30.6L10.6 30.6C12.8 31.8 15.6 32.4 18.6 32.4C26.2 32.4 32.2 27.2 32.2 20.4C32.2 17.8 31.9 15.4 31.2 13.4Z" fill="#ffd23f"/><path d="M31 11.2L36.6 13.5L31.1 15.7Z" fill="#f28c28"/></svg></span><span><span class="t1"><span class="vh">Endpoint: </span><span class="mono">${esc(S.ep)}</span> · ${esc(NODE[S.ep].name)}</span><span class="t2">${inView} of ${NID.length} nodes in view</span></span>${ic('i-chev')}`;
+  document.getElementById('conn-btn').setAttribute('aria-expanded', S.pop === 'conn');
+  document.getElementById('snap').innerHTML = `${ic('i-clock')}Snapshot 14:32:00 UTC`;
+  const tIcon = { system: 'i-auto', light: 'i-sun', dark: 'i-moon' }[S.theme]; const nextT = { system: 'light', light: 'dark', dark: 'system' }[S.theme];
+  const tb = document.getElementById('theme-btn'); tb.innerHTML = ic(tIcon); tb.setAttribute('aria-label', `Theme: ${S.theme}. Switch to ${nextT}.`); tb.setAttribute('data-tip', `Theme: ${S.theme}\nClick for ${nextT}`);
+  const user = ROLE_USER[S.role];
+  document.getElementById('me').innerHTML = `<span class="av" aria-hidden="true">${user[0].toUpperCase()}</span><span class="who"><b>${user}</b><span>${ROLE_LABEL[S.role]} on ${esc(S.ep)}</span></span>`;
+  document.querySelectorAll('[data-act="scen"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.scen));
+  document.querySelectorAll('[data-act="policy"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.policy));
+  document.querySelectorAll('[data-act="role"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.role));
+  document.querySelector('[data-act="notes"]').setAttribute('aria-checked', S.notes);
+  uc.dataset.notes = S.notes ? 'on' : 'off';
+  renderPop();
+}
+function renderPop() {
+  if (S.pop !== 'conn') { pop.hidden = true; pop.innerHTML = ''; return; }
+  pop.hidden = false;
+  pop.innerHTML = `<h3>Endpoint</h3>${NID.map(n => { const s = nodeStateFromEp(n); return `<button type="button" class="pop-item" data-act="endpoint" data-v="${n}" ${n === S.ep ? 'aria-current="true"' : ''}>${glyph(s.g)}<span class="grow"><b class="mono">${n}</b> <span class="muted">${esc(NODE[n].name)}</span><span class="t2" style="display:block">${n === S.ep ? 'Connected now' : s.st === 'connected' ? 'Peer of ' + S.ep + ' · reachable' : 'Out of view from ' + S.ep + '. Try connecting directly.'}</span></span></button>`; }).join('')}<div class="pop-foot">${ic('i-lock')} Accounts are per node. Switching uses your saved token for that node, or asks for one. ${od('Token storage', 'Where the browser keeps tokens (memory, session, or local storage) is still open. The concept assumes they are saved per endpoint.')}</div>`;
+}
+function renderMain(focus) {
+  hideTip();
+  const r = S.route.split('/').filter(Boolean);
+  let html;
+  switch (r[0]) {
+    case 'monitors': html = r[1] ? vMonitor(r[1]) : vMonitors(); break;
+    case 'incidents': html = r[1] ? vIncident(r[1]) : vIncidents(); break;
+    case 'nodes': html = vNodes(); break;
+    case 'alerts': html = vAlerts(); break;
+    case 'config': html = vConfig(); break;
+    case 'accounts': html = vAccounts(); break;
+    case 'overview': case undefined: html = vOverview(); break;
+    default: html = notFound();
+  }
+  main.innerHTML = html;
+  drawCharts();
+  if (focus) { const h = main.querySelector('h1'); if (h) h.focus({ preventScroll: true }); try { window.scrollTo({ top: 0 }); } catch (e) {} }
+}
+function renderAll(focus) { renderChrome(); renderMain(focus); }
+function go(r) { S.route = r; S.pop = null; try { if (location.hash !== '#' + r) location.hash = r; } catch (e) {} renderAll(true); }
+function announce(t) { live.textContent = ''; setTimeout(() => { live.textContent = t; }, 30); }
+function flash(el, msg) { const old = el.parentElement.querySelector('.flash'); if (old) old.remove(); const f = document.createElement('span'); f.className = 'flash'; f.setAttribute('role', 'status'); f.textContent = msg; el.insertAdjacentElement('afterend', f); setTimeout(() => f.remove(), 5000); }
+function applyTheme() {
+  const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+  const mode = S.theme === 'system' ? (mq && mq.matches ? 'dark' : 'light') : S.theme;
+  uc.dataset.mode = mode; document.documentElement.style.colorScheme = S.theme === 'system' ? '' : mode;
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#/"]');
+  if (a && uc.contains(a)) { e.preventDefault(); go(a.getAttribute('href').slice(1)); return; }
+  const b = e.target.closest('[data-act]');
+  if (!b) {
+    const row = e.target.closest('[data-href]'); if (row && !e.target.closest('button,input,label,select')) { go(row.dataset.href); return; }
+    if (S.pop && !e.target.closest('#pop')) { S.pop = null; renderChrome(); }
+    return;
+  }
+  const v = b.dataset.v, act = b.dataset.act;
+  switch (act) {
+    case 'scen': S.scen = v; if (v === 'connected') S.ep = S.ep; announce(`Scenario: ${SCEN[v].label}`); renderAll(); break;
+    case 'policy': S.policy = v; announce(`Outage policy preview: ${POL[v].label}`); renderAll(); break;
+    case 'role': S.role = v; if (v !== 'admin' && S.route.startsWith('/accounts')) S.route = '/overview'; announce(`Viewing as ${ROLE_LABEL[v]}`); renderAll(); break;
+    case 'notes': S.notes = !S.notes; renderChrome(); break;
+    case 'theme': S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; applyTheme(); renderChrome(); announce(`Theme: ${S.theme}`); break;
+    case 'pop': S.pop = S.pop === v ? null : v; renderChrome(); if (S.pop) { const f = pop.querySelector('button'); if (f) f.focus(); } break;
+    case 'endpoint': S.ep = v; S.pop = null; announce(`Endpoint switched to ${v}`); renderAll(); document.getElementById('conn-btn').focus({ preventScroll: true }); break;
+    case 'filt': S.filt = v; renderMain(); break;
+    case 'lfilt': S.lfilt = v; renderMain(); break;
+    case 'range': S.range = v; renderMain(); break;
+    case 'table': S.table[v] = !S.table[v]; renderMain(); break;
+    case 'newmon': S.newMon = !S.newMon; renderMain(); break;
+    case 'nmtype': S.nm.type = v; renderMain(); break;
+    case 'nmnode': if (b.checked) S.nm.nodes.add(v); else S.nm.nodes.delete(v); renderMain(); { const cb = main.querySelector(`[data-act="nmnode"][data-v="${v}"]`); if (cb) cb.focus({ preventScroll: true }); } return;
+    case 'pick': S.pick[b.dataset.f] = v; renderMain(); { const r = main.querySelector(`[data-act="pick"][data-f="${b.dataset.f}"][data-v="${v}"]`); if (r) r.focus({ preventScroll: true }); } return;
+    case 'pickall': { const c = MONK.billing.conflict; ['every', 'timeout', 'expect'].forEach(k => { S.pick[k] = v === 'both' ? (c.a[k] !== c.base[k] ? 'a' : 'b') : v; }); renderMain(); break; }
+    case 'reveal': S.reveal = !S.reveal; renderMain(); break;
+    case 'flash': if (!b.disabled) flash(b, v); break;
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.pop) { S.pop = null; renderChrome(); document.getElementById('conn-btn').focus(); }
+  if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) { e.preventDefault(); document.getElementById('q').focus(); }
+  const row = e.target.closest && e.target.closest('tr[data-href]');
+  if (row && e.key === 'Enter' && e.target === row) go(row.dataset.href);
+});
+document.getElementById('q').addEventListener('input', e => { S.q = e.target.value; const sec = S.route.split('/')[1]; if (sec !== 'overview' && !(sec === 'monitors' && !S.route.split('/')[2])) { S.route = '/monitors'; try { location.hash = S.route; } catch (er) {} renderChrome(); } renderMain(); });
+window.addEventListener('hashchange', () => { const r = location.hash.slice(1) || '/overview'; if (r !== S.route && r.startsWith('/')) { S.route = r; renderAll(true); } });
+if (window.matchMedia) { const mq = window.matchMedia('(prefers-color-scheme: dark)'); (mq.addEventListener ? mq.addEventListener('change', applyTheme) : mq.addListener(applyTheme)); }
+
+/* ---------- boot ---------- */
+const h0 = (location.hash || '').slice(1); if (h0.startsWith('/')) S.route = h0;
+/* Deep links for reviews: ?theme=light|dark&scen=partition&ep=sgp-1&role=viewer&policy=all&notes=off */
+try { const q = new URLSearchParams(location.search);
+  if (['light', 'dark', 'system'].includes(q.get('theme'))) S.theme = q.get('theme');
+  if (SCEN[q.get('scen')]) S.scen = q.get('scen');
+  if (NODE[q.get('ep')]) S.ep = q.get('ep');
+  if (ROLE_LABEL[q.get('role')]) S.role = q.get('role');
+  if (POL[q.get('policy')]) S.policy = q.get('policy');
+  if (q.get('notes') === 'off') S.notes = false;
+  if (q.get('newmon') === '1') S.newMon = true;
+} catch (e) {}
+applyTheme(); renderAll(false);
+})();
+</script>
+</body>
+</html>

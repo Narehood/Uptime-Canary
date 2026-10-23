@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="362" viewBox="0 0 960 362" role="img" aria-labelledby="title desc">
+<title id="title">How alerts behave when nodes or links fail</title>
+<desc id="desc">Four panels with three nodes and one webhook receiver. 1, Connected: node 1 sends one alert and the others stand down after its receipt syncs. 2, Sender lost: node 1 is stopped, no receipt arrives, and node 2 sends the alert after its stagger without a quorum. 3, Partitioned: links to node 3 are cut; node 1 and node 3 each send, so the receiver gets two alerts. 4, Healed: links return, receipts and incidents merge without replaying old alerts, and one recovery is sent.</desc>
+<defs>
+  <style>
+    .s { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; }
+    .m { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+  </style>
+</defs>
+<rect x="0.75" y="0.75" width="958.5" height="360.5" rx="18" fill="#151514" stroke="#2b2b28" stroke-width="1.5"/>
+<g transform="translate(18 18)">
+<rect x="0" y="0" width="222" height="326" rx="14" fill="#20201e" stroke="#3b3b37" stroke-width="1.5"/>
+<circle cx="26" cy="28" r="12" fill="#292926" stroke="#3b3b37"/><text class="m" x="26" y="33" font-size="13" fill="#f0efec" font-weight="700" text-anchor="middle">1</text>
+<text class="s" x="46" y="34" font-size="17" fill="#f0efec" font-weight="700">Connected</text>
+<line x1="58" y1="92" x2="164" y2="92" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="58" y1="92" x2="111" y2="150" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="164" y1="92" x2="111" y2="150" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="61.5" y1="113.7" x2="73.7" y2="191.1" stroke="#ffd23f" stroke-width="2.5" stroke-linecap="round"/><polygon points="75.0,199.0 68.3,191.0 78.9,189.3" fill="#ffd23f"/>
+<circle cx="58" cy="92" r="19" fill="#ffd23f"/><text class="m" x="58" y="97.5" font-size="16" fill="#151514" font-weight="700" text-anchor="middle">1</text>
+<circle cx="164" cy="92" r="19" fill="#292926" stroke="#6da7ec" stroke-width="2"/><text class="m" x="164" y="97.5" font-size="16" fill="#f0efec" font-weight="700" text-anchor="middle">2</text>
+<circle cx="111" cy="150" r="19" fill="#292926" stroke="#6da7ec" stroke-width="2"/><text class="m" x="111" y="155.5" font-size="16" fill="#f0efec" font-weight="700" text-anchor="middle">3</text>
+<rect x="41" y="202" width="140" height="32" rx="9" fill="#292926" stroke="#ffd23f" stroke-width="1.5"/>
+<path d="M54 222C56 219 55 209 61 209C67 209 66 219 68 222Z" fill="none" stroke="#ffd23f" stroke-width="2" stroke-linejoin="round"/><circle cx="61" cy="225" r="1.8" fill="#ffd23f"/>
+<text class="s" x="77" y="223.5" font-size="14.5" fill="#f0efec" font-weight="600">1 alert</text>
+<text class="s" x="16" y="268" font-size="14" fill="#c3c2b7">First candidate sends.</text>
+<text class="s" x="16" y="288" font-size="14" fill="#c3c2b7">Its receipt syncs and</text>
+<text class="s" x="16" y="308" font-size="14" fill="#c3c2b7">the others stand down.</text>
+</g>
+<g transform="translate(252 18)">
+<rect x="0" y="0" width="222" height="326" rx="14" fill="#20201e" stroke="#3b3b37" stroke-width="1.5"/>
+<circle cx="26" cy="28" r="12" fill="#292926" stroke="#3b3b37"/><text class="m" x="26" y="33" font-size="13" fill="#f0efec" font-weight="700" text-anchor="middle">2</text>
+<text class="s" x="46" y="34" font-size="17" fill="#f0efec" font-weight="700">Sender lost</text>
+<line x1="164" y1="92" x2="111" y2="150" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="58" y1="92" x2="164" y2="92" stroke="#807e78" stroke-width="2" stroke-dasharray="3 5"/>
+<line x1="58" y1="92" x2="111" y2="150" stroke="#807e78" stroke-width="2" stroke-dasharray="3 5"/>
+<line x1="160.5" y1="113.7" x2="148.3" y2="191.1" stroke="#ffd23f" stroke-width="2.5" stroke-linecap="round"/><polygon points="147.0,199.0 143.1,189.3 153.7,191.0" fill="#ffd23f"/>
+<circle cx="58" cy="92" r="19" fill="#20201e" stroke="#807e78" stroke-width="2" stroke-dasharray="4 4"/><text class="m" x="58" y="97.5" font-size="16" fill="#807e78" font-weight="700" text-anchor="middle">1</text>
+<path d="M66 66 l18 18 M84 66 l-18 18" stroke="#d03b3b" stroke-width="3.5" stroke-linecap="round"/>
+<circle cx="164" cy="92" r="19" fill="#ffd23f"/><text class="m" x="164" y="97.5" font-size="16" fill="#151514" font-weight="700" text-anchor="middle">2</text>
+<circle cx="111" cy="150" r="19" fill="#292926" stroke="#6da7ec" stroke-width="2"/><text class="m" x="111" y="155.5" font-size="16" fill="#f0efec" font-weight="700" text-anchor="middle">3</text>
+<rect x="41" y="202" width="140" height="32" rx="9" fill="#292926" stroke="#ffd23f" stroke-width="1.5"/>
+<path d="M54 222C56 219 55 209 61 209C67 209 66 219 68 222Z" fill="none" stroke="#ffd23f" stroke-width="2" stroke-linejoin="round"/><circle cx="61" cy="225" r="1.8" fill="#ffd23f"/>
+<text class="s" x="77" y="223.5" font-size="14.5" fill="#f0efec" font-weight="600">1 alert</text>
+<text class="s" x="16" y="268" font-size="14" fill="#c3c2b7">No receipt arrives, so</text>
+<text class="s" x="16" y="288" font-size="14" fill="#c3c2b7">the next candidate sends.</text>
+<text class="s" x="16" y="308" font-size="14" fill="#c3c2b7">No quorum, no handoff.</text>
+</g>
+<g transform="translate(486 18)">
+<rect x="0" y="0" width="222" height="326" rx="14" fill="#20201e" stroke="#3b3b37" stroke-width="1.5"/>
+<circle cx="26" cy="28" r="12" fill="#292926" stroke="#3b3b37"/><text class="m" x="26" y="33" font-size="13" fill="#f0efec" font-weight="700" text-anchor="middle">3</text>
+<text class="s" x="46" y="34" font-size="17" fill="#f0efec" font-weight="700">Partitioned</text>
+<line x1="58" y1="92" x2="164" y2="92" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="58" y1="92" x2="111" y2="150" stroke="#d03b3b" stroke-width="2" stroke-dasharray="4 5" opacity="0.85"/>
+<circle cx="84.5" cy="121.0" r="8" fill="#20201e"/><path d="M80.5 117.0l8 8M88.5 117.0l-8 8" stroke="#d03b3b" stroke-width="2.4" stroke-linecap="round"/>
+<line x1="164" y1="92" x2="111" y2="150" stroke="#d03b3b" stroke-width="2" stroke-dasharray="4 5" opacity="0.85"/>
+<circle cx="137.5" cy="121.0" r="8" fill="#20201e"/><path d="M133.5 117.0l8 8M141.5 117.0l-8 8" stroke="#d03b3b" stroke-width="2.4" stroke-linecap="round"/>
+<line x1="60.9" y1="113.8" x2="71.0" y2="191.1" stroke="#ffd23f" stroke-width="2.5" stroke-linecap="round"/><polygon points="72.0,199.0 65.5,190.8 76.2,189.4" fill="#ffd23f"/>
+<line x1="124.7" y1="167.2" x2="145.0" y2="192.7" stroke="#ffd23f" stroke-width="2.5" stroke-linecap="round"/><polygon points="150.0,199.0 140.2,195.3 148.6,188.6" fill="#ffd23f"/>
+<circle cx="58" cy="92" r="19" fill="#ffd23f"/><text class="m" x="58" y="97.5" font-size="16" fill="#151514" font-weight="700" text-anchor="middle">1</text>
+<circle cx="164" cy="92" r="19" fill="#292926" stroke="#6da7ec" stroke-width="2"/><text class="m" x="164" y="97.5" font-size="16" fill="#f0efec" font-weight="700" text-anchor="middle">2</text>
+<circle cx="111" cy="150" r="19" fill="#ffd23f"/><text class="m" x="111" y="155.5" font-size="16" fill="#151514" font-weight="700" text-anchor="middle">3</text>
+<rect x="41" y="202" width="140" height="32" rx="9" fill="#292926" stroke="#ffd23f" stroke-width="1.5"/>
+<path d="M54 222C56 219 55 209 61 209C67 209 66 219 68 222Z" fill="none" stroke="#ffd23f" stroke-width="2" stroke-linejoin="round"/><circle cx="61" cy="225" r="1.8" fill="#ffd23f"/>
+<text class="s" x="77" y="223.5" font-size="14.5" fill="#f0efec" font-weight="600">2 alerts</text>
+<text class="s" x="16" y="268" font-size="14" fill="#c3c2b7">Each side alerts alone.</text>
+<text class="s" x="16" y="288" font-size="14" fill="#c3c2b7">Duplicates are the price</text>
+<text class="s" x="16" y="308" font-size="14" fill="#c3c2b7">of delivering first.</text>
+</g>
+<g transform="translate(720 18)">
+<rect x="0" y="0" width="222" height="326" rx="14" fill="#20201e" stroke="#3b3b37" stroke-width="1.5"/>
+<circle cx="26" cy="28" r="12" fill="#292926" stroke="#3b3b37"/><text class="m" x="26" y="33" font-size="13" fill="#f0efec" font-weight="700" text-anchor="middle">4</text>
+<text class="s" x="46" y="34" font-size="17" fill="#f0efec" font-weight="700">Healed</text>
+<line x1="58" y1="92" x2="164" y2="92" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="58" y1="92" x2="111" y2="150" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="164" y1="92" x2="111" y2="150" stroke="#6da7ec" stroke-width="2.5" opacity="0.75"/>
+<line x1="61.5" y1="113.7" x2="73.7" y2="191.1" stroke="#0ca30c" stroke-width="2.5" stroke-linecap="round"/><polygon points="75.0,199.0 68.3,191.0 78.9,189.3" fill="#0ca30c"/>
+<circle cx="58" cy="92" r="19" fill="#0ca30c"/><text class="m" x="58" y="97.5" font-size="16" fill="#ffffff" font-weight="700" text-anchor="middle">1</text>
+<circle cx="164" cy="92" r="19" fill="#292926" stroke="#6da7ec" stroke-width="2"/><text class="m" x="164" y="97.5" font-size="16" fill="#f0efec" font-weight="700" text-anchor="middle">2</text>
+<circle cx="111" cy="150" r="19" fill="#292926" stroke="#6da7ec" stroke-width="2"/><text class="m" x="111" y="155.5" font-size="16" fill="#f0efec" font-weight="700" text-anchor="middle">3</text>
+<rect x="41" y="202" width="140" height="32" rx="9" fill="#292926" stroke="#0ca30c" stroke-width="1.5"/>
+<circle cx="61" cy="218" r="7.00" fill="#0ca30c"/><path d="M57.90 218.30l2.10 2.10 4.10 -4.40" fill="none" stroke="#fff" stroke-width="1.80" stroke-linecap="round" stroke-linejoin="round"/>
+<text class="s" x="77" y="223.5" font-size="14.5" fill="#f0efec" font-weight="600">1 recovery</text>
+<text class="s" x="16" y="268" font-size="14" fill="#c3c2b7">Receipts and incidents</text>
+<text class="s" x="16" y="288" font-size="14" fill="#c3c2b7">merge; nothing replays.</text>
+<text class="s" x="16" y="308" font-size="14" fill="#c3c2b7">Recovery is sent once.</text>
+</g>
+</svg>

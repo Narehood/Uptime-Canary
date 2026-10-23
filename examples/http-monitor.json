@@ -1,0 +1,10 @@
+{
+  "name": "Public homepage",
+  "type": "http",
+  "target": "https://example.com",
+  "intervalMs": 30000,
+  "timeoutMs": 5000,
+  "nodeIds": ["canary-1"],
+  "enabled": true,
+  "repeatAfterMs": 0
+}

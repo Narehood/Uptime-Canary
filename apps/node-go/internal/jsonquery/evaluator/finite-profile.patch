@@ -1,0 +1,1423 @@
+diff --git a/v206/functions.go b/v206/functions.go
+--- a/v206/functions.go
++++ b/v206/functions.go
+@@ -230,41 +230,12 @@
+ 		JavaScript equivalent: functions.js lines 40-46
+ 	*/
+ 	sumFunc := func(args []interface{}) (interface{}, error) {
+-		// undefined inputs always return undefined
+-		// This follows JSONata's principle of graceful degradation
+-		if args == nil {
+-			return nil, nil
+-		}
+-
+-		// Check if the first argument is nil (undefined)
+-		if len(args) == 1 && args[0] == nil {
+-			return nil, nil
+-		}
+-
+-		// Handle the case where we receive an array as the first argument
+-		// This happens when JSONata passes [1,2,3,4,5] as args[0] instead of as separate args
+-		var numbersToSum []interface{}
+-		if len(args) == 1 {
+-			if arr, ok := args[0].([]interface{}); ok {
+-				numbersToSum = arr
+-			} else {
+-				numbersToSum = args
+-			}
+-		} else {
+-			numbersToSum = args
+-		}
+-
+-		// Accumulate sum using floating-point arithmetic for precision
+-		total := 0.0
+-		for _, arg := range numbersToSum {
+-			// Handle both native Go numeric types
+-			if num, ok := arg.(float64); ok {
+-				total += num
+-			} else if num, ok := arg.(int); ok {
+-				total += float64(num)
+-			}
+-			// Non-numeric values are silently ignored (graceful degradation)
+-		}
++		if len(args) == 0 || args[0] == nil { return nil, nil }
++		items, ok := args[0].([]interface{})
++		if array, isArray := args[0].(*JSONataArray); isArray && array != nil { items, ok = array.Data, true }
++		if !ok { return nil, createJSONataError("T0410", nil) }
++		var total interface{} = float64(0)
++		for _, item := range items { total = nativeJSAdd(total, item) }
+ 		return total, nil
+ 	}
+ 
+@@ -814,7 +785,7 @@
+ 			str = s
+ 		}
+ 
+-		return float64(len(stringToArray(str))), nil
++		return float64(countStringCodepoints(str)), nil
+ 	}
+ 
+ 	/**
+@@ -945,7 +916,17 @@
+ 	 * @param {[]interface{}} args - the arguments to pass
+ 	 * @returns {interface{}} result of function invocation
+ 	 */
+-	invokeFunction := func(fn interface{}, args []interface{}) (interface{}, error) {
++	invokeFunction := func(fn interface{}, args []interface{}) (result interface{}, err error) {
++		// Native higher-order callbacks can bypass AST dispatch. Guard their
++		// results before the caller can consume or discard them.
++		defer func() {
++			if err == nil {
++				err = rejectNonfiniteResult(result)
++				if err != nil {
++					result = nil
++				}
++			}
++		}()
+ 		switch f := fn.(type) {
+ 		case *Lambda:
+ 			if f.apply != nil {
+@@ -953,81 +934,94 @@
+ 			}
+ 			return nil, errors.New("lambda function has no apply method")
+ 		case *Function:
+-			if f.Implementation != nil {
+-				if impl, ok := f.Implementation.(JSONataFunc); ok {
+-					return impl(args)
+-				} else if impl, ok := f.Implementation.(func(...interface{}) (interface{}, error)); ok {
+-					return impl(args...)
+-				}
+-			}
++			if f.call != nil { return f.call(f, args) }
++			// Fixed regex/argument closures need no context-dependent native path.
++			if impl, ok := f.Implementation.(JSONataFunc); ok { return impl(args) }
++			if impl, ok := f.Implementation.(func(...interface{}) (interface{}, error)); ok { return impl(args...) }
+ 			return nil, errors.New("function has no implementation")
+ 		case func(...interface{}) (interface{}, error):
+ 			return f(args...)
++		case func() (interface{}, error):
++			if len(args) != 0 {
++				return nil, errors.New("invalid continuation arguments")
++			}
++			return f()
++		case func(string, int) interface{}:
++			// Internal regex closure: the second Go argument is a search offset,
++			// not an extra DSL argument. Regex invocation always starts at zero.
++			if len(args) == 0 {
++				return nil, createJSONataError("T0410", nil)
++			}
++			str, ok := args[0].(string)
++			if !ok {
++				return nil, createJSONataError("T0410", nil)
++			}
++			return f(str, 0), nil
++		case func(interface{}, interface{}) (bool, error):
++			// Fixed internal order-by comparator, also checked by the result guard.
++			if len(args) != 2 {
++				return nil, errors.New("invalid comparator arguments")
++			}
++			return f(args[0], args[1])
+ 		default:
+ 			return nil, errors.New("not a function")
+ 		}
+ 	}
+ 
+-	// Helper to convert map result to MatchResult
+-	var convertMapToMatchResult func(map[string]interface{}) *MatchResult
+-	convertMapToMatchResult = func(resultMap map[string]interface{}) *MatchResult {
++	// Both initial and continuation results use the same validation/adapter.
++	// Only an actual undefined result means exhaustion; callback errors and
++	// malformed results must never turn into successful partial output.
++	var convertMapToMatchResult func(map[string]interface{}) (*MatchResult, error)
++	convertMapToMatchResult = func(resultMap map[string]interface{}) (*MatchResult, error) {
+ 		match, _ := resultMap["match"].(string)
+-
+-		// Handle both int and float64 for start/end (JavaScript numbers come as float64)
+ 		var start, end int
++		var hasStart, hasEnd bool
+ 		if s, ok := resultMap["start"].(int); ok {
+-			start = s
++			start, hasStart = s, true
+ 		} else if s, ok := resultMap["start"].(float64); ok {
+-			start = int(s)
++			start, hasStart = int(s), true
+ 		}
+ 		if e, ok := resultMap["end"].(int); ok {
+-			end = e
++			end, hasEnd = e, true
+ 		} else if e, ok := resultMap["end"].(float64); ok {
+-			end = int(e)
+-		}
+-
+-		groupsInterface, _ := resultMap["groups"].([]interface{})
+-
+-		groups := []string{}
+-		for _, g := range groupsInterface {
+-			if gs, ok := g.(string); ok {
+-				groups = append(groups, gs)
+-			}
+-		}
+-
+-		var nextFunc func() *MatchResult
+-		if nextFn, ok := resultMap["next"].(func() (interface{}, error)); ok {
+-			nextFunc = func() *MatchResult {
+-				nextResult, err := nextFn()
+-				if err != nil || nextResult == nil {
+-					return nil
+-				}
+-				if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-					return convertMapToMatchResult(nextMap)
+-				}
+-				return nil
+-			}
+-		} else if next := resultMap["next"]; next != nil && isFunction(next) {
+-			// Handle other function types (like Lambda from custom matchers)
+-			nextFunc = func() *MatchResult {
+-				nextResult, err := invokeFunction(next, []interface{}{})
+-				if err != nil || nextResult == nil {
+-					return nil
+-				}
+-				if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-					return convertMapToMatchResult(nextMap)
+-				}
+-				return nil
+-			}
+-		}
+-
++			end, hasEnd = int(e), true
++		}
++		groupsValue := resultMap["groups"]
++		if array, ok := groupsValue.(*JSONataArray); ok && array != nil {
++			groupsValue = array.Data
++		}
++		groupsInterface, hasGroups := groupsValue.([]interface{})
++		groups := groupsInterface
++		next := resultMap["next"]
++		_, nativeNext := next.(func() (interface{}, error))
++		if !hasStart && !hasEnd && !hasGroups && !isFunction(next) && !nativeNext {
++			return nil, createJSONataError("T1010", nil)
++		}
+ 		return &MatchResult{
+-			Match:  match,
+-			Start:  start,
+-			End:    end,
+-			Groups: groups,
+-			Next:   nextFunc,
+-		}
++			Match: match, Start: start, End: end, Groups: groups, Object: resultMap,
++			Next: func() (*MatchResult, error) {
++				if !matcherContinuationCallable(next) {
++					return nil, createJSONataError("T1010", nil)
++				}
++				// Reference evaluateMatcher(next) supplies one undefined string
++				// argument. The fixed Go regex continuation has a zero-arg shape.
++				nextArgs := []interface{}{nil}
++				if nativeNext {
++					nextArgs = nil
++				}
++				result, err := invokeFunction(next, nextArgs)
++				if err != nil {
++					return nil, err
++				}
++				if result == nil {
++					return nil, nil
++				}
++				if resultMap, ok := result.(map[string]interface{}); ok {
++					return convertMapToMatchResult(resultMap)
++				}
++				return nil, createJSONataError("T1010", nil)
++			},
++		}, nil
+ 	}
+ 
+ 	/**
+@@ -1056,21 +1050,32 @@
+ 
+ 				match := allMatches[idx]
+ 				matchStr := str[match[0]:match[1]]
+-				groups := []string{}
++				groups := []interface{}{}
+ 				// match[2:] contains the capture group indices (pairs of start,end)
+ 				for i := 2; i < len(match); i += 2 {
++					var group interface{}
+ 					if match[i] >= 0 && match[i+1] >= 0 {
+-						groups = append(groups, str[match[i]:match[i+1]])
++						group = str[match[i]:match[i+1]]
+ 					}
+-				}
+-
++					groups = append(groups, group)
++				}
++
++				object := map[string]interface{}{
++					"match": matchStr, "start": match[0], "end": match[1], "groups": groups,
++				}
++				object["next"] = matcherNextFunction(func() (interface{}, error) {
++					next := buildResult(idx + 1)
++					if next == nil { return nil, nil }
++					return next.Object, nil
++				})
+ 				return &MatchResult{
++					Object: object,
+ 					Match:  matchStr,
+ 					Start:  match[0],
+ 					End:    match[1],
+ 					Groups: groups,
+-					Next: func() *MatchResult {
+-						return buildResult(idx + 1)
++					Next: func() (*MatchResult, error) {
++						return buildResult(idx + 1), nil
+ 					},
+ 				}
+ 			}
+@@ -1086,7 +1091,7 @@
+ 			}
+ 
+ 			if resultMap, ok := result.(map[string]interface{}); ok {
+-				return convertMapToMatchResult(resultMap), nil
++				return convertMapToMatchResult(resultMap)
+ 			}
+ 
+ 			return nil, createJSONataError("T1010", nil)
+@@ -1105,74 +1110,7 @@
+ 			}
+ 
+ 			if resultMap, ok := result.(map[string]interface{}); ok {
+-				// Validate structure
+-				var start, end int
+-				var match string
+-				var groups []string
+-				var hasStart, hasEnd bool
+-
+-				if s, ok := resultMap["start"].(int); ok {
+-					start = s
+-					hasStart = true
+-				} else if s, ok := resultMap["start"].(float64); ok {
+-					start = int(s)
+-					hasStart = true
+-				}
+-				if e, ok := resultMap["end"].(int); ok {
+-					end = e
+-					hasEnd = true
+-				} else if e, ok := resultMap["end"].(float64); ok {
+-					end = int(e)
+-					hasEnd = true
+-				}
+-				if m, ok := resultMap["match"].(string); ok {
+-					match = m
+-				}
+-				if g, ok := resultMap["groups"].([]interface{}); ok {
+-					for _, group := range g {
+-						if groupStr, ok := group.(string); ok {
+-							groups = append(groups, groupStr)
+-						}
+-					}
+-				}
+-
+-				if !hasStart && !hasEnd && len(groups) == 0 && !isFunction(resultMap["next"]) {
+-					return nil, createJSONataError("T1010", nil)
+-				}
+-
+-				return &MatchResult{
+-					Match:  match,
+-					Start:  start,
+-					End:    end,
+-					Groups: groups,
+-					Next: func() *MatchResult {
+-						if nextFunc, ok := resultMap["next"]; ok {
+-							// Check if it's a function that returns (interface{}, error)
+-							if fn, ok := nextFunc.(func() (interface{}, error)); ok {
+-								nextResult, err := fn()
+-								if err != nil || nextResult == nil {
+-									return nil
+-								}
+-								// Convert the result to MatchResult
+-								if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-									return convertMapToMatchResult(nextMap)
+-								}
+-							} else if isFunction(nextFunc) {
+-								// The next function returns a matcher result
+-								// We need to invoke it with no arguments
+-								nextResult, err := invokeFunction(nextFunc, []interface{}{})
+-								if err != nil || nextResult == nil {
+-									return nil
+-								}
+-								// Convert the result to MatchResult
+-								if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-									return convertMapToMatchResult(nextMap)
+-								}
+-							}
+-						}
+-						return nil
+-					},
+-				}, nil
++				return convertMapToMatchResult(resultMap)
+ 			}
+ 
+ 			return nil, createJSONataError("T1010", nil)
+@@ -1198,14 +1136,12 @@
+ 		// args[0] = string
+ 		// args[1] = token (string or function)
+ 		str, ok1 := args[0].(string)
+-		if !ok1 {
+-			str = ""
+-		}
++		if args[0] != nil && !ok1 { return nil, createJSONataError("T0410", nil) }
+ 
+ 		token := args[1]
+ 
+ 		// undefined inputs always return undefined
+-		if str == "" {
++		if args[0] == nil || args[1] == nil {
+ 			return nil, nil
+ 		}
+ 
+@@ -1250,20 +1186,11 @@
+ 
+ 		regex := args[1]
+ 
+-		var limit *int
+-		if len(args) >= 3 {
+-			if args[2] != nil {
+-				if limitVal, ok := args[2].(int); ok {
+-					limit = &limitVal
+-				} else if limitVal, ok := args[2].(float64); ok {
+-					intVal := int(limitVal)
+-					limit = &intVal
+-				}
+-			}
+-		}
++		limit, err := matcherLimit(args, 2)
++		if err != nil { return nil, err }
+ 
+ 		// undefined inputs always return undefined
+-		if str == "" {
++		if args[0] == nil {
+ 			return nil, nil
+ 		}
+ 
+@@ -1285,21 +1212,17 @@
+ 				return nil, err
+ 			}
+ 			if matches != nil {
+-				for matches != nil && (limit == nil || count < *limit) {
++				for matches != nil && (limit == nil || float64(count) < *limit) {
+ 					groups := matches.Groups
+-					if groups == nil {
+-						groups = []string{}
+-					}
+ 					result.Data = append(result.Data, map[string]interface{}{
+-						"match":  matches.Match,
+-						"index":  matches.Start,
++						"match":  matches.Object["match"],
++						"index":  matches.Object["start"],
+ 						"groups": groups,
+ 					})
+ 					count++
+-					if matches.Next != nil {
+-						matches = matches.Next()
+-					} else {
+-						matches = nil
++					matches, err = matches.Next()
++					if err != nil {
++						return nil, err
+ 					}
+ 				}
+ 			}
+@@ -1354,7 +1277,7 @@
+ 							substitute += matches.Match
+ 							position = digitEnd
+ 						} else if groupNum > 0 && groupNum <= len(matches.Groups) {
+-							substitute += matches.Groups[groupNum-1]
++							substitute += matchGroupText(matches.Groups[groupNum-1])
+ 							position = digitEnd
+ 						} else {
+ 							// Group doesn't exist, JavaScript outputs empty string
+@@ -1407,18 +1330,11 @@
+ 		pattern := args[1]
+ 		replacement := args[2]
+ 
+-		var limit *int
+-		if len(args) >= 4 && args[3] != nil {
+-			if limitVal, ok := args[3].(int); ok {
+-				limit = &limitVal
+-			} else if limitVal, ok := args[3].(float64); ok {
+-				intVal := int(limitVal)
+-				limit = &intVal
+-			}
+-		}
++		limit, err := matcherLimit(args, 3)
++		if err != nil { return nil, err }
+ 
+ 		// undefined inputs always return undefined
+-		if str == "" {
++		if args[0] == nil {
+ 			return nil, nil
+ 		}
+ 
+@@ -1450,7 +1366,7 @@
+ 				if replacementStr, ok := replacement.(string); ok {
+ 					for {
+ 						index := strings.Index(str[position:], patternStr)
+-						if index == -1 || (limit != nil && count >= *limit) {
++						if index == -1 || (limit != nil && float64(count) >= *limit) {
+ 							break
+ 						}
+ 						index += position
+@@ -1463,63 +1379,20 @@
+ 				}
+ 			} else {
+ 				// Regex replacement - matches JavaScript: evaluateMatcher(pattern, str)
+-				// First, we need to test if this regex would match zero-length strings
+-				// by invoking it and checking the first match
+-				testResult, err := invokeFunction(pattern, []interface{}{str})
+-				if err != nil {
+-					return nil, err
+-				}
+-
+-				// Check if we got a match result map
+-				if testResultMap, ok := testResult.(map[string]interface{}); ok {
+-					// Check if it's a zero-length match
+-					if match, hasMatch := testResultMap["match"].(string); hasMatch && match == "" {
+-						// Try to get the next match to see if it would progress
+-						if nextFn, hasNext := testResultMap["next"].(func() (interface{}, error)); hasNext {
+-							nextResult, nextErr := nextFn()
+-							// If we get a D1004 error, propagate it
+-							if nextErr != nil {
+-								return nil, nextErr
+-							}
+-							// If the next match is also zero-length at the same position, it would loop forever
+-							if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-								if nextMatch, hasMatch := nextMap["match"].(string); hasMatch && nextMatch == "" {
+-									if nextStart, hasStart := nextMap["start"].(int); hasStart && nextStart == 0 {
+-										// This would cause infinite loop
+-										return nil, createJSONataError("D1004", pattern)
+-									}
+-								}
+-							}
+-						}
+-					}
+-				}
+-
+-				// Now do the actual replacement
+ 				matches, err := evaluateMatcher(pattern, str, nil)
+ 				if err != nil {
+ 					return nil, err
+ 				}
+ 				if matches != nil {
+ 
+-					for matches != nil && (limit == nil || count < *limit) {
++					for matches != nil && (limit == nil || float64(count) < *limit) {
+ 						result += str[position:matches.Start]
+ 						if replacementStr, ok := replacement.(string); ok {
+ 							// Process replacement string with $0, $1, $2, etc.
+ 							replacedWith := processReplacementString(replacementStr, matches)
+ 							result += replacedWith
+ 						} else if isFunction(replacement) {
+-							// Lambda replacement functions - matches JavaScript: replacement.apply(this, [matches])
+-							// Convert MatchResult to the format expected by JavaScript
+-							// Convert []string to []interface{} for groups
+-							groups := make([]interface{}, len(matches.Groups))
+-							for i, g := range matches.Groups {
+-								groups[i] = g
+-							}
+-							matchObj := map[string]interface{}{
+-								"match":  matches.Match,
+-								"index":  matches.Start,
+-								"groups": groups,
+-							}
++							matchObj := matches.Object
+ 							res, err := invokeFunction(replacement, []interface{}{matchObj})
+ 							if err != nil {
+ 								return nil, err
+@@ -1532,7 +1405,10 @@
+ 						}
+ 						position = matches.End
+ 						count++
+-						matches = matches.Next()
++						matches, err = matches.Next()
++						if err != nil {
++							return nil, err
++						}
+ 					}
+ 					result += str[position:]
+ 				} else {
+@@ -1761,18 +1637,11 @@
+ 
+ 		separator := args[1]
+ 
+-		var limit *int
+-		if len(args) >= 3 && args[2] != nil {
+-			if limitVal, ok := args[2].(int); ok {
+-				limit = &limitVal
+-			} else if limitVal, ok := args[2].(float64); ok {
+-				intVal := int(limitVal)
+-				limit = &intVal
+-			}
+-		}
++		limit, err := matcherLimit(args, 2)
++		if err != nil { return nil, err }
+ 
+ 		// undefined inputs always return undefined
+-		if str == "" {
++		if args[0] == nil {
+ 			return nil, nil
+ 		}
+ 
+@@ -1794,7 +1663,7 @@
+ 					// Use Split to get all parts, then take first limit elements
+ 					parts := strings.Split(str, sepStr)
+ 					for i, part := range parts {
+-						if i >= *limit {
++						if uint64(i) >= uint64(math.Mod(math.Trunc(*limit), 4294967296)) {
+ 							break
+ 						}
+ 						result = append(result, part)
+@@ -1814,13 +1683,16 @@
+ 				}
+ 				if matches != nil {
+ 					start := 0
+-					for matches != nil && (limit == nil || count < *limit) {
++					for matches != nil && (limit == nil || float64(count) < *limit) {
+ 						result = append(result, str[start:matches.Start])
+ 						start = matches.End
+-						matches = matches.Next()
++						matches, err = matches.Next()
++						if err != nil {
++							return nil, err
++						}
+ 						count++
+ 					}
+-					if limit == nil || count < *limit {
++					if limit == nil || float64(count) < *limit {
+ 						result = append(result, str[start:])
+ 					}
+ 				} else {
+@@ -2980,30 +2852,9 @@
+ 			return nil, nil
+ 		}
+ 
+-		arg := 0.0
+-		if a, ok := args[0].(float64); ok {
+-			arg = a
+-		} else if a, ok := args[0].(int); ok {
+-			arg = float64(a)
+-		} else {
+-			// Non-numeric input returns undefined
+-			return nil, nil
+-		}
+-
+-		exp := 0.0
+-		if e, ok := args[1].(float64); ok {
+-			exp = e
+-		} else if e, ok := args[1].(int); ok {
+-			exp = float64(e)
+-		} else {
+-			// Non-numeric input returns undefined
+-			return nil, nil
+-		}
+-
+-		// undefined inputs always return undefined
+-		if math.IsNaN(arg) {
+-			return nil, nil
+-		}
++		if args[0] == nil { return nil, nil }
++		arg := nativeJSNumber(args[0])
++		exp := nativeJSNumber(args[1])
+ 
+ 		result := math.Pow(arg, exp)
+ 
+@@ -3880,6 +3731,11 @@
+ 		var comparator interface{}
+ 		if len(args) > 1 {
+ 			comparator = args[1]
++		}
++		if comparator != nil && !isFunction(comparator) {
++			if _, ok := comparator.(func(interface{}, interface{}) (bool, error)); !ok {
++				return nil, createJSONataError("T0410", nil)
++			}
+ 		}
+ 		// undefined inputs always return undefined
+ 		if arr == nil {
+@@ -3955,34 +3811,11 @@
+ 						}
+ 					}
+ 				} else {
+-					// Call custom comparator function
+-					if cmpFunc, ok := comparator.(func(interface{}, interface{}) (bool, error)); ok {
+-						shouldSwap, err = cmpFunc(left[i], right[j])
+-						if err != nil {
+-							return nil, err
+-						}
+-					} else if lambda, ok := comparator.(*Lambda); ok {
+-						// Handle Lambda comparator
+-						compResult, err := lambda.apply(nil, []interface{}{left[i], right[j]})
+-						if err != nil {
+-							return nil, err
+-						}
+-						// Convert result to boolean using JavaScript truthiness rules
+-						if compResult != nil {
+-							switch v := compResult.(type) {
+-							case bool:
+-								shouldSwap = v
+-							case float64:
+-								shouldSwap = v != 0
+-							case int:
+-								shouldSwap = v != 0
+-							case string:
+-								shouldSwap = v != ""
+-							default:
+-								shouldSwap = true // non-nil values are truthy
+-							}
+-						}
++					compResult, err := invokeFunction(comparator, []interface{}{left[i], right[j]})
++					if err != nil {
++						return nil, err
+ 					}
++					shouldSwap = comparatorTruthy(compResult)
+ 				}
+ 
+ 				if shouldSwap {
+@@ -4180,6 +4013,7 @@
+ 		sqrtFunc:               sqrtFunc,
+ 		powerFunc:              powerFunc,
+ 		randomFunc:             randomFunc,
++		invokeFunction:         invokeFunction,
+ 		booleanFunc:            booleanFunc,
+ 		notFunc:                notFunc,
+ 		mapFunc:                mapFunc,
+@@ -4213,6 +4047,7 @@
+ 
+ // FunctionsModule contains all the built-in functions
+ type FunctionsModule struct {
++	invokeFunction func(interface{}, []interface{}) (interface{}, error)
+ 	sumFunc                JSONataFunc
+ 	countFunc              JSONataFunc
+ 	maxFunc                JSONataFunc
+@@ -4277,6 +4112,7 @@
+ 	Match  string
+ 	Start  int
+ 	End    int
+-	Groups []string
+-	Next   func() *MatchResult
++	Groups []interface{}
++	Next   func() (*MatchResult, error)
++	Object map[string]interface{}
+ }
+diff --git a/v206/jsonata.go b/v206/jsonata.go
+--- a/v206/jsonata.go
++++ b/v206/jsonata.go
+@@ -829,6 +829,12 @@
+ 		if err != nil {
+ 			return nil, err
+ 		}
++	}
++
++	// Local finite-intermediate profile: check before predicates/grouping can
++	// consume or discard a nonfinite result.
++	if err := rejectNonfiniteResult(result); err != nil {
++		return nil, err
+ 	}
+ 
+ 	// Apply predicate filters to the evaluation result
+@@ -2904,15 +2910,19 @@
+ 		}
+ 	}
+ 	var closure func(string, int) interface{}
++	cursor := 0 // reference RegExp.lastIndex is shared by observable next calls
+ 	closure = func(str string, fromIndex int) interface{} {
++		cursor = fromIndex
+ 		searchStr := str
+ 		if fromIndex > 0 && fromIndex < len(str) {
+ 			searchStr = str[fromIndex:]
+ 		}
+ 		match := re.FindStringSubmatchIndex(searchStr)
+ 		if match == nil {
++			cursor = 0
+ 			return nil
+ 		}
++		cursor = match[1] + fromIndex
+ 
+ 		result := map[string]interface{}{
+ 			"match":  searchStr[match[0]:match[1]],
+@@ -2923,17 +2933,19 @@
+ 
+ 		groups := []interface{}{}
+ 		for i := 2; i < len(match); i += 2 {
++			var group interface{}
+ 			if match[i] >= 0 {
+-				groups = append(groups, searchStr[match[i]:match[i+1]])
+-			}
++				group = searchStr[match[i]:match[i+1]]
++			}
++			groups = append(groups, group)
+ 		}
+ 		result["groups"] = groups
+ 
+ 		nextFunc := func() (interface{}, error) {
+-			if match[1]+fromIndex >= len(str) {
++			if cursor >= len(str) {
+ 				return nil, nil
+ 			}
+-			next := closure(str, match[1]+fromIndex)
++			next := closure(str, cursor)
+ 			if nextMap, ok := next.(map[string]interface{}); ok && nextMap["match"] == "" {
+ 				// matches zero length string; this will never progress
+ 				return nil, &JSONataError{
+@@ -2945,7 +2957,7 @@
+ 			}
+ 			return next, nil
+ 		}
+-		result["next"] = nextFunc
++		result["next"] = matcherNextFunction(nextFunc)
+ 
+ 		return result
+ 	}
+@@ -3418,12 +3430,19 @@
+ 			fmt.Printf("DEBUG-GO: parent operator evaluated to: %v (type: %T)\n", arg, arg)
+ 		}
+ 		if isFunction(arg) {
+-			// For Lambda types, pass them directly without wrapping
++			// Retain Lambda signatures and captured execution state.
+ 			if lambda, ok := arg.(*Lambda); ok {
+-				evaluatedArgs = append(evaluatedArgs, lambda)
++				// Retain identity of captured state while recording the reference's
++				// callable argument wrapper on a private header, never a global value.
++				wrapped := *lambda
++				wrapped.matcherCallable = true
++				evaluatedArgs = append(evaluatedArgs, &wrapped)
+ 			} else if fn, ok := arg.(*Function); ok {
+-				// For Function types, pass them directly to preserve signature
+-				evaluatedArgs = append(evaluatedArgs, fn)
++				// Preserve native signatures on the callable argument header.
++				wrapped := *fn
++				wrapped.matcherCallable = true
++				wrapped.focus = &Focus{input: input, environment: environment}
++				evaluatedArgs = append(evaluatedArgs, &wrapped)
+ 			} else {
+ 				// For other function types, wrap in a closure
+ 				closure := func(params ...interface{}) (interface{}, error) {
+@@ -3432,6 +3451,7 @@
+ 				}
+ 				closureFn := &Function{
+ 					JSONataFunction: true,
++					matcherCallable: true,
+ 					Implementation:  closure,
+ 					Arity:           getFunctionArity(arg),
+ 				}
+@@ -3687,6 +3707,7 @@
+ 
+ 	procedure := &Lambda{
+ 		JSONataLambda: true,
++		matcherCallable: true,
+ 		input:         input,
+ 		environment:   environment,
+ 		arguments:     arguments,
+@@ -3764,12 +3785,12 @@
+ 	case *Lambda:
+ 		result = partialApplyProcedure(p, evaluatedArgs)
+ 	case *Function:
+-		result, err = partialApplyNativeFunction(p.Implementation, evaluatedArgs)
++		result, err = partialApplyNativeFunction(p, evaluatedArgs, input, environment)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+ 	case func(...interface{}) interface{}:
+-		result, err = partialApplyNativeFunction(p, evaluatedArgs)
++		result, err = partialApplyNativeFunction(p, evaluatedArgs, input, environment)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+@@ -3827,13 +3848,17 @@
+ 
+ 	env := createFrame(proc.environment)
+ 	for index, param := range proc.arguments {
++		var arg interface{}
+ 		if index < len(args) {
+-			paramNode := param.(*ASTNode)
+-			env.bind(paramNode.Value.(string), args[index])
+-		}
++			arg = args[index]
++		}
++		paramNode := param.(*ASTNode)
++		env.bind(paramNode.Value.(string), arg)
+ 	}
+ 	// Check for various function types that can be in the body
+ 	switch bodyFn := proc.body.(type) {
++	case *nativePartial:
++		return bodyFn.invoke(env)
+ 	case func(...interface{}) interface{}:
+ 		// this is a lambda that wraps a native function - generated by partially evaluating a native
+ 		result, err = applyNativeFunction(bodyFn, env)
+@@ -3909,87 +3934,10 @@
+  * @param {Array} args - Arguments
+  * @returns {{lambda: boolean, input: *, environment: {bind, lookup}, arguments: Array, body: *}} Result of partially applying native function
+  */
+-func partialApplyNativeFunction(native interface{}, args []interface{}) (interface{}, error) {
+-	// create a lambda function that wraps and invokes the native function
+-	// We need to determine how many arguments the function takes
+-	// Count the number of placeholders (?) in args
+-	numPlaceholders := 0
+-	for _, arg := range args {
+-		if argNode, ok := arg.(*ASTNode); ok && argNode.Type == "operator" && argNode.Value.(string) == "?" {
+-			numPlaceholders++
+-		}
+-	}
+-
+-	// Generate parameter names for the placeholders based on their positions
+-	// We need to maintain the mapping between parameter index and original position
+-	argNames := []string{}
+-	paramIndexToOriginalPos := make(map[int]int)
+-	paramIndex := 0
+-	for i, arg := range args {
+-		if argNode, ok := arg.(*ASTNode); ok && argNode.Type == "operator" && argNode.Value.(string) == "?" {
+-			argNames = append(argNames, fmt.Sprintf("$%d", paramIndex))
+-			paramIndexToOriginalPos[paramIndex] = i
+-			paramIndex++
+-		}
+-	}
+-
+-	body := fmt.Sprintf("function(%s){ _ }", strings.Join(argNames, ", "))
+-
+-	bodyAST, err := Parse(body)
+-	if err != nil {
+-		return nil, err
+-	}
+-	bodyASTNode := bodyAST
+-
+-	// Convert []*ASTNode to []interface{}
+-	arguments := make([]interface{}, len(bodyASTNode.Arguments))
+-	for i, arg := range bodyASTNode.Arguments {
+-		arguments[i] = arg
+-	}
+-
+-	// Create a closure that captures the bound arguments and position mapping
+-	// Make copies to avoid mutation issues
+-	boundArgs := make([]interface{}, len(args))
+-	copy(boundArgs, args)
+-	nativeFn := native
+-	positionMap := paramIndexToOriginalPos
+-
+-	// Create a wrapper function that will be called by applyNativeFunction
+-	wrapperFunc := JSONataFunc(func(newArgs []interface{}) (interface{}, error) {
+-		// Merge bound arguments with new arguments
+-		fullArgs := make([]interface{}, len(boundArgs))
+-		copy(fullArgs, boundArgs)
+-
+-		// Replace placeholders with new arguments using the position mapping
+-		for paramIdx, originalPos := range positionMap {
+-			if paramIdx < len(newArgs) {
+-				fullArgs[originalPos] = newArgs[paramIdx]
+-			}
+-		}
+-
+-		// Call the original function with the complete argument list
+-		if fn, ok := nativeFn.(JSONataFunc); ok {
+-			return fn(fullArgs)
+-		}
+-		return nil, fmt.Errorf("unsupported function type for partial application: %T", nativeFn)
+-	})
+-
+-	// When calling partialApplyProcedure, we should only pass the arguments
+-	// that correspond to placeholders, not all arguments
+-	placeholderArgs := make([]interface{}, numPlaceholders)
+-	placeholderIndex := 0
+-	for _, arg := range args {
+-		if argNode, ok := arg.(*ASTNode); ok && argNode.Type == "operator" && argNode.Value.(string) == "?" {
+-			placeholderArgs[placeholderIndex] = arg
+-			placeholderIndex++
+-		}
+-	}
+-
+-	partial := partialApplyProcedure(&Lambda{
+-		arguments: arguments,
+-		body:      wrapperFunc,
+-	}, placeholderArgs)
+-	return partial, nil
++func partialApplyNativeFunction(native interface{}, args []interface{}, input interface{}, environment *Frame) (interface{}, error) {
++	fn, ok := native.(*Function)
++	if !ok { return nil, createJSONataError("T1008", nil) }
++	return newNativePartial(fn, args, input, environment), nil
+ }
+ 
+ /**
+@@ -4060,6 +4008,7 @@
+ 	definition := &Function{
+ 		JSONataFunction: true,
+ 		Implementation:  implementation,
++		call:            callNativeFunction,
+ 	}
+ 	if signature != "" {
+ 		sig, err := parseSignature(signature)
+@@ -4417,7 +4366,9 @@
+ 	staticFrame.bind("encodeUrl", defineFunction(fn.encodeUrlFunc, "<s-:s>"))
+ 	staticFrame.bind("decodeUrlComponent", defineFunction(fn.decodeUrlComponentFunc, "<s-:s>"))
+ 	staticFrame.bind("decodeUrl", defineFunction(fn.decodeUrlFunc, "<s-:s>"))
+-	staticFrame.bind("eval", defineFunction(JSONataFunc(functionEval), "<sx?:x>"))
++	evalDefinition := defineFunction(JSONataFunc(functionEval), "<sx?:x>")
++	evalDefinition.nativeParameters = []string{"expr", "focus"}
++	staticFrame.bind("eval", evalDefinition)
+ 	staticFrame.bind("toMillis", defineFunction(func(args []interface{}) (interface{}, error) {
+ 		if len(args) < 1 {
+ 			return nil, errors.New("toMillis function requires at least 1 argument")
+diff --git a/v206/utils.go b/v206/utils.go
+--- a/v206/utils.go
++++ b/v206/utils.go
+@@ -494,6 +494,9 @@
+ // Lambda represents a JSONata lambda function
+ type Lambda struct {
+ 	JSONataLambda  bool
++	// JS literal lambdas and argument wrappers have a callable .apply method;
++	// raw partial objects do not. This is metadata, never closure inspection.
++	matcherCallable bool
+ 	input          interface{}
+ 	environment    *Frame
+ 	arguments      []interface{}
+@@ -509,6 +512,11 @@
+ type Function struct {
+ 	JSONataFunction bool
+ 	JSONataLambda   bool
++	matcherCallable bool // true only on a normal expression argument wrapper
++	focus           *Focus // private invocation context, copied with argument headers
++	partialNative   bool   // native partials use the reference's implementation call semantics
++	call            func(*Function, []interface{}) (interface{}, error)
++	nativeParameters []string // explicit observable native locals where context can inspect them
+ 	Implementation  interface{}
+ 	signature       interface{}
+ 	token           string
+diff --git a/v206/finite.go b/v206/finite.go
+new file mode 100644
+--- /dev/null
++++ b/v206/finite.go
+@@ -0,0 +1,71 @@
++package jsonata
++
++import (
++	"errors"
++	"math"
++)
++
++const (
++	finiteResultMaxDepth  = 128
++	finiteResultMaxValues = 65536
++)
++
++var errFiniteResult = errors.New("JSON query result rejected by finite profile")
++
++// rejectNonfiniteResult implements the local finite-intermediate profile. Each
++// result has its own depth/value budget. Only JSON-shaped containers are walked;
++// functions, lexical environments and other opaque engine values are not inspected.
++// No reflection, pointer cache, host callbacks or user bindings are involved.
++// Cycles exhaust the depth budget (at most 129 edges); repeated references count
++// again. This bounds cyclic/shared graphs without skipping data after alias mutation.
++func rejectNonfiniteResult(value interface{}) error {
++	remaining := finiteResultMaxValues
++	return walkFiniteResult(value, 0, &remaining)
++}
++
++func walkFiniteResult(value interface{}, depth int, remaining *int) error {
++	if depth > finiteResultMaxDepth || *remaining == 0 {
++		return errFiniteResult
++	}
++	*remaining -= 1
++	switch v := value.(type) {
++	case float64:
++		if math.IsNaN(v) || math.IsInf(v, 0) {
++			return errFiniteResult
++		}
++	case float32:
++		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
++			return errFiniteResult
++		}
++	case map[string]interface{}:
++		if len(v) > *remaining {
++			return errFiniteResult
++		}
++		for _, child := range v {
++			if err := walkFiniteResult(child, depth+1, remaining); err != nil {
++				return err
++			}
++		}
++	case []interface{}:
++		return walkFiniteItems(v, depth, remaining)
++	case *JSONataArray:
++		if v != nil {
++			return walkFiniteItems(v.Data, depth, remaining)
++		}
++	case JSONataArray:
++		return walkFiniteItems(v.Data, depth, remaining)
++	}
++	return nil
++}
++
++func walkFiniteItems(items []interface{}, depth int, remaining *int) error {
++	if len(items) > *remaining {
++		return errFiniteResult
++	}
++	for _, child := range items {
++		if err := walkFiniteResult(child, depth+1, remaining); err != nil {
++			return err
++		}
++	}
++	return nil
++}
+diff --git a/v206/callbacks.go b/v206/callbacks.go
+new file mode 100644
+--- /dev/null
++++ b/v206/callbacks.go
+@@ -0,0 +1,59 @@
++package jsonata
++
++// Matcher continuations use .apply in the pinned reference, rather than the
++// general expression invocation path. Raw native/partial objects lack that JS
++// method; normal DSL lambdas and expression argument wrappers have it. Track
++// only that distinction, without looking inside captured state or function code.
++func matcherContinuationCallable(value interface{}) bool {
++	switch fn := value.(type) {
++	case *Lambda:
++		return fn != nil && fn.matcherCallable
++	case *Function:
++		return fn != nil && fn.matcherCallable
++	case func() (interface{}, error):
++		return true // fixed native regex continuation
++	default:
++		return isFunction(value)
++	}
++}
++
++// comparatorTruthy follows the host JS conditional used by reference sort,
++// rather than JSONata's $boolean builtin: empty arrays/objects are truthy, null
++// is false. invokeFunction has already rejected nonfinite returned numbers.
++// Opaque values are never formatted, reflected, traversed or invoked here.
++func comparatorTruthy(value interface{}) bool {
++	switch v := value.(type) {
++	case nil, *JSONataNull, JSONataNull:
++		return false
++	case bool:
++		return v
++	case string:
++		return v != ""
++	case float64:
++		return v != 0
++	case float32:
++		return v != 0
++	case int:
++		return v != 0
++	case int8:
++		return v != 0
++	case int16:
++		return v != 0
++	case int32:
++		return v != 0
++	case int64:
++		return v != 0
++	case uint:
++		return v != 0
++	case uint8:
++		return v != 0
++	case uint16:
++		return v != 0
++	case uint32:
++		return v != 0
++	case uint64:
++		return v != 0
++	default:
++		return true
++	}
++}
+diff --git a/v206/matchdata.go b/v206/matchdata.go
+new file mode 100644
+--- /dev/null
++++ b/v206/matchdata.go
+@@ -0,0 +1,77 @@
++package jsonata
++
++import (
++	"encoding/json"
++	"math"
++	"strconv"
++	"strings"
++)
++
++// Preserve fractional limits until the consumer compares its counter. Native
++// String.split's separate ToUint32 conversion stays in its string-only branch.
++func matcherLimit(args []interface{}, index int) (*float64, error) {
++	if len(args) <= index || args[index] == nil {
++		return nil, nil
++	}
++	var n float64
++	switch value := args[index].(type) {
++	case float64:
++		n = value
++	case int:
++		n = float64(value)
++	default:
++		return nil, createJSONataError("T0410", nil)
++	}
++	if math.IsNaN(n) || math.IsInf(n, 0) {
++		return nil, errFiniteResult
++	}
++	return &n, nil
++}
++
++// This fixed internal regex continuation is an observable DSL function. It is
++// never registered as a binding and ignores the reference's undefined argument.
++func matcherNextFunction(next func() (interface{}, error)) *Function {
++	return &Function{
++		JSONataFunction: true,
++		matcherCallable: true,
++		Implementation: JSONataFunc(func([]interface{}) (interface{}, error) {
++			return next()
++		}),
++	}
++}
++
++// Reference replacement concatenates group values; undefined positions are
++// empty, while JSON scalars and containers retain JS primitive conversion.
++// Group trees have already passed the bounded finite-result walker.
++func matchGroupText(value interface{}) string {
++	switch v := value.(type) {
++	case nil:
++		return ""
++	case *JSONataNull, JSONataNull:
++		return "null"
++	case string:
++		return v
++	case bool:
++		return strconv.FormatBool(v)
++	case float64:
++		if v == 0 {
++			return "0"
++		}
++		b, _ := json.Marshal(v)
++		return string(b)
++	case int:
++		return strconv.Itoa(v)
++	case []interface{}:
++		parts := make([]string, len(v))
++		for i, item := range v {
++			if _, null := item.(*JSONataNull); !null {
++				parts[i] = matchGroupText(item)
++			}
++		}
++		return strings.Join(parts, ",")
++	case *JSONataArray:
++		return matchGroupText(v.Data)
++	default:
++		return "[object Object]"
++	}
++}
+diff --git a/v206/native.go b/v206/native.go
+new file mode 100644
+--- /dev/null
++++ b/v206/native.go
+@@ -0,0 +1,195 @@
++package jsonata
++
++import (
++	"errors"
++	"math"
++	"math/big"
++	"strconv"
++	"strings"
++	"unicode"
++)
++
++// This fixed internal dispatch lives on the immutable native definition header.
++// Indirection also avoids an initialization cycle in upstream's builtin table.
++func callNativeFunction(function *Function, args []interface{}) (interface{}, error) {
++	native := *function
++	if native.partialNative {
++		native.signature = nil
++	}
++	focus := native.focus
++	if focus == nil {
++		focus = &Focus{}
++	}
++	return applyFunction(&native, args, focus.input, focus.environment)
++}
++
++// A native partial retains its full function header and explicit bindings.
++// Undefined is a value at a known position, never an end-of-arguments marker.
++// No generated source, closure inspection, reflected code or host binding is used.
++type nativePartial struct {
++	function   *Function
++	bound      []interface{}
++	positions  []int
++	parameters []string
++	input      interface{}
++}
++
++func newNativePartial(fn *Function, args []interface{}, input interface{}, environment *Frame) *Lambda {
++	if fn.nativeParameters != nil && len(args) > len(fn.nativeParameters) {
++		args = args[:len(fn.nativeParameters)] // reference native declaration ignores extra bound arguments
++	}
++	native := *fn
++	native.partialNative = true
++	partial := &nativePartial{function: &native, bound: append([]interface{}(nil), args...), input: input}
++	// The reference's partial $eval frame exposes its actual native parameters.
++	// Do not introduce generated locals into the environment $eval can inspect.
++	if fn.nativeParameters != nil {
++		environment = createFrame(environment)
++		for i, name := range fn.nativeParameters {
++			var value interface{}
++			if i < len(args) {
++				value = args[i]
++			}
++			if node, ok := value.(*ASTNode); ok && node.Type == "operator" && node.Value == "?" {
++				value = nil
++			}
++			environment.bind(name, value)
++		}
++	}
++	arguments := []interface{}{}
++	for i, arg := range args {
++		if node, ok := arg.(*ASTNode); ok && node.Type == "operator" && node.Value == "?" {
++			name := "__native_partial_" + strconv.Itoa(len(partial.positions))
++			if i < len(fn.nativeParameters) {
++				name = fn.nativeParameters[i]
++			}
++			partial.positions = append(partial.positions, i)
++			partial.parameters = append(partial.parameters, name)
++			arguments = append(arguments, &ASTNode{Type: "variable", Value: name})
++		}
++	}
++	procedure := &Lambda{
++		JSONataLambda: true, input: input, environment: environment,
++		arguments: arguments, body: partial, Arity: len(arguments),
++	}
++	procedure.apply = func(_ interface{}, args []interface{}) (interface{}, error) {
++		return applyFunction(procedure, args, input, environment)
++	}
++	return procedure
++}
++
++func (p *nativePartial) invoke(environment *Frame) (interface{}, error) {
++	args := append([]interface{}(nil), p.bound...)
++	for i, position := range p.positions {
++		args[position] = environment.lookup(p.parameters[i])
++	}
++	native := *p.function
++	native.focus = &Focus{input: p.input, environment: environment}
++	return functions.invokeFunction(&native, args)
++}
++
++// Pure JS primitive conversion used by the retained Math.pow implementation.
++// Normal native calls still validate their signature first; native partials do
++// not in the pinned reference. Numeric strings must not become false safe-DOWNs.
++func nativeJSNumber(value interface{}) float64 {
++	switch v := value.(type) {
++	case nil:
++		return math.NaN()
++	case *JSONataNull, JSONataNull:
++		return 0
++	case bool:
++		if v {
++			return 1
++		}
++		return 0
++	case float64:
++		return v
++	case int:
++		return float64(v)
++	case string:
++		s := strings.TrimFunc(v, func(r rune) bool { return unicode.IsSpace(r) && r != 0x85 || r == '\ufeff' })
++		if s == "" {
++			return 0
++		}
++		if s == "Infinity" || s == "+Infinity" {
++			return math.Inf(1)
++		}
++		if s == "-Infinity" {
++			return math.Inf(-1)
++		}
++		if len(s) > 2 && s[0] == '0' && strings.ContainsRune("xXoObB", rune(s[1])) {
++			base := 16
++			if s[1] == 'o' || s[1] == 'O' {
++				base = 8
++			}
++			if s[1] == 'b' || s[1] == 'B' {
++				base = 2
++			}
++			for _, digit := range s[2:] {
++				if !(digit >= '0' && digit <= '9' && int(digit-'0') < base || base == 16 && (digit >= 'a' && digit <= 'f' || digit >= 'A' && digit <= 'F')) {
++					return math.NaN()
++				}
++			}
++			if n, ok := new(big.Int).SetString(s, 0); ok {
++				f, _ := new(big.Float).SetInt(n).Float64()
++				return f
++			}
++			return math.NaN()
++		}
++		// ParseFloat additionally accepts Inf and hex floats, which JS rejects.
++		if strings.Contains(s, "Inf") || strings.ContainsAny(s, "xX_pP") {
++			return math.NaN()
++		}
++		n, err := strconv.ParseFloat(s, 64)
++		if err != nil {
++			var parseError *strconv.NumError
++			if !errors.As(err, &parseError) || parseError.Err != strconv.ErrRange {
++				return math.NaN()
++			}
++		}
++		return n
++	case []interface{}:
++		return nativeJSNumber(matchGroupText(v))
++	case *JSONataArray:
++		return nativeJSNumber(matchGroupText(v))
++	default:
++		return math.NaN()
++	}
++}
++
++// JS sum uses addition rather than silently dropping nonnumeric array members.
++// These are inert JSON primitives/containers; no valueOf/toString callback runs.
++func nativeJSAdd(left, right interface{}) interface{} {
++	primitive := func(value interface{}) interface{} {
++		switch value.(type) {
++		case map[string]interface{}, []interface{}, *JSONataArray, *Function, *Lambda:
++			return matchGroupText(value)
++		default:
++			return value
++		}
++	}
++	a, b := primitive(left), primitive(right)
++	_, aString := a.(string)
++	_, bString := b.(string)
++	if aString || bString {
++		text := func(value interface{}) string {
++			if value == nil {
++				return "undefined"
++			}
++			if n, ok := value.(float64); ok {
++				if math.IsNaN(n) {
++					return "NaN"
++				}
++				if math.IsInf(n, 1) {
++					return "Infinity"
++				}
++				if math.IsInf(n, -1) {
++					return "-Infinity"
++				}
++			}
++			return matchGroupText(value)
++		}
++		return text(a) + text(b)
++	}
++	return nativeJSNumber(a) + nativeJSNumber(b)
++}
+diff --git a/v206/length.go b/v206/length.go
+new file mode 100644
+--- /dev/null
++++ b/v206/length.go
+@@ -0,0 +1,9 @@
++package jsonata
++
++import "unicode/utf8"
++
++// The retained stringToArray uses one element per rune. Count those codepoints
++// without allocating the rune slice and one string per element.
++func countStringCodepoints(value string) int {
++	return utf8.RuneCountInString(value)
++}

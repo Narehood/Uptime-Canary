@@ -1,0 +1,1112 @@
+[
+  {
+    "name": "path",
+    "expression": "health.status",
+    "document": {
+      "health": {
+        "status": "ok"
+      }
+    },
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  },
+  {
+    "name": "arithmetic",
+    "expression": "price * quantity + 2",
+    "document": {
+      "price": 4,
+      "quantity": 5
+    },
+    "operator": "==",
+    "expected": 22,
+    "reference": {
+      "kind": "number",
+      "value": 22,
+      "state": "up"
+    }
+  },
+  {
+    "name": "single predicate",
+    "expression": "orders[price > 10].name",
+    "document": {
+      "orders": [
+        {
+          "name": "small",
+          "price": 5
+        },
+        {
+          "name": "large",
+          "price": 20
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": "large",
+    "reference": {
+      "kind": "string",
+      "value": "large",
+      "state": "up"
+    }
+  },
+  {
+    "name": "predicate aggregation",
+    "expression": "$sum(orders[price > 10].price)",
+    "document": {
+      "orders": [
+        {
+          "price": 5
+        },
+        {
+          "price": 20
+        },
+        {
+          "price": 40
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": 60,
+    "reference": {
+      "kind": "number",
+      "value": 60,
+      "state": "up"
+    }
+  },
+  {
+    "name": "mapped aggregate",
+    "expression": "$sum(orders.(price * quantity))",
+    "document": {
+      "orders": [
+        {
+          "price": 5,
+          "quantity": 2
+        },
+        {
+          "price": 20,
+          "quantity": 3
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": 70,
+    "reference": {
+      "kind": "number",
+      "value": 70,
+      "state": "up"
+    }
+  },
+  {
+    "name": "local binding",
+    "expression": "($threshold := 10; $count(orders[price > $threshold]))",
+    "document": {
+      "orders": [
+        {
+          "price": 5
+        },
+        {
+          "price": 20
+        },
+        {
+          "price": 40
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "lambda reduce",
+    "expression": "$reduce([1,2,3], function($a,$v){$a+$v}, 0)",
+    "document": {},
+    "operator": "==",
+    "expected": 6,
+    "reference": {
+      "kind": "number",
+      "value": 6,
+      "state": "up"
+    }
+  },
+  {
+    "name": "higher order map",
+    "expression": "$sum($map([1,2,3], function($v){$v*$v}))",
+    "document": {},
+    "operator": "==",
+    "expected": 14,
+    "reference": {
+      "kind": "number",
+      "value": 14,
+      "state": "up"
+    }
+  },
+  {
+    "name": "range",
+    "expression": "$sum([1..100])",
+    "document": {},
+    "operator": "==",
+    "expected": 5050,
+    "reference": {
+      "kind": "number",
+      "value": 5050,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nested range",
+    "expression": "($x := 3; $count([1..$x]))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "root binding",
+    "expression": "items[price > $$.minimum].name",
+    "document": {
+      "minimum": 5,
+      "items": [
+        {
+          "name": "ok",
+          "price": 8
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sort",
+    "expression": "(items^(>price))[0].name",
+    "document": {
+      "items": [
+        {
+          "name": "low",
+          "price": 2
+        },
+        {
+          "name": "high",
+          "price": 9
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": "high",
+    "reference": {
+      "kind": "string",
+      "value": "high",
+      "state": "up"
+    }
+  },
+  {
+    "name": "chain",
+    "expression": "name ~> $uppercase() ~> $substring(0,3)",
+    "document": {
+      "name": "healthy"
+    },
+    "operator": "==",
+    "expected": "HEA",
+    "reference": {
+      "kind": "string",
+      "value": "HEA",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex contains",
+    "expression": "$contains(message, /ok/i)",
+    "document": {
+      "message": "OK now"
+    },
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex match",
+    "expression": "$match(message, /[0-9]+/)[0].match",
+    "document": {
+      "message": "code 200"
+    },
+    "operator": "==",
+    "expected": "200",
+    "reference": {
+      "kind": "string",
+      "value": "200",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex replacement",
+    "expression": "$replace(message, /[0-9]+/, 'X')",
+    "document": {
+      "message": "code 200"
+    },
+    "operator": "==",
+    "expected": "code X",
+    "reference": {
+      "kind": "string",
+      "value": "code X",
+      "state": "up"
+    }
+  },
+  {
+    "name": "average",
+    "expression": "$average(values)",
+    "document": {
+      "values": [
+        2,
+        4,
+        6
+      ]
+    },
+    "operator": "==",
+    "expected": 4,
+    "reference": {
+      "kind": "number",
+      "value": 4,
+      "state": "up"
+    }
+  },
+  {
+    "name": "boolean aggregate",
+    "expression": "$boolean(items[active = true])",
+    "document": {
+      "items": [
+        {
+          "active": true
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "exists missing",
+    "expression": "$exists(missing)",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "conditional",
+    "expression": "status = 'ok' ? 'UP' : 'DOWN'",
+    "document": {
+      "status": "ok"
+    },
+    "operator": "==",
+    "expected": "UP",
+    "reference": {
+      "kind": "string",
+      "value": "UP",
+      "state": "up"
+    }
+  },
+  {
+    "name": "string join",
+    "expression": "$join(names, ',')",
+    "document": {
+      "names": [
+        "one",
+        "two"
+      ]
+    },
+    "operator": "contains",
+    "expected": "one,two",
+    "reference": {
+      "kind": "string",
+      "value": "one,two",
+      "state": "up"
+    }
+  },
+  {
+    "name": "group and aggregate",
+    "expression": "$sum(items{category: $sum(price)}.*)",
+    "document": {
+      "items": [
+        {
+          "category": "a",
+          "price": 2
+        },
+        {
+          "category": "a",
+          "price": 3
+        },
+        {
+          "category": "b",
+          "price": 7
+        }
+      ]
+    },
+    "operator": "==",
+    "expected": 12,
+    "reference": {
+      "kind": "error",
+      "code": "T0412",
+      "state": "down"
+    }
+  },
+  {
+    "name": "dynamic JSONata eval",
+    "expression": "$eval(query)",
+    "document": {
+      "query": "$sum([1,2,3])"
+    },
+    "operator": "==",
+    "expected": 6,
+    "reference": {
+      "kind": "number",
+      "value": 6,
+      "state": "up"
+    }
+  },
+  {
+    "name": "null literal",
+    "expression": "null",
+    "document": {},
+    "operator": "!=",
+    "expected": "null",
+    "reference": {
+      "kind": "null",
+      "value": null,
+      "state": "down"
+    }
+  },
+  {
+    "name": "null input",
+    "expression": "$",
+    "document": null,
+    "operator": "!=",
+    "expected": false,
+    "reference": {
+      "kind": "null",
+      "value": null,
+      "state": "down"
+    }
+  },
+  {
+    "name": "null property",
+    "expression": "value",
+    "document": {
+      "value": null
+    },
+    "operator": "!=",
+    "expected": false,
+    "reference": {
+      "kind": "null",
+      "value": null,
+      "state": "down"
+    }
+  },
+  {
+    "name": "undefined",
+    "expression": "missing",
+    "document": {},
+    "operator": "!=",
+    "expected": "missing",
+    "reference": {
+      "kind": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "array",
+    "expression": "values",
+    "document": {
+      "values": [
+        1,
+        2
+      ]
+    },
+    "operator": "contains",
+    "expected": 1,
+    "reference": {
+      "kind": "array",
+      "value": [
+        1,
+        2
+      ],
+      "state": "down"
+    }
+  },
+  {
+    "name": "singleton array",
+    "expression": "[1]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "array",
+      "value": [
+        1
+      ],
+      "state": "down"
+    }
+  },
+  {
+    "name": "empty array",
+    "expression": "[]",
+    "document": {},
+    "operator": "!=",
+    "expected": false,
+    "reference": {
+      "kind": "array",
+      "value": [],
+      "state": "down"
+    }
+  },
+  {
+    "name": "object",
+    "expression": "$",
+    "document": {
+      "healthy": true
+    },
+    "operator": "!=",
+    "expected": false,
+    "reference": {
+      "kind": "object",
+      "value": {
+        "healthy": true
+      },
+      "state": "down"
+    }
+  },
+  {
+    "name": "function",
+    "expression": "$sum",
+    "document": {},
+    "operator": "!=",
+    "expected": false,
+    "reference": {
+      "kind": "function",
+      "state": "down"
+    }
+  },
+  {
+    "name": "syntax error",
+    "expression": "$sum(",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "S0203",
+      "state": "down"
+    }
+  },
+  {
+    "name": "runtime error",
+    "expression": "$error('private credential')",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "stringified number equality",
+    "expression": "value",
+    "document": {
+      "value": 2
+    },
+    "operator": "==",
+    "expected": "2",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "stringified boolean equality",
+    "expression": "value",
+    "document": {
+      "value": true
+    },
+    "operator": "==",
+    "expected": "true",
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "boolean versus number",
+    "expression": "value",
+    "document": {
+      "value": true
+    },
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "down"
+    }
+  },
+  {
+    "name": "numeric spelling equality",
+    "expression": "value",
+    "document": {
+      "value": 2
+    },
+    "operator": "!=",
+    "expected": "2.0",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "numeric ordering",
+    "expression": "value",
+    "document": {
+      "value": "02.0"
+    },
+    "operator": ">=",
+    "expected": 2,
+    "reference": {
+      "kind": "string",
+      "value": "02.0",
+      "state": "up"
+    }
+  },
+  {
+    "name": "numeric greater",
+    "expression": "value",
+    "document": {
+      "value": 5
+    },
+    "operator": ">",
+    "expected": 4,
+    "reference": {
+      "kind": "number",
+      "value": 5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "numeric less",
+    "expression": "value",
+    "document": {
+      "value": -5
+    },
+    "operator": "<",
+    "expected": -4,
+    "reference": {
+      "kind": "number",
+      "value": -5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "numeric less equal",
+    "expression": "value",
+    "document": {
+      "value": -4
+    },
+    "operator": "<=",
+    "expected": "-4",
+    "reference": {
+      "kind": "number",
+      "value": -4,
+      "state": "up"
+    }
+  },
+  {
+    "name": "false condition",
+    "expression": "value",
+    "document": {
+      "value": 5
+    },
+    "operator": ">",
+    "expected": 8,
+    "reference": {
+      "kind": "number",
+      "value": 5,
+      "state": "down"
+    }
+  },
+  {
+    "name": "hex numeric string",
+    "expression": "value",
+    "document": {
+      "value": "0x10"
+    },
+    "operator": ">=",
+    "expected": 16,
+    "reference": {
+      "kind": "string",
+      "value": "0x10",
+      "state": "up"
+    }
+  },
+  {
+    "name": "binary numeric string",
+    "expression": "value",
+    "document": {
+      "value": "0b10"
+    },
+    "operator": "==",
+    "expected": "0b10",
+    "reference": {
+      "kind": "string",
+      "value": "0b10",
+      "state": "up"
+    }
+  },
+  {
+    "name": "octal numeric string",
+    "expression": "value",
+    "document": {
+      "value": "0o10"
+    },
+    "operator": "<=",
+    "expected": 8,
+    "reference": {
+      "kind": "string",
+      "value": "0o10",
+      "state": "up"
+    }
+  },
+  {
+    "name": "boolean ordering error",
+    "expression": "value",
+    "document": {
+      "value": true
+    },
+    "operator": ">=",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "whitespace numeric error",
+    "expression": "value",
+    "document": {
+      "value": " 2 "
+    },
+    "operator": ">",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "plus numeric error",
+    "expression": "value",
+    "document": {
+      "value": "+2"
+    },
+    "operator": ">",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "empty numeric error",
+    "expression": "value",
+    "document": {
+      "value": ""
+    },
+    "operator": ">",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "empty containment",
+    "expression": "value",
+    "document": {
+      "value": ""
+    },
+    "operator": "contains",
+    "expected": "",
+    "reference": {
+      "kind": "string",
+      "value": "",
+      "state": "up"
+    }
+  },
+  {
+    "name": "number containment",
+    "expression": "value",
+    "document": {
+      "value": 1234
+    },
+    "operator": "contains",
+    "expected": 23,
+    "reference": {
+      "kind": "number",
+      "value": 1234,
+      "state": "up"
+    }
+  },
+  {
+    "name": "boolean containment",
+    "expression": "value",
+    "document": {
+      "value": false
+    },
+    "operator": "contains",
+    "expected": "als",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "literal containment",
+    "expression": "value",
+    "document": {
+      "value": "abc.*def"
+    },
+    "operator": "contains",
+    "expected": ".*",
+    "reference": {
+      "kind": "string",
+      "value": "abc.*def",
+      "state": "up"
+    }
+  },
+  {
+    "name": "negative zero",
+    "expression": "value",
+    "document": {
+      "value": 0
+    },
+    "operator": "==",
+    "expected": "0",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "fixed small number",
+    "expression": "value",
+    "document": {
+      "value": 0.000001
+    },
+    "operator": "==",
+    "expected": "0.000001",
+    "reference": {
+      "kind": "number",
+      "value": 0.000001,
+      "state": "up"
+    }
+  },
+  {
+    "name": "exponent small number",
+    "expression": "value",
+    "document": {
+      "value": 1e-7
+    },
+    "operator": "==",
+    "expected": "1e-7",
+    "reference": {
+      "kind": "number",
+      "value": 1e-7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "fixed large number",
+    "expression": "value",
+    "document": {
+      "value": 100000000000000000000
+    },
+    "operator": "==",
+    "expected": "100000000000000000000",
+    "reference": {
+      "kind": "number",
+      "value": 100000000000000000000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "exponent large number",
+    "expression": "value",
+    "document": {
+      "value": 1e+21
+    },
+    "operator": "==",
+    "expected": "1e+21",
+    "reference": {
+      "kind": "number",
+      "value": 1e+21,
+      "state": "up"
+    }
+  },
+  {
+    "name": "unicode length",
+    "expression": "$length('😀')",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex lookahead",
+    "expression": "$contains('abc', /a(?=b)/)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "goState": "down",
+    "gap": "Go RE2 rejects lookahead supported by JavaScript regular expressions."
+  },
+  {
+    "name": "new coalesce syntax",
+    "expression": "missing ?? 'fallback'",
+    "document": {},
+    "operator": "==",
+    "expected": "fallback",
+    "reference": {
+      "kind": "string",
+      "value": "fallback",
+      "state": "up"
+    },
+    "goState": "down",
+    "gap": "The pinned 2.0.6 parser does not implement JSONata 2.1+ coalescing syntax."
+  },
+  {
+    "name": "new elvis syntax",
+    "expression": "'' ?: 'fallback'",
+    "document": {},
+    "operator": "==",
+    "expected": "fallback",
+    "reference": {
+      "kind": "string",
+      "value": "fallback",
+      "state": "up"
+    },
+    "goState": "down",
+    "gap": "The pinned 2.0.6 parser does not implement JSONata 2.1+ Elvis syntax."
+  },
+  {
+    "name": "numeric builtin plus gap",
+    "expression": "$number('+2')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "numeric builtin fraction gap",
+    "expression": "$number('.5')",
+    "document": {},
+    "operator": "==",
+    "expected": 0.5,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "numeric builtin wide hex gap",
+    "expression": "$number('0x10000000000000000')",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string builtin exponent formatting",
+    "expression": "$string(100000000000000000000)",
+    "document": {},
+    "operator": "==",
+    "expected": "100000000000000000000",
+    "reference": {
+      "kind": "string",
+      "value": "100000000000000000000",
+      "state": "up"
+    }
+  },
+  {
+    "name": "decimal trailing newline",
+    "expression": "value",
+    "document": {
+      "value": "2\n"
+    },
+    "operator": ">=",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "hex trailing whitespace",
+    "expression": "value",
+    "document": {
+      "value": "0x10 "
+    },
+    "operator": ">=",
+    "expected": 16,
+    "reference": {
+      "kind": "string",
+      "value": "0x10 ",
+      "state": "up"
+    }
+  },
+  {
+    "name": "octal leading whitespace",
+    "expression": "value",
+    "document": {
+      "value": " 0o10"
+    },
+    "operator": ">=",
+    "expected": 8,
+    "reference": {
+      "kind": "string",
+      "value": " 0o10",
+      "state": "up"
+    }
+  },
+  {
+    "name": "binary leading whitespace",
+    "expression": "value",
+    "document": {
+      "value": " 0b10"
+    },
+    "operator": ">=",
+    "expected": 2,
+    "reference": {
+      "kind": "string",
+      "value": " 0b10",
+      "state": "up"
+    }
+  },
+  {
+    "name": "wide hex ordering",
+    "expression": "value",
+    "document": {
+      "value": "0x10000000000000000"
+    },
+    "operator": ">=",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "string",
+      "value": "0x10000000000000000",
+      "state": "up"
+    }
+  },
+  {
+    "name": "membership",
+    "expression": "2 in [1,2,3]",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "distinct count",
+    "expression": "$count($distinct([1,1,2]))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "null exists",
+    "expression": "$exists(value)",
+    "document": {
+      "value": null
+    },
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "unicode substring",
+    "expression": "$substring('a😀b',1,1)",
+    "document": {},
+    "operator": "==",
+    "expected": "😀",
+    "reference": {
+      "kind": "string",
+      "value": "😀",
+      "state": "up"
+    }
+  }
+]

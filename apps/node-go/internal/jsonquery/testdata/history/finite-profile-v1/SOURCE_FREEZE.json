@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "scope": "apps/node-go/internal/jsonquery/**",
+  "status": "source frozen for independent review; validation/documentation still in progress",
+  "upstreamManifest": "evaluator/upstream.json",
+  "files": [
+    {
+      "path": "check.go",
+      "sha256": "f12fb30dd28580e0b89395536c4b0b1a7b0c2758d471463786c00c748706307b"
+    },
+    {
+      "path": "config.go",
+      "sha256": "11cd50b6af3bd95a96e92e33c18a5f23fe24d49b1fbe82fc654ac92c3b5615b1"
+    },
+    {
+      "path": "evaluator/datetime.go",
+      "sha256": "d08ed1d93b803848046ed8f20cc997efc4e9fbf64e00154d7b3586776c6a30b7"
+    },
+    {
+      "path": "evaluator/finite-profile.patch",
+      "sha256": "773af82acabe39bebd151c3feef43a71261fd1a4383ea9be3416b91827085f75"
+    },
+    {
+      "path": "evaluator/finite.go",
+      "sha256": "03d2f4ad804e2bdb18b977b5db8de317ef82e9065d441b67135fa2b6d3bc4f47"
+    },
+    {
+      "path": "evaluator/finite_test.go",
+      "sha256": "b59f0d8d0caf29e453d2bdab6516d8c6a2d6cf318a3c0939b8d9615e7a8124fc"
+    },
+    {
+      "path": "evaluator/functions.go",
+      "sha256": "bb691034fa38698b16a4cf6d537d472324b614336bb5e278dc04213a17e1b15b"
+    },
+    {
+      "path": "evaluator/jsonata.go",
+      "sha256": "4da6def01cea7227fcae3d3b4e11eaf21e08eb886c7e1aa606985b2a5182e1fa"
+    },
+    {
+      "path": "evaluator/LICENSE",
+      "sha256": "188e548d24101b7580e507e48e1a71d76e8c8add79d2e0855f3d78555637ff3f"
+    },
+    {
+      "path": "evaluator/parser.go",
+      "sha256": "2f15ea86642829ad5f2d3cb2c9b89746c751a0ff2698ff2fc70db468cdbb8f45"
+    },
+    {
+      "path": "evaluator/signature.go",
+      "sha256": "906aa9c47fb4fb14952f4c504e4f71d2374a759eca4227b6dee4463a1cd43a90"
+    },
+    {
+      "path": "evaluator/upstream.json",
+      "sha256": "fb0d1556997c65666fa79793c0bad439d868b947a613c3065ffb8b37f8447072"
+    },
+    {
+      "path": "evaluator/utils.go",
+      "sha256": "ef70636143df842ad937c74487d4ea8d1ddc25d00997a28f791ae8afad25c68c"
+    },
+    {
+      "path": "finite_profile_test.go",
+      "sha256": "df6829037857754c7b21ebef05614ff91676b565bad030559020ed99c2256b0b"
+    },
+    {
+      "path": "independent_probe_test.go",
+      "sha256": "4d61633e025b705ac193ab738e696c17055a9f4f4e8e32ada7de206023cdf045"
+    },
+    {
+      "path": "number.go",
+      "sha256": "56e15cb2c4b6121d136611a4fb7481fb837252ee60f56dfd8eeccd1772f607c6"
+    },
+    {
+      "path": "query_test.go",
+      "sha256": "24669db4da25cc6cb3c49e65b320fafa635297eaf36a8cbaf86c165bb92ff1dd"
+    },
+    {
+      "path": "testdata/finite-profile-fixtures.json",
+      "sha256": "c4a44ca1fd375df0cf04611f82d8ae699bf2889deeb9f5dcc54ab12e132a33c6"
+    },
+    {
+      "path": "testdata/finite-profile-reference.mjs",
+      "sha256": "efbd09cb806915639052cab507a0dba991f85554a5088ebc850449e134715db4"
+    },
+    {
+      "path": "testdata/fixtures.json",
+      "sha256": "847ce0b2219715273a5a1d120c8ac3041a8d9ad824c63c8a6a172f6652563c2a"
+    },
+    {
+      "path": "testdata/independent-nonfinite-probes.json",
+      "sha256": "ca7e7d319fc3c093f0fb875f9b85e588dfa31cef6db488adb5c25980fb0d4366"
+    },
+    {
+      "path": "testdata/independent-reference.mjs",
+      "sha256": "b20188b722879ce793e952a4063faaa7965ba9e04bc48fcb0e29b797ef6b287a"
+    },
+    {
+      "path": "testdata/number-fixtures.json",
+      "sha256": "d68bcd2a4598d62fbead3ed3608495af9593b3485b0182cae55ca93d648ea769"
+    },
+    {
+      "path": "testdata/reference.mjs",
+      "sha256": "57aab2e6e124d70b0ac421f55fc88f7b0a7d5aeab0f025382cff6f670806b7bb"
+    }
+  ]
+}

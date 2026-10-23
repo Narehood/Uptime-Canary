@@ -1,0 +1,1263 @@
+[
+  {
+    "name": "match numeric limit 0",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},0))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split numeric limit 0",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},0))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace numeric limit 0",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',0)",
+    "document": {},
+    "operator": "==",
+    "expected": "ab",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "ab",
+      "state": "up"
+    }
+  },
+  {
+    "name": "match numeric limit 0.25",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},0.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split numeric limit 0.25",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},0.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace numeric limit 0.25",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',0.25)",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "xb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "match numeric limit 0.5",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},0.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split numeric limit 0.5",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},0.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace numeric limit 0.5",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',0.5)",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "xb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "match numeric limit 1",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},1))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split numeric limit 1",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},1))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace numeric limit 1",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',1)",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "xb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "match numeric limit 1.5",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},1.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split numeric limit 1.5",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},1.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace numeric limit 1.5",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',1.5)",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "xx",
+      "state": "up"
+    }
+  },
+  {
+    "name": "match numeric limit 2.25",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},2.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split numeric limit 2.25",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},2.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace numeric limit 2.25",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',2.25)",
+    "document": {},
+    "operator": "==",
+    "expected": "xx",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "xx",
+      "state": "up"
+    }
+  },
+  {
+    "name": "match numeric limit -0.25",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},-0.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3040",
+      "state": "down"
+    }
+  },
+  {
+    "name": "split numeric limit -0.25",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},-0.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3020",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replace numeric limit -0.25",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',-0.25)",
+    "document": {},
+    "operator": "==",
+    "expected": "ab",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3011",
+      "state": "down"
+    }
+  },
+  {
+    "name": "match numeric limit -1.5",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},-1.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3040",
+      "state": "down"
+    }
+  },
+  {
+    "name": "split numeric limit -1.5",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},-1.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3020",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replace numeric limit -1.5",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){missing}}}}},'x',-1.5)",
+    "document": {},
+    "operator": "==",
+    "expected": "ab",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3011",
+      "state": "down"
+    }
+  },
+  {
+    "name": "match fractional error stage1",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('r6-private-marker')}}},0.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "match fractional error stage2",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('r6-private-marker')}}}}},1.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "match undefined bypasses callback",
+    "expression": "$exists($match(missing,function($s){$error('r6-private-marker')},-0.5))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "split fractional error stage1",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('r6-private-marker')}}},0.25))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "split fractional error stage2",
+    "expression": "$count($split('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('r6-private-marker')}}}}},1.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "split undefined bypasses callback",
+    "expression": "$exists($split(missing,function($s){$error('r6-private-marker')},-0.5))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "replace fractional error stage1",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('r6-private-marker')}}},'x',0.25)",
+    "document": {},
+    "operator": "==",
+    "expected": "ab",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replace fractional error stage2",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){{'match':'b','start':1,'end':2,'groups':[],'next':function(){$error('r6-private-marker')}}}}},'x',1.5)",
+    "document": {},
+    "operator": "==",
+    "expected": "ab",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replace undefined bypasses callback",
+    "expression": "$exists($replace(missing,function($s){$error('r6-private-marker')},'x',-0.5))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "literal split fractional ToUint32",
+    "expression": "$count($split('a,b',',',0.5))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "literal split wrap ToUint32",
+    "expression": "$count($split('a,b',',',4294967297))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "literal replace fractional",
+    "expression": "$replace('aa','a','x',0.5)",
+    "document": {},
+    "operator": "==",
+    "expected": "xa",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "xa",
+      "state": "up"
+    }
+  },
+  {
+    "name": "empty match valid exhaustion",
+    "expression": "$count($match('',function($s){missing}))",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "empty split valid exhaustion",
+    "expression": "$count($split('',function($s){missing}))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "empty replace valid exhaustion",
+    "expression": "$replace('',function($s){missing},'x')",
+    "document": {},
+    "operator": "==",
+    "expected": "",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "",
+      "state": "up"
+    }
+  },
+  {
+    "name": "empty contains string",
+    "expression": "$contains('','')",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "empty contains callback error",
+    "expression": "$contains('',function($s){$error('r6-private-marker')})",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3137",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replacement start retained",
+    "expression": "$replace('ab',/a/,function($m){$exists($m.start)?'yes':'no'})",
+    "document": {},
+    "operator": "==",
+    "expected": "yesb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "yesb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement end retained",
+    "expression": "$replace('ab',/a/,function($m){$exists($m.end)?'yes':'no'})",
+    "document": {},
+    "operator": "==",
+    "expected": "yesb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "yesb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement next retained",
+    "expression": "$replace('ab',/a/,function($m){$exists($m.next)?'yes':'no'})",
+    "document": {},
+    "operator": "==",
+    "expected": "yesb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "yesb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement custom retained",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'custom':7,'next':function(){missing}}},function($m){$exists($m.custom)?'yes':'no'})",
+    "document": {},
+    "operator": "==",
+    "expected": "yesb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "yesb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement no invented index",
+    "expression": "$replace('ab',/a/,function($m){$exists($m.index)?'bad':'ok'})",
+    "document": {},
+    "operator": "==",
+    "expected": "okb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "okb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement callable next",
+    "expression": "$replace('aba',/a/,function($m){$exists($m.next())?'more':'last'})",
+    "document": {},
+    "operator": "==",
+    "expected": "moreba",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "moreba",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement next is function",
+    "expression": "$replace('ab',/a/,function($m){$type($m.next)})",
+    "document": {},
+    "operator": "==",
+    "expected": "functionb",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "functionb",
+      "state": "up"
+    }
+  },
+  {
+    "name": "replacement next failure propagates",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[],'next':function(){$error('r6-private-marker')}}},function($m){$m.next();'x'})",
+    "document": {},
+    "operator": "==",
+    "expected": "xb",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "S0202",
+      "state": "down"
+    }
+  },
+  {
+    "name": "replacement original custom group",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[7],'custom':'value','next':function(){missing}}},function($m){$m.custom & ':' & $m.groups[0]})",
+    "document": {},
+    "operator": "==",
+    "expected": "value:7b",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "value:7b",
+      "state": "up"
+    }
+  },
+  {
+    "name": "custom fractional index value",
+    "expression": "$match('ab',function($s){{'match':'a','start':0.5,'end':1.5,'groups':[],'next':function(){missing}}}).index",
+    "document": {},
+    "operator": "==",
+    "expected": 0.5,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 0.5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "custom numeric group value",
+    "expression": "$match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[7],'next':function(){missing}}}).groups[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 7,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "custom numeric group replacement",
+    "expression": "$replace('ab',function($s){{'match':'a','start':0,'end':1,'groups':[7],'next':function(){missing}}},'$1')",
+    "document": {},
+    "operator": "==",
+    "expected": "7b",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "7b",
+      "state": "up"
+    }
+  },
+  {
+    "name": "custom null group slot count",
+    "expression": "$count($match('ab',function($s){{'match':'a','start':0,'end':1,'groups':[null,7],'next':function(){missing}}}).groups)",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "optional capture positional count",
+    "expression": "$count($match('b',/(a)?(b)(c)?/).groups)",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "optional capture second position",
+    "expression": "$match('b',/(a)?(b)(c)?/).groups[1]",
+    "document": {},
+    "operator": "==",
+    "expected": "b",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "b",
+      "state": "up"
+    }
+  },
+  {
+    "name": "optional capture first undefined",
+    "expression": "$exists($match('b',/(a)?(b)(c)?/).groups[0])",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "optional capture third undefined",
+    "expression": "$exists($match('b',/(a)?(b)(c)?/).groups[2])",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "optional capture replacement slots",
+    "expression": "$replace('b',/(a)?(b)(c)?/,'$1:$2:$3')",
+    "document": {},
+    "operator": "==",
+    "expected": ":b:",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": ":b:",
+      "state": "up"
+    }
+  },
+  {
+    "name": "invalid partial $sum(?) paired a",
+    "expression": "$sort(['b','a'],$sum(?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "invalid partial $sum(?) paired b",
+    "expression": "$sort(['b','a'],$sum(?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "b",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "invalid partial $power(?,?) paired a",
+    "expression": "$sort(['b','a'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "a",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "invalid partial $power(?,?) paired b",
+    "expression": "$sort(['b','a'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "b",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "invalid partial $contains(?,?) paired 1",
+    "expression": "$sort([2,1],$contains(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "invalid partial $contains(?,?) paired 2",
+    "expression": "$sort([2,1],$contains(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "partial power numeric text",
+    "expression": "$sort(['2','1'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "1",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "1",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial power leading plus",
+    "expression": "$sort(['+2','1'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "1",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "1",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial power decimal dot",
+    "expression": "$sort(['.5','1'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "1",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "1",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial power hex",
+    "expression": "$sort(['0x2','1'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "1",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "1",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial power underscore is invalid",
+    "expression": "$sort(['0x1_0','1'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "1",
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "partial power whitespace",
+    "expression": "$sort([' 2 ','1'],$power(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "1",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "1",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial power undefined first",
+    "expression": "($f:=$power(?,?);$exists($f(missing,2)))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial sum undefined",
+    "expression": "($f:=$sum(?);$exists($f(missing)))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial sum valid mixed addition",
+    "expression": "($f:=$sum(?);$string($f([1,'2'])))",
+    "document": {},
+    "operator": "==",
+    "expected": "12",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "12",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial sum numeric scalar invalid",
+    "expression": "$count($sort([2,1],$sum(?)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "error",
+    "reference": {
+      "kind": "error",
+      "code": "undefined",
+      "state": "down"
+    }
+  },
+  {
+    "name": "partial sum repeated partial",
+    "expression": "($f:=$sum(?);$g:=$f(?);$g([1,2]))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial power repeated partial",
+    "expression": "($f:=$power(?,?);$g:=$f(?,2);$g(3))",
+    "document": {},
+    "operator": "==",
+    "expected": 9,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 9,
+      "state": "up"
+    }
+  },
+  {
+    "name": "native eval lexical context",
+    "expression": "($x:=7;$sort(['false','true'],$eval)[0])",
+    "document": {},
+    "operator": "==",
+    "expected": "false",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "false",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval lexical context",
+    "expression": "($x:=7;$f:=$eval(?,?);$f('$x',{}))",
+    "document": {},
+    "operator": "==",
+    "expected": 7,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval overridden input",
+    "expression": "($f:=$eval(?,?);$f('x',{'x':7}))",
+    "document": {},
+    "operator": "==",
+    "expected": 7,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval has no generated local",
+    "expression": "($f:=$eval(?,?);$exists($f('$__native_partial_0',{})))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval original expression local",
+    "expression": "($f:=$eval(?,?);$f('$expr',{}))",
+    "document": {},
+    "operator": "==",
+    "expected": "$expr",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "$expr",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval original focus local",
+    "expression": "($f:=$eval(?,?);$f('$focus.x',{'x':7}))",
+    "document": {},
+    "operator": "==",
+    "expected": 7,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval bound focus local",
+    "expression": "($f:=$eval(?,{'x':7});$f('$focus.x'))",
+    "document": {},
+    "operator": "==",
+    "expected": 7,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval extra argument has no generated local",
+    "expression": "($f:=$eval(?,?,?);$f('$exists($__native_partial_2)',{},7))",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "mode": "up",
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    }
+  },
+  {
+    "name": "native eval comparator",
+    "expression": "$sort(['false','true'],$eval)[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "false",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "false",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval comparator",
+    "expression": "$sort(['false','true'],$eval(?,?))[0]",
+    "document": {},
+    "operator": "==",
+    "expected": "false",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "false",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial eval alias property",
+    "expression": "($f:=$eval(?,?);$o:={'f':$f};$sort(['false','true'],$o.f)[0])",
+    "document": {},
+    "operator": "==",
+    "expected": "false",
+    "mode": "up",
+    "reference": {
+      "kind": "string",
+      "value": "false",
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial native undefined continuation",
+    "expression": "($mk:=function($f){function($s){{'match':'a','start':0,'end':1,'groups':[],'next':$f}}};$count($match('ab',$mk($sum(?)))))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial numeric shim remains scoped",
+    "expression": "($f:=$number(?);$f('0x10000000000000000'))",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial lexical override",
+    "expression": "($sum:=function($x){42};$f:=$sum(?);$f('bad'))",
+    "document": {},
+    "operator": "==",
+    "expected": 42,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial overflow guarded",
+    "expression": "$count($sort([[1e308,1e308],[1]],$sum(?)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "safe-profile",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial overflow alias guarded",
+    "expression": "($f:=$sum(?);$count($sort([[1e308,1e308],[1]],$f)))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "mode": "safe-profile",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "length ASCII",
+    "expression": "$length($)",
+    "document": "canary",
+    "operator": "==",
+    "expected": 6,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 6,
+      "state": "up"
+    }
+  },
+  {
+    "name": "length multibyte",
+    "expression": "$length($)",
+    "document": "é漢🙂",
+    "operator": "==",
+    "expected": 3,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "length combining",
+    "expression": "$length($)",
+    "document": "é",
+    "operator": "==",
+    "expected": 2,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "length empty",
+    "expression": "$length($)",
+    "document": "",
+    "operator": "==",
+    "expected": 0,
+    "mode": "up",
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  }
+]

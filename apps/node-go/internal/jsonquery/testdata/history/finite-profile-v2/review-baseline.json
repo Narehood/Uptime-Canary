@@ -1,0 +1,17 @@
+{
+  "round": "ROUND2",
+  "reviewReport": "docs/jsonata-matcher-sort-review.md",
+  "privateEvidence": "C:\\Users\\Michael\\AppData\\Local\\Temp\\canary-jsonata-matcher-sort-review-08980ad9",
+  "reviewTests": {
+    "profile_review_test.go": "cabd65607e780b73197e84959b681cb70d24033cde4d0a5b59e670e0b066e34c",
+    "evaluator/finite_review_test.go": "c801a0c52d659c76a8850b62ff434a55c5508b8308d1c96dfcde880342c33e27",
+    "matcher_sort_review_test.go": "22f98416fb31b6394eb8ea12d0947a6501eee9436c49a5a12d30807544d555c0"
+  },
+  "frozenBaselineSha256": "5d59f53fab22c8836c1dd05e3780d9a1a58a5bc49d2e3b3074d0eccee88c28bf",
+  "baselinePassingEvents": 505,
+  "reviewPassingEvents": 544,
+  "reviewFailingCases": 66,
+  "reviewFalseUPCases": 56,
+  "reviewFiniteDownMismatches": 10,
+  "reviewFailingEventsIncludingParent": 67
+}

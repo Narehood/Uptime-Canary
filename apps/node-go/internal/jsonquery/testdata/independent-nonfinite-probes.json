@@ -1,0 +1,414 @@
+[
+  {
+    "name": "arithmetic overflow: type",
+    "expression": "$type((1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "arithmetic overflow: boolean",
+    "expression": "$boolean((1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "arithmetic overflow: string",
+    "expression": "$string((1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": "Infinity",
+    "reference": {
+      "kind": "error",
+      "code": "D3001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "arithmetic overflow: exists",
+    "expression": "$exists((1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "arithmetic overflow: comparison",
+    "expression": "($n := (1e308 * 10); $n > 0)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "arithmetic overflow: discarded",
+    "expression": "((1e308 * 10); 'ok')",
+    "document": {},
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  },
+  {
+    "name": "negative arithmetic overflow: type",
+    "expression": "$type((-1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "negative arithmetic overflow: boolean",
+    "expression": "$boolean((-1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "negative arithmetic overflow: string",
+    "expression": "$string((-1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": "-Infinity",
+    "reference": {
+      "kind": "error",
+      "code": "D3001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "negative arithmetic overflow: exists",
+    "expression": "$exists((-1e308 * 10))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "negative arithmetic overflow: comparison",
+    "expression": "($n := (-1e308 * 10); $n < 0)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "negative arithmetic overflow: discarded",
+    "expression": "((-1e308 * 10); 'ok')",
+    "document": {},
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  },
+  {
+    "name": "power overflow: type",
+    "expression": "$type(($power(10,999)))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "power overflow: boolean",
+    "expression": "$boolean(($power(10,999)))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "power overflow: string",
+    "expression": "$string(($power(10,999)))",
+    "document": {},
+    "operator": "==",
+    "expected": "Infinity",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "power overflow: exists",
+    "expression": "$exists(($power(10,999)))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "power overflow: comparison",
+    "expression": "($n := ($power(10,999)); $n > 0)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "power overflow: discarded",
+    "expression": "(($power(10,999)); 'ok')",
+    "document": {},
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "error",
+      "code": "D3061",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum overflow: type",
+    "expression": "$type(($sum([1e308,1e308])))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum overflow: boolean",
+    "expression": "$boolean(($sum([1e308,1e308])))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum overflow: string",
+    "expression": "$string(($sum([1e308,1e308])))",
+    "document": {},
+    "operator": "==",
+    "expected": "Infinity",
+    "reference": {
+      "kind": "error",
+      "code": "D3001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum overflow: exists",
+    "expression": "$exists(($sum([1e308,1e308])))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sum overflow: comparison",
+    "expression": "($n := ($sum([1e308,1e308])); $n > 0)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sum overflow: discarded",
+    "expression": "(($sum([1e308,1e308])); 'ok')",
+    "document": {},
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  },
+  {
+    "name": "sum NaN: type",
+    "expression": "$type(($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "string",
+      "value": "object",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum NaN: boolean",
+    "expression": "$boolean(($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum NaN: string",
+    "expression": "$string(($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])))",
+    "document": {},
+    "operator": "==",
+    "expected": "NaN",
+    "reference": {
+      "kind": "error",
+      "code": "D3001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "sum NaN: exists",
+    "expression": "$exists(($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sum NaN: comparison",
+    "expression": "($n := ($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])); $n != $n)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "sum NaN: discarded",
+    "expression": "(($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])); 'ok')",
+    "document": {},
+    "operator": "==",
+    "expected": "ok",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  },
+  {
+    "name": "finite arithmetic control",
+    "expression": "$type(1e308 * 0.1)",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "control": true,
+    "reference": {
+      "kind": "string",
+      "value": "number",
+      "state": "up"
+    }
+  },
+  {
+    "name": "finite sum control",
+    "expression": "$sum([1,2,3])",
+    "document": {},
+    "operator": "==",
+    "expected": 6,
+    "control": true,
+    "reference": {
+      "kind": "number",
+      "value": 6,
+      "state": "up"
+    }
+  },
+  {
+    "name": "lexical shadow control",
+    "expression": "($number := function($x){42}; $number('+2'))",
+    "document": {},
+    "operator": "==",
+    "expected": 42,
+    "control": true,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nested finite eval control",
+    "expression": "$eval('$number(2)')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "control": true,
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  }
+]

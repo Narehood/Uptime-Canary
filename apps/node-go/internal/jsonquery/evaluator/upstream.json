@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 3,
+  "module": "github.com/jsonata-go/jsonata",
+  "path": "v206",
+  "version": "v0.0.0-20250709164031-599f35f32e5f",
+  "commit": "599f35f32e5f31297f8b2153b5da44ddbb330e28",
+  "repository": "https://github.com/jsonata-go/jsonata",
+  "localPackage": "uptime-canary/apps/node-go/internal/jsonquery/evaluator",
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "upstreamPath": "LICENSE",
+    "sha256": "188e548d24101b7580e507e48e1a71d76e8c8add79d2e0855f3d78555637ff3f"
+  },
+  "files": [
+    {
+      "path": "datetime.go",
+      "upstreamPath": "v206/datetime.go",
+      "upstreamSha256": "d08ed1d93b803848046ed8f20cc997efc4e9fbf64e00154d7b3586776c6a30b7",
+      "sha256": "d08ed1d93b803848046ed8f20cc997efc4e9fbf64e00154d7b3586776c6a30b7"
+    },
+    {
+      "path": "functions.go",
+      "upstreamPath": "v206/functions.go",
+      "upstreamSha256": "05faaba5ff7cb89804e49058bc2a08577f4196930c8b9b6ad10116344956e4dd",
+      "sha256": "b90aba9bc4b1e0c344832e827be0d56c3cfff06d798615ff55385631dd3e4a52"
+    },
+    {
+      "path": "jsonata.go",
+      "upstreamPath": "v206/jsonata.go",
+      "upstreamSha256": "e095262e6c3062a560130ffd521e34b9a1891b47e5e3d158cbbbb2f756a8c1a2",
+      "sha256": "8ba85fcf80935e07c2d6b5724cf9d1dc422ec8f8fbff59d09d8dbe89799a2b91"
+    },
+    {
+      "path": "parser.go",
+      "upstreamPath": "v206/parser.go",
+      "upstreamSha256": "2f15ea86642829ad5f2d3cb2c9b89746c751a0ff2698ff2fc70db468cdbb8f45",
+      "sha256": "2f15ea86642829ad5f2d3cb2c9b89746c751a0ff2698ff2fc70db468cdbb8f45"
+    },
+    {
+      "path": "signature.go",
+      "upstreamPath": "v206/signature.go",
+      "upstreamSha256": "906aa9c47fb4fb14952f4c504e4f71d2374a759eca4227b6dee4463a1cd43a90",
+      "sha256": "906aa9c47fb4fb14952f4c504e4f71d2374a759eca4227b6dee4463a1cd43a90"
+    },
+    {
+      "path": "utils.go",
+      "upstreamPath": "v206/utils.go",
+      "upstreamSha256": "ef70636143df842ad937c74487d4ea8d1ddc25d00997a28f791ae8afad25c68c",
+      "sha256": "cde9dd88ae71a0dd619131c275a275960d1202279d75c6347df4630bd4296ccd"
+    }
+  ],
+  "patch": {
+    "file": "finite-profile.patch",
+    "sha256": "85ea0bcede0301f1fcf6e4153a1f90e87a5909b0949c14cc8b41325373504d41",
+    "pathsRelativeTo": "upstream repository root"
+  },
+  "localFiles": [
+    {
+      "path": "finite.go",
+      "sha256": "03d2f4ad804e2bdb18b977b5db8de317ef82e9065d441b67135fa2b6d3bc4f47"
+    },
+    {
+      "path": "callbacks.go",
+      "sha256": "9ef538354054b6852241a7dbe6a2b17017d8567111529d3336065ddccb07f525"
+    },
+    {
+      "path": "matchdata.go",
+      "sha256": "d8106d309a53d0e76b837cfae1597eeaa2ecbf0616d48a32e31ef26ae56b25dc"
+    },
+    {
+      "path": "native.go",
+      "sha256": "cd866e9967bc3a5ac2c0b40530ff6561d68c34b01899370d330252b7a50c8de6"
+    },
+    {
+      "path": "length.go",
+      "sha256": "39336aad7ca2c314e806ead791c7234890663f945b40d29a9387e9d0d90a800a"
+    }
+  ],
+  "profile": {
+    "maxDepth": 128,
+    "maxVisitedValues": 65536,
+    "cycleHandling": "cycles exhaust the depth budget; repeated references count again",
+    "error": "JSON query result rejected by finite profile"
+  },
+  "localRepairs": [
+    "unchanged depth128/65536 finite walker and pre-consumption AST/shared invocation guards",
+    "error-aware matcher adapters and all three consumers",
+    "original match object, custom metadata and positional capture slots",
+    "fractional limits and undefined-versus-empty input handling",
+    "guarded typed native partials with explicit undefined bindings and invocation context",
+    "reference sum/power/contains implementation semantics for native partial arguments",
+    "observable regex continuation cursor and DSL function representation",
+    "constant-allocation UTF-8 codepoint count preserving prior length handling",
+    "removed prior comment-only Unicode encoding drift",
+    "explicit expr/focus native eval locals; no generated partial names visible to eval"
+  ]
+}

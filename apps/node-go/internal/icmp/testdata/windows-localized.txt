@@ -1,0 +1,8 @@
+Ping wird ausgeführt für 127.0.0.1 mit 32 Bytes Daten:
+Antwort von 127.0.0.1: Bytes=32 Zeit=10,0ms TTL=128
+Antwort von 127.0.0.1: Bytes=32 Zeit=15,0ms TTL=128
+
+Ping-Statistik für 127.0.0.1:
+    Pakete: Gesendet = 2, Empfangen = 2, Verloren = 0 (0% Verlust),
+Ca. Zeitangaben in Millisek.:
+    Minimum = 10,0ms, Maximum = 15,0ms, Mittelwert = 12,5ms

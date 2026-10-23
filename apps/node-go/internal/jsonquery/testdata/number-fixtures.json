@@ -1,0 +1,1376 @@
+[
+  {
+    "name": "boolean true",
+    "expression": "$number(true)",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "boolean false",
+    "expression": "$number(false)",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "finite number",
+    "expression": "$number(12.5)",
+    "document": {},
+    "operator": "==",
+    "expected": 12.5,
+    "reference": {
+      "kind": "number",
+      "value": 12.5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "negative number",
+    "expression": "$number(-12)",
+    "document": {},
+    "operator": "==",
+    "expected": -12,
+    "reference": {
+      "kind": "number",
+      "value": -12,
+      "state": "up"
+    }
+  },
+  {
+    "name": "number scientific",
+    "expression": "$number(1e20)",
+    "document": {},
+    "operator": "==",
+    "expected": 100000000000000000000,
+    "reference": {
+      "kind": "number",
+      "value": 100000000000000000000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "negative zero",
+    "expression": "$number(-0)",
+    "document": {},
+    "operator": "==",
+    "expected": "0",
+    "reference": {
+      "kind": "number",
+      "number": "-0",
+      "state": "up"
+    }
+  },
+  {
+    "name": "computed count integer",
+    "expression": "$number($count([1,2,3]))",
+    "document": {},
+    "operator": "==",
+    "expected": 3,
+    "reference": {
+      "kind": "number",
+      "value": 3,
+      "state": "up"
+    }
+  },
+  {
+    "name": "computed range integer",
+    "expression": "$number($sum([1..10]))",
+    "document": {},
+    "operator": "==",
+    "expected": 55,
+    "reference": {
+      "kind": "number",
+      "value": 55,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string integer",
+    "expression": "$number('42')",
+    "document": {},
+    "operator": "==",
+    "expected": 42,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string leading zeroes",
+    "expression": "$number('0042')",
+    "document": {},
+    "operator": "==",
+    "expected": 42,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string decimal",
+    "expression": "$number('-12.5')",
+    "document": {},
+    "operator": "==",
+    "expected": -12.5,
+    "reference": {
+      "kind": "number",
+      "value": -12.5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string fraction",
+    "expression": "$number('0.5')",
+    "document": {},
+    "operator": "==",
+    "expected": 0.5,
+    "reference": {
+      "kind": "number",
+      "value": 0.5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string scientific",
+    "expression": "$number('2.5e+3')",
+    "document": {},
+    "operator": "==",
+    "expected": 2500,
+    "reference": {
+      "kind": "number",
+      "value": 2500,
+      "state": "up"
+    }
+  },
+  {
+    "name": "string scientific uppercase",
+    "expression": "$number('-2.5E-3')",
+    "document": {},
+    "operator": "==",
+    "expected": -0.0025,
+    "reference": {
+      "kind": "number",
+      "value": -0.0025,
+      "state": "up"
+    }
+  },
+  {
+    "name": "decimal underflow",
+    "expression": "$number('1e-9999')",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "number",
+      "value": 0,
+      "state": "up"
+    }
+  },
+  {
+    "name": "decimal overflow error",
+    "expression": "$number('1e9999')",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "leading plus error",
+    "expression": "$number('+2')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "leading fraction dot error",
+    "expression": "$number('.5')",
+    "document": {},
+    "operator": "==",
+    "expected": 0.5,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "trailing decimal dot error",
+    "expression": "$number('2.')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "empty string error",
+    "expression": "$number('')",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "decimal space error",
+    "expression": "$number(value)",
+    "document": {
+      "value": " 2 "
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "decimal tab error",
+    "expression": "$number(value)",
+    "document": {
+      "value": "2\t"
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "decimal newline error",
+    "expression": "$number(value)",
+    "document": {
+      "value": "2\n"
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "numeric separator error",
+    "expression": "$number('1_000')",
+    "document": {},
+    "operator": "==",
+    "expected": 1000,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "literal true string error",
+    "expression": "$number('true')",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "literal false string error",
+    "expression": "$number('false')",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "NaN string error",
+    "expression": "$number('NaN')",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "Infinity string error",
+    "expression": "$number('Infinity')",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "hex",
+    "expression": "$number('0x10')",
+    "document": {},
+    "operator": "==",
+    "expected": 16,
+    "reference": {
+      "kind": "number",
+      "value": 16,
+      "state": "up"
+    }
+  },
+  {
+    "name": "uppercase hex",
+    "expression": "$number('0XFF')",
+    "document": {},
+    "operator": "==",
+    "expected": 255,
+    "reference": {
+      "kind": "number",
+      "value": 255,
+      "state": "up"
+    }
+  },
+  {
+    "name": "wide hex",
+    "expression": "$number('0x10000000000000000')",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "wide binary",
+    "expression": "$number(value)",
+    "document": {
+      "value": "0b10000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "wide octal",
+    "expression": "$number('0o2000000000000000000000')",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "hex trailing whitespace",
+    "expression": "$number(value)",
+    "document": {
+      "value": "0x10 \t\r\n"
+    },
+    "operator": "==",
+    "expected": 16,
+    "reference": {
+      "kind": "number",
+      "value": 16,
+      "state": "up"
+    }
+  },
+  {
+    "name": "hex leading whitespace error",
+    "expression": "$number(' 0x10')",
+    "document": {},
+    "operator": "==",
+    "expected": 16,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "octal surrounding whitespace",
+    "expression": "$number(' 0o10 ')",
+    "document": {},
+    "operator": "==",
+    "expected": 8,
+    "reference": {
+      "kind": "number",
+      "value": 8,
+      "state": "up"
+    }
+  },
+  {
+    "name": "binary leading whitespace",
+    "expression": "$number(' 0b10')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "number",
+      "value": 2,
+      "state": "up"
+    }
+  },
+  {
+    "name": "binary trailing whitespace error",
+    "expression": "$number('0b10 ')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "unicode base whitespace",
+    "expression": "$number(value)",
+    "document": {
+      "value": "0x10 ﻿"
+    },
+    "operator": "==",
+    "expected": 16,
+    "reference": {
+      "kind": "number",
+      "value": 16,
+      "state": "up"
+    }
+  },
+  {
+    "name": "unicode non ECMAScript whitespace",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject the NaN conversion before the enclosing comparison, even though JS returns a finite boolean.",
+    "expression": "$number(value) != $number(value)",
+    "probe": "$number(value)",
+    "document": {
+      "value": "0x10"
+    },
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "NaN"
+    }
+  },
+  {
+    "name": "malformed base yields NaN",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject the NaN conversion before the enclosing comparison, even though JS returns a finite boolean.",
+    "expression": "($n := $number('0x10z'); $n != $n)",
+    "probe": "$number('0x10z')",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "NaN"
+    }
+  },
+  {
+    "name": "base substring yields NaN",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject the NaN conversion before the enclosing comparison, even though JS returns a finite boolean.",
+    "expression": "($n := $number('prefix0o10'); $n != $n)",
+    "probe": "$number('prefix0o10')",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "NaN"
+    }
+  },
+  {
+    "name": "NaN number passthrough",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject the inner NaN conversion; no numeric conversion may propagate NaN.",
+    "expression": "($n := $number($number('0x10z')); $n != $n)",
+    "probe": "$number($number('0x10z'))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "NaN"
+    }
+  },
+  {
+    "name": "base overflow infinity",
+    "regression": "original-downstream-nonfinite",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject Infinity at conversion before the downstream ordering operation.",
+    "expression": "$number('0x' & $pad('f',300,'f')) > 1e300",
+    "probe": "$number('0x' & $pad('f',300,'f'))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "Infinity"
+    }
+  },
+  {
+    "name": "infinity number passthrough",
+    "regression": "original-downstream-nonfinite",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject the inner Infinity conversion; no numeric conversion may propagate Infinity.",
+    "expression": "$number($number('0x' & $pad('f',300,'f'))) > 1e300",
+    "probe": "$number($number('0x' & $pad('f',300,'f')))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "Infinity"
+    }
+  },
+  {
+    "name": "null error",
+    "expression": "$number(null)",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "undefined propagates",
+    "expression": "$exists($number(missing))",
+    "probe": "$number(missing)",
+    "document": {},
+    "operator": "==",
+    "expected": false,
+    "reference": {
+      "kind": "boolean",
+      "value": false,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "undefined"
+    }
+  },
+  {
+    "name": "empty array error",
+    "expression": "$number([])",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "singleton array error",
+    "expression": "$number([2])",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "multiple array error",
+    "expression": "$number([2,3])",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "object error",
+    "expression": "$number({'value':2})",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "function error",
+    "expression": "$number($sum)",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "context number",
+    "expression": "$number()",
+    "document": 12.5,
+    "operator": "==",
+    "expected": 12.5,
+    "reference": {
+      "kind": "number",
+      "value": 12.5,
+      "state": "up"
+    }
+  },
+  {
+    "name": "context string",
+    "expression": "$number()",
+    "document": "42",
+    "operator": "==",
+    "expected": 42,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "context boolean",
+    "expression": "$number()",
+    "document": true,
+    "operator": "==",
+    "expected": 1,
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "context null error",
+    "expression": "$number()",
+    "document": null,
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "T0411",
+      "state": "down"
+    }
+  },
+  {
+    "name": "context object error",
+    "expression": "$number()",
+    "document": {},
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "T0411",
+      "state": "down"
+    }
+  },
+  {
+    "name": "context array error",
+    "expression": "$number()",
+    "document": [
+      2,
+      3
+    ],
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0411",
+      "state": "down"
+    }
+  },
+  {
+    "name": "too many arguments error",
+    "expression": "$number('2','3')",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0410",
+      "state": "down"
+    }
+  },
+  {
+    "name": "computed plus error",
+    "expression": "$number($join(parts))",
+    "document": {
+      "parts": [
+        "+",
+        "2"
+      ]
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "computed fraction error",
+    "expression": "$number($substring(value,1))",
+    "document": {
+      "value": "x.5"
+    },
+    "operator": "==",
+    "expected": 0.5,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "computed wide hex",
+    "expression": "$number(prefix & digits)",
+    "document": {
+      "prefix": "0x",
+      "digits": "10000000000000000"
+    },
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "mapped callback",
+    "expression": "$sum($map(['2','3','4'], $number))",
+    "document": {},
+    "operator": "==",
+    "expected": 9,
+    "reference": {
+      "kind": "number",
+      "value": 9,
+      "state": "up"
+    }
+  },
+  {
+    "name": "mapped invalid callback error",
+    "expression": "$sum($map(['2','+3'], $number))",
+    "document": {},
+    "operator": "==",
+    "expected": 5,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "chain call",
+    "expression": "'0x10000000000000000' ~> $number()",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "path context call",
+    "expression": "$sum(values.$number())",
+    "document": {
+      "values": [
+        "2",
+        "3",
+        "4"
+      ]
+    },
+    "operator": "==",
+    "expected": 9,
+    "reference": {
+      "kind": "number",
+      "value": 9,
+      "state": "up"
+    }
+  },
+  {
+    "name": "function alias",
+    "expression": "($convert := $number; $convert('0x10000000000000000'))",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "function alias invalid error",
+    "expression": "($convert := $number; $convert('+2'))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "lambda computed call",
+    "expression": "($convert := function($x){$number($x)}; $convert(value))",
+    "document": {
+      "value": "0x10000000000000000"
+    },
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "local shadow preserved",
+    "expression": "($number := function($x){42}; $number('+2'))",
+    "document": {},
+    "operator": "==",
+    "expected": 42,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "parameter shadow preserved",
+    "expression": "(function($number){$number('+2')})(function($x){42})",
+    "document": {},
+    "operator": "==",
+    "expected": 42,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nested scope shadow preserved",
+    "expression": "($convert := $number; $a := ($number := function($x){42}; $number('+2')); $a+$convert('2'))",
+    "document": {},
+    "operator": "==",
+    "expected": 44,
+    "reference": {
+      "kind": "number",
+      "value": 44,
+      "state": "up"
+    }
+  },
+  {
+    "name": "closure lexical capture error",
+    "expression": "($convert := function($x){$number($x)}; ($number := function($x){99}; $convert('+2')))",
+    "document": {},
+    "operator": "==",
+    "expected": 99,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "nested eval wide hex",
+    "expression": "$eval(query)",
+    "document": {
+      "query": "$number(value)",
+      "value": "0x10000000000000000"
+    },
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nested eval plus error",
+    "expression": "$eval(query)",
+    "document": {
+      "query": "$number(value)",
+      "value": "+2"
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3121",
+      "state": "down"
+    }
+  },
+  {
+    "name": "nested eval alias",
+    "expression": "($convert := $number; $eval('$convert(value)'))",
+    "document": {
+      "value": "0x10000000000000000"
+    },
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nested eval context argument",
+    "expression": "$eval('$number(value)', {'value':'0x10000000000000000'})",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nested eval context error",
+    "expression": "$eval('$number(value)', {'value':'.5'})",
+    "document": {},
+    "operator": "==",
+    "expected": 0.5,
+    "reference": {
+      "kind": "error",
+      "code": "D3121",
+      "state": "down"
+    }
+  },
+  {
+    "name": "double eval error",
+    "expression": "$eval('$eval(query)')",
+    "document": {
+      "query": "$number(value)",
+      "value": "+2"
+    },
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3121",
+      "state": "down"
+    }
+  },
+  {
+    "name": "eval inherits local shadow",
+    "expression": "($number := function($x){42}; $eval(query))",
+    "document": {
+      "query": "$number('+2')"
+    },
+    "operator": "==",
+    "expected": 42,
+    "reference": {
+      "kind": "number",
+      "value": 42,
+      "state": "up"
+    }
+  },
+  {
+    "name": "eval own local shadow",
+    "expression": "$eval(query)",
+    "document": {
+      "query": "($number := function($x){7}; $number('+2'))"
+    },
+    "operator": "==",
+    "expected": 7,
+    "reference": {
+      "kind": "number",
+      "value": 7,
+      "state": "up"
+    }
+  },
+  {
+    "name": "literal unchanged",
+    "expression": "\"$number('+2')\"",
+    "document": {},
+    "operator": "==",
+    "expected": "$number('+2')",
+    "reference": {
+      "kind": "string",
+      "value": "$number('+2')",
+      "state": "up"
+    }
+  },
+  {
+    "name": "regex unchanged",
+    "expression": "$contains('$number(+2)', /\\$number\\(\\+2\\)/)",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    }
+  },
+  {
+    "name": "infinity builtin type",
+    "regression": "original-downstream-nonfinite",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Prevent the known false UP by rejecting Infinity before $type can inspect it.",
+    "expression": "$type($number('0x' & $pad('f',300,'f')))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "infinity passthrough type",
+    "regression": "original-downstream-nonfinite",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Prevent the known false UP by rejecting the nonfinite conversion before propagation and $type.",
+    "expression": "$type($number($number('0x' & $pad('f',300,'f'))))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "context singleton array error",
+    "expression": "$number()",
+    "document": [
+      2
+    ],
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "T0411",
+      "state": "down"
+    }
+  },
+  {
+    "name": "context empty array error",
+    "expression": "$number()",
+    "document": [],
+    "operator": "==",
+    "expected": 0,
+    "reference": {
+      "kind": "error",
+      "code": "T0411",
+      "state": "down"
+    }
+  },
+  {
+    "name": "partial application",
+    "expression": "($convert := $number(?); $convert('0x10000000000000000'))",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "partial application plus error",
+    "expression": "($convert := $number(?); $convert('+2'))",
+    "document": {},
+    "operator": "==",
+    "expected": 2,
+    "reference": {
+      "kind": "error",
+      "code": "D3030",
+      "state": "down"
+    }
+  },
+  {
+    "name": "decimal precision rounding",
+    "expression": "$number('9007199254740993')",
+    "document": {},
+    "operator": "==",
+    "expected": 9007199254740992,
+    "reference": {
+      "kind": "number",
+      "value": 9007199254740992,
+      "state": "up"
+    }
+  },
+  {
+    "name": "hex precision rounding",
+    "expression": "$number('0xffffffffffffffff')",
+    "document": {},
+    "operator": "==",
+    "expected": 18446744073709552000,
+    "reference": {
+      "kind": "number",
+      "value": 18446744073709552000,
+      "state": "up"
+    }
+  },
+  {
+    "name": "NaN type classification",
+    "regression": "original-downstream-nonfinite",
+    "policy": "fail-closed-nonfinite",
+    "expression": "$type($number('0x10z'))",
+    "document": {},
+    "operator": "==",
+    "expected": "object",
+    "goState": "down",
+    "policyReason": "Reject NaN before the evaluator can apply its incompatible $type classification.",
+    "reference": {
+      "kind": "string",
+      "value": "object",
+      "state": "up"
+    }
+  },
+  {
+    "name": "native positive Infinity argument",
+    "expression": "$type($number($sum([1e308,1e308])))",
+    "probe": "$number($sum([1e308,1e308]))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject an actual numeric Infinity argument produced by native $sum, before $type.",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "Infinity"
+    }
+  },
+  {
+    "name": "native negative Infinity argument",
+    "expression": "$type($number($sum([-1e308,-1e308])))",
+    "probe": "$number($sum([-1e308,-1e308]))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject an actual numeric negative Infinity argument produced by native $sum, before $type.",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "-Infinity"
+    }
+  },
+  {
+    "name": "native NaN argument",
+    "expression": "($n := $number($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])])); $n != $n)",
+    "probe": "$number($sum([$sum([1e308,1e308]),$sum([-1e308,-1e308])]))",
+    "document": {},
+    "operator": "==",
+    "expected": true,
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject an actual numeric NaN argument produced by summing opposite infinities, even if JS later produces a boolean.",
+    "reference": {
+      "kind": "boolean",
+      "value": true,
+      "state": "up"
+    },
+    "probeReference": {
+      "kind": "number",
+      "number": "NaN"
+    }
+  },
+  {
+    "name": "finite native numeric argument control",
+    "expression": "$number($sum([1,2,3]))",
+    "document": {},
+    "operator": "==",
+    "expected": 6,
+    "reference": {
+      "kind": "number",
+      "value": 6,
+      "state": "up"
+    }
+  },
+  {
+    "name": "finite nested numeric argument control",
+    "expression": "$eval('$number($sum(values))')",
+    "document": {
+      "values": [
+        1,
+        2,
+        3
+      ]
+    },
+    "operator": "==",
+    "expected": 6,
+    "reference": {
+      "kind": "number",
+      "value": 6,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nonfinite alias rejection",
+    "expression": "$type(($convert := $number; $convert('0x' & $pad('f',300,'f'))))",
+    "document": {},
+    "operator": "==",
+    "expected": "number",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "A function alias must retain the nonfinite rejection before $type.",
+    "reference": {
+      "kind": "error",
+      "code": "D1001",
+      "state": "down"
+    }
+  },
+  {
+    "name": "nonfinite nested eval rejection",
+    "expression": "$eval(query)",
+    "document": {
+      "query": "$type($number('0x' & $pad('f',300,'f')))"
+    },
+    "operator": "==",
+    "expected": "number",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Nested $eval must inherit the nonfinite rejection before $type.",
+    "reference": {
+      "kind": "error",
+      "code": "D3121",
+      "state": "down"
+    }
+  },
+  {
+    "name": "nonfinite mapped callback rejection",
+    "expression": "$count($map(['0x10z'], $number))",
+    "document": {},
+    "operator": "==",
+    "expected": 1,
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject NaN in a native callback rather than allowing $count to turn it into finite success.",
+    "reference": {
+      "kind": "number",
+      "value": 1,
+      "state": "up"
+    }
+  },
+  {
+    "name": "nonfinite discarded intermediate rejection",
+    "expression": "($n := $number('0x' & $pad('f',300,'f')); 'ok')",
+    "document": {},
+    "operator": "==",
+    "expected": "ok",
+    "policy": "fail-closed-nonfinite",
+    "goState": "down",
+    "policyReason": "Reject a nonfinite intermediate even if the JS expression discards it and returns a finite string.",
+    "reference": {
+      "kind": "string",
+      "value": "ok",
+      "state": "up"
+    }
+  }
+]

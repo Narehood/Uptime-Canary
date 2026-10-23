@@ -1,0 +1,48 @@
+JSONata Go source copy
+=====================
+
+github.com/jsonata-go/jsonata
+Commit: 599f35f32e5f31297f8b2153b5da44ddbb330e28
+Version: v0.0.0-20250709164031-599f35f32e5f
+Upstream package: github.com/jsonata-go/jsonata/v206
+Local package: uptime-canary/apps/node-go/internal/jsonquery/evaluator
+Source: https://github.com/jsonata-go/jsonata/tree/599f35f32e5f31297f8b2153b5da44ddbb330e28
+
+Six production Go files are copied into evaluator/. Local changes add the
+finite-intermediate result profile, error-aware matcher continuations, guarded
+sort invocation/truthiness, native signature checks and explicit matcher
+callability metadata. R6 also retains native partial/context metadata, original
+match objects and capture slots, corrects fractional/empty-input matcher calls,
+and replaces an allocating length count with the same UTF-8 codepoint count.
+Added source files are finite.go, callbacks.go, matchdata.go, native.go, length.go.
+evaluator/upstream.json records raw per-file SHA-256 and the exact unified patch.
+evaluator/LICENSE preserves the upstream LICENSE bytes without modification.
+The application wrapper also supplies its fixed per-expression numeric shim.
+
+The v206 source headers also state:
+Copyright 2025 Blues Inc. All rights reserved.
+Portions Copyright IBM Corp. 2016, 2017, 2018 All Rights Reserved.
+
+The following is the unmodified LICENSE from the pinned module:
+
+MIT License
+
+Copyright (c) 2021 Blues Inc
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

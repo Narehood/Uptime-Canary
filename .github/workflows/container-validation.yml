@@ -1,0 +1,49 @@
+name: Container validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  alpine-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        phase: [node, web, race]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Stage clean source context
+        run: |
+          python3 scripts/alpine-validation-snapshot.py
+          mkdir -p .canary/alpine-validation/source
+          tar -xzf .canary/alpine-validation/source.tar.gz -C .canary/alpine-validation/source
+      - name: Validate Alpine ${{ matrix.phase }} phase
+        run: |
+          case '${{ matrix.phase }}' in
+            node) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --skip-web --skip-race ;;
+            web) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --only web ;;
+            race) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --only race ;;
+          esac
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: alpine-container-validation-${{ matrix.phase }}
+          path: |
+            .canary/alpine-validation/results/
+            .canary/alpine-validation/source-manifest.json
+          retention-days: 14
+          include-hidden-files: true

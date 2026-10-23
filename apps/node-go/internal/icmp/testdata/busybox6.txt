@@ -1,0 +1,7 @@
+PING ::1 (::1): 32 data bytes
+40 bytes from ::1: seq=0 ttl=64 time=0.070 ms
+40 bytes from ::1: seq=1 ttl=64 time=0.096 ms
+
+--- ::1 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.070/0.083/0.096 ms

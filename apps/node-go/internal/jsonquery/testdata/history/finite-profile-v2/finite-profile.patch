@@ -1,0 +1,687 @@
+diff --git a/v206/functions.go b/v206/functions.go
+--- a/v206/functions.go
++++ b/v206/functions.go
+@@ -221,11 +221,11 @@
+ 		- Returns floating-point result for mathematical consistency
+ 
+ 		Example usage:
+-		$sum([1, 2, 3, 4, 5])        → 15
+-		$sum([1.5, 2.5, 3.0])        → 7.0
+-		$sum([1, "hello", 3])        → 4 (ignores non-numeric)
+-		$sum([])                     → 0
+-		$sum(undefined)              → undefined
++		$sum([1, 2, 3, 4, 5])        â†’ 15
++		$sum([1.5, 2.5, 3.0])        â†’ 7.0
++		$sum([1, "hello", 3])        â†’ 4 (ignores non-numeric)
++		$sum([])                     â†’ 0
++		$sum(undefined)              â†’ undefined
+ 
+ 		JavaScript equivalent: functions.js lines 40-46
+ 	*/
+@@ -945,7 +945,17 @@
+ 	 * @param {[]interface{}} args - the arguments to pass
+ 	 * @returns {interface{}} result of function invocation
+ 	 */
+-	invokeFunction := func(fn interface{}, args []interface{}) (interface{}, error) {
++	invokeFunction := func(fn interface{}, args []interface{}) (result interface{}, err error) {
++		// Native higher-order callbacks can bypass AST dispatch. Guard their
++		// results before the caller can consume or discard them.
++		defer func() {
++			if err == nil {
++				err = rejectNonfiniteResult(result)
++				if err != nil {
++					result = nil
++				}
++			}
++		}()
+ 		switch f := fn.(type) {
+ 		case *Lambda:
+ 			if f.apply != nil {
+@@ -953,6 +963,15 @@
+ 			}
+ 			return nil, errors.New("lambda function has no apply method")
+ 		case *Function:
++			// Argument wrappers in the reference validate the native signature,
++			// including undefined substitution for an omitted continuation arg.
++			if signature, ok := f.signature.(*SignatureValidator); ok {
++				validated, err := validateArguments(signature, args, nil)
++				if err != nil {
++					return nil, err
++				}
++				args = validated
++			}
+ 			if f.Implementation != nil {
+ 				if impl, ok := f.Implementation.(JSONataFunc); ok {
+ 					return impl(args)
+@@ -963,71 +982,92 @@
+ 			return nil, errors.New("function has no implementation")
+ 		case func(...interface{}) (interface{}, error):
+ 			return f(args...)
++		case func() (interface{}, error):
++			if len(args) != 0 {
++				return nil, errors.New("invalid continuation arguments")
++			}
++			return f()
++		case func(string, int) interface{}:
++			// Internal regex closure: the second Go argument is a search offset,
++			// not an extra DSL argument. Regex invocation always starts at zero.
++			if len(args) == 0 {
++				return nil, createJSONataError("T0410", nil)
++			}
++			str, ok := args[0].(string)
++			if !ok {
++				return nil, createJSONataError("T0410", nil)
++			}
++			return f(str, 0), nil
++		case func(interface{}, interface{}) (bool, error):
++			// Fixed internal order-by comparator, also checked by the result guard.
++			if len(args) != 2 {
++				return nil, errors.New("invalid comparator arguments")
++			}
++			return f(args[0], args[1])
+ 		default:
+ 			return nil, errors.New("not a function")
+ 		}
+ 	}
+ 
+-	// Helper to convert map result to MatchResult
+-	var convertMapToMatchResult func(map[string]interface{}) *MatchResult
+-	convertMapToMatchResult = func(resultMap map[string]interface{}) *MatchResult {
++	// Both initial and continuation results use the same validation/adapter.
++	// Only an actual undefined result means exhaustion; callback errors and
++	// malformed results must never turn into successful partial output.
++	var convertMapToMatchResult func(map[string]interface{}) (*MatchResult, error)
++	convertMapToMatchResult = func(resultMap map[string]interface{}) (*MatchResult, error) {
+ 		match, _ := resultMap["match"].(string)
+-
+-		// Handle both int and float64 for start/end (JavaScript numbers come as float64)
+ 		var start, end int
++		var hasStart, hasEnd bool
+ 		if s, ok := resultMap["start"].(int); ok {
+-			start = s
++			start, hasStart = s, true
+ 		} else if s, ok := resultMap["start"].(float64); ok {
+-			start = int(s)
++			start, hasStart = int(s), true
+ 		}
+ 		if e, ok := resultMap["end"].(int); ok {
+-			end = e
++			end, hasEnd = e, true
+ 		} else if e, ok := resultMap["end"].(float64); ok {
+-			end = int(e)
+-		}
+-
+-		groupsInterface, _ := resultMap["groups"].([]interface{})
+-
++			end, hasEnd = int(e), true
++		}
++		groupsValue := resultMap["groups"]
++		if array, ok := groupsValue.(*JSONataArray); ok && array != nil {
++			groupsValue = array.Data
++		}
++		groupsInterface, hasGroups := groupsValue.([]interface{})
+ 		groups := []string{}
+-		for _, g := range groupsInterface {
+-			if gs, ok := g.(string); ok {
+-				groups = append(groups, gs)
+-			}
+-		}
+-
+-		var nextFunc func() *MatchResult
+-		if nextFn, ok := resultMap["next"].(func() (interface{}, error)); ok {
+-			nextFunc = func() *MatchResult {
+-				nextResult, err := nextFn()
+-				if err != nil || nextResult == nil {
+-					return nil
+-				}
+-				if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-					return convertMapToMatchResult(nextMap)
+-				}
+-				return nil
+-			}
+-		} else if next := resultMap["next"]; next != nil && isFunction(next) {
+-			// Handle other function types (like Lambda from custom matchers)
+-			nextFunc = func() *MatchResult {
+-				nextResult, err := invokeFunction(next, []interface{}{})
+-				if err != nil || nextResult == nil {
+-					return nil
+-				}
+-				if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-					return convertMapToMatchResult(nextMap)
+-				}
+-				return nil
+-			}
+-		}
+-
++		for _, group := range groupsInterface {
++			if str, ok := group.(string); ok {
++				groups = append(groups, str)
++			}
++		}
++		next := resultMap["next"]
++		_, nativeNext := next.(func() (interface{}, error))
++		if !hasStart && !hasEnd && !hasGroups && !isFunction(next) && !nativeNext {
++			return nil, createJSONataError("T1010", nil)
++		}
+ 		return &MatchResult{
+-			Match:  match,
+-			Start:  start,
+-			End:    end,
+-			Groups: groups,
+-			Next:   nextFunc,
+-		}
++			Match: match, Start: start, End: end, Groups: groups,
++			Next: func() (*MatchResult, error) {
++				if !matcherContinuationCallable(next) {
++					return nil, createJSONataError("T1010", nil)
++				}
++				// Reference evaluateMatcher(next) supplies one undefined string
++				// argument. The fixed Go regex continuation has a zero-arg shape.
++				nextArgs := []interface{}{nil}
++				if nativeNext {
++					nextArgs = nil
++				}
++				result, err := invokeFunction(next, nextArgs)
++				if err != nil {
++					return nil, err
++				}
++				if result == nil {
++					return nil, nil
++				}
++				if resultMap, ok := result.(map[string]interface{}); ok {
++					return convertMapToMatchResult(resultMap)
++				}
++				return nil, createJSONataError("T1010", nil)
++			},
++		}, nil
+ 	}
+ 
+ 	/**
+@@ -1069,8 +1109,8 @@
+ 					Start:  match[0],
+ 					End:    match[1],
+ 					Groups: groups,
+-					Next: func() *MatchResult {
+-						return buildResult(idx + 1)
++					Next: func() (*MatchResult, error) {
++						return buildResult(idx + 1), nil
+ 					},
+ 				}
+ 			}
+@@ -1086,7 +1126,7 @@
+ 			}
+ 
+ 			if resultMap, ok := result.(map[string]interface{}); ok {
+-				return convertMapToMatchResult(resultMap), nil
++				return convertMapToMatchResult(resultMap)
+ 			}
+ 
+ 			return nil, createJSONataError("T1010", nil)
+@@ -1105,74 +1145,7 @@
+ 			}
+ 
+ 			if resultMap, ok := result.(map[string]interface{}); ok {
+-				// Validate structure
+-				var start, end int
+-				var match string
+-				var groups []string
+-				var hasStart, hasEnd bool
+-
+-				if s, ok := resultMap["start"].(int); ok {
+-					start = s
+-					hasStart = true
+-				} else if s, ok := resultMap["start"].(float64); ok {
+-					start = int(s)
+-					hasStart = true
+-				}
+-				if e, ok := resultMap["end"].(int); ok {
+-					end = e
+-					hasEnd = true
+-				} else if e, ok := resultMap["end"].(float64); ok {
+-					end = int(e)
+-					hasEnd = true
+-				}
+-				if m, ok := resultMap["match"].(string); ok {
+-					match = m
+-				}
+-				if g, ok := resultMap["groups"].([]interface{}); ok {
+-					for _, group := range g {
+-						if groupStr, ok := group.(string); ok {
+-							groups = append(groups, groupStr)
+-						}
+-					}
+-				}
+-
+-				if !hasStart && !hasEnd && len(groups) == 0 && !isFunction(resultMap["next"]) {
+-					return nil, createJSONataError("T1010", nil)
+-				}
+-
+-				return &MatchResult{
+-					Match:  match,
+-					Start:  start,
+-					End:    end,
+-					Groups: groups,
+-					Next: func() *MatchResult {
+-						if nextFunc, ok := resultMap["next"]; ok {
+-							// Check if it's a function that returns (interface{}, error)
+-							if fn, ok := nextFunc.(func() (interface{}, error)); ok {
+-								nextResult, err := fn()
+-								if err != nil || nextResult == nil {
+-									return nil
+-								}
+-								// Convert the result to MatchResult
+-								if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-									return convertMapToMatchResult(nextMap)
+-								}
+-							} else if isFunction(nextFunc) {
+-								// The next function returns a matcher result
+-								// We need to invoke it with no arguments
+-								nextResult, err := invokeFunction(nextFunc, []interface{}{})
+-								if err != nil || nextResult == nil {
+-									return nil
+-								}
+-								// Convert the result to MatchResult
+-								if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-									return convertMapToMatchResult(nextMap)
+-								}
+-							}
+-						}
+-						return nil
+-					},
+-				}, nil
++				return convertMapToMatchResult(resultMap)
+ 			}
+ 
+ 			return nil, createJSONataError("T1010", nil)
+@@ -1286,9 +1259,11 @@
+ 			}
+ 			if matches != nil {
+ 				for matches != nil && (limit == nil || count < *limit) {
+-					groups := matches.Groups
+-					if groups == nil {
+-						groups = []string{}
++					// Exposed groups must use the evaluator's JSON array shape so
++					// subsequent path/function evaluation can consume them normally.
++					groups := make([]interface{}, len(matches.Groups))
++					for i, group := range matches.Groups {
++						groups[i] = group
+ 					}
+ 					result.Data = append(result.Data, map[string]interface{}{
+ 						"match":  matches.Match,
+@@ -1296,10 +1271,9 @@
+ 						"groups": groups,
+ 					})
+ 					count++
+-					if matches.Next != nil {
+-						matches = matches.Next()
+-					} else {
+-						matches = nil
++					matches, err = matches.Next()
++					if err != nil {
++						return nil, err
+ 					}
+ 				}
+ 			}
+@@ -1463,38 +1437,6 @@
+ 				}
+ 			} else {
+ 				// Regex replacement - matches JavaScript: evaluateMatcher(pattern, str)
+-				// First, we need to test if this regex would match zero-length strings
+-				// by invoking it and checking the first match
+-				testResult, err := invokeFunction(pattern, []interface{}{str})
+-				if err != nil {
+-					return nil, err
+-				}
+-
+-				// Check if we got a match result map
+-				if testResultMap, ok := testResult.(map[string]interface{}); ok {
+-					// Check if it's a zero-length match
+-					if match, hasMatch := testResultMap["match"].(string); hasMatch && match == "" {
+-						// Try to get the next match to see if it would progress
+-						if nextFn, hasNext := testResultMap["next"].(func() (interface{}, error)); hasNext {
+-							nextResult, nextErr := nextFn()
+-							// If we get a D1004 error, propagate it
+-							if nextErr != nil {
+-								return nil, nextErr
+-							}
+-							// If the next match is also zero-length at the same position, it would loop forever
+-							if nextMap, ok := nextResult.(map[string]interface{}); ok {
+-								if nextMatch, hasMatch := nextMap["match"].(string); hasMatch && nextMatch == "" {
+-									if nextStart, hasStart := nextMap["start"].(int); hasStart && nextStart == 0 {
+-										// This would cause infinite loop
+-										return nil, createJSONataError("D1004", pattern)
+-									}
+-								}
+-							}
+-						}
+-					}
+-				}
+-
+-				// Now do the actual replacement
+ 				matches, err := evaluateMatcher(pattern, str, nil)
+ 				if err != nil {
+ 					return nil, err
+@@ -1532,7 +1474,10 @@
+ 						}
+ 						position = matches.End
+ 						count++
+-						matches = matches.Next()
++						matches, err = matches.Next()
++						if err != nil {
++							return nil, err
++						}
+ 					}
+ 					result += str[position:]
+ 				} else {
+@@ -1817,7 +1762,10 @@
+ 					for matches != nil && (limit == nil || count < *limit) {
+ 						result = append(result, str[start:matches.Start])
+ 						start = matches.End
+-						matches = matches.Next()
++						matches, err = matches.Next()
++						if err != nil {
++							return nil, err
++						}
+ 						count++
+ 					}
+ 					if limit == nil || count < *limit {
+@@ -2921,11 +2869,11 @@
+ 		- Follows IEEE 754 floating-point semantics
+ 
+ 		Example usage:
+-		$sqrt(4)        → 2
+-		$sqrt(2)        → 1.4142135623730951
+-		$sqrt(0)        → 0
+-		$sqrt(-1)       → Error D3060 (domain error)
+-		$sqrt(undefined) → undefined
++		$sqrt(4)        â†’ 2
++		$sqrt(2)        â†’ 1.4142135623730951
++		$sqrt(0)        â†’ 0
++		$sqrt(-1)       â†’ Error D3060 (domain error)
++		$sqrt(undefined) â†’ undefined
+ 
+ 		Error codes:
+ 		- D3060: Square root of negative number (domain error)
+@@ -3880,6 +3828,11 @@
+ 		var comparator interface{}
+ 		if len(args) > 1 {
+ 			comparator = args[1]
++		}
++		if comparator != nil && !isFunction(comparator) {
++			if _, ok := comparator.(func(interface{}, interface{}) (bool, error)); !ok {
++				return nil, createJSONataError("T0410", nil)
++			}
+ 		}
+ 		// undefined inputs always return undefined
+ 		if arr == nil {
+@@ -3955,34 +3908,11 @@
+ 						}
+ 					}
+ 				} else {
+-					// Call custom comparator function
+-					if cmpFunc, ok := comparator.(func(interface{}, interface{}) (bool, error)); ok {
+-						shouldSwap, err = cmpFunc(left[i], right[j])
+-						if err != nil {
+-							return nil, err
+-						}
+-					} else if lambda, ok := comparator.(*Lambda); ok {
+-						// Handle Lambda comparator
+-						compResult, err := lambda.apply(nil, []interface{}{left[i], right[j]})
+-						if err != nil {
+-							return nil, err
+-						}
+-						// Convert result to boolean using JavaScript truthiness rules
+-						if compResult != nil {
+-							switch v := compResult.(type) {
+-							case bool:
+-								shouldSwap = v
+-							case float64:
+-								shouldSwap = v != 0
+-							case int:
+-								shouldSwap = v != 0
+-							case string:
+-								shouldSwap = v != ""
+-							default:
+-								shouldSwap = true // non-nil values are truthy
+-							}
+-						}
++					compResult, err := invokeFunction(comparator, []interface{}{left[i], right[j]})
++					if err != nil {
++						return nil, err
+ 					}
++					shouldSwap = comparatorTruthy(compResult)
+ 				}
+ 
+ 				if shouldSwap {
+@@ -4037,7 +3967,7 @@
+ 		// shuffle using the 'inside-out' variant of the Fisher-Yates algorithm
+ 		result := make([]interface{}, len(arr))
+ 		for i := 0; i < len(arr); i++ {
+-			j := rand.Intn(i + 1) // random integer such that 0 ≤ j ≤ i
++			j := rand.Intn(i + 1) // random integer such that 0 â‰¤ j â‰¤ i
+ 			if i != j {
+ 				result[i] = result[j]
+ 			}
+@@ -4278,5 +4208,5 @@
+ 	Start  int
+ 	End    int
+ 	Groups []string
+-	Next   func() *MatchResult
++	Next   func() (*MatchResult, error)
+ }
+diff --git a/v206/jsonata.go b/v206/jsonata.go
+--- a/v206/jsonata.go
++++ b/v206/jsonata.go
+@@ -829,6 +829,12 @@
+ 		if err != nil {
+ 			return nil, err
+ 		}
++	}
++
++	// Local finite-intermediate profile: check before predicates/grouping can
++	// consume or discard a nonfinite result.
++	if err := rejectNonfiniteResult(result); err != nil {
++		return nil, err
+ 	}
+ 
+ 	// Apply predicate filters to the evaluation result
+@@ -3418,12 +3424,18 @@
+ 			fmt.Printf("DEBUG-GO: parent operator evaluated to: %v (type: %T)\n", arg, arg)
+ 		}
+ 		if isFunction(arg) {
+-			// For Lambda types, pass them directly without wrapping
++			// Retain Lambda signatures and captured execution state.
+ 			if lambda, ok := arg.(*Lambda); ok {
+-				evaluatedArgs = append(evaluatedArgs, lambda)
++				// Retain identity of captured state while recording the reference's
++				// callable argument wrapper on a private header, never a global value.
++				wrapped := *lambda
++				wrapped.matcherCallable = true
++				evaluatedArgs = append(evaluatedArgs, &wrapped)
+ 			} else if fn, ok := arg.(*Function); ok {
+-				// For Function types, pass them directly to preserve signature
+-				evaluatedArgs = append(evaluatedArgs, fn)
++				// Preserve native signatures on the callable argument header.
++				wrapped := *fn
++				wrapped.matcherCallable = true
++				evaluatedArgs = append(evaluatedArgs, &wrapped)
+ 			} else {
+ 				// For other function types, wrap in a closure
+ 				closure := func(params ...interface{}) (interface{}, error) {
+@@ -3432,6 +3444,7 @@
+ 				}
+ 				closureFn := &Function{
+ 					JSONataFunction: true,
++					matcherCallable: true,
+ 					Implementation:  closure,
+ 					Arity:           getFunctionArity(arg),
+ 				}
+@@ -3687,6 +3700,7 @@
+ 
+ 	procedure := &Lambda{
+ 		JSONataLambda: true,
++		matcherCallable: true,
+ 		input:         input,
+ 		environment:   environment,
+ 		arguments:     arguments,
+diff --git a/v206/utils.go b/v206/utils.go
+--- a/v206/utils.go
++++ b/v206/utils.go
+@@ -494,6 +494,9 @@
+ // Lambda represents a JSONata lambda function
+ type Lambda struct {
+ 	JSONataLambda  bool
++	// JS literal lambdas and argument wrappers have a callable .apply method;
++	// raw partial objects do not. This is metadata, never closure inspection.
++	matcherCallable bool
+ 	input          interface{}
+ 	environment    *Frame
+ 	arguments      []interface{}
+@@ -509,6 +512,7 @@
+ type Function struct {
+ 	JSONataFunction bool
+ 	JSONataLambda   bool
++	matcherCallable bool // true only on a normal expression argument wrapper
+ 	Implementation  interface{}
+ 	signature       interface{}
+ 	token           string
+diff --git a/v206/finite.go b/v206/finite.go
+new file mode 100644
+--- /dev/null
++++ b/v206/finite.go
+@@ -0,0 +1,71 @@
++package jsonata
++
++import (
++	"errors"
++	"math"
++)
++
++const (
++	finiteResultMaxDepth  = 128
++	finiteResultMaxValues = 65536
++)
++
++var errFiniteResult = errors.New("JSON query result rejected by finite profile")
++
++// rejectNonfiniteResult implements the local finite-intermediate profile. Each
++// result has its own depth/value budget. Only JSON-shaped containers are walked;
++// functions, lexical environments and other opaque engine values are not inspected.
++// No reflection, pointer cache, host callbacks or user bindings are involved.
++// Cycles exhaust the depth budget (at most 129 edges); repeated references count
++// again. This bounds cyclic/shared graphs without skipping data after alias mutation.
++func rejectNonfiniteResult(value interface{}) error {
++	remaining := finiteResultMaxValues
++	return walkFiniteResult(value, 0, &remaining)
++}
++
++func walkFiniteResult(value interface{}, depth int, remaining *int) error {
++	if depth > finiteResultMaxDepth || *remaining == 0 {
++		return errFiniteResult
++	}
++	*remaining -= 1
++	switch v := value.(type) {
++	case float64:
++		if math.IsNaN(v) || math.IsInf(v, 0) {
++			return errFiniteResult
++		}
++	case float32:
++		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
++			return errFiniteResult
++		}
++	case map[string]interface{}:
++		if len(v) > *remaining {
++			return errFiniteResult
++		}
++		for _, child := range v {
++			if err := walkFiniteResult(child, depth+1, remaining); err != nil {
++				return err
++			}
++		}
++	case []interface{}:
++		return walkFiniteItems(v, depth, remaining)
++	case *JSONataArray:
++		if v != nil {
++			return walkFiniteItems(v.Data, depth, remaining)
++		}
++	case JSONataArray:
++		return walkFiniteItems(v.Data, depth, remaining)
++	}
++	return nil
++}
++
++func walkFiniteItems(items []interface{}, depth int, remaining *int) error {
++	if len(items) > *remaining {
++		return errFiniteResult
++	}
++	for _, child := range items {
++		if err := walkFiniteResult(child, depth+1, remaining); err != nil {
++			return err
++		}
++	}
++	return nil
++}
+diff --git a/v206/callbacks.go b/v206/callbacks.go
+new file mode 100644
+--- /dev/null
++++ b/v206/callbacks.go
+@@ -0,0 +1,59 @@
++package jsonata
++
++// Matcher continuations use .apply in the pinned reference, rather than the
++// general expression invocation path. Raw native/partial objects lack that JS
++// method; normal DSL lambdas and expression argument wrappers have it. Track
++// only that distinction, without looking inside captured state or function code.
++func matcherContinuationCallable(value interface{}) bool {
++	switch fn := value.(type) {
++	case *Lambda:
++		return fn != nil && fn.matcherCallable
++	case *Function:
++		return fn != nil && fn.matcherCallable
++	case func() (interface{}, error):
++		return true // fixed native regex continuation
++	default:
++		return isFunction(value)
++	}
++}
++
++// comparatorTruthy follows the host JS conditional used by reference sort,
++// rather than JSONata's $boolean builtin: empty arrays/objects are truthy, null
++// is false. invokeFunction has already rejected nonfinite returned numbers.
++// Opaque values are never formatted, reflected, traversed or invoked here.
++func comparatorTruthy(value interface{}) bool {
++	switch v := value.(type) {
++	case nil, *JSONataNull, JSONataNull:
++		return false
++	case bool:
++		return v
++	case string:
++		return v != ""
++	case float64:
++		return v != 0
++	case float32:
++		return v != 0
++	case int:
++		return v != 0
++	case int8:
++		return v != 0
++	case int16:
++		return v != 0
++	case int32:
++		return v != 0
++	case int64:
++		return v != 0
++	case uint:
++		return v != 0
++	case uint8:
++		return v != 0
++	case uint16:
++		return v != 0
++	case uint32:
++		return v != 0
++	case uint64:
++		return v != 0
++	default:
++		return true
++	}
++}

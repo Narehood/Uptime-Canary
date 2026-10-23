@@ -1,0 +1,10 @@
+{
+  "name": "@uptime-canary/proof",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  }
+}

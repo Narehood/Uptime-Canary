@@ -1,0 +1,21 @@
+FROM golang:1.27.3-alpine AS build
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY apps/node-go ./apps/node-go
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/canary ./apps/node-go/cmd/canary
+
+FROM alpine:3.24 AS runtime
+RUN apk add --no-cache ca-certificates iputils \
+    && addgroup -S canary && adduser -S -G canary canary \
+    && mkdir -p /data /identity && chown canary:canary /data /identity \
+    && chmod 0700 /identity
+WORKDIR /app
+COPY --from=build /out/canary /usr/local/bin/canary
+COPY LICENSE THIRD_PARTY_NOTICES.txt /usr/share/licenses/uptime-canary/
+ENV CANARY_HOST=0.0.0.0 CANARY_PORT=3100 CANARY_DB=/data/canary.db CANARY_IDENTITY_DIRECTORY=/identity
+USER canary
+EXPOSE 3100
+VOLUME ["/data", "/identity"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD wget -q -O /dev/null http://127.0.0.1:3100/readyz || exit 1
+CMD ["/usr/local/bin/canary", "serve"]

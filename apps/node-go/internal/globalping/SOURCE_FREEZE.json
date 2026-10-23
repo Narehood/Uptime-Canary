@@ -1,0 +1,113 @@
+{
+    "formatVersion":  1,
+    "frozenAtUTC":  "2026-10-22T22:26:40.5373312Z",
+    "scope":  "apps/node-go/internal/globalping",
+    "contractFrozen":  true,
+    "contractFile":  "config.go",
+    "entryPoints":  [
+                        "Validate(Config) error",
+                        "Check(context.Context, Config) Result"
+                    ],
+    "states":  [
+                   "up",
+                   "down",
+                   "pending"
+               ],
+    "queryWorkerUnavailableAlwaysPending":  true,
+    "latencySource":  "provider remote stats.avg or timings.total, gated by LatencyAvailable",
+    "files":  [
+                  {
+                      "path":  "bounds_test.go",
+                      "sha256":  "135a73e9a12e04d3f8d88ca10e28a4b5352c43b444223c005bca30c92c6c6904",
+                      "bytes":  4373
+                  },
+                  {
+                      "path":  "client.go",
+                      "sha256":  "568628db832d91a27254a956447f18df43aefb9b7fadc9efcbc57cbd25b8ce3a",
+                      "bytes":  8937
+                  },
+                  {
+                      "path":  "config.go",
+                      "sha256":  "ac92890e2dc35b092f9a54f589f38fba636730458b4ad3975de5dd13a6374eaf",
+                      "bytes":  11486
+                  },
+                  {
+                      "path":  "engine_test.go",
+                      "sha256":  "c998d785c0ddb7fb7450b71c1275a17f371de18294d918b392118ebe94199b7f",
+                      "bytes":  22612
+                  },
+                  {
+                      "path":  "invalid_test.go",
+                      "sha256":  "7c98f774f66c9bf0b9814f6cb3d2dbda7c692dcdbf20bc79d581342f53c90eae",
+                      "bytes":  16372
+                  },
+                  {
+                      "path":  "json.go",
+                      "sha256":  "70a5dc81bd62173f9e243c3930f92d1d80aae676518286f78ac69ea68ae101a9",
+                      "bytes":  4198
+                  },
+                  {
+                      "path":  "README.md",
+                      "sha256":  "2963854dfa46169dbf38cb8b23b25c62c6f2706d3746c4037eab31a6ffa08e49",
+                      "bytes":  15049
+                  },
+                  {
+                      "path":  "request.go",
+                      "sha256":  "2b99d950eef71fa7ded09ec37c5c6284345222ce909ed01a54048aee20b25965",
+                      "bytes":  1361
+                  },
+                  {
+                      "path":  "result.go",
+                      "sha256":  "dfa38bd753578af16e33e37b2069dacec8b7fb99877a0e6ced4cb5c5b0512e1b",
+                      "bytes":  7750
+                  }
+              ],
+    "references":  {
+                       "schemasSHA256":  "3579c865148bc63a14ef6a23a545dc2051ba0c14913eb5134f692cd33d409ab6",
+                       "officialSDKModelsSHA256":  "5b54b26af59275b5bd8187f7f7a183cfe09137c399db26211bbd9d0e4d5c1a63",
+                       "kumaCommit":  "7ca4a3debd76443d8452da95d4040200a1479af4"
+                   },
+    "validation":  {
+                       "go":  "go1.27.3 windows/amd64",
+                       "focusedFixtures":  {
+                                               "command":  ".canary/tools/go/bin/go.exe test -mod=readonly ./apps/node-go/internal/globalping -count=1 -timeout=45s \u0027-coverprofile=apps/node-go/internal/globalping/coverage.out\u0027",
+                                               "result":  "PASS",
+                                               "seconds":  6.571,
+                                               "statementCoveragePercent":  92.6
+                                           },
+                       "vet":  {
+                                   "command":  ".canary/tools/go/bin/go.exe vet -mod=readonly ./apps/node-go/internal/globalping",
+                                   "result":  "PASS"
+                               },
+                       "linuxAmd64":  {
+                                          "environment":  {
+                                                              "CGO_ENABLED":  "0",
+                                                              "GOOS":  "linux",
+                                                              "GOARCH":  "amd64"
+                                                          },
+                                          "command":  ".canary/tools/go/bin/go.exe build -mod=readonly ./apps/node-go/internal/globalping",
+                                          "result":  "PASS (library build, no output binary)"
+                                      },
+                       "linuxArm64":  {
+                                          "environment":  {
+                                                              "CGO_ENABLED":  "0",
+                                                              "GOOS":  "linux",
+                                                              "GOARCH":  "arm64"
+                                                          },
+                                          "command":  ".canary/tools/go/bin/go.exe build -mod=readonly ./apps/node-go/internal/globalping",
+                                          "result":  "PASS (library build, no output binary)"
+                                      },
+                       "coverageFunctionSummary":  {
+                                                       "command":  ".canary/tools/go/bin/go.exe tool cover \u0027-func=apps/node-go/internal/globalping/coverage.out\u0027",
+                                                       "result":  "PASS; total 92.6%"
+                                                   }
+                   },
+    "generatedCoverageAndExecutablesRetained":  false,
+    "externalMeasurementRequests":  0,
+    "notRun":  [
+                   "whole-Go tests (owner reported unrelated evaluator failures)",
+                   "Alpine VM/runtime (owner busy)",
+                   "live provider measurement or paid-credit request"
+               ],
+    "integration":  "Root owns API, HA, shared types, viewer, and dispatch. Existing Go JSONata semantics and known issues remain; private JS candidate not adopted."
+}

@@ -1,0 +1,28 @@
+{
+  "name": "uptime-canary",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.13.0 <25" },
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "init": "node scripts/init.mjs",
+    "dev": "node scripts/go.mjs serve",
+    "dev:web": "npm run dev --workspace @uptime-canary/web",
+    "build:node": "node scripts/go.mjs build",
+    "build:linux": "node scripts/go.mjs build-linux",
+    "build": "npm run build:node && npm run build --workspace @uptime-canary/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "node scripts/go.mjs test",
+    "test:proof": "npm run build:node && npm run test --workspace @uptime-canary/proof",
+    "vet": "node scripts/go.mjs vet",
+    "check": "npm run typecheck && npm run vet && npm test && npm run test:proof && npm run build",
+    "canary": "node scripts/go.mjs cli"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

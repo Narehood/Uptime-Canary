@@ -1,0 +1,5 @@
+{
+  "name": "Choose your group name",
+  "nodeIds": ["canary-1"],
+  "graceMs": 10000
+}

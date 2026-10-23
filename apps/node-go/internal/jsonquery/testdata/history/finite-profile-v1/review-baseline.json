@@ -1,0 +1,13 @@
+{
+  "reviewReport": "docs/jsonata-profile-review.md",
+  "privateEvidence": ".canary/jsonata-profile-review/run-45a39cf4/",
+  "reviewTests": {
+    "profile_review_test.go": "cabd65607e780b73197e84959b681cb70d24033cde4d0a5b59e670e0b066e34c",
+    "evaluator/finite_review_test.go": "c801a0c52d659c76a8850b62ff434a55c5508b8308d1c96dfcde880342c33e27"
+  },
+  "frozenBaselineSha256": "284a0f42035705a4c128f100ba84f2d400cb475ef751a6203acca7520580d94d",
+  "baselinePassingEvents": 292,
+  "reviewPassingEvents": 324,
+  "reviewFailingAssertionCases": 20,
+  "reviewFailingEventsIncludingParents": 22
+}

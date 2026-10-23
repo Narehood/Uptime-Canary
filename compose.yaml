@@ -1,0 +1,44 @@
+services:
+  node:
+    init: true
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    restart: unless-stopped
+    environment:
+      CANARY_NODE_ID: ${CANARY_NODE_ID:-canary-1}
+      CANARY_NODE_NAME: ${CANARY_NODE_NAME:-Canary One}
+      CANARY_ADMIN_TOKEN: ${CANARY_ADMIN_TOKEN:?Run npm run init first}
+      CANARY_CLUSTER_TOKEN: ${CANARY_CLUSTER_TOKEN:?Run npm run init first}
+      CANARY_PEERS: ${CANARY_PEERS:-[]}
+      CANARY_CORS_ORIGINS: ${CANARY_CORS_ORIGINS:-http://localhost:8080}
+      CANARY_SYNC_INTERVAL_MS: ${CANARY_SYNC_INTERVAL_MS:-1000}
+      CANARY_NOTIFICATION_DELAY_MS: ${CANARY_NOTIFICATION_DELAY_MS:-1500}
+      CANARY_PEER_TIMEOUT_MS: ${CANARY_PEER_TIMEOUT_MS:-2000}
+      CANARY_HISTORY_LIMIT: ${CANARY_HISTORY_LIMIT:-1000}
+      CANARY_HISTORY_RETENTION_MS: ${CANARY_HISTORY_RETENTION_MS:-604800000}
+      CANARY_HOST: 0.0.0.0
+      CANARY_DB: /data/canary.db
+      CANARY_IDENTITY_DIRECTORY: /identity
+    ports:
+      - "${CANARY_BIND_ADDRESS:-127.0.0.1}:${CANARY_PORT:-3100}:3100"
+    volumes:
+      - canary-data:/data
+      - canary-identity:/identity
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    profiles: [web]
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - "${CANARY_WEB_BIND_ADDRESS:-127.0.0.1}:${CANARY_WEB_PORT:-8080}:8080"
+
+volumes:
+  canary-data:
+  canary-identity:
