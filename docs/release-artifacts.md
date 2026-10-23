@@ -133,6 +133,16 @@ that authoring command is not claimed as a passing immutable validation. The
 subsequent readonly `--check` passed in 4.485 seconds, with source unchanged,
 zero scratch and zero shared-module growth.
 
+The next actual attempt on `874fac4` verified all 42 Windows linked module
+notice sets and built successfully, then failed the new validator's assumption
+that the main module must say `(devel)`. Its real Go 1.27.3 metadata correctly
+contained `v0.0.0-20261023211050-874fac4fa436`, the full matching Git revision and
+`vcs.modified=false`. The validator now accepts Go-derived versions while still
+requiring the exact full revision, clean flag and target settings; new positive
+fixtures cover pseudoversions and tags. This was a validator defect, not an
+application test failure. That guarded run took 22.594 seconds and removed all
+172,952,074 sampled scratch bytes; module growth was zero.
+
 Before calling a release ready, the producer still needs to build and validate
 real Windows/Linux artifacts, verify target-specific dependency notices and
 source provenance, execute the supported native/container gates including

@@ -58,9 +58,15 @@ def verify_build_info(raw, target, commit, toolchain):
     goos, goarch = target.split("-")
     expected = {"GOOS": goos, "GOARCH": goarch, "CGO_ENABLED": "0", "-trimpath": "true",
                 "-buildmode": "exe", "vcs": "git", "vcs.revision": commit, "vcs.modified": "false"}
-    if (fields.get("path") != [MAIN] or fields.get("mod", [])[:2] != ["uptime-canary", "(devel)"]
+    module = fields.get("mod", [])
+    module_version = module[1] if len(module) >= 2 else ""
+    # Go 1.27 derives a module version from VCS when available. The full VCS
+    # revision and clean flag below bind source; '(devel)' is not mandatory.
+    valid_version = module_version == "(devel)" or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?", module_version)
+    if (fields.get("path") != [MAIN] or not module or module[0] != "uptime-canary" or not valid_version
             or any(settings.get(k) != value for k, value in expected.items())):
         raise ValueError("Executable source identity, target or build policy mismatch")
+    settings["mainModuleVersion"] = module_version
     return settings
 
 

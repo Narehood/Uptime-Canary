@@ -19,12 +19,16 @@ class ReleaseValidationTests(unittest.TestCase):
     def test_metadata_rejects_wrong_or_missing_source_target_policy_and_duplicate_fields(self):
         checked = validation.verify_build_info(INFO, "windows-amd64", COMMIT, "go1.27.3")
         self.assertEqual(checked["vcs.revision"], COMMIT)
+        for version in ("v0.0.0-20261023211050-" + COMMIT[:12], "v1.2.3"):
+            raw = INFO.replace("(devel)", version)
+            self.assertEqual(validation.verify_build_info(raw, "windows-amd64", COMMIT, "go1.27.3")["mainModuleVersion"], version)
         cases = [INFO.replace("go1.27.3", "go1.26.0"), INFO.replace(COMMIT, "b" * 40),
                  INFO.replace("vcs.modified=false", "vcs.modified=true"), INFO.replace("GOOS=windows", "GOOS=linux"),
                  INFO.replace("GOARCH=amd64", "GOARCH=arm64"), INFO.replace("CGO_ENABLED=0", "CGO_ENABLED=1"),
                  INFO.replace("-trimpath=true", "-trimpath=false"), INFO.replace("canary/apps", "other/apps"),
                  INFO.replace("\tbuild\tvcs.revision=" + COMMIT + "\n", ""),
-                 INFO + "\tbuild\tvcs.modified=false\n", INFO + "\tpath\tother\n", INFO + "\tbuild\tbroken\n"]
+                 INFO + "\tbuild\tvcs.modified=false\n", INFO + "\tpath\tother\n", INFO + "\tbuild\tbroken\n",
+                 INFO.replace("(devel)", "not-a-version")]
         for raw in cases:
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 validation.verify_build_info(raw, "windows-amd64", COMMIT, "go1.27.3")
