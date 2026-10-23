@@ -28,27 +28,31 @@ done. Original failures and the older checkpoint below remain historical.
   scratch below 512 MiB, one owned cache and one validation at a time. No new
   source snapshots, binary archives or persistent validation VMs are permitted.
 
-### Current acceptance work
+### Refreshed acceptance milestone and next work
 
-1. Refresh real-process proofs on the combined source, including partitions,
-   restart, provider acceptance, current runtime queries and retained identity.
-   The runner is being migrated to guarded disposable outputs rather than
-   copied source trees.
-2. Scan the combined source and embedded runtimes again. Check the locally
-   replaced Goja module's upstream identity explicitly as well as imported
-   symbols, lockfiles and the JSONata asset; do not treat local patches as an
-   advisory exemption.
-3. Refresh dashboard contract coverage on the current source. Its historical
-   catalogue failure expects 25 types even though the accepted Globalping
-   contract adds the 26th. Preserve that earlier result and document the
-   narrow expectation update. Any real product findings still require fixes.
-4. Prove coordinated upgrades, database migration and rollback/refusal rules;
-   exercise backlog, retained-history growth and operational recovery without
-   touching user data. Bounded wire pages do not bound total retained history.
-5. Continue the remaining monitor/provider options and publication features in
-   [the parity inventory](parity-audit.md), keeping the original near-parity
-   goal. SMS remains explicitly deferred. Prepare release artifacts only after
-   the coherent checks and their source/platform evidence are complete.
+- Windows: all 17 current real-process tests and the refreshed 124/124 dashboard
+  contract pass against the same development binary. A separately scoped
+  controlled 13-to-14 upgrade proof passes, including mixed-peer refusal,
+  accounts/configuration, monotonic origin sequences and retained receipts.
+- Current source-symbol/advisory gate: no reachable Go finding, zero npm
+  advisories, and explicit verified Goja/JSONata version and commit lookups
+  without active advisories. The module-only OpenPGP finding remains disclosed.
+- [Workflow 39991889659](https://github.com/Narehood/Uptime-Canary/actions/runs/39991889659)
+  on `4d51a6a` passes all four node/web/race/proof jobs. It adds actual Alpine
+  execution of all 17 process proofs and actual Compose runtime checks for the
+  Portainer template. Core 869 and worker-parent 1,527 race events pass, with
+  helper race packages separate. All 560 manifest entries match the checkout.
+- One new standalone validation-fixture import defect was reproduced and
+  repaired; the failed predecessor run remains preserved. Product runtime and
+  dashboard source are unchanged from `77416a1`. See the exact
+  [checkpoint evidence](protocol14-checkpoint.md).
+- Continue missing publication, monitor and provider capabilities in
+  [the parity inventory](parity-audit.md). Public observed availability/history
+  and uptime badges are the next proposed wave; current-state badges and
+  authenticated local observed-time history already exist. SMS stays deferred.
+- Retained-history operating costs, capacity/backlog recovery and reproducible
+  tagged release artifacts still need deliberate release work. Bounded wire
+  pages do not bound total retained evidence. Arm64 was compiled, not executed.
 
 There is no tagged release or release certification at this checkpoint.
 See [container evidence](container-validation.md) for the exact current run.

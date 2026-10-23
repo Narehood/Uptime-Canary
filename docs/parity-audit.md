@@ -3,65 +3,53 @@
 ## Current implementation note, 2026-10-23
 
 The comparison below is the original researched baseline. Its `Gap` and
-`in progress` cells are historical, not a current inventory. The project has
-since selected **MIT**, implemented the five priority notification services,
-password/MFA accounts, retries/inversion, maintenance, local statistics/metrics,
-restore activation with separately retained sequence state, manual monitors,
-public status JSON and tags. Sixteen service engines and the active network
-checks are integrated; package-specific option differences remain documented in
-their READMEs. Public status/tag privacy has also passed a two-process proof.
+`in progress` cells are historical. This current inventory supersedes those
+implementation labels; the pinned upstream research remains unchanged.
 
-Passive push/heartbeat monitoring is implemented with passing engine/API tests
-and current protocol-9 process and Alpine checks. Coherent whole-release
-validation is still pending. Opus has completed the structured dashboard for all
-26 current monitor types and management surfaces. After contract repairs, the
-unchanged reviewer harness passed 114/114 and Opus's private browser proof passed
-28/28. The latest UI still needs fresh container validation.
-System services, PM2, browser checks, Tailscale, GameDig and Steam remain absent.
-Globalping HTTP/ping/DNS is integrated with native tests, a compiled two-process
-proof and structured dashboard forms. Its independent privacy reviews passed;
-the focused dashboard proof passed 16/16 on a protocol-12 development artifact.
-Group hierarchy and local observed-time history have reviewed backend
-implementations. Opus completed their dashboard presentations and badge share
-links, with 23 browser checks passing on a private protocol-11 artifact. The new
-badge renderer still needs combined-artifact browser validation.
-Some authentication/protocol options and much of the notification
-catalogue also remain gaps. A generic webhook is not counted as those providers.
-The user explicitly deferred SMS; the priority adapters do not redefine the
-near-parity destination as complete.
+Protocol 14 adopts official JSONata 2.2.2 in the existing bounded worker through
+Goja and private finite-value guards. The former Go port has no production
+fallback. Its seven reported false-healthy mechanisms no longer block this
+source: all 130 unchanged independent review cases pass on actual Alpine.
+The finite profile deliberately differs from unrestricted JavaScript JSONata;
+the [migration notes](../apps/node-go/internal/jsonquery/RUNTIME_MIGRATION.md)
+record the narrow accepted expectation changes. The earlier failed candidate
+and emulated-platform results remain historical evidence, not current results.
 
-Protocol-10 development adds HTTP OAuth2 client credentials and guarded JSONata
-conditions for HTTP, MQTT, SNMP, and MongoDB. Focused integration tests pass;
-numeric compatibility and worker reliability repairs, structured UI controls,
-independent review, and final platform validation remain in progress. This is
-partial implementation, not a claim of full JSONata or OAuth feature parity.
-The supported 1 MiB query document now passes actual Alpine with unchanged
-limits, while seven newly reproduced compatibility mechanisms remain blockers.
-An official-JavaScript candidate is private research, not an adopted runtime.
-Working protocol 11 added parent links and current-health rollups without changing
-direct group alert or maintenance selection. Working protocol 12 adds Globalping.
-The first official-JavaScript candidate failed four extra Alpine resource
-assertions; a distinct private repair is undergoing focused platform checks.
-No candidate runtime or profile waiver has been adopted. R3 passed additional
-independent native/worker controls but failed the first exact visit-budget
-case on the small diskless Alpine/TCG setup. Later selectors stopped. That
-failure and all fixed resource limits remain preserved; see
-[the bounded checkpoint](bounded-alpine-result.md).
+Current implementation includes 26 monitor types, sixteen service engines,
+passive push, manual checks, Globalping, HTTP OAuth2, HTTP/MQTT/SNMP/MongoDB
+JSONata, retries/inversion, maintenance, group hierarchy, tags, local observed
+availability, public status pages and current-state badges. Package READMEs
+state the options and protocol differences. Notifications include eleven
+native providers with typed configuration, destination-specific identities,
+durable attempts and peer receipts. Accounts support passwords, MFA, sessions
+and roles. Recovery uses quarantine/activation and separately retained sequence
+state. The license is MIT.
 
-Working protocol 13 adds native Slack, Telegram, ntfy, Gotify and Pushover
-channels, typed configuration, destination identities bound to channel resources,
-durable attempts and peer receipts. All 26 leaf groups, full Canary tests,
-delivery tests, targeted vet and Linux leaf/delivery library compilation pass.
-The five forms pass typechecking, eight pure checks and 21 local-provider browser
-checks. This increases the native notification catalogue to eleven including
-the existing Discord/email/webhook providers. It does not implement the entire
-upstream catalogue or clear the JSONata blocker. Current protocol-13 process
-verification is separate from the historical artifacts listed below.
+The current Windows node passes all 17 process proofs, the refreshed dashboard
+contract passes 124/124, and a controlled 13-to-14 upgrade proof preserves
+configuration, accounts, sequence monotonicity and delivery receipts. The
+dashboard harness explicitly accepts the catalogue's 25-to-26 addition, checks
+uniqueness and Globalping, and adds ten checks for the five chat/push providers.
+The earlier 113/114 result is preserved as historical. Current dependency scans
+find no reachable Go vulnerability or npm advisory. Exact source and platform
+scopes are in [the protocol-14 checkpoint](protocol14-checkpoint.md) and
+[container validation](container-validation.md). These checks do not declare
+the complete near-parity goal achieved.
 
-See [protocol9-checkpoint.md](protocol9-checkpoint.md) for the recent backend
-process evidence and [container-validation.md](container-validation.md) for
-exact Alpine artifact scopes. The validated heartbeat checkpoint uses protocol 9;
-older checkpoint results do not certify that changing source or the dashboard.
+Remaining feature gaps include system services, PM2, browser checks, Tailscale,
+GameDig and Steam; additional options within implemented protocols; more of the
+upstream notification catalogue; and opt-in public historical availability,
+uptime badges, custom domains and status-page styling. Local authenticated
+observed-time history exists; it is not yet public history. Current-state
+badges do not imply an uptime metric. Generic webhooks do not count as native
+provider coverage. SMS remains explicitly deferred. Arm64 execution and tagged,
+reproducible release-artifact publication remain separate operational work.
+
+Retained causal evidence and local delivery provenance are not forever bounded
+by the wire-page limits. Their long-run storage, heap and lock costs remain
+documented operating constraints; complete retained-history compaction is not
+claimed. Further feature waves must preserve the agreed storage budget for
+development and the existing HA/recovery/privacy contracts.
 
 ## Original comparison and research
 

@@ -1257,3 +1257,60 @@ phases used the same production worker SHA-256
 No release binaries were published or retained locally. This result covers
 Linux amd64; arm64 was cross-compiled, not executed. The older standalone
 browser harness and its historical catalogue assertion were not rerun here.
+
+## 2026-10-23 protocol 14: expanded process and Compose acceptance
+
+Source: [`4d51a6a4ba956f03104375ad1e9e3f7056eeecbb`](https://github.com/Narehood/Uptime-Canary/commit/4d51a6a4ba956f03104375ad1e9e3f7056eeecbb).
+Workflow [39991889659](https://github.com/Narehood/Uptime-Canary/actions/runs/39991889659)
+completed at **17:20:00 UTC** with all **four jobs successful**.
+Production node and dashboard source remain unchanged from `77416a1`.
+
+| Gate | Current result |
+| --- | --- |
+| Original node Dockerfile and runtime | 11/11 passed, including actual HTTP/ICMP, outage/recovery webhooks, restart persistence and private retained identity volume |
+| Original web Dockerfile and runtime | Build, health, assets, headers, SPA fallback and nonroot checks passed |
+| Multi-process suite | 17/17 passed, zero failures/cancellations/skips/todos, exit 0 and no OOM |
+| Actual Portainer template via Docker Compose | Readiness, CORS, separate 0700 identity storage, configuration and observation persistence across restart passed |
+| Full Alpine race | Core 869 and worker-parent 1,527 passing events, zero failures/skips/unfinished tests/races; helper packages separately passed race tests |
+
+The proof image copies the executable built by the original node Dockerfile.
+Its 17 TypeScript process proofs run sequentially as UID 65534 with read-only
+root, no-new-privileges, bounded temporary storage and no external network.
+Loopback fixtures serve all remote-provider and monitored endpoints. It runs
+the actual node, not an in-process HTTP substitute. The Compose check creates
+one generated project with random loopback ports and generated credentials;
+its containers and fixture volumes are removed in `finally`. No user's
+Portainer, database, account secret or external notification is used.
+
+Both race-parent phases use intentionally uninstrumented production worker
+children under the original caps. Their worker SHA-256 remains
+`5b9586d0d4a36b6aefd70ff4cff50493fbed2fb01aaf2454efdc96ef50fbed04`.
+The unchanged 130-case matcher/projection review passes. Linux amd64 was
+executed; no arm64 runtime or tagged release claim is made.
+
+All four artifact manifests contain **560 entries**, SHA-256
+`acc6e40b05493328d7d2f326682b1386966d579c7612558e35988b0392c6cc56`.
+Every entry matched the checkout. Archives were inspected in memory, not saved
+as another local validation collection:
+
+| Artifact | ID | Archive SHA-256 |
+| --- | --- | --- |
+| Node | 12517912923 | `fccf8b05f2846c947128d59ad6913840c41948707ba761da6f08f50d0823ff86` |
+| Web | 12518485567 | `ada4b92a788d62942a4cc47e8a8389c65b68a676e37e89abed445be9309d5bb9` |
+| Proof/Compose | 12519280491 | `ec4bbc54c7b223d4d1bf3df33a52448597bcc6369fb216d85f35b5f12c5c94c9` |
+| Race | 12518542677 | `ebcaf4fd4264a25f1744189fcb3655c62ec9ff8049116f3f009506f7931b58bf` |
+
+The predecessor workflow `39989316293` on `9add261` passed proof/Compose and
+web, but its standalone Python fixture crashed before node smoke tests because
+it imported a helper absent from its deliberately minimal fixture image.
+Its node artifact `12517212241` preserves `ModuleNotFoundError:
+No module named 'validation_workspace'`. The fix lazy-imports that proof-only
+helper in the main validation path. A new isolated-interpreter regression
+passes. The predecessor race job was cancelled when the fix was pushed; its
+partial result is not called a pass. See [the checkpoint](protocol14-checkpoint.md)
+for the original failure and current Windows process/browser/upgrade evidence.
+
+Local storage after acceptance remained about **1.17 GiB**, zero scratch and
+one bounded cache; no VM, source snapshot, archive or binary collection was
+created. This is a coherent development checkpoint, not complete parity or
+whole-project release certification.

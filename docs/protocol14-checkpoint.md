@@ -39,9 +39,11 @@ Goja files and its one declared helper before making advisory requests, and
 rejects unrecorded code. Original source, helper mutation and identity controls
 pass. No claim is made that local patches automatically fix upstream advisories.
 
-The guarded scan passed in 22.437 seconds, with source unchanged and zero
+The final guarded scan passed in 18.906 seconds, with source unchanged and zero
 scratch after cleanup. Its source-v2 fingerprint was
-`2c0ebfba2de0f84d6875963f454df8213d02069263264ce239bf776b87399be7`.
+`0b1efdf70176d6348821dea2d380dcb90879069c604092a62b8048884faa7490`.
+The source/runtime fingerprint before and after was
+`47214cc923227935596233069092341aea7d3e0c03f8266085096e6afa3e0298`.
 
 ## Upgrade proof: controlled historical fixture
 
@@ -88,10 +90,9 @@ and observation persistence across restart. Only that generated project and
 its fixture volumes are removed. No user's Portainer host is contacted. The
 template now matches the tested read-only-root policy with bounded `/tmp`.
 
-The new Alpine process/Compose checks are pending their first CI execution.
-Existing protocol-14 node/web/race results remain those linked in
-[container validation](container-validation.md). This extension does not
-relabel those earlier runs as covering the new checks.
+The first execution and its fixture repair are recorded below. Existing
+protocol-14 results remain linked in [container validation](container-validation.md);
+an earlier run is not relabelled as covering later checks.
 
 
 ### First expanded CI run: fixture dependency repaired
@@ -114,5 +115,37 @@ The fixture image deliberately contains one standalone stdlib script. Moving
 that proof-only import into `validate_proof` restores that contract; no app,
 probe deadline or expected outcome changes. A new isolated-interpreter test
 loads the copied fixture with `python -I -S`, without repository helpers, and
-passes. The original failed CI evidence remains intact. The follow-up full CI
-run is pending; earlier `77416a1` race results are not relabelled as this run.
+passes. The original failed CI evidence remains intact.
+
+### Final expanded CI run
+
+Commit `4d51a6a4ba956f03104375ad1e9e3f7056eeecbb`, workflow
+[39991889659](https://github.com/Narehood/Uptime-Canary/actions/runs/39991889659),
+completed successfully at 2026-10-23 17:20:00 UTC. All four jobs passed:
+
+- Node: all 11 original container checks.
+- Web: original image build, health, assets, security/cache headers, SPA fallback
+  and nonroot runtime.
+- Proof: all 17 real-process tests against the original node image's binary,
+  under the restricted Alpine policy; zero failures, cancellations, skips,
+  todos or OOM. The actual Portainer Compose template also passed readiness,
+  CORS, separate private identity storage and persistence across restart.
+- Race: 869 core and 1,527 worker-parent passing test/subtest events; zero
+  failures, skips, unfinished tests or race warnings. Helper packages passed
+  `-race` separately. Capped production children remain uninstrumented.
+
+All four retained artifacts were inspected in memory. Their identical
+560-entry source manifest matched the checkout, SHA-256
+`acc6e40b05493328d7d2f326682b1386966d579c7612558e35988b0392c6cc56`.
+Artifact IDs: node `12517912923`, web `12518485567`, proof `12519280491`,
+race `12518542677`. The race artifact SHA-256 is
+`ebcaf4fd4264a25f1744189fcb3655c62ec9ff8049116f3f009506f7931b58bf`.
+Both race-parent phases used production worker SHA-256
+`5b9586d0d4a36b6aefd70ff4cff50493fbed2fb01aaf2454efdc96ef50fbed04`,
+identical to the earlier runtime checkpoint.
+
+Production runtime and dashboard source are unchanged from `77416a1`.
+This is a coherent development acceptance milestone on Windows and Linux
+amd64, not a tagged release, arm64 execution or complete Kuma-parity claim.
+The repository remains about 1.17 GiB with zero scratch, below its 1.25 GiB
+idle target; no CI archive, binary or private fixture database was kept locally.

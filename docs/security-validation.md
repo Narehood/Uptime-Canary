@@ -1,19 +1,15 @@
 # Dependency security checks
 
-Use `python scripts/security-check.py` after source integration settles. The
-runner executes npm's advisory audit and Go's source-symbol vulnerability
-analysis for Linux amd64 by default. It records raw output, the scanner/database
-configuration, exit codes and source hashes under `.canary/security/`. A source
-change during the scan makes the run incomplete. Arm64 and Windows can be
-selected explicitly.
+Run `python scripts/bounded_validation.py --timeout 420 -- python -B scripts/security-check.py --goos linux`
+after source integration settles. Only root starts this command, with the shared
+validation slot free. It executes npm's advisory audit and Go's source-symbol
+vulnerability analysis for Linux amd64. Raw outputs and the temporary npm cache
+are disposable guarded files; one compact `.canary/security-current.json`
+summary is overwritten. A source change makes the run incomplete. Arm64 and
+Windows can be selected explicitly.
 
-The runner requires Go, npm and govulncheck. It uses workspace tools when present;
-an isolated install of the pinned scanner is:
-
-```sh
-GOBIN="$PWD/.canary/tools/security" go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-python3 scripts/security-check.py --govulncheck .canary/tools/security/govulncheck
-```
+The runner uses the existing Go, npm and pinned govulncheck v1.9.0 tools. Do not
+create another scanner installation or compiler cache for a validation task.
 
 The Go project describes [govulncheck and its reachability analysis](https://go.dev/doc/security/vuln/).
 A successful source-symbol scan means it found no known reachable vulnerable
@@ -28,8 +24,28 @@ version and Git commit. It retains all bounded response pages and fails on
 active advisories, malformed/incomplete evidence, or lookup errors. This is
 advisory matching, not symbol reachability or proof that the local patch fixes
 an upstream advisory. The [official OSV query API](https://google.github.io/osv.dev/post-v1-query/)
-defines both query forms and pagination. Offline gate controls are available as
-`python scripts/security-check-test.py`.
+defines both query forms and pagination. Run offline controls through the same
+guard: `python scripts/bounded_validation.py --timeout 60 -- python -B scripts/security-check-test.py`.
+
+## Current protocol-14 checkpoint, 2026-10-23
+
+The guarded Linux-amd64 source-symbol scan passed at 16:39 UTC with source
+unchanged. npm reported zero advisories and govulncheck no reachable finding.
+`GO-2026-5932` remains module-only, without an imported OpenPGP package or
+reachable symbol; x/crypto remains v0.58.0. Explicit OSV version and full-commit
+queries returned no active advisories for JSONata 2.2.2 and the local Goja
+replacement. The retained historical Go-port identity is also queried.
+
+The gate verifies all original Goja source and its one recorded descriptor
+helper, rejects unrecorded files, and checks the exact embedded JavaScript
+asset. Local replacement metadata is not an advisory exemption. Seven offline
+gate controls pass. The last guarded scan took 18.906 seconds, with zero scratch
+after cleanup; guard source-v2 fingerprint:
+`0b1efdf70176d6348821dea2d380dcb90879069c604092a62b8048884faa7490`.
+Its runtime/source fingerprint before and after was
+`47214cc923227935596233069092341aea7d3e0c03f8266085096e6afa3e0298`.
+These are source/advisory results, not a security certification or an arm64
+artifact scan. The older entries below retain their original source scopes.
 
 ## Integration checkpoint, 2026-10-22
 
