@@ -117,7 +117,21 @@ development evidence, not a retained distributable or release approval.
 Three additional provenance fixture tests pass on Windows (4.172 seconds
 guarded), covering wrong/missing/duplicate build identity, target notice gaps and
 dirty or mismatched checkouts. They use tiny private Git fixtures and fixed
-metadata. No real build has been run with this runner yet.
+metadata. Actual executable validation is still pending; the first attempted
+run is recorded below.
+
+The first actual Windows attempt on `187f486` stopped before compilation:
+target dependency checks found `github.com/mattn/go-isatty` and
+`github.com/ncruces/go-strftime` absent from the Linux-only notice inventory.
+The guarded failure took 23.344 seconds, left zero scratch and changed no source
+or shared modules. The notice generator now discovers the union of Linux amd64,
+Linux arm64 and Windows amd64 dependencies. This failure is retained as evidence
+that platform notice omissions block packaging; it is not an executable test.
+Regeneration produced 48 notice sets. The generator exited zero, while the guard
+correctly reported changed source because the two inventory files were updated;
+that authoring command is not claimed as a passing immutable validation. The
+subsequent readonly `--check` passed in 4.485 seconds, with source unchanged,
+zero scratch and zero shared-module growth.
 
 Before calling a release ready, the producer still needs to build and validate
 real Windows/Linux artifacts, verify target-specific dependency notices and
