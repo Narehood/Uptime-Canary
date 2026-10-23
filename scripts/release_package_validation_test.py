@@ -17,11 +17,13 @@ INFO = ("fixture: go1.27.3\n\tpath\tuptime-canary/apps/node-go/cmd/canary\n\tmod
 
 class ReleaseValidationTests(unittest.TestCase):
     def test_declared_release_label_and_runtime_identity_must_match_the_archive(self):
-        flags = "-s -w -X " + validation.VERSION_SYMBOL + "=0.1.0-rc.1"
-        info = INFO + "\tbuild\t-ldflags=" + validation.json.dumps(flags) + "\n"
-        validation.verify_build_info(info, "windows-amd64", COMMIT, "go1.27.3", "v0.1.0-rc.1")
-        with self.assertRaisesRegex(ValueError, "release label"):
-            validation.verify_build_info(info, "windows-amd64", COMMIT, "go1.27.3", "0.1.0-rc.2")
+        # Original new-fixture assumption: require -ldflags in build metadata,
+        # then reject a different release label through verify_build_info.
+        # A real d3de153 build exposed that Go 1.27.3 intentionally omits
+        # -ldflags under -trimpath (cmd/go/internal/load/pkg.go:2470-2480).
+        # Source/target checks still apply; the native JSON check below must
+        # verify the actual label, rather than trusting synthetic flag text.
+        validation.verify_build_info(INFO, "windows-amd64", COMMIT, "go1.27.3")
         identity = {"name": "Uptime-Canary", "version": "0.1.0-rc.1", "sourceCommit": COMMIT, "modified": False,
                     "goVersion": "go1.27.3", "os": "windows", "arch": "amd64", "peerProtocol": 15}
         self.assertEqual(validation.verify_runtime_identity(validation.json.dumps(identity), "windows-amd64", "0.1.0-rc.1", COMMIT, "go1.27.3", 15), identity)

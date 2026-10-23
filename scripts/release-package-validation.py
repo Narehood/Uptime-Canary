@@ -54,7 +54,7 @@ def clean_checkout(commit, root=ROOT):
         raise ValueError("A clean checkout, including nonignored untracked files, is required")
 
 
-def verify_build_info(raw, target, commit, toolchain, release_version=None):
+def verify_build_info(raw, target, commit, toolchain):
     lines = raw.splitlines()
     if not lines or not lines[0].endswith(": " + toolchain):
         raise ValueError("Unexpected executable toolchain")
@@ -81,10 +81,6 @@ def verify_build_info(raw, target, commit, toolchain, release_version=None):
     if (fields.get("path") != [MAIN] or not module or module[0] != "uptime-canary" or not valid_version
             or any(settings.get(k) != value for k, value in expected.items())):
         raise ValueError("Executable source identity, target or build policy mismatch")
-    if release_version is not None:
-        expected_flags = "-s -w -X " + VERSION_SYMBOL + "=" + packager.version_value(release_version)
-        if settings.get("-ldflags") not in (expected_flags, json.dumps(expected_flags)):
-            raise ValueError("Executable release label does not match the declared linker settings")
     settings["mainModuleVersion"] = module_version
     return settings
 
@@ -197,7 +193,7 @@ def main():
         build = [str(go), "build", "-mod=readonly", "-trimpath", "-buildvcs=true", "-buildmode=exe",
                  "-ldflags=" + flags, "-o", str(binary), "./apps/node-go/cmd/canary"]
         run("build", build, 360)
-        report["buildSettings"] = verify_build_info(run("build-info", [str(go), "version", "-m", str(binary)]), args.target, args.commit, expected_go, args.version)
+        report["buildSettings"] = verify_build_info(run("build-info", [str(go), "version", "-m", str(binary)]), args.target, args.commit, expected_go)
         result = packager.package(binary, output / "archives", args.version, args.commit, args.target)
         report["artifact"] = {k: v for k, v in result.items() if k not in ("archive", "checksum")}
         binary.unlink()
@@ -207,12 +203,13 @@ def main():
         binary.unlink()
         extracted = output / ("canary.exe" if goos == "windows" else "canary")
         unpack_binary(result, extracted, args.target, args.version, args.commit)
-        verify_build_info(run("extracted-build-info", [str(go), "version", "-m", str(extracted)]), args.target, args.commit, expected_go, args.version)
+        verify_build_info(run("extracted-build-info", [str(go), "version", "-m", str(extracted)]), args.target, args.commit, expected_go)
         report["nativeExecution"] = native
         if report["nativeExecution"]:
             protocol = int(re.search(r"(?m)^const peerProtocol = ([1-9][0-9]*)\s*$", (ROOT / "apps/node-go/internal/canary/wire_pages.go").read_text())[1])
             report["runtimeIdentity"] = verify_runtime_identity(run("extracted-identity", [str(extracted), "version"], 15),
                                                                args.target, args.version, args.commit, expected_go, protocol)
+            report["releaseLabelVerifiedByExecution"] = True
             if not run("extracted-help", [str(extracted), "--help"], 15).startswith("Commands: serve,"):
                 raise ValueError("Extracted executable did not return expected CLI help")
             node = shutil.which("node")
@@ -228,6 +225,7 @@ def main():
             report["proofCounts"] = tap_counts(proof)
         else:
             report["executionLimit"] = "Cross-built artifact only; not executed on its target platform"
+            report["releaseLabelVerifiedByExecution"] = False
         if args.alpine_help:
             docker = shutil.which("docker")
             if not docker or os.getuid() == 0:
