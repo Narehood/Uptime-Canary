@@ -278,3 +278,33 @@ its module coverage checks do not certify a different platform or build mode.
 Installation/upgrade guidance and reproducible tagged-release verification
 remain part of the broader [shipping work](shipping-progress.md). No tagged
 release, publication or full near-Kuma completion is claimed by this helper.
+
+
+## Native follow-up: compiler debug archives
+
+Run [40032098863](https://github.com/Narehood/Uptime-Canary/actions/runs/40032098863)
+on `a36f259a8ff7f709169bc8d5b15161869fbf0dbe` passed the complete extracted
+native executable proof selection on Windows amd64 (18/18, 492.266 seconds
+guarded) and Linux amd64 (18/18, 504.160 seconds). The Linux artifact also passed
+restricted native Alpine help. All proof counts have zero failures and skips;
+both commands returned scratch to zero and reported unchanged source. The
+small uploaded reports were inspected in memory without retaining archives.
+
+Arm64 still failed **during compilation**, before the core tests: sampled
+scratch reached 538,116,085 bytes despite stripped final test executables.
+The guard stopped it after 133.692 seconds, reclaimed scratch to zero and
+reported no storage pause. This failure is preserved; neither a test pass nor
+a whole-workflow pass is claimed.
+
+The native arm64 test command now additionally uses
+`-gcflags=all=-dwarf=false` to omit DWARF records from compiler archives, where
+linker-only stripping cannot remove them early enough. Go 1.27.3's
+`cmd/compile/internal/base/flag.go` defines this as debug-symbol generation.
+Test selection, assertions, timeouts, process limits, package serialization
+and the 512 MiB scratch ceiling stay unchanged. Release builds retain their
+normal flags and module graph. A local Windows focused core run with both
+compiler/linker flags passed in 105.062 seconds (package 2.705 seconds), with
+415,014,151 sampled scratch bytes and zero remaining scratch. That local run
+also contained unpublished system-service fixtures; it verifies flag viability
+and this host's storage only, not native arm64 completion. A fresh native run
+is still required.
