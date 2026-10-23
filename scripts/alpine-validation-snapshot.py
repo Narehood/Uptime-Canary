@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".canary/alpine-validation"
 OUT.mkdir(parents=True, exist_ok=True)
 ROOT_FILES = (
-    "Dockerfile.node", "Dockerfile.web", ".dockerignore", "compose.yaml",
+    "Dockerfile.node", "Dockerfile.web", ".dockerignore", ".gitattributes", "compose.yaml",
     "go.mod", "go.sum", "package.json", "package-lock.json", "tsconfig.base.json",
     "apps/proof/package.json",
     "LICENSE", "THIRD_PARTY_NOTICES.txt", "third-party-manifest.json",

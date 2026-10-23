@@ -14,7 +14,7 @@ class StorageGuards(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             for name in ('form.ts', 'view.tsx', 'styles.css', 'index.html', 'validator.py',
-                         'Dockerfile.node', 'compose.yaml', 'web.conf'):
+                         'Dockerfile.node', 'compose.yaml', 'web.conf', '.gitattributes'):
                 path = base / name
                 path.write_text('before', encoding='utf-8')
                 original = guard.source_digest(base)

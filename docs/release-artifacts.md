@@ -175,7 +175,7 @@ the shared owned cache below 256 MiB and zero module-cache growth. No VM,
 source snapshot, private cache, external notification or remote measurement
 was created. The failures above remain part of the record.
 
-### Native CI gate (pending first execution)
+### Native CI gate
 
 The new `.github/workflows/release-package-validation.yml` runs serial native
 jobs on Windows amd64, Ubuntu amd64 and Ubuntu arm64. The runner labels are
@@ -219,6 +219,55 @@ test functions (4.188 s guarded) and eleven archive/provenance test functions
 (4.234 s guarded), including native/cross-target classification. Scratch returns
 to zero and shared modules do not grow. These checks do **not** prove the new
 workflow or native arm64 runtime passes; those results are pending execution.
+
+### First native CI result and repairs
+
+[Workflow 40027197572](https://github.com/Narehood/Uptime-Canary/actions/runs/40027197572)
+on `bcbd65b` completed with one passing target and two failures. Its small
+artifacts were inspected in memory; no archive or source copy was retained:
+
+- **Native Linux amd64 passes:** two matching builds, extracted executable,
+  all 18/18 process proofs, zero skips, and offline/nonroot/read-only native
+  Alpine CLI help. Source is unchanged. The guarded run took 526.743 seconds,
+  with 434,077,520 sampled scratch bytes returned to zero. Archive SHA-256 is
+  `c928cd6605f5c2c034ab06994340c0eb5887957d0b49d7fc247a1c62c0890578`,
+  executable SHA-256 is
+  `23b7dad8f546a707fedd2ab2b6774eb82beb9418b34b714677bf554188ae74c2`.
+  Native Alpine image digest was
+  `alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a`.
+- **Windows fails before compilation:** the exact runtime-source verifier
+  rejected `jsonata.js`, whose checkout bytes had been converted to CRLF. The
+  run took 2.688 seconds; no executable or application assertion ran. A tiny
+  checkout fixture independently reproduces LF becoming CRLF under
+  `core.autocrlf=true` (4.313 seconds guarded). New `.gitattributes` preserves
+  every tracked Git blob's bytes, including existing CRLF fixtures; it does not
+  normalize source files or weaken hash verification. The unchanged byte
+  assertions now pass, with all twelve archive/provenance fixture functions
+  passing in 4.219 seconds guarded.
+- **Arm64 is stopped during compilation:** the guard detected 537,148,698 bytes
+  of scratch, above 512 MiB, and killed the command after 134.205 seconds. The
+  availability package passed, but canary tests and subsequent packages did not
+  run. Scratch returned to zero and idle usage to 361,891,727 bytes. This is not
+  a numerical/runtime assertion failure or an arm64 pass. The full package test
+  command now strips test-executable debug symbols (`-ldflags='-s -w'`) to reduce
+  linker/output storage while retaining every test, assertion, timeout and
+  worker limit. The 512 MiB cap is unchanged; actual arm64 completion remains
+  pending a new run.
+
+The v3 guard fingerprint also covers `.gitattributes`; its new detection case
+fails before the change and passes afterward. All nine guard test functions
+pass in 4.313 seconds guarded, with zero scratch and no module growth. Earlier
+v2 fingerprints retain their original scope. The Alpine source manifest now
+includes the checkout policy itself. None of these local setup controls clears
+the failed Windows/arm64 gate without executing the corrected workflow.
+
+A local cross-compilation of the stripped arm64 canary test binary subsequently
+passes in 118.125 seconds guarded. Its 54,591,648-byte output is deleted;
+504,709,110 sampled scratch bytes remain below 512 MiB and return to zero,
+with no module growth. Source is unchanged at v3 fingerprint
+`e75e3bd50bf9e2acf88f8b71f79489d34bc5cdf9050ff214445ff452072c2a68`.
+This verifies that core test compilation fits on this Windows host; it does not
+execute an arm64 test or prove the complete native package suite fits.
 
 Before calling a release ready, the producer still needs to build and validate
 real Windows/Linux artifacts, verify target-specific dependency notices and

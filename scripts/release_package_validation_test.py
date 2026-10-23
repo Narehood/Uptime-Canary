@@ -77,6 +77,31 @@ class ReleaseValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "clean checkout"):
                 validation.clean_checkout(commit, root)
 
+    def test_checkout_preserves_pinned_source_bytes_and_existing_crlf_fixtures(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            repository, checkout = root / "repository", root / "checkout"
+            repository.mkdir()
+            checkout.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=repository, stderr=subprocess.STDOUT)
+            git("init", "--quiet")
+            attributes = validation.ROOT / ".gitattributes"
+            (repository / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.is_file() else b"")
+            fixtures = {
+                "apps/node-go/internal/jsonquery/jsvm/jsonata.js": b"const fixture = true;\n",
+                "apps/node-go/third_party/goja/runtime.go": b"package goja\n// Exact hash fixture.\n",
+                "apps/node-go/internal/canary/independent_test.go": b"package canary\r\n// Retained CRLF fixture.\r\n",
+            }
+            for name, raw in fixtures.items():
+                path = repository / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(raw)
+            git("-c", "core.autocrlf=false", "add", ".")
+            git("-c", "core.autocrlf=true", "checkout-index", "--all", "--force", "--prefix=" + checkout.as_posix() + "/")
+            for name, raw in fixtures.items():
+                self.assertEqual((checkout / name).read_bytes(), raw, name)
+
 
 if __name__ == "__main__":
     unittest.main()

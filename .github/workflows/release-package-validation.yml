@@ -3,6 +3,7 @@ name: Release package validation
 on:
   pull_request:
     paths:
+      - '.gitattributes'
       - 'apps/node-go/**'
       - 'apps/proof/**'
       - 'packages/shared/**'
@@ -96,7 +97,7 @@ jobs:
         run: python scripts/bounded_validation.py --timeout 60 -- python -B -m unittest discover -s scripts -p '*package*test.py'
       - name: Exercise all node packages on native arm64
         if: matrix.target == 'linux-arm64'
-        run: python scripts/bounded_validation.py --timeout 1200 -- go test -mod=readonly -p=1 -count=1 -timeout=15m ./apps/node-go/...
+        run: python scripts/bounded_validation.py --timeout 1200 -- go test -mod=readonly -p=1 -ldflags='-s -w' -count=1 -timeout=15m ./apps/node-go/...
       - name: Pull the native Alpine image for the offline help check
         if: runner.os == 'Linux'
         run: docker pull alpine:3.24
