@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 	"uptime-canary/apps/node-go/internal/globalping"
+	"uptime-canary/apps/node-go/internal/steam"
 )
 
 const maxBody = 1_048_576
@@ -140,6 +141,9 @@ func placement(ids []string, known map[string]bool) error {
 	return nil
 }
 func validateMonitor(m *MonitorInput, known map[string]bool) error {
+	if m.Type != "steam" && m.Steam != nil {
+		return fail(400, "Steam options do not match monitor type")
+	}
 	if m.Type != "globalping" && m.Globalping != nil {
 		return fail(400, "Globalping options do not match monitor type")
 	}
@@ -170,7 +174,7 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	case "push":
 		m.Target = "push"
 	case "tcp", "tls", "dns", "websocket", "smtp", "system-service":
-	case "globalping":
+	case "globalping", "steam":
 	case "docker", "redis", "postgres", "mysql", "mqtt", "sftp", "mongodb", "sqlserver", "ntp", "grpc", "snmp", "radius", "sip-options", "rabbitmq", "kafka-producer", "oracledb":
 	default:
 		return fail(400, "Invalid monitor type")
@@ -242,7 +246,14 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	if m.Type != "ping" && m.Ping != nil {
 		return fail(400, "Ping options do not match monitor type")
 	}
-	if m.Type == "system-service" {
+	if m.Type == "steam" {
+		if m.Steam == nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
+			return fail(400, "Options do not match Steam monitor")
+		}
+		if steam.Validate(steamConfig(*m)) != nil {
+			return fail(400, "Invalid Steam configuration")
+		}
+	} else if m.Type == "system-service" {
 		if m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
 			return fail(400, "Options do not match system service monitor")
 		}
@@ -364,7 +375,7 @@ func parseMonitor(b []byte, known map[string]bool) (MonitorInput, error) {
 	if err = required(o, "name", "type", "target", "intervalMs", "timeoutMs", "nodeIds", "enabled"); err != nil {
 		return m, err
 	}
-	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping"); err != nil {
+	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam"); err != nil {
 		return m, err
 	}
 	if json.Unmarshal(b, &m) != nil {
