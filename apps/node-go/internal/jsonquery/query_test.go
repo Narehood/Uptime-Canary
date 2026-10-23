@@ -347,8 +347,19 @@ func TestResourceBoundsAndRecovery(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			start := time.Now()
-			got := Check(context.Background(), request(tt.expression, "1"))
-			if got.State != tt.state {
+			expected := "1"
+			if tt.name == "allocation" {
+				// Without effective resource controls the matching result would be
+				// UP, rather than merely miss an unrelated expected value.
+				expected = "268435456"
+			}
+			got := Check(context.Background(), request(tt.expression, expected))
+			// RLIMIT_DATA may return ENOMEM without terminating the process.
+			// Allocation must stop the worker or fail within the VM/parent
+			// deadline, then release its slot for the success control below.
+			boundedAllocation := tt.name == "allocation" && got.State == "down" &&
+				(got.Message == "service check timed out" || got.Message == "service check failed")
+			if got.State != tt.state && !boundedAllocation {
 				t.Fatalf("resource result: %+v", got)
 			}
 			if time.Since(start) > 5*time.Second {
@@ -406,11 +417,10 @@ func TestParentDeadlineAndCancellation(t *testing.T) {
 
 func TestRangeLimitSourceGap(t *testing.T) {
 	supported(t)
-	// The pinned source fails to copy maxRange in createFrame. A lexical block
-	// therefore bypasses SetMaxRange; keep this visible instead of claiming a
-	// universal range bound. Hard worker limits still contain all evaluation.
+	// The official runtime applies the finite profile's cap in lexical frames;
+	// this regression must no longer preserve the old Go-port range bypass.
 	r := request("($n := 10001; $count([1..$n]))", "10001")
-	if got := Check(context.Background(), r); got.State != "up" {
-		t.Fatalf("review recorded range behavior: %+v", got)
+	if got := Check(context.Background(), r); got.State != "down" {
+		t.Fatalf("lexical block escaped range bound: %+v", got)
 	}
 }

@@ -1,0 +1,9 @@
+Goja, github.com/dop251/goja, version v0.0.0-20261022125820-07c4b9d6265b.
+Copyright and MIT terms are retained verbatim in LICENSE.
+
+This source replacement retains 81 upstream production/module/license files
+and adds canary_own_data.go. The helper inspects own data-property metadata
+without invoking an accessor or allocating a JavaScript descriptor object.
+Canary rejects proxies before calling it. No host API is exposed to expressions.
+CANARY_PATCH.json records the upstream module h1 checksum and every original
+file hash, plus the added helper hash. There is no module-cache modification.

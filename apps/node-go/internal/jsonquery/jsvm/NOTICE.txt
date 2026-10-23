@@ -1,0 +1,15 @@
+JSONata 2.2.2, upstream commit 6c7e95fdbf4405a1e741852a7cd8cd985b4305bb.
+Copyright IBM Corp. 2015-2025 and other contributors. MIT terms: LICENSE.
+
+Canary changes add finite-intermediate and container depth/visit checks,
+private procedure identities, a 10,000-element range bound, bounded primitive
+numeric conversion, wide-base conversion repair, Unicode length counting,
+and primitive-string padding. Trusted callbacks remain private bootstrap
+arguments. No user bindings, host objects, filesystem or network APIs are added.
+
+jsonata-guard.patch is the complete upstream-to-canonical-source diff.
+jsonata.js is esbuild 0.28.2 whitespace-only output from jsonata-source.js.
+upstream.json records the version, commit, source, patch and embedded hashes.
+The reviewed descriptor and numeric callbacks remain under the original
+one-second advisory VM timer, parent deadline and process resource controls.
+This is a maintained finite profile, not universal upstream/Kuma parity.

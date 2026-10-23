@@ -1,0 +1,195 @@
+--- jsonata-2.2.2.js
++++ jsonata-source.js
+@@ -1614,6 +1614,19 @@
+             return undefined;
+         }
+ 
++        if (typeof str === 'string') {
++            if (!/[\uD800-\uDBFF]/.test(str)) return str.length;
++            let count = 0;
++            for (let i = 0; i < str.length; i++) {
++                const c = str.charCodeAt(i);
++                if (c >= 0xD800 && c <= 0xDBFF && i + 1 < str.length) {
++                    const next = str.charCodeAt(i + 1);
++                    if (next >= 0xDC00 && next <= 0xDFFF) i++;
++                }
++                count++;
++            }
++            return count;
++        }
+         return stringToArray(str).length;
+     }
+ 
+@@ -1662,7 +1675,11 @@
+         width = Math.trunc(width);
+         var padLength = Math.abs(width) - length(str);
+         if (padLength > 0) {
+-            var padding = (new Array(padLength + 1)).join(char);
++            // Equivalent only for primitive string separators and valid Array lengths.
++            // Keep the original coercion/error path for all other partial-native inputs.
++            var padding = typeof char === 'string' && Number.isInteger(padLength) && padLength < 4294967295
++                ? char.repeat(padLength)
++                : (new Array(padLength + 1)).join(char);
+             if (char.length > 1) {
+                 padding = substring(padding, 0, padLength);
+             }
+@@ -2568,6 +2585,22 @@
+      */
+     function number(arg) {
+         var result;
++        var privateKind;
++        if (typeof arg === 'string' && typeof canaryPrivateNumericString === 'function') {
++            privateKind = canaryPrivateNumericString(arg);
++        } else {
++        if (typeof arg === 'string') {
++            if (arg.length > 1048576) throw new Error('numeric string exceeds limit');
++            if (/[^\x00-\x7f]/.test(arg)) {
++                let bytes = 0;
++                for (const character of arg) {
++                    const code = character.codePointAt(0);
++                    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
++                    if (bytes > 1048576) throw new Error('numeric string exceeds limit');
++                }
++            }
++        }
++        }
+ 
+         // undefined inputs always return undefined
+         if (typeof arg === 'undefined') {
+@@ -2577,10 +2610,12 @@
+         if (typeof arg === 'number') {
+             // already a number
+             result = arg;
+-        } else if (typeof arg === 'string' && /^-?[0-9]+(\.[0-9]+)?([Ee][-+]?[0-9]+)?$/.test(arg) && !isNaN(parseFloat(arg)) && isFinite(arg)) {
+-            result = parseFloat(arg);
+-        } else if (typeof arg === 'string' && /^(0[xX][0-9A-Fa-f]+)|(0[oO][0-7]+)|(0[bB][0-1]+)$/.test(arg)) {
+-            result = Number(arg);
++        } else if (typeof privateKind === 'number' && Number.isFinite(privateKind)) {
++            result = privateKind;
++        } else if (typeof arg === 'string' && typeof privateKind === 'undefined' && /^-?[0-9]+(\.[0-9]+)?([Ee][-+]?[0-9]+)?$/.test(arg) && Number.isFinite(result = parseFloat(arg))) {
++            // Primitive string validated by the same grammar: reuse its one conversion.
++        } else if (typeof arg === 'string' && (typeof privateKind === 'undefined' ? /^(0[xX][0-9A-Fa-f]+)|(0[oO][0-7]+)|(0[bB][0-1]+)$/.test(arg) : privateKind === true)) {
++            result = Number(BigInt(arg));
+         } else if (arg === true) {
+             // boolean true casts to 1
+             result = 1;
+@@ -3496,7 +3531,59 @@
+ 
+     // Start of Evaluator code
+ 
++    // Canary private finite-intermediate profile. No public binding or user marker.
++    var canaryProcedures = new WeakSet();
++    var canaryDescriptor = Object.getOwnPropertyDescriptor;
++    var canaryKeys = Object.keys;
++    var canaryArray = Array.isArray;
++    var canaryOwn = Object.hasOwn;
++    function canaryReject() {
++        throw new Error('JSON query result rejected by finite profile');
++    }
++    function canaryFinite(value) {
++        var remaining = 65536;
++        function visit(current, depth) {
++            if (depth > 128 || remaining === 0) canaryReject();
++            remaining--;
++            if (typeof current === 'number') {
++                if (!Number.isFinite(current)) canaryReject();
++                return;
++            }
++            if (current === null || typeof current !== 'object' || canaryProcedures.has(current)) return;
++            var array = canaryArray(current);
++            var keys = array ? null : canaryKeys(current);
++            var length = array ? canaryDescriptor(current, 'length').value : keys.length;
++            if (length > remaining || (length > 0 && depth === 128)) canaryReject();
++            for (var i = 0; i < length; i++) {
++                var descriptor = canaryDescriptor(current, array ? i : keys[i]);
++                if (descriptor && !canaryOwn(descriptor, 'value')) canaryReject();
++                var child = descriptor ? descriptor.value : undefined;
++                if (child !== null && typeof child === 'object') {
++                    visit(child, depth + 1);
++                } else {
++                    // Inline only primitive/function leaves; every occurrence still counts.
++                    if (remaining === 0) canaryReject();
++                    remaining--;
++                    if (typeof child === 'number' && !Number.isFinite(child)) canaryReject();
++                }
++            }
++        }
++        visit(value, 0);
++        return value;
++    }
++
+     var staticFrame = createFrame(null);
++
++    // R3 private bootstrap override; standalone JS reference tests retain
++    // their original guard. The worker always supplies the private validator.
++    if (typeof canaryPrivateValidator !== 'undefined') {
++        if (typeof canaryPrivateValidator !== 'function') throw new Error('invalid private validator');
++        const canaryCapturedValidator = canaryPrivateValidator;
++        const canaryCapturedIdentities = canaryProcedures;
++        canaryFinite = function(value) {
++            return canaryCapturedValidator(value, canaryCapturedIdentities);
++        };
++    }
+ 
+     /**
+      * Evaluate expression against input data
+@@ -3574,6 +3661,8 @@
+                 break;
+         }
+ 
++        canaryFinite(result);
++
+         if (Object.prototype.hasOwnProperty.call(expr, 'predicate')) {
+             for(var ii = 0; ii < expr.predicate.length; ii++) {
+                 result = await evaluateFilter(expr.predicate[ii].expr, result, environment);
+@@ -4518,7 +4607,7 @@
+         // this is an implementation defined limit to protect against
+         // memory and performance issues.  This value may increase in the future.
+         var size = rhs - lhs + 1;
+-        if(size > 1e7) {
++        if(size > 10000) {
+             throw {
+                 code: "D2014",
+                 stack: (new Error()).stack,
+@@ -5043,7 +5132,7 @@
+             }
+             throw err;
+         }
+-        return result;
++        return canaryFinite(result);
+     }
+ 
+     /**
+@@ -5069,6 +5158,7 @@
+         procedure.apply = async function(self, args) {
+             return await apply(procedure, args, input, !!self ? self.environment : environment);
+         };
++        canaryProcedures.add(procedure);
+         return procedure;
+     }
+ 
+@@ -5182,6 +5272,7 @@
+             arguments: unboundArgs,
+             body: proc.body
+         };
++        canaryProcedures.add(procedure);
+         return procedure;
+     }
+ 
+@@ -5229,7 +5320,7 @@
+         if (isPromise(result)) {
+             result = await result;
+         }
+-        return result;
++        return canaryFinite(result);
+     }
+ 
+     /**
+@@ -5258,6 +5349,7 @@
+         if(typeof signature !== 'undefined') {
+             definition.signature = parseSignature(signature);
+         }
++        canaryProcedures.add(definition);
+         return definition;
+     }
+ 

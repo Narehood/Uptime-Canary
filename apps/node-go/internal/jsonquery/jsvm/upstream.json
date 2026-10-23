@@ -1,0 +1,13 @@
+{
+  "module": "jsonata",
+  "version": "2.2.2",
+  "commit": "6c7e95fdbf4405a1e741852a7cd8cd985b4305bb",
+  "bundleSha256": "1f97b738169d032298b0f7c5218e495987536f26d95cbd2ee32637542c0bba31",
+  "canonicalSha256": "343b4faab42536be9e4b0a5addaec34156657d5cee7761e87c2127f458289f00",
+  "unmodifiedSha256": "9c2a35f4d895797f123f65c7f9a4ce16b3a295d209e0f3f225a0c3bae1bd9049",
+  "patchSha256": "5f64bd3add1c0b69c486cfeb35a444ef7453d081764c5c9dff8d26f5ad9072b9",
+  "bundler": "esbuild 0.28.2; minify-whitespace only; charset=utf8",
+  "bridgeSha256": "e7c18b7fe221e6df11174e2f0ec5749419a6177f493e8a5749a9d4b27be59a41",
+  "finiteGuardSha256": "fb8c7c5ab5c73edb95c8ceec33c98d0e7080eab824484cac146b889b8efe5beb",
+  "numericGuardSha256": "052e047556f8055bd987dca76c867aa4444a01b257d204fb57702643ebb5b105"
+}

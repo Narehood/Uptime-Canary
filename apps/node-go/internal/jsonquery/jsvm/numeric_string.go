@@ -1,0 +1,116 @@
+package jsvm
+
+import (
+	"context"
+	"github.com/dop251/goja"
+	"sync/atomic"
+)
+
+// A primitive-only private bootstrap callback. It replaces the two original
+// numeric grammar regex scans and UTF-8 counting. For the validated complete
+// decimal grammar, Goja String.ToFloat uses the same strconv conversion as its
+// parseFloat builtin without repeating its prefix regex. Signed zero remains.
+// JS number(arg), BigInt, booleans, shadowing and radix quirks remain unchanged.
+func privateNumericString(vm *goja.Runtime, ctx context.Context, stopped *atomic.Bool) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		reject := func() { panic(vm.NewTypeError(privateFiniteError)) }
+		text, ok := call.Argument(0).(goja.String)
+		if !ok || ctx.Err() != nil || stopped.Load() {
+			reject()
+		}
+		steps := 0
+		checkpoint := func() {
+			steps++
+			if steps&1023 == 0 && (ctx.Err() != nil || stopped.Load()) {
+				reject()
+			}
+		}
+		length := text.Length()
+		if length > 1048576 {
+			reject()
+		}
+		bytes := 0
+		for index := 0; index < length; index++ {
+			checkpoint()
+			char := text.CharAt(index)
+			switch {
+			case char < 128:
+				bytes++
+			case char < 2048:
+				bytes += 2
+			case char >= 0xD800 && char <= 0xDBFF && index+1 < length && text.CharAt(index+1) >= 0xDC00 && text.CharAt(index+1) <= 0xDFFF:
+				bytes += 4
+				index++
+			default:
+				bytes += 3
+			}
+			if bytes > 1048576 {
+				reject()
+			}
+		}
+		digit := func(char uint16) bool { return char >= '0' && char <= '9' }
+		index := 0
+		if index < length && text.CharAt(index) == '-' {
+			index++
+		}
+		start := index
+		for index < length && digit(text.CharAt(index)) {
+			checkpoint()
+			index++
+		}
+		valid := index > start
+		if index < length && text.CharAt(index) == '.' {
+			index++
+			start = index
+			for index < length && digit(text.CharAt(index)) {
+				checkpoint()
+				index++
+			}
+			valid = valid && index > start
+		}
+		if index < length && (text.CharAt(index) == 'e' || text.CharAt(index) == 'E') {
+			index++
+			if index < length && (text.CharAt(index) == '+' || text.CharAt(index) == '-') {
+				index++
+			}
+			start = index
+			for index < length && digit(text.CharAt(index)) {
+				checkpoint()
+				index++
+			}
+			valid = valid && index > start
+		}
+		if valid && index == length {
+			return vm.ToValue(text.ToFloat())
+		}
+		// /^0[xX][0-9A-Fa-f]+/ is anchored only at the beginning.
+		if length >= 3 && text.CharAt(0) == '0' && (text.CharAt(1) == 'x' || text.CharAt(1) == 'X') {
+			char := text.CharAt(2)
+			if digit(char) || char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F' {
+				return vm.ToValue(true)
+			}
+		}
+		// /0[oO][0-7]+/ may match anywhere. /0[bB][01]+$/ must reach the end.
+		for index = 0; index+2 < length; index++ {
+			checkpoint()
+			if text.CharAt(index) != '0' {
+				continue
+			}
+			kind, char := text.CharAt(index+1), text.CharAt(index+2)
+			if (kind == 'o' || kind == 'O') && char >= '0' && char <= '7' {
+				return vm.ToValue(true)
+			}
+			if (kind == 'b' || kind == 'B') && (char == '0' || char == '1') {
+				end := index + 3
+				for end < length && (text.CharAt(end) == '0' || text.CharAt(end) == '1') {
+					checkpoint()
+					end++
+				}
+				if end == length {
+					return vm.ToValue(true)
+				}
+			}
+		}
+		return vm.ToValue(false)
+	}
+}

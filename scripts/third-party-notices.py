@@ -97,7 +97,10 @@ def main():
     for module in sorted(modules, key=lambda m: m["Path"]):
         if module["Path"] in linked and not module.get("Main"):
             source = module.get("Replace", module)
-            add(module["Path"], source["Version"], Path(source["Dir"]))
+            # A locally maintained source replacement keeps its pinned upstream
+            # version in the parent requirement, not in Replace.Version.
+            version = source.get("Version", module.get("Version", "local"))
+            add(module["Path"], version, Path(source["Dir"]))
     # A locally patched evaluator is part of the main module, so go list's
     # external-module inventory cannot retain its upstream attribution for us.
     evaluator = ROOT / "apps/node-go/internal/jsonquery/evaluator"

@@ -2,8 +2,10 @@ name: Container validation
 
 on:
   pull_request:
+    paths-ignore: [README.md, 'docs/**', 'design/**']
   push:
     branches: [main]
+    paths-ignore: [README.md, 'docs/**', 'design/**']
   workflow_dispatch:
 
 permissions:
@@ -25,6 +27,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Verify embedded runtime provenance
+        run: python3 scripts/verify-jsonquery-runtime.py
       - name: Validate Portainer stack configuration
         if: matrix.phase == 'node'
         env:

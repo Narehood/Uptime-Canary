@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	jsonata "uptime-canary/apps/node-go/internal/jsonquery/evaluator"
+	"uptime-canary/apps/node-go/internal/jsonquery/jsvm"
 
 	"uptime-canary/apps/node-go/internal/probeworker/process"
 )
@@ -79,21 +79,6 @@ func CheckInWorker(ctx context.Context, r Request) (result process.Result) {
 	if ctx.Err() != nil {
 		return failed("JSON query interrupted")
 	}
-	e, err := jsonata.Compile(r.Query.Expression, false)
-	if err != nil {
-		return failed("JSON query compilation failed")
-	}
-	e.SetMaxDepth(MaxDepth)
-	e.SetMaxRange(MaxRange)
-	// The only native extension is this fixed pure compatibility implementation
-	// of the standard builtin. It is local to this expression; nested $eval and
-	// lexical scopes inherit it normally. No user-supplied binding is accepted.
-	// The pinned registration code counts (nsb) as arity three rather than one,
-	// breaking higher-order calls. x preserves one-argument/context metadata;
-	// compatibleNumber itself strictly accepts only number/string/bool/undefined.
-	if e.RegisterFunction("number", compatibleNumber, "<x-:n>") != nil {
-		return failed("JSON query initialization failed")
-	}
 	limit := MaxEvaluationTime
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < limit {
 		limit = time.Until(deadline)
@@ -103,8 +88,7 @@ func CheckInWorker(ctx context.Context, r Request) (result process.Result) {
 	}
 	// Advisory checks supplement the parent deadline, kill/reap and kernel cap.
 	// They do not bound parsing, every builtin, or nested $eval compilation.
-	e.SetMaxTime(max(1, int(limit/time.Millisecond)))
-	output, err := e.Evaluate(r.Document, nil)
+	output, err := jsvm.Evaluate(ctx, r.Query.Expression, r.Document, MaxDepth, max(1, int(limit/time.Millisecond)), MaxRange)
 	if err != nil || ctx.Err() != nil {
 		return failed("JSON query evaluation failed")
 	}

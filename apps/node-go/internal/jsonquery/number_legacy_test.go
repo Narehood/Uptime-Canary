@@ -6,7 +6,9 @@ import (
 	jsonata "uptime-canary/apps/node-go/internal/jsonquery/evaluator"
 )
 
-// compatibleNumber is the single whitelisted native compatibility function.
+// Retained only for historical Go-port numeric regression tests. Production
+// uses jsvm's private numeric callback and never initializes the old evaluator.
+// compatibleNumber was the single whitelisted native compatibility function.
 // It is installed only on a newly compiled expression in the guarded child,
 // under the standard builtin name/signature. It is pure, accepts no host data
 // or callbacks, and performs no I/O or global registration. The signature

@@ -909,9 +909,7 @@
       "kind": "boolean",
       "value": true,
       "state": "up"
-    },
-    "goState": "down",
-    "gap": "Go RE2 rejects lookahead supported by JavaScript regular expressions."
+    }
   },
   {
     "name": "new coalesce syntax",
@@ -923,9 +921,7 @@
       "kind": "string",
       "value": "fallback",
       "state": "up"
-    },
-    "goState": "down",
-    "gap": "The pinned 2.0.6 parser does not implement JSONata 2.1+ coalescing syntax."
+    }
   },
   {
     "name": "new elvis syntax",
@@ -937,9 +933,7 @@
       "kind": "string",
       "value": "fallback",
       "state": "up"
-    },
-    "goState": "down",
-    "gap": "The pinned 2.0.6 parser does not implement JSONata 2.1+ Elvis syntax."
+    }
   },
   {
     "name": "numeric builtin plus gap",
