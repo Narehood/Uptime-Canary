@@ -180,11 +180,13 @@ func messagingPeerPage(t *testing.T, from, to *Node) {
 	t.Helper()
 	cursor := ""
 	for {
+		from.mu.Lock()
 		page, err := from.snapshotPage(cursor, "")
-		if err != nil {
-			t.Fatal(err)
+		var b []byte
+		if err == nil {
+			b, err = json.Marshal(page)
 		}
-		b, err := json.Marshal(page)
+		from.mu.Unlock()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -192,7 +194,12 @@ func messagingPeerPage(t *testing.T, from, to *Node) {
 		if err != nil {
 			t.Fatal("producer emitted a peer-invalid messaging page", err)
 		}
-		if err := to.mergeSnapshot(validated); err != nil {
+		// Production peer ingress holds the state lock across merge/evaluation.
+		// Real delivery workers run in this fixture too, so use the same boundary.
+		to.mu.Lock()
+		err = to.mergeSnapshot(validated)
+		to.mu.Unlock()
+		if err != nil {
 			t.Fatal(err)
 		}
 		if page.Next == "" {

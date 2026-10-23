@@ -25,6 +25,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Validate Portainer stack configuration
+        if: matrix.phase == 'node'
+        env:
+          CANARY_NODE_ID: ci-config-only
+          CANARY_ADMIN_TOKEN: ci-admin-fixture-000000000000000000000000
+          CANARY_CLUSTER_TOKEN: ci-cluster-fixture-0000000000000000000000
+          CANARY_CORS_ORIGINS: http://127.0.0.1:8080
+        run: docker compose --env-file /dev/null -f deploy/portainer-stack.yml config --quiet
       - name: Stage clean source context
         run: |
           python3 scripts/alpine-validation-snapshot.py
@@ -45,5 +53,7 @@ jobs:
           path: |
             .canary/alpine-validation/results/
             .canary/alpine-validation/source-manifest.json
+            !.canary/alpine-validation/results/worker-race/**/canary-worker
+            !.canary/alpine-validation/results/worker-race/**/process-fixture
           retention-days: 14
           include-hidden-files: true

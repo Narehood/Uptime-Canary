@@ -1,0 +1,63 @@
+# Portainer Docker Standalone stack. See docs/portainer.md before deploying.
+# Build or pull both images onto the selected Docker host first.
+# No published release images are assumed; never pull an unrelated image name.
+services:
+  node:
+    image: ${CANARY_NODE_IMAGE:-uptime-canary-node:development}
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    environment:
+      CANARY_NODE_ID: ${CANARY_NODE_ID:?Set a unique persistent node ID}
+      CANARY_NODE_NAME: ${CANARY_NODE_NAME:-Uptime Canary}
+      CANARY_ADMIN_TOKEN: ${CANARY_ADMIN_TOKEN:?Set a unique random admin token}
+      CANARY_CLUSTER_TOKEN: ${CANARY_CLUSTER_TOKEN:?Set a separate random cluster token}
+      CANARY_PEERS: ${CANARY_PEERS:-[]}
+      CANARY_CORS_ORIGINS: ${CANARY_CORS_ORIGINS:?Set the browser dashboard origin}
+      CANARY_HOST: 0.0.0.0
+      CANARY_PORT: "3100"
+      CANARY_DB: /data/canary.db
+      CANARY_IDENTITY_DIRECTORY: /identity
+      CANARY_HISTORY_LIMIT: ${CANARY_HISTORY_LIMIT:-1000}
+      CANARY_HISTORY_RETENTION_MS: ${CANARY_HISTORY_RETENTION_MS:-604800000}
+      CANARY_SYNC_INTERVAL_MS: ${CANARY_SYNC_INTERVAL_MS:-1000}
+      CANARY_NOTIFICATION_DELAY_MS: ${CANARY_NOTIFICATION_DELAY_MS:-1500}
+      CANARY_PEER_TIMEOUT_MS: ${CANARY_PEER_TIMEOUT_MS:-2000}
+    ports:
+      - "${CANARY_BIND_ADDRESS:-127.0.0.1}:${CANARY_PORT:-3100}:3100"
+    volumes:
+      - canary-data:/data
+      - canary-identity:/identity
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    image: ${CANARY_WEB_IMAGE:-uptime-canary-web:development}
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "${CANARY_WEB_BIND_ADDRESS:-127.0.0.1}:${CANARY_WEB_PORT:-8080}:8080"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Retain both volumes. Identity reservations must outlive database restores.
+# Volumes are scoped to the Portainer stack name; use a stable stack name.
+volumes:
+  canary-data:
+  canary-identity:
