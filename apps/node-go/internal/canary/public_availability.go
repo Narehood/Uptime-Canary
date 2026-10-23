@@ -34,8 +34,10 @@ type publicAvailabilityKey struct {
 }
 
 type publicAvailabilityCache struct {
-	// TryLock provides one nonwaiting reader. SQL never holds the node mutex.
+	// Cache bookkeeping never holds a lock across SQL. A separate TryLock
+	// gate permits one nonwaiting archive reader without hiding cache hits.
 	mu      sync.Mutex
+	reader  sync.Mutex
 	entries map[publicAvailabilityKey]*PublicObservedAvailability
 	keys    [publicAvailabilityEntries]publicAvailabilityKey
 	next    int
@@ -45,7 +47,16 @@ func unavailablePublicAvailability() *PublicObservedAvailability {
 	return &PublicObservedAvailability{Status: "unavailable", Scope: "serving-node"}
 }
 
+// cached returns an immutable result without waiting for an archive reader.
+func (c *publicAvailabilityCache) cached(k publicAvailabilityKey) *PublicObservedAvailability {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.entries[k]
+}
+
 func (c *publicAvailabilityCache) remember(k publicAvailabilityKey, v *PublicObservedAvailability) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.entries == nil {
 		c.entries = make(map[publicAvailabilityKey]*PublicObservedAvailability)
 	}
@@ -138,9 +149,17 @@ func (n *Node) fillPublicAvailability(parent context.Context, page *PublicStatus
 	}
 	c := &n.publicAvailability
 	values := make(map[publicAvailabilityKey]*PublicObservedAvailability)
-	if c.mu.TryLock() {
+	missing := make([]publicAvailabilityKey, 0, len(keys))
+	for _, k := range keys {
+		if v := c.cached(k); v != nil {
+			values[k] = v
+		} else {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) > 0 && c.reader.TryLock() {
 		func() {
-			defer c.mu.Unlock()
+			defer c.reader.Unlock()
 			ctx, cancel := context.WithTimeout(parent, publicAvailabilityTimeout)
 			defer cancel()
 			var tx *sql.Tx
@@ -150,8 +169,10 @@ func (n *Node) fillPublicAvailability(parent context.Context, page *PublicStatus
 					_ = tx.Rollback()
 				}
 			}()
-			for _, k := range keys {
-				if v := c.entries[k]; v != nil {
+			for _, k := range missing {
+				// Another reader may have finished between our initial lookup
+				// and acquiring the gate; avoid repeating that SQL work.
+				if v := c.cached(k); v != nil {
 					values[k] = v
 					continue
 				}

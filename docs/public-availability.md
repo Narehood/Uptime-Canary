@@ -51,7 +51,9 @@ retained archive. Overflow, cancellation, invalid spans or database contention
 produce unavailable, never a partial prefix counted as history.
 
 One FIFO cache holds at most 256 metrics, keyed by private monitor revision and
-rounded window end. Cached errors also expire with that frame. Cache eviction
+rounded window end. Cache lookup/bookkeeping uses a short-held mutex separate
+from the nonwaiting SQL-reader gate; an unrelated cache miss cannot hide an
+already cached result. Cached errors also expire with that frame. Cache eviction
 has no durable or causal effect. Publication and current monitor readiness are
 checked again after reading, so cached data grants no publication authority.
 SQL reads use a transaction and never prune, insert or update history. The
@@ -126,6 +128,56 @@ need completion. The already-authored Opus SVG function is included in the
 backend draft and its numeric/safety regressions pass; no new visual proof is
 claimed. The partial dashboard changes are kept outside the backend commit.
 
-This backend is draft feature work, with protocol-15 Alpine/race checks and
-frontend acceptance still separate. The green protocol-14 main branch remains
-the validated development checkpoint. No release pass is claimed.
+This backend remains draft feature work; frontend acceptance is still separate.
+The green protocol-14 main branch remains the validated development checkpoint.
+No release pass is claimed.
+
+## First draft Alpine checkpoint and cache review
+
+Commit `6789fe92be4f79938264f6c7f2e3ee54d0cb57c6` passed all five PR checks.
+[Workflow 39999926780](https://github.com/Narehood/Uptime-Canary/actions/runs/39999926780)
+passed the four node/web/proof/race jobs: 11 node smoke checks; web build/runtime
+and security/asset checks; all 18 real-process proofs plus actual Compose
+runtime; and 886 core plus 1,527 worker-parent race events. Parent reports have
+zero failures, skips, unfinished tests or race warnings. Helper packages passed
+race checks separately; capped worker children remain uninstrumented. The
+production worker SHA-256 was
+`06010eb280f23da80634c3d1272ab2b29bf0b942bf03c5226a7db951135a7d1b`.
+
+All four artifacts were read in memory, without saving archives locally.
+Their identical 563-entry source manifest matched committed `6789fe9`, SHA-256
+`132a68c501d926353192063fb58d5aec6a6b55b4f1dde0622be239cb5b9d5495`.
+The held UI changes and subsequent regression authoring were compared against
+Git's original file bytes, not mistaken for that committed CI source.
+Artifact IDs: node `12521557440`, web `12520489796`, proof `12521428699`,
+race `12521873248`. No completed frontend or arm64 execution is claimed.
+
+CodeRabbit's completed review identified one minor availability defect:
+[discussion 4362859567](https://github.com/Narehood/Uptime-Canary/pull/1#discussion_r4362859567).
+The original cache used one mutex for both its map and the SQL reader. A cold
+read could hold it while waiting for SQL, making another request return
+unavailable for a hot cached key. The new
+`TestPublicAvailabilityHotCacheSurvivesUnrelatedSQLRead` uses a real occupied
+SQL connection and a separate cold HTTP request; its hot-cache assertion failed
+on the original implementation:
+
+```text
+an unrelated SQL read hid an already cached metric
+&{unavailable serving-node 0 0 <nil> []}
+```
+
+The unchanged regression assertion now exercises a separate short-held cache
+mutex and nonwaiting SQL-reader gate. The existing cold-reader contention test
+locks that new gate, preserving its assertions. Timeout, row budget, cache size,
+publication revalidation and wire format are unchanged.
+
+The repaired focused availability/status-page/badge/upgrade selection passed
+in 3.633 seconds, with Canary-package vet also passing without diagnostics.
+The single guarded command took 51.469 seconds, source-v2 fingerprint
+`b301c9455ba85b2ced8d57351d31dbb96c7cb00567415fda022bea9b4bfd4b22`;
+source remained unchanged. Scratch peaked at 286,041,259 bytes and returned to
+zero; idle repository size was 1,238,771,840 bytes, with no module-cache growth.
+The earlier regression failure is preserved above. CI for the repair is
+pending; the green `6789fe9` checkpoint is not relabelled as covering the fix.
+The review's completion notices and informational docstring coverage warning
+do not change the project's behavioral requirements.

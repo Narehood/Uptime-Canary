@@ -224,9 +224,9 @@ func TestPublicAvailabilityRowBudgetIsExactAndNeverPartial(t *testing.T) {
 func TestPublicAvailabilityBusyDatabaseAndCacheRemainBounded(t *testing.T) {
 	n, clock, _, page := publicAvailabilityFixture(t, false, true)
 	// No waiting for another public reader; the result says unavailable.
-	n.publicAvailability.mu.Lock()
+	n.publicAvailability.reader.Lock()
 	v := publicAvailabilityRead(t, n, page.Slug)
-	n.publicAvailability.mu.Unlock()
+	n.publicAvailability.reader.Unlock()
 	if v.Status != "unavailable" {
 		t.Fatal("contended read invented metric")
 	}
@@ -256,6 +256,54 @@ func TestPublicAvailabilityBusyDatabaseAndCacheRemainBounded(t *testing.T) {
 	}
 	if len(n.publicAvailability.entries) > publicAvailabilityEntries {
 		t.Fatal("public cache grows with retained history")
+	}
+}
+
+func TestPublicAvailabilityHotCacheSurvivesUnrelatedSQLRead(t *testing.T) {
+	n, clock, m, page := publicAvailabilityFixture(t, false, true)
+	to := clock.Load() / publicAvailabilityFrame * publicAvailabilityFrame
+	availabilityRecord(t, n, m, to-1000, to, 1, "up", false)
+	hot := publicAvailabilityRead(t, n, page.Slug)
+	if hot.Status != "available" || hot.Summary.KnownMs != 1000 {
+		t.Fatal("hot-cache fixture was not populated", hot)
+	}
+	coldMonitor, err := n.writeMonitor(input([]string{"a", "b"}, "http://private-cold.invalid/", ""), nil, "cold-monitor", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coldPage := statusFixture("cold-history")
+	coldPage.Groups[0].Monitors[0].MonitorID = coldMonitor.ID
+	coldPage.Groups[0].Monitors[0].ShowAvailability = true
+	statusCreate(t, n, coldPage, adminToken)
+
+	// Occupy the only SQL connection so a genuine unrelated public cache miss
+	// holds the reader gate. The cache-hit assertion does not depend on which
+	// mutex field implements that gate.
+	tx, err := n.store.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := n.store.db.Stats().WaitCount
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		n.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", publicStatusPrefix+coldPage.Slug, nil))
+	}()
+	defer func() { _ = tx.Rollback(); <-done }()
+	deadline := time.Now().Add(2 * time.Second)
+	for n.store.db.Stats().WaitCount == before {
+		if time.Now().After(deadline) {
+			t.Fatal("cold-read fixture never reached SQL")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-done:
+		t.Fatal("cold-read fixture finished before the concurrent cache lookup")
+	default:
+	}
+	if got := publicAvailabilityRead(t, n, page.Slug); !equalJSON(got, hot) {
+		t.Fatal("an unrelated SQL read hid an already cached metric", got)
 	}
 }
 
