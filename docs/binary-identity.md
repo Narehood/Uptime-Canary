@@ -66,7 +66,7 @@ before this command existed. Native Windows evidence for the new source:
   label mismatches and runtime identity with unknown/dirty/mismatched source,
   target, toolchain or peer protocol.
 
-These checks used source fingerprint
+These checks used v2 source fingerprint
 `561583e1116debeaf733dce463b3910205b692097d6bb9b61f694fc4c817757d`,
 unchanged during each run. The largest sampled scratch was 517,077,350 bytes,
 below 512 MiB, and returned to zero. Shared modules did not grow. Current-source
@@ -84,7 +84,7 @@ That failed run took 87.672 seconds, left source unchanged, removed its
 validator failure, not a demonstrated application version mismatch.
 
 The corrected Windows native archive run passes on clean commit
-`5019c672e202d0a12dbb5873d62ef169690e18b6`, source fingerprint
+`5019c672e202d0a12dbb5873d62ef169690e18b6`, v2 source fingerprint
 `bc33418e81975d6ffd18aaaf618e35b374bae3d5f6bdf04f1dd1e0c3a4f3c0d9`:
 two matching builds, archive/extracted-file checksums, CLI identity and help,
 and the existing two-node public-history/restart/withdrawal proof (1/1, zero
@@ -99,3 +99,11 @@ Go 1.27.3, Windows amd64 and peer protocol 15. The run took 101.109 seconds;
 The corrected twelve Python fixture functions also pass (4.218 seconds
 guarded). These are local development results, not native Linux execution,
 full-suite acceptance, an original release artifact or tagged publication.
+
+The parent native-CI repairs are also included: byte-exact Git checkouts and
+smaller arm64 test executables, with the original hash checks and 512 MiB guard
+retained. After merging those repairs, all thirteen combined archive/provenance
+fixture functions pass (4.282 seconds guarded), source unchanged at v3
+fingerprint `7ae60d52f2eb5a794f9d1676a8994dd977ae892fc2bbede4abbabfc032343151`.
+The Go identity implementation is unchanged from the local compiled proof.
+Native Windows/Linux/arm64 CI on this combined source remains pending.
