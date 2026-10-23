@@ -242,9 +242,11 @@ async function review() {
     monitors[type] = saved.value;
     return { id: m.id, protocol: key, fieldCount: f.SERVICE_FIELDS[key].length, optionsPreserved: true };
   });
-  await step('Catalogue matches all 26 implemented check types, including Globalping', async () => {
-    assert.equal(f.CHECK_TYPES.length, 26); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 26);
+  // Protocol 16 adds system-service to the previously accepted 26-type catalogue.
+  await step('Catalogue matches all 27 implemented check types, including Globalping and system-service', async () => {
+    assert.equal(f.CHECK_TYPES.length, 27); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 27);
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'globalping'));
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'system-service'));
     assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
     assert.equal(f.PROVIDERS.length, 11);
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
@@ -285,6 +287,7 @@ async function review() {
     smtp: { target: '127.0.0.1:9999', smtp: { tlsMode: 'starttls' }, tls: { serverName: 'localhost', ignoreVerification: true } },
     manual: { manual: { state: 'up', message: 'Review manual result' } },
     push: { push: { token: secret(), allowGet: true } },
+    'system-service': { target: 'getty@tty1.service' },
   };
   for (const [type, options] of Object.entries(networkOptions)) await step(`API + form: ${type} preserves all non-service options and nullable omission`, async () => {
     if (options.push) secrets.add(options.push.token);
@@ -292,6 +295,7 @@ async function review() {
     const d = f.draftFrom(m, [A.id]), initial = structuredClone(d); d.name += ' renamed'; const built = f.build(d, m, initial); assert.ok(built.input, JSON.stringify({ ...built.errors, ...built.serviceErrors }));
     const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text);
     for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
+    assert.equal(saved.value.target, m.target);
     if (type === 'push') { assert.equal(saved.value.pushStartedAt, m.pushStartedAt); assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision); }
     networkMonitors[type] = saved.value; return { id: m.id, allOptionsPreserved: true };
   });
@@ -353,6 +357,34 @@ async function review() {
 }
 async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows }) {
   await launchBrowser(); await step('Browser: sign in to private A', () => signIn(A));
+  await step('Browser: system service names are literal, locally scoped and preserved by rename', async () => {
+    const m = networkMonitors['system-service'];
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await text('Each selected node checks its own operating system, never another host.');
+    assert.equal(await page.eval(`__field('Internal service name').value`), m.target);
+    const before = report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length;
+    await fill('Internal service name', 'ssh*'); await click('Save changes'); await text('Patterns');
+    assert.equal(report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length, before);
+    await fill('Internal service name', m.target); await fill('Name', 'Review system service renamed');
+    await click('Save changes'); await heading('Review system service renamed');
+    const rows = (await api(A, '/api/monitors')).value;
+    const saved = rows.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(saved.checkGeneration, m.checkGeneration);
+    for (const key of ['http','tls','dns','websocket','smtp','service','ping','manual','push','globalping']) assert.equal(saved[key], undefined, key);
+    await text('Not measured; shown as a dash'); await text('ordinary container');
+    networkMonitors['system-service'] = saved;
+    return { target: saved.target, generationPreserved: true, noManagerQuery: saved.enabled === false };
+  });
+  await step('System service conflict projection retains the exact target and ordinary settings', async () => {
+    const m = networkMonitors['system-service'];
+    const ctx = { groupMap: new Map(), role: 'admin', channels: { map: new Map() }, tags: { map: new Map() } };
+    const projected = Object.assign({}, ...f.monitorRows(ctx, false).map(row => row.project(m)));
+    assert.equal(projected.type, 'system-service'); assert.equal(projected.target, m.target);
+    const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...projected, revision: m.revision });
+    assert.equal(saved.status, 200, saved.text); assert.equal(saved.value.target, m.target);
+    assert.equal(saved.value.checkGeneration, m.checkGeneration);
+    return { serverValidatedProjection: true, actualMultiHeadConflict: false };
+  });
   for (const [type, m] of Object.entries(monitors)) await step(`Browser: rename ${type} preserves stored service bytes`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'); const saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved); assert.deepEqual(saved.service, m.service); return { id: m.id, servicePreserved: true };

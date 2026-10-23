@@ -8,6 +8,7 @@ import (
 	"uptime-canary/apps/node-go/internal/jsonquery"
 	"uptime-canary/apps/node-go/internal/probeworker/process"
 	"uptime-canary/apps/node-go/internal/services"
+	"uptime-canary/apps/node-go/internal/systemservice"
 )
 
 // Dispatch runs before CLI parsing, database access, or listener startup.
@@ -26,6 +27,10 @@ func Dispatch(args []string) (handled bool, exitCode int) {
 			}
 			if header.Type == jsonquery.Type {
 				selected = jsonquery.WorkerHandler()
+				return selected.Validate(b)
+			}
+			if header.Type == systemservice.Type {
+				selected = systemservice.WorkerHandler()
 				return selected.Validate(b)
 			}
 			d := json.NewDecoder(bytes.NewReader(b))

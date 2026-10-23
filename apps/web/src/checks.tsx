@@ -3,8 +3,9 @@ import type { CertificateSummary, HTTPMonitorOptions, Monitor, MonitorInput, Mon
 import { maskedUrl, plural, span } from './format';
 import { gpCanonical, gpFacts } from './globalping';
 import { SERVICE_PROTOCOL, serviceFacts } from './serviceSpecs';
+import { systemdUnit } from './systemService';
 
-export type CheckCategory = 'web' | 'remote' | 'data' | 'messaging' | 'infra' | 'manual';
+export type CheckCategory = 'web' | 'remote' | 'local' | 'data' | 'messaging' | 'infra' | 'manual';
 
 export interface CheckType {
   type: MonitorType;
@@ -22,7 +23,8 @@ export interface CheckType {
 export const CATEGORY_LABEL: Record<CheckCategory, string> = {
   web: 'Web and network',
   remote: 'Remote probes (third party)',
-  data: 'Databases and caches',
+  local: 'On each node’s own system',
+  data:'Databases and caches',
   messaging: 'Messaging and containers',
   infra: 'Infrastructure and RPC',
   manual: 'Passive and operator controlled',
@@ -38,6 +40,10 @@ export const CHECK_TYPES: CheckType[] = [
   { type: 'websocket', label: 'WebSocket', short: 'ws', category: 'web', hint: 'Upgrade and ping/pong', targetLabel: 'URL', placeholder: 'wss://stream.example.com/socket', targetHint: 'A ws:// or wss:// address. Up when the upgrade succeeds and a ping gets its pong.' },
   { type: 'smtp', label: 'SMTP', short: 'smtp', category: 'web', hint: 'Greeting, EHLO, TLS', targetLabel: 'Host and port', placeholder: 'mail.example.com:587', targetHint: 'host:port. Sends no login and no mail: greeting, EHLO and the chosen TLS mode only.' },
   { type: 'globalping', label: 'Globalping', short: 'gp', category: 'remote', hint: 'Ping, HTTP or DNS from a probe elsewhere' },
+  {
+    type: 'system-service', label: 'System service', short: 'svc', category: 'local', hint: 'systemd or Windows service state', targetLabel: 'Internal service name', placeholder: 'sshd.service or Spooler',
+    targetHint: 'The internal name, not the display name: sshd or sshd.service for systemd, Spooler (not “Print Spooler”) on Windows. Letters, digits, dots, underscores, hyphens and @; no spaces, paths or patterns.',
+  },
   { type: 'postgres', label: 'PostgreSQL', short: 'pg', category: 'data', hint: 'Read-only query' },
   { type: 'mysql', label: 'MySQL', short: 'mysql', category: 'data', hint: 'Read-only query' },
   { type: 'sqlserver', label: 'SQL Server', short: 'mssql', category: 'data', hint: 'Read-only query' },
@@ -62,8 +68,10 @@ const TYPE_MAP = new Map(CHECK_TYPES.map(entry => [entry.type as string, entry])
 export const checkType = (type: string): CheckType | undefined => TYPE_MAP.get(type);
 export const typeLabel = (type: string): string => TYPE_MAP.get(type)?.label ?? type.toUpperCase();
 export const typeShort = (type: string): string => TYPE_MAP.get(type)?.short ?? type;
-/** Types whose target is a single field the operator types. */
+/** Network types: the target is one address the operator types. */
 export const NETWORK_TYPES = new Set<MonitorType>(['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp']);
+/** Types whose target is a single field the operator types: an address, or the name of a service on each node. */
+export const TYPED_TARGET_TYPES = new Set<MonitorType>([...NETWORK_TYPES, 'system-service']);
 export const isServiceType = (type: string): boolean => type in SERVICE_PROTOCOL;
 
 export const SMTP_MODES = [
@@ -124,7 +132,8 @@ const norm = (key: string, value: unknown): unknown => {
 export function checkChanges(before: MonitorInput, after: MonitorInput): string[] {
   const service = isServiceType(after.type) && before.type === after.type;
   const changed: string[] = CHECK_FIELDS.filter(key => {
-    // The node derives service targets from their options; compare the options instead.
+    // The node derives service targets from their options; compare the options instead. Other targets, including a
+    // system service's name, compare exactly as stored: `sshd` → `sshd.service` is a new check, as on the node.
     if (key === 'target' && service) return false;
     return JSON.stringify(norm(key, before[key])) !== JSON.stringify(norm(key, after[key]));
   });
@@ -137,7 +146,9 @@ const CHECK_FIELD_WORDS: Record<string, string> = {
   upsideDown: 'inverted result', retries: 'retry count', http: 'HTTP options', tls: 'TLS options', dns: 'DNS options', websocket: 'WebSocket options',
   smtp: 'SMTP options', service: `service options`, ping: 'ping options', push: 'push token or GET setting', intervalMs: 'heartbeat interval', globalping: 'Globalping options',
 };
-export const checkChangeWords = (keys: string[]): string[] => keys.map(key => CHECK_FIELD_WORDS[key] ?? key);
+/** `type` is the edited monitor's type, for words that depend on it: a system service's target is its service name. */
+export const checkChangeWords = (keys: string[], type?: string): string[] =>
+  keys.map(key => key === 'target' && type === 'system-service' ? 'service name' : CHECK_FIELD_WORDS[key] ?? key);
 
 /** "200–299, 301" from a list of codes. */
 export function statusCodesText(codes: number[] | undefined): string {
@@ -273,6 +284,13 @@ export function checkFacts(m: Monitor, { viewer, reveal }: { viewer: boolean; re
     else if (t.clientCertPem) facts.push({ label: 'Client certificate', value: <>Configured (mutual TLS) · key <Secret /></> });
     if (t.minValidityDays) facts.push({ label: 'Certificate must last', value: `At least ${plural(t.minValidityDays, 'more day')}` });
     if (t.ignoreVerification) facts.push({ label: 'Verification', value: <span className="warn-text">Off: chain and host name aren’t verified. Dates still are.</span> });
+  }
+  if (m.type === 'system-service') {
+    facts.push({ label: 'Read from', value: <>Each assigned node’s own operating system, never another host: systemd on Linux (unit <span className="mono wrap">{systemdUnit(m.target)}</span>), the Service Control Manager on Windows (<span className="mono wrap">{m.target}</span>). Read-only; no credentials.</> });
+    facts.push({ label: 'Up when', value: 'The service is running (systemd: active)' });
+    facts.push({ label: 'Down when', value: 'The service manager reports it stopped, or the service isn’t installed' });
+    facts.push({ label: 'Pending when', value: 'The node can’t read its service manager: none present (as in an ordinary container), no permission, an unsupported OS, no free check worker, or no answer within the timeout. Pending never recovers an outage.' });
+    facts.push({ label: 'Latency', value: <span className="muted">Not measured; shown as a dash</span> });
   }
   if (isServiceType(m.type)) facts.push(...serviceFacts(m, viewer, reveal));
   if (m.type === 'globalping') facts.push(...gpFacts(m, viewer, reveal));

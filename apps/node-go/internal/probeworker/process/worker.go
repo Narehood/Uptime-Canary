@@ -75,7 +75,7 @@ func worker(input io.Reader, output io.Writer, limits func() error, handler Hand
 		return 74
 	}
 	r := handler.Check(ctx)
-	if !validResult(r, config.Timeout) {
+	if !validTypedResult(config.Type, r, config.Timeout) {
 		return 70
 	}
 	r.Message = safeMessage(config.Type, r)

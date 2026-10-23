@@ -75,6 +75,7 @@ function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
           <>
             <span className="ttype">{typeLabel(m.type)}</span> {m.type !== 'manual' && m.type !== 'push' ? <span className="mono wrap">{m.target}</span> : null}
             {m.type === 'globalping' && m.globalping ? <span className="muted small"> · {String(m.globalping.mode).toLowerCase()} from <span className="mono">{m.globalping.location}</span></span> : null}
+            {m.type === 'system-service' ? <span className="muted small"> · read by each node from its own operating system</span> : null}
             {m.type === 'http' ? <span className="muted small"> · accepts {acceptedStatusText(m)}</span> : null}
             {m.type === 'manual' ? <span className="muted small"> · status {m.manual?.state ?? 'not set'}{m.manual?.message ? `: ${m.manual.message}` : ''}</span> : null}
             {m.upsideDown ? <span className="muted small"> · inverted</span> : null}
