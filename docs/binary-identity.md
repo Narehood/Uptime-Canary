@@ -107,3 +107,22 @@ fixture functions pass (4.282 seconds guarded), source unchanged at v3
 fingerprint `7ae60d52f2eb5a794f9d1676a8994dd977ae892fc2bbede4abbabfc032343151`.
 The Go identity implementation is unchanged from the local compiled proof.
 Native Windows/Linux/arm64 CI on this combined source remains pending.
+
+
+## Native executable identity follow-up
+
+Run [40032320452](https://github.com/Narehood/Uptime-Canary/actions/runs/40032320452)
+on `ffeee7173f294f1e2f3af54af02c054b56ee255c` passed native Windows amd64 and
+Linux amd64 archive/extraction, identical repeat builds, local identity JSON,
+help and all 18 process proofs per platform, with zero failures or skips.
+Guarded times were 517.015 and 523.589 seconds; sampled scratch peaks were
+437,111,491 and 434,784,079 bytes, returning to zero. Both runtime identity
+records report the exact commit, clean source, Go 1.27.3, protocol 15 and
+`0.0.0-dev`; Linux also passed restricted native Alpine help. Small uploaded
+reports were read in memory, not downloaded to a retained artifact directory.
+
+Native arm64 still stopped at the storage guard during compilation, so this
+is not an all-platform or whole-workflow pass. The compiler-debug reduction
+and preserved failure are documented in [release artifacts](release-artifacts.md#native-follow-up-compiler-debug-archives).
+The identity implementation and ordinary release-build flags are unchanged;
+the updated native workflow must finish before claiming arm64 execution.
