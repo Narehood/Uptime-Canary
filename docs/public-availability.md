@@ -228,3 +228,234 @@ execution or a release artifact. PR #1 remains draft; main remains protocol 14.
 Frontend ownership is still reserved for Opus. The final storage check found
 1,238,799,308 bytes in the repository and zero scratch, below the idle target;
 no VM, source snapshot, extra build cache or binary archive was created.
+
+## Protocol 14 to 15 upgrade acceptance
+
+The protocol-14 checkpoint's controlled 13-to-14 proof does not cover this
+publication-policy change. A separate `--publication-upgrade` mode now selects
+`public-availability-upgrade.compat.ts`; it is outside the ordinary process
+suite so a source-only container context cannot accidentally run it without
+retained Git history.
+
+The old fixture is rebuilt from protocol-14 main commit
+`65fc953ddf430ae7e454027f2a163c1f871e1b51` using five declared historical
+production-file fragments. The new `public_availability.go` is absent through
+Go's overlay deletion rule. Other production inputs and `go.mod`/`go.sum` must
+match the reference; undeclared drift aborts before fixture writes or builds.
+This uses no copied checkout or cache and is not an original published artifact.
+Both executables and their hashes are checked; all disposable fragments,
+binaries and private databases remain under guarded outputs.
+
+The authored proof checks old API refusal of the new flag, unchanged default-off
+pages after upgrade, bidirectional mixed-peer refusal, preservation of an exact
+pre-upgrade local-history range, retained account role/configuration/generation,
+increasing origin sequence, explicit opt-in and peer synchronization after both
+nodes upgrade, and one original down followed by one genuine recovery without
+an upgrade resend. It contacts only private loopback nodes and a local webhook
+fixture.
+
+The proof-runner unit checks pass: five test functions in 0.210 seconds,
+guarded command 4.079 seconds, with zero scratch after cleanup. These tests cover
+refusal of undeclared Go/module/embedded-code changes and exact overlay deletion
+without copying a checkout. The guard fingerprint was scoped to `scripts/`,
+`f6354fb877c9bf4f75f409c3adaaca962fb6c2e0744066b3050eac00404b3445`,
+while Opus independently authored frontend source. This is not a process-proof
+or frontend pass. The proof project's `tsc --noEmit` subsequently passed without
+diagnostics in 4.093 guarded seconds; its fingerprint was scoped to `apps/proof/`,
+`1a4be43517ec9ba1b7d13b8efee790a640eb9d320e030aaa7110d7ef668cb444`.
+No application or browser fixture ran. The real compatibility proof remains
+pending stable integrated source. Its root command is:
+
+```text
+python scripts/bounded_validation.py --timeout 480 -- python -B scripts/process-proof-validation.py --publication-upgrade
+```
+
+Opus has resumed a source-only continuation for the public editor/presentation.
+Earlier partial work and provider failures remain recorded above; no completed
+interface or browser acceptance is claimed yet.
+
+### Frontend acceptance extension (authored, not yet executed)
+
+`scripts/dashboard-contract-review.mjs --public-availability` retains the
+existing dashboard assertions and adds the root-owned
+`scripts/public-availability-browser.mjs` checks. The extension exercises
+default-off and explicitly saved publication, metadata-edit preservation,
+actual local measured coverage and hourly rendering, credentialless SVG links,
+current DOWN beside historical up time, malformed/unavailable/zero-known-time
+fixtures, expanded-table layout at 390/1440 pixels, late old-node responses,
+same-node slug changes, clearing a withdrawn 404 page, and UI opt-out.
+
+Unavailable and malformed payloads are explicitly injected through the private
+browser fixture, not reported as genuine backend outcomes. Other measurements,
+publication writes and withdrawal responses come from its real loopback nodes.
+No screenshot, profile collection, copied application source or external
+provider is needed. The command builds into the single guarded output tree and
+must run after Opus's source freeze, using native preview first or the documented
+fallback after its required failed attempts:
+
+```text
+python scripts/bounded_validation.py --timeout 900 -- node scripts/dashboard-contract-review.mjs --await-browser --public-availability
+```
+
+Both browser-harness JavaScript files pass `node --check` in 4.094 guarded
+seconds, with a `scripts/` source fingerprint of
+`593f75ae91678227e5e193bf4895c32f14cb50218dbf6b76ebcb77ac34683fd1`.
+This is a syntax check only: the extension has no browser result yet. The older
+124/124 dashboard checkpoint does not validate the new controls or public
+history view. Both guards left zero scratch and no module-cache growth.
+
+## Integrated Opus source: first executed checks
+
+After Opus froze the actual editor, public history view, badge sharing and
+strict reader, one guarded Windows command passed the full workspace typecheck,
+all **13** authored pure frontend checks, and a disposable production Vite build.
+The guard took **12.640 seconds**, source-v2 fingerprint
+`cc6e0890afa202c7d31214b3e8593aaa3f99a11d945e382efd593c8feb24db43`,
+with source unchanged. Scratch peaked at 1,702,484 bytes and returned to zero;
+module-cache growth was zero. No browser or application process ran in this
+command, and the build output was deleted by the guard.
+
+The build still reports its ordinary large-chunk advisory: main JS 756.81 kB,
+221.15 kB gzipped. No threshold was raised or warning suppressed. The older
+component/platform evidence remains scoped above; real-process upgrade and
+browser acceptance of this integrated interface are still pending.
+
+The controlled 14-to-15 proof subsequently passed **1/1**, with zero failures,
+skips, cancellations or todos, on native Windows. Its test phase took
+**26.875 seconds**; both builds plus the guard took **121.391 seconds**.
+The fingerprint above remained unchanged, as did both binaries and the proof
+fixtures. Current binary SHA-256:
+`0617c5581232b7da084c4aa88b5585c5c3e28e29158403aac92368971b2c0179`;
+rebuilt historical fixture:
+`86daea66466ff3e327f723c7f8854f6d4c25833f80878c268915eb4ed3734b65`.
+The checks described in the upgrade section all executed, including exact
+pre-upgrade history totals, default-off publication, mixed-peer refusal and no
+resend of the accepted down before its genuine recovery. This is rebuilt-source
+Windows evidence, not an original release-artifact or Alpine upgrade claim.
+
+Sampled scratch peaked at 507,768,052 bytes, below 512 MiB, and returned to
+zero. The cache trimmed to 250,653,321 bytes and the repository to 1,241,170,787
+bytes; module-cache growth was zero. No binaries or overlay fragments remain.
+Browser acceptance still needs execution. Its fixture explicitly sets en-US
+for consistent percentage assertions; the product formats visitors' locales.
+
+### First integrated browser run: navigation regression
+
+The first full contract run with the public-history extension executed **137**
+assertion groups: **135 passed, two failed**, with zero browser exceptions or
+blocked external requests. All original assertions passed. Both new failures
+occurred at the same preparation step, after selecting node B from a two-node
+link and navigating to a single-node link for A:
+
+```text
+FAIL Public observed: switching slug on the same node clears prior service history: Timeout: heading Observed acceptance page
+FAIL Public observed: unpublishing returns 404 and clears old page, history and embed links: Timeout: heading Observed acceptance page
+```
+
+`PublicStatusView` retained `active = 1` when the new candidate list contained
+only A, making its base URL undefined. The same-node slug assertion and later
+404-clearing assertion were not reached; they must not be counted as passed.
+The tests remain unchanged. Opus received the reproduced navigation defect for
+a source-only repair. A separate source finding requests that an available
+metric also fail closed on invalid/zero `generatedAt`, instead of bypassing its
+frame check; the earlier new pure fixture's zero-time acceptance is not adopted
+as the reader contract.
+
+The new positive history/table/coverage and metric SVG, current DOWN versus old
+up time, credentialless requests, malformed/unavailable/zero-known responses,
+390/1440-pixel expanded table, late A response after selecting B, and editor
+opt-out checks all passed. The injected response cases remain distinct from
+actual backend outcomes.
+
+Native preview opened the private fixture, but both snapshots returned
+`Preview automation snapshot timed out after 15000ms.` The owned tab was closed,
+and the documented Chrome/CDP fallback ran under guarded outputs. No screenshots
+were captured. Guard time was **250.891 seconds**, source-v2 fingerprint
+`b5118ede21213fc1d728e359c9d158837d3651b77e52df6e68d3ce5e01b46e44`,
+source unchanged; production binary still matched the upgrade proof's
+`0617c558...` hash. The compact result SHA-256 was
+`fc0739e08849a6f468b375f2b08f25ec3561b4a3ae78a08f72cbcfbd0d1b21fa`.
+Scratch peaked at 224,718,741 bytes and returned to zero; repository returned
+to 1,257,830,313 bytes, below the idle target. The fixture processes, private
+databases, binary, dist and single Chrome profile were removed by cleanup.
+This failed run is preserved as a failure, not a whole-feature pass.
+
+Opus repaired node selection by retaining a selected URL with the list it
+belongs to; a new list selects its first endpoint, while normal polls retain
+the visitor's explicit choice. The reader also now refuses quantified available
+history without a positive safe projection timestamp. Its earlier zero-time
+acceptance assertion is quoted in the pure fixture and replaced by an explicit
+invalid-time regression for both measured and empty history; unavailable
+responses continue to draw no numbers. This is the stricter accepted reader
+contract, not a change to a historical backend regression.
+
+The repaired source passes workspace typechecking, all **14** pure checks and
+the disposable Vite build in **12.484 guarded seconds**, source-v2 fingerprint
+`076899d570600991c7d55c8fbe04a0ea1d0f0731d553e731f4f1e4eb66cc1ea0`,
+source unchanged. Scratch peaked at 1,700,928 bytes and returned to zero, with
+no module-cache growth. The normal large-chunk notice remains (756.91 kB main
+JS, 221.19 kB gzipped). The unchanged browser assertions must now be rerun,
+including the previously unreached same-node slug and 404 withdrawal checks.
+
+### Repaired integrated browser acceptance
+
+The unchanged **137/137** contract groups now pass, with zero failures, browser
+exceptions or blocked external requests. This includes all original 124 groups
+and all 13 new public-availability groups. The same-node slug and unpublication
+404 assertions both reached their actual assertions and passed. No test was
+removed or weakened to clear the node-selection defect.
+
+The browser phase ran at 2026-10-23 20:09:22.755–20:10:33.801 UTC; the complete
+guard took **113.765 seconds**. Source-v2 fingerprint remained
+`076899d570600991c7d55c8fbe04a0ea1d0f0731d553e731f4f1e4eb66cc1ea0`.
+Application source manifest:
+`4bb826b33d1e6d3faec575973f3b9a3983bd0930620f69cb46701024dcb2266a`;
+the binary still matched `0617c558...`, also used by the upgrade proof.
+Final JS SHA-256:
+`09da793f0fc1efaddf19bf320c78c714ad63fdeb05fce856a8572666df096353`;
+CSS: `d6456689765c26781177df2b2874709d68dc9cdd0c0b161ce405ffe2eff000c8`.
+The compact result SHA-256 is
+`dbe4bd60d47d8eccda0335e4c1554b8053925744ce6d008f56e7d39f35fefb37`.
+
+This rerun reused the documented CDP fallback after the first run's two native
+snapshot timeouts; it made no additional native-preview attempt. The fixture
+sets en-US; the application itself retains locale-aware formatting. Scratch
+peaked at 250,922,037 bytes, returned to zero, and the repository returned to
+1,257,616,777 bytes. Module-cache growth remained zero. No screenshots, private
+databases, binary, dist or Chrome profile were retained.
+
+The 14 pure checks are now tracked at `scripts/public-availability-pure.mjs`;
+only their module-root lookup changed from the authored ignored fixture. They
+also pass from that permanent path (4.125 guarded seconds, source unchanged).
+The web Dockerfile now runs them after `npm ci` and before building, and the
+CI source selector includes the script. Docker execution of that new build
+step and the complete integrated commit's CI remain pending. Local browser
+acceptance does not imply arm64, Portainer-host or release approval.
+
+## Split deployment checkpoint
+
+All four jobs in [workflow 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)
+passed on `0c3d131802cd5059d37e90f7bda0cb7a7476b9e8`, completing at
+2026-10-23 20:05:34 UTC. Its inspected artifacts confirm all 11 node checks,
+web runtime checks, 18/18 original-image process proofs, combined Compose
+runtime, and the new separate dashboard/node Compose runtime scenario.
+Independent projects/networks, a credential-free dashboard, CORS, private node
+identity storage and independent stop/start persistence all passed. Core 887
+and worker-parent 1,527 race events passed with zero failed/skipped tests and
+zero race warnings; helper packages raced separately.
+
+Every one of the common **565** manifest entries matched the exact committed
+Git blobs, not the locally modified frontend. Manifest SHA-256:
+`47a44ed6fe6bd0a31d9bd3f361e162e1eb90b29fef515fd8c1737a66ae21af8b`.
+All four archives were read in memory, without local downloads:
+
+| Artifact | ID | Archive SHA-256 |
+| --- | --- | --- |
+| Node | 12526898243 | `83a5a51beed1329a384d08539c4e35df2d6efa8c1b0b4af66e6d487f8a837cca` |
+| Web | 12526009890 | `36f66fb9c2af769a06bb68df3e3104d717dae8089c7af9317e29a4767b9296e3` |
+| Proof | 12527163402 | `8aac2681e2f72c9b8fa92d4542ce857a16814cea385c5e76542ea712db2c7409` |
+| Race | 12529225260 | `b2bac19a5498ac5db428136915672befeebec18b81e37edacacba7986e757899` |
+
+That CI source predates the completed interface and new web-build pure-check
+step; its pass must not be extended to them. No deployment through Portainer's
+own UI or separate Docker hosts was exercised.

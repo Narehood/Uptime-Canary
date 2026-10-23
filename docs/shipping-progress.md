@@ -1,6 +1,6 @@
 # Shipping progress
 
-## Current checkpoint: protocol 14, 2026-10-23
+## Validated main checkpoint: protocol 14, 2026-10-23
 
 The ready-to-ship independent Go/SQLite HA system with near-Uptime-Kuma
 monitoring and notification abilities remains the goal. The green workflow is
@@ -47,15 +47,79 @@ done. Original failures and the older checkpoint below remain historical.
   dashboard source are unchanged from `77416a1`. See the exact
   [checkpoint evidence](protocol14-checkpoint.md).
 - Continue missing publication, monitor and provider capabilities in
-  [the parity inventory](parity-audit.md). Public observed availability/history
-  and uptime badges are the next proposed wave; current-state badges and
-  authenticated local observed-time history already exist. SMS stays deferred.
+  [the parity inventory](parity-audit.md). The user selected public observed
+  availability/history and uptime badges for the active protocol-15 wave
+  described below. SMS stays deferred.
 - Retained-history operating costs, capacity/backlog recovery and reproducible
   tagged release artifacts still need deliberate release work. Bounded wire
   pages do not bound total retained evidence. Arm64 was compiled, not executed.
 
 There is no tagged release or release certification at this checkpoint.
 See [container evidence](container-validation.md) for the exact current run.
+
+## Active feature: protocol 15, public observed availability
+
+[Draft PR #1](https://github.com/Narehood/Uptime-Canary/pull/1) contains explicit
+per-service publication of the serving node's last 24 hours of observed
+availability, hourly history and uptime badges. This remains one node's view,
+with separate known-time availability and coverage; it is not merged HA uptime.
+Default-off publication, proof revalidation, SQL budgets and credentialless
+redaction are specified in [the feature contract](public-availability.md).
+Protocol 15 requires coordinated peer upgrades; main remains protocol 14.
+
+- The backend at `1e3dd97` passed all four Alpine CI execution jobs in
+  [workflow 40003648085](https://github.com/Narehood/Uptime-Canary/actions/runs/40003648085):
+  11 node checks, web runtime checks, all 18 process proofs, combined-template
+  Compose runtime, 887 core and 1,527 worker-parent race events. The CodeRabbit
+  cache-contention finding has a before-fix reproduction and passing repaired
+  regression. Capped worker children remain deliberately uninstrumented.
+- Documentation head `871717c` also passed all four jobs in
+  [workflow 40007603974](https://github.com/Narehood/Uptime-Canary/actions/runs/40007603974).
+  Neither run includes the held, unfinished frontend helpers. CodeRabbit's
+  later green status means draft review was skipped, not that it re-reviewed
+  the repair.
+- `0c3d131` adds [separate dashboard and node Compose/Portainer files](portainer.md).
+  Both preserve the combined template's hardened service settings. Bounded
+  local syntax/parity/source-selection checks and three proof-runner tests
+  pass. [Workflow 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)
+  passes all four jobs, including actual configuration parsing and separate
+  Compose projects with CORS, independent networks and restart persistence.
+  All 565 source-manifest entries match that commit. No Portainer-host or
+  cross-host deployment has been exercised.
+- Opus completed the editor opt-in, public history presentation and uptime
+  badge sharing. The repaired interface passes workspace typechecking, 14 pure
+  checks, a disposable production build and **137/137** browser assertions.
+  The first browser run's navigation defect and its two blocked assertions
+  remain recorded as a failure. A controlled **14-to-15** process upgrade also
+  passes, preserving exact historical totals, identities, account roles and
+  receipts without opting old pages in. This is native Windows rebuilt-source
+  evidence, not original release-artifact or Alpine upgrade evidence. Exact
+  source hashes and results are in [the feature contract](public-availability.md).
+  The complete integrated source still needs its own CI result before merge.
+
+### Release gates still open
+
+1. Complete and validate the integrated protocol-15 feature, including frontend,
+   its new deployment files and the exact source proposed for merge. Local
+   interface and 14-to-15 acceptance have passed; the earlier protocol-14
+   controlled 13-to-14 proof remains a separate historical result.
+2. Reconcile remaining monitor families and protocol/provider options against
+   the pinned [parity inventory](parity-audit.md). System-service, PM2, browser,
+   Tailscale, GameDig and Steam checks are still absent; native provider coverage
+   is eleven, not the full upstream catalogue. Status-page domains, styling and
+   subscriptions remain gaps. These are not waived by backend CI passes.
+3. Keep recovery, mixed-peer refusal, identities, retention and backlog behavior
+   tied to each final source. Retained causal history still has growing storage,
+   heap and catch-up costs. Arm64 compilation is not arm64 execution.
+4. Produce a reviewed versioned release with checksummed artifacts and Alpine
+   images, repeat applicable dependency/provenance and coherent acceptance
+   gates, and document installation, supported limits and coordinated upgrades.
+   No tag, published release binary or release-image validation exists yet.
+
+Storage remains below the enforced idle budget, with one owned cache and zero
+scratch after the split-template local checks. No VM, source snapshot or binary
+archive was created. The complete independent Go/SQLite HA and near-Kuma goal
+remains active; the draft feature and green checkpoints are not completion.
 
 ## Historical development checkpoint: 2026-10-22
 

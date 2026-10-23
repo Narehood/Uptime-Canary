@@ -172,12 +172,15 @@ peer protocol changes.
 
 The combined template has passed actual Docker Compose runtime validation,
 including readiness, CORS, private identity storage and restart persistence.
-The separate templates add configuration parity checks and a CI runtime
-scenario with independent projects and networks, no dashboard credentials,
-independent stops/restarts and persistent node history. Their execution result
-must be read from the CI run for the exact commit; adding a scenario is not a
-passing result. No deployment through a Portainer instance has been performed.
-These checks do not certify a complete release or cross-host networking.
+On `0c3d131`, [workflow 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)
+also passed actual separate-project Compose runtime: independent networks, no
+dashboard credentials, CORS, private identity storage, independent stop/start
+and persistent node history. Configuration parsing and split-template parity
+passed, and all 565 source-manifest entries matched the committed source; see
+[the exact evidence](public-availability.md#split-deployment-checkpoint).
+That run predates the completed public-history interface. No deployment through
+a Portainer instance has been performed. These checks do not certify a complete
+release or cross-host networking.
 
 - [Portainer: add a stack and supply environment variables](https://docs.portainer.io/user/docker/stacks/add)
 - [Portainer: build an image](https://docs.portainer.io/user/docker/images/build)

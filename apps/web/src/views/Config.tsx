@@ -165,7 +165,8 @@ function statusPageRows(ctx: Canary): Row<StatusPage>[] {
     { key: 'enabled', label: 'Published', keys: ['enabled'], project: p => ({ enabled: p.enabled }), render: p => p.enabled ? 'Published' : 'Draft' },
     {
       key: 'groups', label: 'Sections', keys: ['groups'], project: p => ({ groups: structuredClone(p.groups) }),
-      render: p => <>{p.groups.map(group => `${group.name} (${group.monitors.map(sel => sel.name).join(', ') || 'empty'})`).join('; ') || <span className="muted">None</span>}{p.groups.some(group => group.monitors.some(sel => !ctx.monitorMap.has(sel.monitorId))) ? <div className="muted small">Includes monitors unknown to {ctx.endpoint}</div> : null}</>,
+      // Selections are kept as stored, including the 24 h history opt-in and any field this dashboard doesn't know.
+      render: p => <>{p.groups.map(group => `${group.name} (${group.monitors.map(sel => sel.showAvailability === true ? `${sel.name} + 24 h history` : sel.name).join(', ') || 'empty'})`).join('; ') || <span className="muted">None</span>}{p.groups.some(group => group.monitors.some(sel => !ctx.monitorMap.has(sel.monitorId))) ? <div className="muted small">Includes monitors unknown to {ctx.endpoint}</div> : null}</>,
     },
     { key: 'announcements', label: 'Announcements', keys: ['announcements'], project: p => ({ announcements: structuredClone(p.announcements) }), render: p => p.announcements.length ? p.announcements.map(note => `${note.title} (${note.state})`).join('; ') : <span className="muted">None</span> },
   ];

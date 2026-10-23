@@ -3,7 +3,10 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
-RUN npm ci && npm run build --workspace @uptime-canary/web
+COPY scripts/public-availability-pure.mjs ./scripts/public-availability-pure.mjs
+RUN npm ci \
+    && TSX_DISABLE_CACHE=1 node scripts/public-availability-pure.mjs \
+    && npm run build --workspace @uptime-canary/web
 
 FROM nginxinc/nginx-unprivileged:stable-alpine
 COPY LICENSE THIRD_PARTY_NOTICES.txt /usr/share/licenses/uptime-canary/
