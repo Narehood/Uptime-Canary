@@ -18,6 +18,7 @@ ROOT_FILES = (
     "scripts/validation_paths.py",
     "scripts/validation_workspace.py", "deploy/Dockerfile.proof", "deploy/portainer-stack.yml",
     "scripts/public-availability-pure.mjs",
+    "scripts/package-release.py", "scripts/package_release_test.py",
 )
 TREES = ("apps/node-go", "apps/web/src", "apps/proof", "packages/shared/src", "deploy")
 EXTRA = ("apps/web/index.html", "apps/web/package.json", "apps/web/tsconfig.json",
