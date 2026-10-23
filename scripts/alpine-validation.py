@@ -3,8 +3,10 @@
 import argparse
 import http.server
 import json
+import os
 from pathlib import Path
 import secrets
+import socket
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from validation_workspace import tap_counts
 
 
 def fixture():
@@ -46,7 +49,7 @@ def main():
     p.add_argument("--skip-web", action="store_true")
     p.add_argument("--skip-race", action="store_true")
     p.add_argument("--node-image", help="Use an existing image; explicitly skips the repository node build")
-    p.add_argument("--only", choices=("web", "race"), help="Run one independent phase and explicitly omit the other phases")
+    p.add_argument("--only", choices=("web", "race", "proof"), help="Run one independent phase and explicitly omit the other phases")
     a = p.parse_args()
     a.context = a.context.resolve()
     a.output = a.output.resolve()
@@ -58,11 +61,11 @@ def main():
     token, cluster = secrets.token_hex(32), secrets.token_hex(32)
     log = (a.output / "commands.log").open("w+", buffering=1)
 
-    def cmd(label, *args, timeout=180):
+    def cmd(label, *args, timeout=180, env=None):
         print(label, flush=True)
         log.write("\n== " + label + " ==\n")
         start = log.tell()
-        result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, text=True, timeout=timeout)
+        result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, text=True, timeout=timeout, env=env)
         log.flush()
         log.seek(start)
         output = log.read()
@@ -80,7 +83,7 @@ def main():
         if body is not None: headers["Content-Type"] = "application/json"
         req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
         try:
-            response = urllib.request.urlopen(req, timeout=15)
+            response = urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=15)
         except urllib.error.HTTPError as e:
             response = e
         with response:
@@ -134,6 +137,67 @@ def main():
         eventually("Web Docker HEALTHCHECK", lambda: cmd("Inspect web health", "docker", "inspect", "--format", "{{.State.Health.Status}}", web) == "healthy", timeout=120)
         passed("Optional static UI build, Docker health, security/cache headers, SPA fallback, JS/CSS assets, nonroot runtime")
 
+    def validate_stack(node_image):
+        web_image = prefix + "-stack-web"
+        images.append(web_image)
+        cmd("Build original web image for stack", "docker", "build", "--pull", "--progress=plain", "-f", str(a.context / "Dockerfile.web"), "-t", web_image, str(a.context), timeout=1200)
+        with socket.socket() as node_socket, socket.socket() as web_socket:
+            node_socket.bind(("127.0.0.1", 0)); web_socket.bind(("127.0.0.1", 0))
+            node_port, web_port = node_socket.getsockname()[1], web_socket.getsockname()[1]
+        node_url, web_url = "http://127.0.0.1:" + str(node_port), "http://127.0.0.1:" + str(web_port)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CANARY_")}
+        env.update({"CANARY_NODE_IMAGE": node_image, "CANARY_WEB_IMAGE": web_image,
+            "CANARY_NODE_ID": prefix, "CANARY_ADMIN_TOKEN": token, "CANARY_CLUSTER_TOKEN": cluster,
+            "CANARY_CORS_ORIGINS": web_url, "CANARY_PORT": str(node_port), "CANARY_WEB_PORT": str(web_port)})
+        compose = ["docker", "compose", "--ansi", "never", "--env-file", "/dev/null", "--project-name", prefix,
+                   "-f", str(a.context / "deploy/portainer-stack.yml")]
+        try:
+            cmd("Start actual Portainer template as an isolated Compose project", *compose, "up", "-d", timeout=180, env=env)
+            eventually("Stack node ready", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
+            eventually("Stack dashboard ready", lambda: urllib.request.build_opener(urllib.request.ProxyHandler({})).open(web_url + "/healthz", timeout=5).status == 200)
+            node = cmd("Locate owned stack node", *compose, "ps", "-q", "node", env=env)
+            policy = json.loads(cmd("Inspect stack node", "docker", "inspect", node))[0]
+            assert policy["Config"]["Labels"]["com.docker.compose.project"] == prefix
+            assert policy["HostConfig"]["ReadonlyRootfs"]
+            mounts = {m["Destination"]: m for m in policy["Mounts"]}
+            assert mounts["/data"]["Name"] != mounts["/identity"]["Name"]
+            assert cmd("Check stack identity permissions", "docker", "exec", node, "stat", "-c", "%a", "/identity") == "700"
+            req = urllib.request.Request(node_url + "/api/overview", headers={"Authorization": "Bearer " + token, "Origin": web_url})
+            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as response:
+                assert response.status == 200 and response.headers.get("Access-Control-Allow-Origin") == web_url
+                response.read()
+            monitor = request(node_url, "/api/monitors", {"name": "Stack persistence fixture", "type": "manual", "target": "manual",
+                "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [prefix], "enabled": True, "manual": {"state": "up", "message": "Private stack fixture"}}, expected=201)
+            path = "/api/monitors/" + monitor["id"] + "/history"
+            history = eventually("Stack records private observations", lambda: request(node_url, path))
+            cmd("Restart stack node with retained volumes", *compose, "restart", "node", timeout=60, env=env)
+            eventually("Restarted stack ready", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
+            assert any(row in request(node_url, path) for row in history)
+            assert any(row["monitor"]["id"] == monitor["id"] for row in request(node_url, "/api/monitors"))
+            passed("Portainer template actual Compose runtime, private identity volume, CORS and restart persistence")
+        finally:
+            # Only this generated project and its fixture volumes; never user stacks.
+            subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
+
+    def validate_proof():
+        node_image, proof_image, proof = prefix + "-proof-node", prefix + "-proof-image", prefix + "-proof"
+        images.extend([node_image, proof_image])
+        containers.append(proof)
+        cmd("Build original node image for process proofs", "docker", "build", "--pull", "--progress=plain", "-f", str(a.context / "Dockerfile.node"), "-t", node_image, str(a.context), timeout=1200)
+        cmd("Build Alpine process-proof tooling", "docker", "build", "--progress=plain", "-f", str(a.context / "deploy/Dockerfile.proof"), "--build-arg", "CANARY_NODE_IMAGE=" + node_image, "-t", proof_image, str(a.context), timeout=1200)
+        cmd("Create isolated nonroot process-proof container", "docker", "create", "--name", proof, "--network", "none", "--read-only", "--cap-drop", "ALL", "--cap-add", "NET_RAW", "--security-opt", "no-new-privileges:true", "--cpus", "4", "--memory", "2g", "--pids-limit", "128", "--tmpfs", "/tmp:rw,exec,nosuid,nodev,size=256m,mode=1777", proof_image)
+        policy = json.loads(cmd("Inspect process-proof policy", "docker", "inspect", proof))[0]
+        assert policy["Config"]["User"] == "65534:65534"
+        assert policy["HostConfig"]["ReadonlyRootfs"] and policy["HostConfig"]["NetworkMode"] == "none"
+        assert "no-new-privileges:true" in policy["HostConfig"]["SecurityOpt"]
+        raw = cmd("Run all real-process proofs on the original node binary", "docker", "start", "--attach", proof, timeout=900)
+        counts = tap_counts(raw)
+        cmd("Verify proof container exited successfully", "docker", "inspect", "--format", "{{.State.ExitCode}}", proof)
+        status = json.loads(cmd("Inspect final process-proof state", "docker", "inspect", proof))[0]["State"]
+        assert status["ExitCode"] == 0 and not status["OOMKilled"] and not status["Running"]
+        passed("Full multi-process suite on original node Dockerfile binary, nonroot/read-only/no-network", {"counts": counts, "state": status})
+        validate_stack(node_image)
+
     def validate_race():
         race_name = prefix + "-race"
         containers.append(race_name)
@@ -147,8 +211,10 @@ def main():
             if a.only == "web":
                 cmd("Create isolated network", "docker", "network", "create", "--internal", network)
                 validate_web()
-            else:
+            elif a.only == "race":
                 validate_race()
+            else:
+                validate_proof()
             summary["passed"] = True
             return
         node = a.node_image or prefix + "-node"

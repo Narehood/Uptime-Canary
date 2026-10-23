@@ -16,11 +16,12 @@ ROOT_FILES = (
     "LICENSE", "THIRD_PARTY_NOTICES.txt", "third-party-manifest.json",
     "scripts/worker-race-validation.py",
     "scripts/validation_paths.py",
+    "scripts/validation_workspace.py", "deploy/Dockerfile.proof", "deploy/portainer-stack.yml",
 )
-TREES = ("apps/node-go", "apps/web/src", "packages/shared/src", "deploy")
+TREES = ("apps/node-go", "apps/web/src", "apps/proof", "packages/shared/src", "deploy")
 EXTRA = ("apps/web/index.html", "apps/web/package.json", "apps/web/tsconfig.json",
          "apps/web/vite.config.ts", "packages/shared/package.json", "packages/shared/tsconfig.json")
-EXTENSIONS = {".go", ".mod", ".sum", ".ts", ".tsx", ".js", ".json", ".css", ".html", ".conf", ".txt", ".md", ".mjs", ".patch"}
+EXTENSIONS = {".go", ".mod", ".sum", ".ts", ".tsx", ".js", ".json", ".css", ".html", ".conf", ".txt", ".md", ".mjs", ".patch", ".pem"}
 NOTICE_FILES = {"LICENSE", "COPYING", "COPYRIGHT", "NOTICE"}
 
 

@@ -42,6 +42,54 @@ class Opener:
 
 
 class AdvisoryEvidenceTests(unittest.TestCase):
+    def goja_fixture(self, root):
+        directory = root / "apps/node-go/third_party/goja"
+        directory.mkdir(parents=True)
+        original = {}
+        for index in range(81):
+            name = f"source-{index}.go"
+            raw = f"// synthetic original {index}\n".encode()
+            (directory / name).write_bytes(raw)
+            original[name] = hashlib.sha256(raw).hexdigest()
+        helper = b"// synthetic recorded helper\n"
+        (directory / "canary_own_data.go").write_bytes(helper)
+        (directory / "NOTICE.txt").write_text("Synthetic test fixture")
+        metadata = {"module": "github.com/dop251/goja", "version": "v0.0.0-20261022125820-07c4b9d6265b",
+            "commit": "07c4b9d6265b9d472b736d9a57295b03809ce02b", "upstreamFiles": original,
+            "addedFile": "canary_own_data.go", "addedFileSHA256": hashlib.sha256(helper).hexdigest()}
+        (directory / "CANARY_PATCH.json").write_text(json.dumps(metadata))
+        return directory, metadata
+
+    def test_local_goja_uses_verified_upstream_version_and_commit(self):
+        with tempfile.TemporaryDirectory() as path:
+            root = Path(path)
+            _, metadata = self.goja_fixture(root)
+            opener = Opener([Response({}), Response({"vulns": [{"id": "TEST-GOJA"}]})])
+            record = security.vendored_checks(root, root, opener)["localGoja"]
+            self.assertEqual(record["activeAdvisories"], ["TEST-GOJA"])
+            self.assertEqual(opener.requests, [
+                {"package": {"name": metadata["module"], "ecosystem": "Go"}, "version": metadata["version"]},
+                {"commit": metadata["commit"]}])
+
+    def test_goja_mutations_or_unrecorded_code_fail_before_advisory_queries(self):
+        for change in ("helper", "original", "unrecorded", "commit"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as path:
+                root = Path(path)
+                directory, metadata = self.goja_fixture(root)
+                if change == "helper":
+                    (directory / "canary_own_data.go").write_bytes(b"changed helper")
+                elif change == "original":
+                    (directory / "source-0.go").write_bytes(b"changed original")
+                elif change == "unrecorded":
+                    (directory / "extra.go").write_bytes(b"unrecorded source")
+                else:
+                    metadata["commit"] = "0" * 40
+                    (directory / "CANARY_PATCH.json").write_text(json.dumps(metadata))
+                opener = Opener([])
+                with self.assertRaises(ValueError):
+                    security.vendored_checks(root, root, opener)
+                self.assertEqual(opener.requests, [])
+
     def test_embedded_code_changes_are_fingerprinted(self):
         with tempfile.TemporaryDirectory() as path:
             root = Path(path)

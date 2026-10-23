@@ -309,8 +309,8 @@ export class Cluster {
     this.links.push(link);
   }
 
-  async start(node: NodeProcess): Promise<void> {
-    assert.ok(this.binary, 'Call Cluster.initialize() before starting a compiled runtime.');
+  async start(node: NodeProcess, binary = this.binary): Promise<void> {
+    assert.ok(binary && existsSync(binary) && statSync(binary).isFile(), 'Call Cluster.initialize() with a valid compiled runtime.');
     assert.ok(!node.child || node.child.exitCode !== null || node.child.signalCode !== null, `${node.id} already runs`);
     if (node.reservation) {
       await closeServer(node.reservation);
@@ -323,7 +323,7 @@ export class Cluster {
     }));
     node.stopping = false;
     node.lastExit = undefined;
-    const child = spawn(this.binary, ['serve'], {
+    const child = spawn(binary, ['serve'], {
       cwd: ROOT, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...env, ...this.childEnvironment,

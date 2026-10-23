@@ -1,0 +1,18 @@
+# CI-only process proof image. The executable comes from the original node image.
+ARG CANARY_NODE_IMAGE
+FROM ${CANARY_NODE_IMAGE} AS canary
+
+FROM node:24.22.1-alpine
+RUN apk add --no-cache ca-certificates iputils
+WORKDIR /work
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY apps/proof/package.json ./apps/proof/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY apps/proof ./apps/proof
+COPY packages/shared ./packages/shared
+COPY --from=canary /usr/local/bin/canary /usr/local/bin/canary
+ENV CANARY_BIN=/usr/local/bin/canary TSX_DISABLE_CACHE=1
+USER 65534:65534
+CMD ["sh", "-ec", "test \"$(id -u)\" = 65534; grep -Eq '^NoNewPrivs:[[:space:]]*1$' /proc/self/status; exec node --import tsx --test --test-concurrency=1 --test-reporter=tap apps/proof/test/*.test.ts"]

@@ -1,5 +1,66 @@
 # Shipping progress
 
+## Current checkpoint: protocol 14, 2026-10-23
+
+The ready-to-ship independent Go/SQLite HA system with near-Uptime-Kuma
+monitoring and notification abilities remains the goal. The green workflow is
+an acceptance milestone, not a declaration that all parity or release work is
+done. Original failures and the older checkpoint below remain historical.
+
+- Runtime commit `77416a1` adopts official JSONata 2.2.2 on Goja with the finite
+  profile and optimized private guards. The old evaluator has no production
+  fallback. Its seven reported false-healthy mechanisms are resolved by the
+  replacement; all 130 unchanged independent review cases pass on actual
+  Alpine. Narrow legacy expectation changes are documented in
+  [the migration notes](../apps/node-go/internal/jsonquery/RUNTIME_MIGRATION.md).
+- All 19 Windows native node packages pass. Node-wide vet, provenance, notices,
+  module verification and static Linux amd64/arm64 builds pass under the
+  storage guard. Arm64 execution is still a separate gate.
+- [GitHub workflow 39972484403](https://github.com/Narehood/Uptime-Canary/actions/runs/39972484403)
+  passes node, web and race jobs: 11 node runtime checks, the web build/runtime,
+  and the Portainer stack configuration. Alpine race-parent runs contain 869
+  core and 1,527 worker-parent passing events, zero failures/skips/races. Helper
+  packages pass race tests separately. Production worker children intentionally
+  remain uninstrumented under their original caps.
+- Protocol 14 is a coordinated cluster upgrade. It rejects older peers;
+  monitor options and notification destination identities are unchanged.
+- Storage remains a requirement: repository below 3 GiB, idle below 1.25 GiB,
+  scratch below 512 MiB, one owned cache and one validation at a time. No new
+  source snapshots, binary archives or persistent validation VMs are permitted.
+
+### Current acceptance work
+
+1. Refresh real-process proofs on the combined source, including partitions,
+   restart, provider acceptance, current runtime queries and retained identity.
+   The runner is being migrated to guarded disposable outputs rather than
+   copied source trees.
+2. Scan the combined source and embedded runtimes again. Check the locally
+   replaced Goja module's upstream identity explicitly as well as imported
+   symbols, lockfiles and the JSONata asset; do not treat local patches as an
+   advisory exemption.
+3. Refresh dashboard contract coverage on the current source. Its historical
+   catalogue failure expects 25 types even though the accepted Globalping
+   contract adds the 26th. Preserve that earlier result and document the
+   narrow expectation update. Any real product findings still require fixes.
+4. Prove coordinated upgrades, database migration and rollback/refusal rules;
+   exercise backlog, retained-history growth and operational recovery without
+   touching user data. Bounded wire pages do not bound total retained history.
+5. Continue the remaining monitor/provider options and publication features in
+   [the parity inventory](parity-audit.md), keeping the original near-parity
+   goal. SMS remains explicitly deferred. Prepare release artifacts only after
+   the coherent checks and their source/platform evidence are complete.
+
+There is no tagged release or release certification at this checkpoint.
+See [container evidence](container-validation.md) for the exact current run.
+
+## Historical development checkpoint: 2026-10-22
+
+The record below is preserved from earlier source. Statements that the
+JavaScript replacement is private or JSONata is still blocked refer to that
+older checkpoint, not protocol 14. Its source-specific failures are not erased
+or relabelled as passing by the new workflow.
+
+
 Development checkpoint: 2026-10-22. **The release goal is active; this is not a
 ready-to-ship claim.** Evidence belongs to the source snapshot recorded by each
 test, rather than automatically covering subsequent edits.

@@ -3,6 +3,14 @@ node_modules
 **/dist
 .git
 .env
+.env.*
+**/.env
+**/.env.*
 .canary
+**/.canary
 *.db*
+*.sqlite*
+/data
+/identity
+/backups
 design

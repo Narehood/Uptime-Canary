@@ -1,5 +1,5 @@
-// Independent contract review. Writes only private artifacts under .canary/dashboard-contract-review.
-// Run: node scripts/dashboard-contract-review.mjs
+// Independent contract review. All disposable files belong to the storage guard.
+// Run: python scripts/bounded_validation.py --timeout 600 -- node scripts/dashboard-contract-review.mjs --await-browser
 // Development: --fixture holds an owned fixture; --run <runDir> reviews that fixture; STOP ends it.
 // Uses the documented Chrome/CDP fallback after attempting T3 preview. No .env or user database access.
 import assert from 'node:assert/strict';
@@ -8,11 +8,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { createServer as netServer } from 'node:net';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+process.env.TSX_DISABLE_CACHE = '1';
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^CANARY_/iu.test(k)));
 const owned = [], servers = [];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -54,16 +55,18 @@ function files(path) {
   return out;
 }
 async function fixture() {
-  const base = join(root, '.canary', 'dashboard-contract-review'); mkdirSync(base, { recursive: true });
+  const base = join(root, '.canary', 'work', 'current', 'outputs');
+  assert.ok(existsSync(join(root, '.canary', 'bounded-validation.lock')), 'Run through bounded_validation.py');
+  assert.equal(resolve(process.env.GOCACHE || ''), join(root, '.canary', 'cache', 'go-build'));
+  assert.ok(existsSync(base), 'The guard must own disposable outputs');
   runDir = mkdtempSync(join(base, 'run-'));
-  const source = join(runDir, 'source'); mkdirSync(source);
+  const source = root;
   const sourceFiles = [...files(join(root, 'apps', 'node-go')), ...files(join(root, 'apps', 'web')), ...files(join(root, 'packages', 'shared')),
     ...['go.mod', 'go.sum', 'package.json', 'package-lock.json', 'tsconfig.base.json', 'Dockerfile.web', 'deploy/web.conf'].map(p => join(root, p)).filter(existsSync)];
   const manifest = [];
   for (const f of sourceFiles.sort()) {
-    const name = relative(root, f).replaceAll('\\', '/'), bytes = readFileSync(f), dest = join(source, name);
-    mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, bytes);
-    assert.equal(sha(readFileSync(dest)), sha(bytes)); manifest.push({ path: name, bytes: bytes.length, sha256: sha(bytes) });
+    const name = relative(root, f).replaceAll('\\', '/'), bytes = readFileSync(f);
+    manifest.push({ path: name, bytes: bytes.length, sha256: sha(bytes) });
   }
   const sourceHash = sha(JSON.stringify(manifest)); write(join(runDir, 'source-manifest.json'), { sourceHash, files: manifest });
   const go = process.env.CANARY_GO || join(root, '.canary', 'tools', 'go', 'bin', process.platform === 'win32' ? 'go.exe' : 'go');
@@ -87,12 +90,27 @@ async function fixture() {
     const node = { id, port: await port(), token: secret() }; node.url = `http://127.0.0.1:${node.port}`; nodes.push(node);
     const p = spawn(binary, ['serve'], { cwd: runDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...cleanEnv,
       CANARY_NODE_ID: id, CANARY_NODE_NAME: id, CANARY_HOST: '127.0.0.1', CANARY_PORT: String(node.port), CANARY_DB: join(runDir, `${id}.db`),
+      CANARY_IDENTITY_DIRECTORY: join(runDir, `${id}-identity`),
       CANARY_ADMIN_TOKEN: node.token, CANARY_CLUSTER_TOKEN: secret(), CANARY_PEERS: '[]', CANARY_CORS_ORIGINS: origin } });
     owned.push(p); let log = ''; for (const s of [p.stdout, p.stderr]) s.on('data', b => { log = (log + b).slice(-20000); });
     p.on('exit', code => writeFileSync(join(runDir, `${id}.exit.log`), `exit ${code}\n${log}`));
     await until(async () => (await fetch(node.url + '/api/auth/status')).ok, `${id} ready`, 30000);
   }
-  const preview = spawn(process.execPath, [vite, 'preview', '--outDir', dist, '--host', '127.0.0.1', '--port', new URL(origin).port, '--strictPort'], { cwd: webRoot, env: cleanEnv, windowsHide: true, stdio: 'ignore' }); owned.push(preview);
+  const contentTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
+  const preview = createServer((req, res) => {
+    try {
+      let path = resolve(dist, '.' + decodeURIComponent(new URL(req.url, origin).pathname));
+      if (path !== dist && !path.startsWith(dist + sep)) throw Error('Outside private dist');
+      if (!extname(path)) path = join(dist, 'index.html');
+      let body = readFileSync(path);
+      if (extname(path) === '.html') {
+        // Native preview and CDP both start on this fixture, never the usual :3100.
+        body = Buffer.from(body.toString().replace('<head>', `<head><script>localStorage.setItem('uptime-canary.endpoint',${J(nodes[0].url)})</script>`));
+      }
+      res.writeHead(200, { 'Content-Type': contentTypes[extname(path)] || 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }).end(body);
+    } catch { res.writeHead(404).end(); }
+  });
+  preview.listen(Number(new URL(origin).port), '127.0.0.1'); await once(preview, 'listening'); servers.push(preview);
   await until(async () => (await fetch(origin)).ok, 'private dashboard');
   const artifacts = files(dist).map(f => ({ path: relative(dist, f).replaceAll('\\', '/'), bytes: readFileSync(f).length, sha256: sha(readFileSync(f)) }));
   state = { kind: 'dashboard-contract-review', runDir, source, origin, sink: `http://127.0.0.1:${sink.address().port}`, nodes, sourceHash, binaryHash: sha(readFileSync(binary)), artifacts, startedAt: new Date().toISOString(), pid: process.pid };
@@ -101,7 +119,7 @@ async function fixture() {
 async function api(node, path, method = 'GET', body, token = node.token) {
   assert.equal(new URL(node.url).hostname, '127.0.0.1');
   let r;
-  try { r = await fetch(node.url + path, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(15000) }); }
+  try { r = await fetch(node.url + path, { method, headers: { Connection: 'close', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(15000) }); }
   catch (e) { throw Error(`${method} ${path}: ${e.message}; cause=${e.cause?.code || e.cause?.message || 'unknown'}`); }
   const text = await r.text(); let value; try { value = JSON.parse(text); } catch {}
   return { status: r.status, value, text };
@@ -133,6 +151,10 @@ async function step(name, fn) {
   save();
 }
 async function launchBrowser() {
+  if (args.includes('--await-browser')) {
+    console.log(`BROWSER_READY ${state.origin} ${runDir}`);
+    await until(() => existsSync(join(runDir, 'ALLOW_CDP')), 'native preview or documented CDP fallback', 180000);
+  }
   const debugPort = await port(), chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   const profile = mkdtempSync(join(runDir, 'chrome-profile-'));
   const p = spawn(chrome, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-extensions', '--no-proxy-server', '--password-store=basic', 'about:blank'], { windowsHide: true, stdio: 'ignore' }); owned.push(p);
@@ -162,11 +184,18 @@ async function signIn(node, switching = false) {
   const dismiss = await page.eval(`!![...document.querySelectorAll('button')].find(e => e.textContent === 'Not now')`); if (dismiss) await click('Not now');
 }
 async function functionsUnderReview() {
-  // Append exports only to private copies. Build above always uses the unmodified byte-checked snapshot.
+  // Four small test modules need extra exports. Build real source in place;
+  // never clone the source tree. Relative imports still resolve to originals.
   globalThis.document ??= { addEventListener() {} };
   globalThis.React ??= await import('react');
   const { tsImport } = await import('tsx/esm/api');
-  const load = async (name, exports) => { const src = join(state.source, 'apps', 'web', 'src', name); const dest = src.replace(/\.tsx?$/, '.review.tsx'); writeFileSync(dest, readFileSync(src, 'utf8') + `\nexport { ${exports} };\n`); return tsImport(pathToFileURL(dest).href, import.meta.url); };
+  const load = async (name, exports) => {
+    const src = join(state.source, 'apps', 'web', 'src', name), dest = join(runDir, name.replaceAll('/', '-').replace(/\.tsx?$/, '.review.tsx'));
+    const code = readFileSync(src, 'utf8').replace(/(from\s+)(['"])(\.[^'"]+)\2/gu,
+      (_, prefix, quote, specifier) => prefix + quote + pathToFileURL(resolve(dirname(src), specifier)).href + quote);
+    writeFileSync(dest, code + `\nexport { ${exports} };\n`);
+    return tsImport(pathToFileURL(dest).href, import.meta.url);
+  };
   const monitor = await load('views/MonitorForm.tsx', 'draftFrom, build, masked');
   const channel = await load('views/Channels.tsx', 'channelDraft, buildChannel');
   const config = await load('views/Config.tsx', 'monitorRows');
@@ -211,8 +240,11 @@ async function review() {
     monitors[type] = saved.value;
     return { id: m.id, protocol: key, fieldCount: f.SERVICE_FIELDS[key].length, optionsPreserved: true };
   });
-  await step('Catalogue matches all 25 implemented check types', async () => {
-    assert.equal(f.CHECK_TYPES.length, 25); assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
+  await step('Catalogue matches all 26 implemented check types, including Globalping', async () => {
+    assert.equal(f.CHECK_TYPES.length, 26); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 26);
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'globalping'));
+    assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
+    assert.equal(f.PROVIDERS.length, 11);
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
   });
   await step('All 16 structured service forms cover the Go DTO fields', async () => {
@@ -276,11 +308,16 @@ async function review() {
     mailgun: { kind: 'mailgun', mailgun: { apiKey: 'review-mailgun-key', domain: 'example.test', region: 'EU', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
     brevo: { kind: 'brevo', brevo: { apiKey: 'review-brevo-key', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
     mandrill: { kind: 'mandrill', mandrill: { apiKey: 'review-mandrill-key', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
+    slack: { kind: 'slack', slack: { webhookURL: state.sink + '/services/T0REVIEW/B0REVIEW/review-slack-secret', allowInsecureHTTP: true } },
+    telegram: { kind: 'telegram', telegram: { botToken: '123456:review-telegram-token', chatId: '-1001234567890', messageThreadId: 7, silent: true, protectContent: true, disableLinkPreview: true, baseURL: state.sink + '/tg', allowInsecureHTTP: true } },
+    ntfy: { kind: 'ntfy', ntfy: { topic: 'review-topic', token: 'tk_review-ntfy-token', priority: 4, tags: ['warning', 'skull'], baseURL: state.sink + '/ntfy', allowInsecureHTTP: true } },
+    gotify: { kind: 'gotify', gotify: { appToken: 'review-gotify-token', priority: 5, baseURL: state.sink + '/gotify', allowInsecureHTTP: true } },
+    pushover: { kind: 'pushover', pushover: { appToken: 'a'.repeat(30), userKey: 'u'.repeat(30), device: 'phone_1', priority: 2, sound: 'siren', retrySeconds: 60, expireSeconds: 3600, baseURL: state.sink + '/po', allowInsecureHTTP: true } },
   }, channels = {};
   for (const [kind, config] of Object.entries(channelConfigs)) await step(`Channel ${kind} API + form rename preserves credentials and provider options`, async () => {
     const made = await api(A, '/api/notification-channels', 'POST', { name: `Review ${kind}`, enabled: false, config }); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.channelDraft(m); d.name += ' renamed'; const built = f.buildChannel(d, m); assert.ok(built.input, JSON.stringify(built.errors));
-    for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
+    for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
     const saved = await api(A, `/api/notification-channels/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.config, m.config); channels[kind] = saved.value;
     return { id: m.id, savedWithoutSending: !existsSync(join(runDir, 'sink.json')) };
   });
@@ -310,7 +347,7 @@ async function review() {
   report.sourceChangedAfterSnapshot = manifest.files.filter(v => !existsSync(join(root, v.path)) || sha(readFileSync(join(root, v.path))) !== v.sha256).map(v => v.path);
   report.finishedAt = new Date().toISOString(); report.summary = { passed: report.checks.filter(v => v.passed).length, failed: report.checks.filter(v => !v.passed).length, exceptions: report.exceptions.length, blocked: report.blocked.length }; save();
   console.log(JSON.stringify(report.summary));
-  ws?.close(); return report.summary.failed || report.summary.exceptions ? 1 : 0;
+  ws?.close(); return report.summary.failed || report.summary.exceptions || report.summary.blocked || report.sourceChangedAfterSnapshot.length ? 1 : 0;
 }
 async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows }) {
   await launchBrowser(); await step('Browser: sign in to private A', () => signIn(A));
@@ -442,7 +479,8 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   await step('Viewer: API and UI hide monitor/channel/push credentials and disable editing', async () => {
     const token = secret(); secrets.add(token); const made = await api(A, '/api/accounts', 'POST', { name: `review-viewer-${Date.now()}`, role: 'viewer', token }); assert.equal(made.status, 201, made.text);
     const raw = await api(A, '/api/overview', 'GET', undefined, token); for (const value of ['review-password', 'review-hook-key', networkMonitors.push.push.token, 'private-body', 'private-header']) assert.ok(!raw.text.includes(value));
-    const c = await api(A, '/api/notification-channels', 'GET', undefined, token); assert.ok(!c.text.includes('review-hook-key')); assert.ok(!c.text.includes('review-smtp-password'));
+    const c = await api(A, '/api/notification-channels', 'GET', undefined, token);
+    for (const value of ['review-hook-key', 'review-smtp-password', 'review-slack-secret', 'review-telegram-token', '-1001234567890', 'review-topic', 'tk_review-ntfy-token', 'review-gotify-token', 'a'.repeat(30), 'u'.repeat(30)]) assert.ok(!c.text.includes(value), 'viewer received private channel configuration');
     await signIn({ ...A, token }, true); await nav(`#/monitors/${monitors.redis.id}`); await heading(monitors.redis.name); await text('Hidden from viewers'); await nav('#/channels/new'); await text('Viewers can’t change channels');
     await signIn(A, true); return { redactedAtServer: true, formsReadOnly: true };
   });
@@ -462,6 +500,22 @@ try {
 } catch (error) { console.error(redact(error.stack)); }
 finally {
   if (state && args[0] !== '--run') { write(join(runDir, 'state.private.json'), { ...state, nodes: state.nodes.map(n => ({ ...n, token: '[removed]' })) }); }
+  if (report) {
+    const { requests, ...compact } = report;
+    const raw = redact(JSON.stringify(compact, null, 2));
+    if (Buffer.byteLength(raw) > 128 * 1024) throw Error('Review summary exceeds 128 KiB');
+    writeFileSync(join(root, '.canary', 'dashboard-contract-current.json'), raw);
+  }
+  for (const child of owned.slice().reverse()) {
+    if (child.exitCode !== null || child.signalCode !== null) continue;
+    if (process.platform === 'win32') {
+      try { await command('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], root); } catch {}
+    } else {
+      child.kill('SIGTERM');
+      await Promise.race([once(child, 'exit'), sleep(1500)]);
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    }
+  }
   cleanup();
 }
 process.exit(exitCode);

@@ -1,6 +1,7 @@
 {
   "module": "github.com/dop251/goja",
   "version": "v0.0.0-20261022125820-07c4b9d6265b",
+  "commit": "07c4b9d6265b9d472b736d9a57295b03809ce02b",
   "moduleChecksum": "h1:TFm3j5vQYAb+aRIs5fHjoBnUiKm9CPg1qDL83a+WhAs=",
   "upstreamFiles": {
     "LICENSE": "8a1266c1dd7d22027455bea83b92087f606c8d5fc701b269a8411f008ed49a99",

@@ -21,6 +21,10 @@ _paths_spec = importlib.util.spec_from_file_location("canary_validation_paths", 
 _paths_module = importlib.util.module_from_spec(_paths_spec)
 _paths_spec.loader.exec_module(_paths_module)
 filesystem_path = _paths_module.filesystem_path
+_runtime_spec = importlib.util.spec_from_file_location("jsonquery_runtime_provenance", Path(__file__).with_name("verify-jsonquery-runtime.py"))
+_runtime_module = importlib.util.module_from_spec(_runtime_spec)
+_runtime_spec.loader.exec_module(_runtime_module)
+from validation_workspace import guarded_output, retain_summary
 
 
 def fingerprint(source):
@@ -29,6 +33,9 @@ def fingerprint(source):
     files += sorted((source / "apps/node-go").rglob("*.go"))
     files += sorted((source / "apps/node-go").rglob("*.js"))
     files += sorted((source / "apps/node-go").rglob("upstream.json"))
+    files += sorted((source / "apps/node-go").rglob("CANARY_PATCH.json"))
+    files += sorted((source / "apps/node-go").rglob("*.mod"))
+    files += sorted((source / "apps/node-go").rglob("*.sum"))
     files += sorted((source / "apps/web").glob("package*.json"))
     return {str(p.relative_to(source)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in files if p.is_file()}
@@ -123,6 +130,18 @@ def vendored_checks(source, output, opener):
             "scope": "Upstream advisory matching, not reachability or a claim that local patches fix advisories"}
         if bundle is not None:
             records[key]["bundleSha256"] = digest
+    goja = source / "apps/node-go/third_party/goja"
+    if goja.is_dir():
+        # Local replacements need their upstream identity checked explicitly;
+        # an empty replacement version is not an advisory exemption.
+        metadata = _runtime_module.verify_goja(source)
+        findings = osv_query({"package": {"name": metadata["module"], "ecosystem": "Go"},
+                              "version": metadata["version"]}, output, "local-goja-module", opener)
+        commits = osv_query({"commit": metadata["commit"]}, output, "local-goja-commit", opener)
+        records["localGoja"] = {"module": metadata["module"], "version": metadata["version"],
+            "commit": metadata["commit"], "moduleFindings": findings, "commitFindings": commits,
+            "activeAdvisories": sorted({v["id"] for v in findings + commits if not v.get("withdrawn")}),
+            "scope": "Verified original source plus one recorded helper; upstream advisory matching, not patch clearance"}
     return records
 
 
@@ -145,16 +164,17 @@ def main():
     if not go or not scan or not npm:
         raise SystemExit("Go, npm and govulncheck are required; install govulncheck v1.9.0 into an isolated tool directory first")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    output = ROOT / ".canary/security" / stamp
-    output.mkdir(parents=True, exist_ok=False)
+    output = guarded_output("security")
+    _runtime_module.verify(source)
     before = fingerprint(source)
     env = dict(os.environ)
     env.update({"CGO_ENABLED": "0", "GOOS": args.goos, "GOARCH": args.goarch,
-                "GOTOOLCHAIN": "local", "GOFLAGS": "-mod=readonly"})
+                "GOTOOLCHAIN": "local", "npm_config_cache": str(output / "npm-cache"),
+                "npm_config_update_notifier": "false"})
     env["PATH"] = str(Path(go).parent) + os.pathsep + env.get("PATH", "")
     commands = {"npm": [npm, "audit", "--json"], "go": [scan, "-json", "./apps/node-go/..."]}
     report = {"startedAt": stamp, "target": {"goos": args.goos, "goarch": args.goarch},
-              "source": str(source), "sourceBefore": before, "checks": {}}
+              "source": str(source), "sourceBefore": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(), "checks": {}}
     failed = False
     for name, command in commands.items():
         # npm.cmd requires the Windows command processor; arguments are fixed.
@@ -194,11 +214,13 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, RecursionError) as error:
         report["checks"]["vendoredProvenance"] = {"error": type(error).__name__}
         failed = True
-    report["sourceAfter"] = fingerprint(source)
-    report["sourceUnchanged"] = before == report["sourceAfter"]
+    after = fingerprint(source)
+    report["sourceAfter"] = hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest()
+    report["sourceUnchanged"] = before == after
     report["finishedAt"] = datetime.now(timezone.utc).isoformat()
     report["passed"] = not failed and report["sourceUnchanged"]
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    retain_summary("security", report)
     print(json.dumps({"evidence": str(output), "passed": report["passed"],
                       "sourceUnchanged": report["sourceUnchanged"], "checks": report["checks"]}, indent=2))
     return 0 if report["passed"] else 1

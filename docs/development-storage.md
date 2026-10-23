@@ -53,3 +53,13 @@ in `.canary/jsonata-identifier-study-result.json`; do not retry that deletion by
 another tool. The rejected private experiment occupies 97,644 bytes and is not
 enabled in production or ordinary candidate builds. Retaining it does not breach
 the idle budget. Its failure does not justify another Alpine run.
+
+
+Current process and dashboard acceptance runners build the existing checkout
+in place and place binaries, private fixture databases and the single browser
+profile below guarded outputs. They retain one overwritten compact summary
+per runner, rather than timestamped source/binary directories. The optional
+upgrade proof uses three declared historical Go source fragments as temporary
+build-overlay fixtures; it never copies a source tree or a module/build cache.
+The dependency scan uses guarded outputs for npm cache and raw advisory pages.
+No scanner or source snapshot is installed or retained by a reviewer.

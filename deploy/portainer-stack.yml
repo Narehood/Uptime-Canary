@@ -7,6 +7,9 @@ services:
     pull_policy: never
     init: true
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=64m
     environment:
       CANARY_NODE_ID: ${CANARY_NODE_ID:?Set a unique persistent node ID}
       CANARY_NODE_NAME: ${CANARY_NODE_NAME:-Uptime Canary}
@@ -44,6 +47,9 @@ services:
     image: ${CANARY_WEB_IMAGE:-uptime-canary-web:development}
     pull_policy: never
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=32m
     ports:
       - "${CANARY_WEB_BIND_ADDRESS:-127.0.0.1}:${CANARY_WEB_PORT:-8080}:8080"
     cap_drop:
