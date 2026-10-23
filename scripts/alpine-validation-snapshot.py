@@ -21,7 +21,7 @@ ROOT_FILES = (
 TREES = ("apps/node-go", "apps/web/src", "apps/proof", "packages/shared/src", "deploy")
 EXTRA = ("apps/web/index.html", "apps/web/package.json", "apps/web/tsconfig.json",
          "apps/web/vite.config.ts", "packages/shared/package.json", "packages/shared/tsconfig.json")
-EXTENSIONS = {".go", ".mod", ".sum", ".ts", ".tsx", ".js", ".json", ".css", ".html", ".conf", ".txt", ".md", ".mjs", ".patch", ".pem"}
+EXTENSIONS = {".go", ".mod", ".sum", ".ts", ".tsx", ".js", ".json", ".css", ".html", ".conf", ".txt", ".md", ".mjs", ".patch", ".pem", ".yml", ".yaml"}
 NOTICE_FILES = {"LICENSE", "COPYING", "COPYRIGHT", "NOTICE"}
 
 
