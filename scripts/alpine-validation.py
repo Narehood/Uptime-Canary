@@ -136,6 +136,81 @@ def main():
         eventually("Web Docker HEALTHCHECK", lambda: cmd("Inspect web health", "docker", "inspect", "--format", "{{.State.Health.Status}}", web) == "healthy", timeout=120)
         passed("Optional static UI build, Docker health, security/cache headers, SPA fallback, JS/CSS assets, nonroot runtime")
 
+    def validate_split_stacks(node_image, web_image):
+        # No shared project, network, database, credentials or service dependency.
+        web_project, node_project = prefix + "-dashboard", prefix + "-node"
+        base_env = {k: v for k, v in os.environ.items() if not k.startswith("CANARY_")}
+        with socket.socket() as node_socket, socket.socket() as web_socket:
+            node_socket.bind(("127.0.0.1", 0)); web_socket.bind(("127.0.0.1", 0))
+            node_port, web_port = node_socket.getsockname()[1], web_socket.getsockname()[1]
+        node_url = "http://127.0.0.1:" + str(node_port)
+        web_url = "http://127.0.0.1:" + str(web_port)
+        node_env = {**base_env, "CANARY_NODE_IMAGE": node_image,
+            "CANARY_NODE_ID": node_project, "CANARY_ADMIN_TOKEN": token,
+            "CANARY_CLUSTER_TOKEN": cluster, "CANARY_CORS_ORIGINS": web_url,
+            "CANARY_PORT": str(node_port)}
+        web_env = {**base_env, "CANARY_WEB_IMAGE": web_image, "CANARY_WEB_PORT": str(web_port)}
+
+        def compose(project, filename):
+            return ["docker", "compose", "--ansi", "never", "--env-file", "/dev/null",
+                "--project-name", project, "-f", str(a.context / "deploy" / filename)]
+
+        web_compose = compose(web_project, "portainer-dashboard.yml")
+        node_compose = compose(node_project, "portainer-node.yml")
+
+        def dashboard_ready():
+            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(web_url + "/healthz", timeout=5) as response:
+                response.read()
+                return response.status == 200
+
+        try:
+            cmd("Start dashboard-only stack without node credentials", *web_compose, "up", "-d", timeout=180, env=web_env)
+            eventually("Independent dashboard ready before any node", dashboard_ready)
+            cmd("Start independent node-only stack", *node_compose, "up", "-d", timeout=180, env=node_env)
+            eventually("Independent node ready", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
+            node = cmd("Locate independent node", *node_compose, "ps", "-q", "node", env=node_env)
+            web = cmd("Locate independent dashboard", *web_compose, "ps", "-q", "web", env=web_env)
+            node_policy = json.loads(cmd("Inspect independent node", "docker", "inspect", node))[0]
+            web_policy = json.loads(cmd("Inspect independent dashboard", "docker", "inspect", web))[0]
+            for policy, project in ((node_policy, node_project), (web_policy, web_project)):
+                assert policy["Config"]["Labels"]["com.docker.compose.project"] == project
+                assert policy["Config"]["User"] not in ("", "0", "root")
+                assert policy["HostConfig"]["ReadonlyRootfs"]
+                assert "no-new-privileges:true" in policy["HostConfig"]["SecurityOpt"]
+            assert set(node_policy["NetworkSettings"]["Networks"]).isdisjoint(web_policy["NetworkSettings"]["Networks"])
+            assert not any(value.startswith("CANARY_") for value in web_policy["Config"]["Env"])
+            assert not any(mount["Type"] in ("volume", "bind") for mount in web_policy["Mounts"])
+            mounts = {mount["Destination"]: mount for mount in node_policy["Mounts"]}
+            assert mounts["/data"]["Name"] == node_project + "_canary-data"
+            assert mounts["/identity"]["Name"] == node_project + "_canary-identity"
+            assert cmd("Check independent identity permissions", "docker", "exec", node, "stat", "-c", "%a", "/identity") == "700"
+            req = urllib.request.Request(node_url + "/api/overview", headers={"Authorization": "Bearer " + token, "Origin": web_url})
+            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as response:
+                assert response.status == 200 and response.headers.get("Access-Control-Allow-Origin") == web_url
+                response.read()
+            monitor = request(node_url, "/api/monitors", {"name": "Separate stack fixture", "type": "manual", "target": "manual",
+                "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [node_project], "enabled": True,
+                "manual": {"state": "up", "message": "Private separate-stack fixture"}}, expected=201)
+            path = "/api/monitors/" + monitor["id"] + "/history"
+            history = eventually("Independent node retains observations", lambda: request(node_url, path))
+            cmd("Stop only dashboard stack", *web_compose, "stop", "web", timeout=60, env=web_env)
+            assert request(node_url, "/readyz", authenticated=False)["ready"]
+            assert any(row["monitor"]["id"] == monitor["id"] for row in request(node_url, "/api/monitors"))
+            cmd("Start only dashboard stack", *web_compose, "start", "web", timeout=60, env=web_env)
+            eventually("Dashboard restarted independently", dashboard_ready)
+            cmd("Stop only node stack", *node_compose, "stop", "node", timeout=60, env=node_env)
+            assert dashboard_ready()
+            cmd("Start only node stack", *node_compose, "start", "node", timeout=60, env=node_env)
+            eventually("Independent node restored", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
+            assert any(row in request(node_url, path) for row in history)
+            assert any(row["monitor"]["id"] == monitor["id"] for row in request(node_url, "/api/monitors"))
+            passed("Separate dashboard/node Compose projects: isolated networks, no dashboard secrets, CORS, private identity, independent restarts and history persistence")
+        finally:
+            # Generated fixture projects only; never use the user's stack names.
+            for arguments, env in ((node_compose, node_env), (web_compose, web_env)):
+                subprocess.run([*arguments, "down", "--volumes", "--remove-orphans"], env=env,
+                    stdout=log, stderr=subprocess.STDOUT, timeout=120)
+
     def validate_stack(node_image):
         web_image = prefix + "-stack-web"
         images.append(web_image)
@@ -177,6 +252,7 @@ def main():
         finally:
             # Only this generated project and its fixture volumes; never user stacks.
             subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
+        validate_split_stacks(node_image, web_image)
 
     def validate_proof():
         # The standalone --fixture image contains only this stdlib script.

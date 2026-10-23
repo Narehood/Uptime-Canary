@@ -4,6 +4,7 @@ import { duration, pct, shares } from '../availability';
 import { hasLatency, latency, latencyOf, shortClock, stamp } from '../format';
 import { useWidth } from '../hooks';
 import { stateTone, stateWord } from '../model';
+import { observedWords } from '../publicAvailability';
 import { Glyph } from './icons';
 
 function niceMax(value: number): number {
@@ -308,6 +309,41 @@ export function AvailabilityChart({ buckets, now, label }: { buckets: ObservedTi
         </div>
       ) : null}
       <span className="vh" aria-live="polite">{spoken}</span>
+    </div>
+  );
+}
+
+/**
+ * A compact observed-time strip for public pages: one cell per UTC hour, partial edge hours narrower. Each cell fills
+ * from the bottom with up, down and pending time; what stays unfilled is unknown and hatched, never drawn as up. A top
+ * mark notes maintenance, which removes nothing. Oldest on the left. Pointer tooltips repeat the hourly table, which
+ * holds every figure as text; the strip itself is one image with a summary name.
+ */
+export function ObservedStrip({ buckets, now, label, legend }: { buckets: ObservedTimeTotals[]; now: number; label: string; legend?: boolean }) {
+  const from = buckets[0]!.startMs;
+  const to = buckets[buckets.length - 1]!.endMs;
+  return (
+    <div className="obs-strip-w">
+      <div className="obs-strip" role="img" aria-label={label}>
+        {buckets.map(bucket => {
+          const s = shares(bucket);
+          return (
+            <i key={bucket.startMs} className={bucket.maintenanceMs ? 'mt' : undefined} style={{ flexGrow: bucket.endMs - bucket.startMs }}
+              data-tip={`${stamp(bucket.startMs, now)} – ${stamp(bucket.endMs, now)}\n${observedWords(bucket)}`}>
+              {s.up ? <span className="u" style={{ height: `${s.up * 100}%` }} /> : null}
+              {s.down ? <span className="d" style={{ height: `${s.down * 100}%` }} /> : null}
+              {s.pending ? <span className="p" style={{ height: `${s.pending * 100}%` }} /> : null}
+            </i>
+          );
+        })}
+      </div>
+      <div className="axis-row" aria-hidden="true"><span>{shortClock(from, now)}</span><span>{shortClock(to, now)}</span></div>
+      {legend ? (
+        <div className="legend obs-legend" aria-hidden="true">
+          <span><i className="sw av-up" />Up</span><span><i className="sw av-down" />Down</span><span><i className="sw av-pend" />Pending</span>
+          <span><i className="sw out" />Unknown (no result)</span><span><i className="sw av-maint" />Maintenance (still counted)</span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4,19 +4,26 @@ import { normalizeApiUrl } from './api';
  * Public SVG badges (node route `/public/badge/<slug>.svg`). A badge reads the same public projection as the status
  * page: the page's overall state, or one service picked by its public section ID and public name. No credentials, private
  * monitor IDs or names are ever part of the address; the node answers "not found" for anything else.
+ * Protocol 15 adds `metric=uptime` for one service whose saved selection publishes observed availability: the serving
+ * node's own last 24 hours, never a whole page and never merged across nodes.
  */
 
 export const BADGE_PREFIX = '/public/badge/';
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u;
 
 export interface BadgeSelection { group: string; monitor: string }
+/** `uptime`: the 24-hour observed badge. It needs a single-service selection; there is no whole-page figure. */
+export type BadgeMetric = 'uptime';
 
 /** The image address on one node. Throws for an address that isn't a plain node origin or a slug the node can't serve. */
-export function badgeUrl(nodeUrl: string, slug: string, selection?: BadgeSelection): string {
+export function badgeUrl(nodeUrl: string, slug: string, selection?: BadgeSelection, metric?: BadgeMetric): string {
   if (!SLUG.test(slug)) throw new Error('This page address can’t have a badge.');
+  if (metric && !selection) throw new Error('An observed badge needs one service.');
   const base = normalizeApiUrl(nodeUrl);
-  // Exactly these two parameters, in this order: the node rejects any other key, repeat or empty value.
-  const query = selection ? `?${new URLSearchParams([['group', selection.group], ['monitor', selection.monitor]])}` : '';
+  // Exactly these parameters, in this order: the node rejects any other key, repeat or empty value.
+  const params: [string, string][] = selection ? [['group', selection.group], ['monitor', selection.monitor]] : [];
+  if (metric) params.push(['metric', metric]);
+  const query = params.length ? `?${new URLSearchParams(params)}` : '';
   return `${base}${BADGE_PREFIX}${slug}.svg${query}`;
 }
 
@@ -24,15 +31,22 @@ export interface BadgeTarget extends BadgeSelection {
   sectionName: string;
   /** How many services in the page share this section ID and public name; a badge needs exactly one. */
   matches: number;
+  /** The saved selection publishes observed availability, so the node serves its `metric=uptime` badge. */
+  observed: boolean;
 }
 
-/** Every listed service with its selection; mirrors the node, which counts matches across sections with the same ID. */
-export function badgeTargets(groups: { id: string; name: string; monitors: { name: string }[] }[]): BadgeTarget[] {
+/**
+ * Every listed service with its selection; mirrors the node, which counts matches across sections with the same ID.
+ * `observed` comes from the caller: the saved selection's opt-in in the dashboard, or the presence of the public
+ * `availability` field on the public page. Nothing private is needed or added.
+ */
+export function badgeTargets(groups: { id: string; name: string; monitors: { name: string; observed?: boolean }[] }[]): BadgeTarget[] {
   const counts = new Map<string, number>();
   const keyOf = (group: string, monitor: string): string => JSON.stringify([group, monitor]);
   for (const group of groups) for (const monitor of group.monitors) counts.set(keyOf(group.id, monitor.name), (counts.get(keyOf(group.id, monitor.name)) ?? 0) + 1);
   return groups.flatMap(group => group.monitors.map(monitor => ({
     group: group.id, monitor: monitor.name, sectionName: group.name, matches: group.id && monitor.name ? counts.get(keyOf(group.id, monitor.name))! : 0,
+    observed: monitor.observed === true,
   })));
 }
 

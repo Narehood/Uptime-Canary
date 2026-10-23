@@ -6,6 +6,7 @@ import { addressCaveat, badgeTargets } from '../badges';
 import { bytesOf, plural, shortRev } from '../format';
 import { useResource } from '../hooks';
 import { notify } from '../notices';
+import { SELECTION_KEYS, otherFields, selectionFields, writeSelection, type SelectionFields } from '../publicAvailability';
 import { href, navigate, publicHref } from '../router';
 import { BadgeList } from '../ui/badges';
 import { Banner, Card, Chip, CopyButton, EmptyState, ErrorText, Modal, PageHead, ReadOnly, Rev, Tag, Time, TypeTag } from '../ui/bits';
@@ -71,8 +72,10 @@ function BadgeShare({ page, pendingChange }: { page: StatusPage; pendingChange?:
   const { api, nodes, endpoint } = useCanary();
   const formId = useId();
   const choices = [{ id: endpoint, url: api.baseUrl }, ...nodes.filter(node => node.id !== endpoint && node.url).map(node => ({ id: node.id, url: node.url! }))];
-  const [nodeUrl, setNodeUrl] = useState(api.baseUrl);
+  const [picked, setNodeUrl] = useState(api.baseUrl);
   const [nonce, setNonce] = useState(0);
+  // A node that left the list (or a different endpoint) never keeps serving stale addresses.
+  const nodeUrl = choices.some(choice => choice.url === picked) ? picked : api.baseUrl;
   if (!page.enabled) {
     return (
       <section className="badge-share" aria-labelledby={`${formId}-h`}>
@@ -88,14 +91,14 @@ function BadgeShare({ page, pendingChange }: { page: StatusPage; pendingChange?:
         <h3 className="mini-h" id={`${formId}-h`}>Badges</h3>
         <button type="button" className="icon-btn sm" onClick={() => setNonce(n => n + 1)} aria-label="Reload badge previews" data-tip="Reload previews"><Icon name="refresh" /></button>
       </div>
-      <p className="small">Images for a README or another site. Each shows the current state from one node’s public address, without signing in: up, down, pending or unknown, plus a maintenance segment during planned work. No uptime percentages.</p>
+      <p className="small">Images for a README or another site, from one node’s public address, without signing in. A state badge shows the current state: up, down, pending or unknown, plus a maintenance segment during planned work. Services that publish observed history also get a 24 h observed badge with that node’s availability and coverage percentages.</p>
       <label className="inline-sel" htmlFor={`${formId}-node`}>Served by
         <select id={`${formId}-node`} value={nodeUrl} onChange={event => setNodeUrl(event.target.value)}>
           {choices.map(choice => <option key={choice.url} value={choice.url}>{choice.id} · {choice.url}</option>)}
         </select>
       </label>
       {caveat ? <p className="small fwarn"><Glyph tone="warn" />{caveat}</p> : null}
-      <BadgeList slug={page.slug} title={page.title} groups={page.groups} nodeUrl={nodeUrl} pageLink={publicLink(page.slug, [nodeUrl])} nonce={nonce} />
+      <BadgeList slug={page.slug} title={page.title} groups={savedBadgeGroups(page)} nodeUrl={nodeUrl} pageLink={publicLink(page.slug, [nodeUrl])} nonce={nonce} />
       <p className="muted small">A badge address contains the page address, the section’s public ID and the service’s public name. Changing any of them, or unpublishing, makes existing embeds show a broken image because the node answers “not found”. Renaming a section keeps its ID, so its badges keep working. An image shows one node’s view; it doesn’t switch nodes like the page does.</p>
       {pendingChange ? <p className="small fwarn"><Glyph tone="warn" />Unsaved changes alter or remove some of these addresses. Embeds of the current addresses stop working when you save.</p> : null}
     </section>
@@ -149,7 +152,7 @@ export function StatusPagesView() {
       />
       <div className="guar">
         <div><b><Icon name="lock" />Only what you choose</b><p>Pages show the public names you type for monitors you pick. Private names, targets, IDs, errors and node details never appear.</p></div>
-        <div><b><Icon name="pulse" />Live, not historical</b><p>Each monitor shows its current state from the answering node: unknown is never shown as up. There are no uptime percentages yet.</p></div>
+        <div><b><Icon name="pulse" />Live state, opt-in history</b><p>Each monitor shows its current state from the answering node: unknown is never shown as up. A service you opt in also shows the last 24 hours as that node observed them. Never an SLA.</p></div>
         <div><b><Icon name="megaphone" />Your announcements</b><p>Announcements are text you write. Incidents are never published automatically.</p></div>
       </div>
       <Card className={pages.loading && pages.data ? 'refetching' : undefined}>
@@ -161,6 +164,7 @@ export function StatusPagesView() {
               {list.map(view => {
                 const page = view.statusPage;
                 const monitors = page.groups.reduce((n, group) => n + group.monitors.length, 0);
+                const observed = page.groups.reduce((n, group) => n + group.monitors.filter(sel => sel.showAvailability === true).length, 0);
                 return (
                   <li key={page.id}>
                     <span className="prov-ic" aria-hidden="true"><Icon name="globe" /></span>
@@ -172,7 +176,7 @@ export function StatusPagesView() {
                       </div>
                       <div className="m">
                         <span className="mono">/status/{page.slug}</span>
-                        <span className="muted"> · {plural(page.groups.length, 'section')}, {plural(monitors, 'monitor')} · {plural(page.announcements.length, 'announcement')} · <Rev revision={page.revision} /></span>
+                        <span className="muted"> · {plural(page.groups.length, 'section')}, {plural(monitors, 'monitor')}{observed ? `, ${observed} with 24 h history` : ''} · {plural(page.announcements.length, 'announcement')} · <Rev revision={page.revision} /></span>
                       </div>
                     </div>
                     <div className="acts">
@@ -191,7 +195,7 @@ export function StatusPagesView() {
               {pages.data.length ? 'Try another search.' : 'Publish a page for your users with the monitors and wording you choose.'}
             </EmptyState>
           )}
-        <p className="foot-note">Pages publish only when saved as published. Duplicate slugs created on separate sides of a partition answer “not found” until one is renamed. Share a published page as a link or as status badges. Custom domains, custom CSS and history charts aren’t available.</p>
+        <p className="foot-note">Pages publish only when saved as published. Duplicate slugs created on separate sides of a partition answer “not found” until one is renamed. Share a published page as a link or as status badges. Custom domains, custom CSS and history beyond the last 24 hours aren’t available.</p>
       </Card>
       {deleting ? <DeletePageDialog page={deleting} onClose={() => setDeleting(null)} onDone={pages.reload} /> : null}
       {linkFor ? <Modal title={`Share: ${linkFor.title}`} onClose={() => setLinkFor(null)} wide><PublicLinkBuilder slug={linkFor.slug} enabled={linkFor.enabled} /><BadgeShare page={linkFor} /><p className="muted small">Based on {api.baseUrl}.</p></Modal> : null}
@@ -201,20 +205,30 @@ export function StatusPagesView() {
 
 // ---------- editor
 
-interface SelDraft { key: number; monitorId: string; name: string; showCertificate: boolean; showTags: boolean }
-interface GroupDraft { key: number; id: string; name: string; monitors: SelDraft[] }
-interface NoteDraft { key: number; id: string; title: string; message: string; state: StatusPageAnnouncementState; createdAt: number; updatedAt: number; pinned: boolean; touched: boolean }
-interface PageDraft { slug: string; slugTouched: boolean; title: string; description: string; enabled: boolean; groups: GroupDraft[]; notes: NoteDraft[] }
+/** `other`: stored fields this editor doesn't know, such as ones from a newer node; a save sends them back unchanged. */
+interface SelDraft extends SelectionFields { key: number; other: Record<string, unknown> }
+interface GroupDraft { key: number; id: string; name: string; monitors: SelDraft[]; other: Record<string, unknown> }
+interface NoteDraft { key: number; id: string; title: string; message: string; state: StatusPageAnnouncementState; createdAt: number; updatedAt: number; pinned: boolean; touched: boolean; other: Record<string, unknown> }
+interface PageDraft { slug: string; slugTouched: boolean; title: string; description: string; enabled: boolean; groups: GroupDraft[]; notes: NoteDraft[]; other: Record<string, unknown> }
 let draftKey = 0;
+
+const PAGE_KEYS = ['slug', 'title', 'description', 'enabled', 'groups', 'announcements', 'id', 'revision', 'updatedAt', 'deleted'] as const;
+const GROUP_KEYS = ['id', 'name', 'monitors'] as const;
+const NOTE_KEYS = ['id', 'title', 'message', 'state', 'createdAt', 'updatedAt', 'pinned'] as const;
+const newSelection = (): SelDraft => ({ key: ++draftKey, monitorId: '', name: '', showCertificate: false, showTags: false, showAvailability: false, other: {} });
 
 function pageDraft(page: StatusPage | undefined): PageDraft {
   return {
     slug: page?.slug ?? '', slugTouched: Boolean(page), title: page?.title ?? '', description: page?.description ?? '', enabled: page?.enabled ?? false,
     groups: (page?.groups ?? [{ id: randomId('section'), name: 'Services', monitors: [] }]).map(group => ({
-      key: ++draftKey, id: group.id, name: group.name,
-      monitors: group.monitors.map(sel => ({ key: ++draftKey, monitorId: sel.monitorId, name: sel.name, showCertificate: sel.showCertificate, showTags: Boolean(sel.showTags) })),
+      key: ++draftKey, id: group.id, name: group.name, other: otherFields(group, GROUP_KEYS),
+      monitors: group.monitors.map(sel => ({ key: ++draftKey, ...selectionFields(sel), other: otherFields(sel, SELECTION_KEYS) })),
     })),
-    notes: (page?.announcements ?? []).map(note => ({ key: ++draftKey, ...note, touched: false })),
+    notes: (page?.announcements ?? []).map(note => ({
+      key: ++draftKey, id: note.id, title: note.title, message: note.message, state: note.state, createdAt: note.createdAt, updatedAt: note.updatedAt, pinned: note.pinned,
+      touched: false, other: otherFields(note, NOTE_KEYS),
+    })),
+    other: page ? otherFields(page, PAGE_KEYS) : {},
   };
 }
 
@@ -257,26 +271,42 @@ function buildPage(d: PageDraft, now: number): { input?: StatusPageInput; errors
   }
   if (d.notes.some(note => rowErrors[note.key])) errors.notes ??= 'Fix the highlighted announcements.';
   if (Object.keys(errors).length) return { errors, rowErrors };
+  // Opt-in flags are written only when on, so a page that publishes no history saves exactly as before protocol 15.
   const input: StatusPageInput = {
-    slug: d.slug, title: d.title.trim(), description: d.description, enabled: d.enabled,
+    ...d.other, slug: d.slug, title: d.title.trim(), description: d.description, enabled: d.enabled,
     groups: d.groups.map(group => ({
-      id: group.id, name: group.name.trim(),
-      monitors: group.monitors.map(sel => ({ monitorId: sel.monitorId, name: sel.name.trim(), showCertificate: sel.showCertificate, ...(sel.showTags ? { showTags: true } : {}) })),
+      ...group.other, id: group.id, name: group.name.trim(),
+      monitors: group.monitors.map(sel => writeSelection(sel, sel.other)),
     })),
     announcements: d.notes.map((note): StatusPageAnnouncement => ({
-      id: note.id, title: note.title.trim(), message: note.message, state: note.state, pinned: note.pinned,
+      ...note.other, id: note.id, title: note.title.trim(), message: note.message, state: note.state, pinned: note.pinned,
       createdAt: note.createdAt, updatedAt: note.touched ? Math.max(now, note.createdAt) : note.updatedAt,
     })),
   };
   return { input, errors, rowErrors };
 }
 
+/** Badge groups for a saved page: public section IDs and names only, and which services publish observed history. */
+function savedBadgeGroups(page: StatusPage): { id: string; name: string; monitors: { name: string; observed: boolean }[] }[] {
+  return page.groups.map(group => ({ id: group.id, name: group.name, monitors: group.monitors.map(sel => ({ name: sel.name, observed: sel.showAvailability === true })) }));
+}
+
+/** Every badge address a page would answer, as comparable keys: the state badge per unique service, and its observed badge. */
+function badgeKeys(groups: { id: string; name: string; monitors: { name: string; observed: boolean }[] }[]): Set<string> {
+  const keys = new Set<string>();
+  for (const target of badgeTargets(groups)) {
+    if (target.matches !== 1) continue;
+    keys.add(JSON.stringify([target.group, target.monitor]));
+    if (target.observed) keys.add(JSON.stringify([target.group, target.monitor, 'uptime']));
+  }
+  return keys;
+}
+
 /** Whether saving the draft would change or remove a badge address of the saved page. */
 function badgesChange(saved: StatusPage, draft: PageDraft): boolean {
   if (saved.slug !== draft.slug || saved.enabled !== draft.enabled) return true;
-  const after = new Set(badgeTargets(draft.groups.map(group => ({ id: group.id, name: group.name, monitors: group.monitors.map(sel => ({ name: sel.name.trim() })) })))
-    .filter(target => target.matches === 1).map(target => JSON.stringify([target.group, target.monitor])));
-  return badgeTargets(saved.groups).some(target => target.matches === 1 && !after.has(JSON.stringify([target.group, target.monitor])));
+  const after = badgeKeys(draft.groups.map(group => ({ id: group.id, name: group.name, monitors: group.monitors.map(sel => ({ name: sel.name.trim(), observed: sel.showAvailability })) })));
+  return [...badgeKeys(savedBadgeGroups(saved))].some(key => !after.has(key));
 }
 
 function move<T>(list: T[], index: number, delta: number): T[] {
@@ -394,7 +424,7 @@ export function StatusPageFormView({ id }: { id?: string }) {
             </Card>
 
             <Card title="Sections and monitors" hint={`${plural(draft.groups.length, 'section')} of 16 · ${plural(total, 'monitor')} of 64`}
-              actions={<button type="button" className="btn sm" onClick={() => update({ groups: [...draft.groups, { key: ++draftKey, id: randomId('section'), name: '', monitors: [] }] })} disabled={saving || draft.groups.length >= 16}><Icon name="plus" />Add section</button>}>
+              actions={<button type="button" className="btn sm" onClick={() => update({ groups: [...draft.groups, { key: ++draftKey, id: randomId('section'), name: '', monitors: [], other: {} }] })} disabled={saving || draft.groups.length >= 16}><Icon name="plus" />Add section</button>}>
               {visible.groups ? <ErrorText id={`${formId}-groups-e`}>{visible.groups}</ErrorText> : null}
               {draft.groups.length ? draft.groups.map((group, gIndex) => (
                 <fieldset key={group.key} className="sp-group" disabled={saving}>
@@ -424,18 +454,30 @@ export function StatusPageFormView({ id }: { id?: string }) {
                             <div className="sp-sel-opts">
                               <CheckField full={false} label="Certificate dates" checked={sel.showCertificate} onChange={value => setSel(group.key, sel.key, { showCertificate: value })} hint="When every node agrees on them" />
                               {tagsAvailable ? <CheckField full={false} label="Public tags" checked={sel.showTags} onChange={value => setSel(group.key, sel.key, { showTags: value })} hint="Only tags marked public on the monitor" /> : null}
+                              <CheckField full={false} label="24 h history" checked={sel.showAvailability} onChange={value => setSel(group.key, sel.key, { showAvailability: value })} hint="Observed uptime, off by default" />
                               {view ? <span className="muted small"><TypeTag type={view.monitor.type} /> {view.monitor.enabled ? '' : 'paused · shows unknown'}</span> : sel.monitorId ? <span className="muted small">Not known to {endpoint}: shows unknown</span> : null}
                               <span className="grow" />
                               <MoveButtons index={sIndex} length={group.monitors.length} onMove={delta => setGroup(group.key, { monitors: move(group.monitors, sIndex, delta) })} label={label} disabled={saving} />
                               <button type="button" className="icon-btn sm" onClick={() => setGroup(group.key, { monitors: group.monitors.filter(other => other.key !== sel.key) })} aria-label={`Remove ${label}`}><Icon name="close" /></button>
                             </div>
+                            {sel.showAvailability ? (
+                              <p className="sp-obs-note small">
+                                <Icon name="pulse" />
+                                <span>
+                                  Visitors see this service’s last 24 hours as the node answering them recorded them: availability, coverage and hourly up and down time, including when outages happened. Each node keeps its own record; nothing is merged across nodes, and it isn’t an SLA. It also gets a 24 h observed badge.
+                                  {' '}{!view ? (sel.monitorId ? `Unknown to ${endpoint}, so ${endpoint} shows it as unavailable.` : '')
+                                    : !view.monitor.enabled ? 'While the monitor is paused, every node shows it as unavailable.'
+                                    : <>Only nodes that run this monitor have it (<span className="mono">{view.monitor.nodeIds.join(', ')}</span>); other nodes show it as unavailable.</>}
+                                </span>
+                              </p>
+                            ) : null}
                             {visibleRows[sel.key] ? <ErrorText id={`${formId}-s${sel.key}`}>{visibleRows[sel.key]}</ErrorText> : null}
                           </li>
                         );
                       })}
                     </ol>
                   ) : <p className="muted small">Empty sections show as unknown.</p>}
-                  <button type="button" className="linkbtn" onClick={() => setGroup(group.key, { monitors: [...group.monitors, { key: ++draftKey, monitorId: '', name: '', showCertificate: false, showTags: false }] })} disabled={saving || total >= 64}><Icon name="plus" />Add monitor</button>
+                  <button type="button" className="linkbtn" onClick={() => setGroup(group.key, { monitors: [...group.monitors, newSelection()] })} disabled={saving || total >= 64}><Icon name="plus" />Add monitor</button>
                   <details className="sp-adv"><summary>Public section ID</summary>
                     <input type="text" className="mono" aria-label={`Section ${gIndex + 1} public ID`} value={group.id} maxLength={128} onChange={event => setGroup(group.key, { id: event.target.value })} />
                     <small className="muted">Appears in the public JSON. Unrelated to private groups.</small>
@@ -447,7 +489,7 @@ export function StatusPageFormView({ id }: { id?: string }) {
 
           <div className="vstack">
             <Card title="Announcements" hint="Public text you write; shown in this order, pinned ones first"
-              actions={<button type="button" className="btn sm" disabled={saving || draft.notes.length >= 50} onClick={() => { const now = Date.now(); update({ notes: [{ key: ++draftKey, id: randomId('note'), title: '', message: '', state: 'investigating', createdAt: now, updatedAt: now, pinned: true, touched: true }, ...draft.notes] }); }}><Icon name="plus" />Add</button>}>
+              actions={<button type="button" className="btn sm" disabled={saving || draft.notes.length >= 50} onClick={() => { const now = Date.now(); update({ notes: [{ key: ++draftKey, id: randomId('note'), title: '', message: '', state: 'investigating', createdAt: now, updatedAt: now, pinned: true, touched: true, other: {} }, ...draft.notes] }); }}><Icon name="plus" />Add</button>}>
               {visible.notes ? <ErrorText id={`${formId}-notes-e`}>{visible.notes}</ErrorText> : null}
               {draft.notes.length ? (
                 <ol className="sp-notes">

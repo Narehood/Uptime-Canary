@@ -24,10 +24,11 @@ const publicStatusByteBudget = 16 * maxBody
 // These names and messages are an operator's explicit publication selection.
 // They never inherit names, messages or group membership from private monitors.
 type StatusPageMonitor struct {
-	MonitorID       string `json:"monitorId"`
-	Name            string `json:"name"`
-	ShowCertificate bool   `json:"showCertificate"`
-	ShowTags        bool   `json:"showTags,omitempty"`
+	MonitorID        string `json:"monitorId"`
+	Name             string `json:"name"`
+	ShowCertificate  bool   `json:"showCertificate"`
+	ShowTags         bool   `json:"showTags,omitempty"`
+	ShowAvailability bool   `json:"showAvailability,omitempty"`
 }
 
 type StatusPageGroup struct {
@@ -76,11 +77,14 @@ type PublicStatusCertificate struct {
 }
 
 type PublicStatusMonitor struct {
-	Name        string                   `json:"name"`
-	State       string                   `json:"state"`
-	Maintenance bool                     `json:"maintenance"`
-	Certificate *PublicStatusCertificate `json:"certificate,omitempty"`
-	Tags        []PublicStatusTag        `json:"tags,omitempty"`
+	Name                 string                      `json:"name"`
+	State                string                      `json:"state"`
+	Maintenance          bool                        `json:"maintenance"`
+	Certificate          *PublicStatusCertificate    `json:"certificate,omitempty"`
+	Tags                 []PublicStatusTag           `json:"tags,omitempty"`
+	Availability         *PublicObservedAvailability `json:"availability,omitempty"`
+	availabilityID       string
+	availabilityRevision string
 }
 
 type PublicStatusGroup struct {
@@ -92,14 +96,15 @@ type PublicStatusGroup struct {
 }
 
 type PublicStatusPage struct {
-	Slug          string                   `json:"slug"`
-	Title         string                   `json:"title"`
-	Description   string                   `json:"description"`
-	State         string                   `json:"state"`
-	Maintenance   bool                     `json:"maintenance"`
-	GeneratedAt   int64                    `json:"generatedAt"`
-	Groups        []PublicStatusGroup      `json:"groups"`
-	Announcements []StatusPageAnnouncement `json:"announcements"`
+	Slug           string                   `json:"slug"`
+	Title          string                   `json:"title"`
+	Description    string                   `json:"description"`
+	State          string                   `json:"state"`
+	Maintenance    bool                     `json:"maintenance"`
+	GeneratedAt    int64                    `json:"generatedAt"`
+	Groups         []PublicStatusGroup      `json:"groups"`
+	Announcements  []StatusPageAnnouncement `json:"announcements"`
+	publicationKey string
 }
 
 func statusSlug(s string) bool {
@@ -219,7 +224,7 @@ func parseStatusPage(b []byte) (StatusPageInput, error) {
 			return in, bad
 		}
 		for j, raw := range monitors {
-			m, err := statusObject(raw, "monitorId", "name", "showCertificate", "showTags")
+			m, err := statusObject(raw, "monitorId", "name", "showCertificate", "showTags", "showAvailability")
 			if err != nil || required(m, "monitorId", "name", "showCertificate") != nil {
 				return in, bad
 			}
@@ -443,6 +448,9 @@ func publicStatusRollup(states []string) string {
 
 func (n *Node) publicStatusMonitor(selected StatusPageMonitor) PublicStatusMonitor {
 	out := PublicStatusMonitor{Name: selected.Name, State: "unknown"}
+	if selected.ShowAvailability {
+		out.Availability = unavailablePublicAvailability()
+	}
 	m := n.current(selected.MonitorID)
 	if m == nil {
 		return out
@@ -453,6 +461,9 @@ func (n *Node) publicStatusMonitor(selected StatusPageMonitor) PublicStatusMonit
 	out.Maintenance = len(n.activeMaintenance(*m)) > 0
 	if !m.Enabled || len(m.NodeIDs) == 0 {
 		return out
+	}
+	if selected.ShowAvailability && slices.Contains(m.NodeIDs, n.ID) {
+		out.availabilityID, out.availabilityRevision = m.ID, m.Revision
 	}
 	fresh := n.fresh(*m)
 	states := make([]string, 0, len(fresh)+1)
@@ -523,6 +534,7 @@ func (n *Node) publicStatusPage(slug string) *PublicStatusPage {
 		return nil
 	}
 	out := &PublicStatusPage{Slug: in.Slug, Title: in.Title, Description: in.Description, GeneratedAt: n.now(), Groups: []PublicStatusGroup{}, Announcements: in.Announcements}
+	out.publicationKey = chosen.Resource.ID + "/" + chosen.Resource.Revision + "/" + chosen.EdgeID
 	states := []string{}
 	for _, group := range in.Groups {
 		g := PublicStatusGroup{ID: group.ID, Name: group.Name, Monitors: []PublicStatusMonitor{}}
@@ -543,7 +555,8 @@ func (n *Node) publicStatusPage(slug string) *PublicStatusPage {
 }
 
 // This is a separate unauthenticated JSON boundary, called before management
-// CORS and the /api filter. It never reads a body, a token or historical SQL.
+// CORS and the /api filter. Optional archive reads run outside n.mu under their
+// own bounded, nonwaiting work policy; private history is never implied.
 func (n *Node) servePublicStatus(w http.ResponseWriter, r *http.Request) bool {
 	path := r.URL.Path
 	if path != "/public/status" && !strings.HasPrefix(path, publicStatusPrefix) {
@@ -563,7 +576,7 @@ func (n *Node) servePublicStatus(w http.ResponseWriter, r *http.Request) bool {
 		n.mu.Lock()
 		page := n.publicStatusPage(strings.TrimPrefix(path, publicStatusPrefix))
 		n.mu.Unlock()
-		if page != nil {
+		if page != nil && n.fillPublicAvailability(r.Context(), page) {
 			code, value = http.StatusOK, page
 		}
 	}

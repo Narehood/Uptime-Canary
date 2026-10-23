@@ -1,12 +1,16 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
-import type { PublicStatusPage, PublicStatusState, StatusPageAnnouncement } from '@uptime-canary/shared';
+import type { PublicStatusGroup, PublicStatusMonitor, PublicStatusPage, PublicStatusState, StatusPageAnnouncement } from '@uptime-canary/shared';
 import { ApiFailure, fetchPublicStatus, isAbort, normalizeApiUrl } from '../api';
+import { duration } from '../availability';
 import { addressCaveat } from '../badges';
 import { ago, stamp, utc } from '../format';
 import { useNow } from '../hooks';
+import { availabilityText, observedFigures, percentText, readPublicAvailability, stripWords, validProjectionTime, type PublicObserved } from '../publicAvailability';
 import { href, navigate, publicHref } from '../router';
 import { ThemeButton, type ThemeControl } from '../theme';
 import { BadgeList } from '../ui/badges';
+import { Time } from '../ui/bits';
+import { ObservedStrip } from '../ui/charts';
 import { CanaryMark, Glyph, Icon } from '../ui/icons';
 import { TagPill } from '../ui/tags';
 import { lastEndpoint } from './Connect';
@@ -21,13 +25,21 @@ const state = (value: unknown): PublicStatusState => STATES.has(value as PublicS
 const arr = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const obj = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
+/** A published service as shown: `history` is the strictly read `availability` field, present only when published. */
+interface ShownMonitor extends Omit<PublicStatusMonitor, 'availability'> { history?: PublicObserved }
+interface ShownGroup extends Omit<PublicStatusGroup, 'monitors'> { monitors: ShownMonitor[] }
+interface ShownPage extends Omit<PublicStatusPage, 'groups'> { groups: ShownGroup[] }
+
 /** The public JSON comes from the network: keep only expected fields, as text, with safe fallbacks. */
-function normalize(value: unknown): PublicStatusPage {
+function normalize(value: unknown): ShownPage {
   const page = obj(value);
+  // 0 means "unknown": the footer then shows no time, and no history can be anchored. A value a Date can't hold would
+  // otherwise throw while rendering the footer and take the whole page down.
+  const generatedAt = validProjectionTime(page.generatedAt) ? page.generatedAt : 0;
   return {
     slug: str(page.slug, 64), title: str(page.title, 512) || 'Status', description: str(page.description, 8192),
     state: state(page.state), maintenance: page.maintenance === true,
-    generatedAt: typeof page.generatedAt === 'number' && Number.isFinite(page.generatedAt) ? page.generatedAt : 0,
+    generatedAt,
     groups: arr(page.groups).slice(0, 16).map(raw => {
       const group = obj(raw);
       return {
@@ -36,10 +48,13 @@ function normalize(value: unknown): PublicStatusPage {
           const monitor = obj(rawMonitor);
           const certificate = obj(monitor.certificate);
           const tags = arr(monitor.tags).slice(0, 32).map(rawTag => { const tag = obj(rawTag); return { name: str(tag.name, 512), color: str(tag.color, 7), ...(tag.value ? { value: str(tag.value, 512) } : {}) }; }).filter(tag => tag.name);
+          // Never a healthy fallback: a malformed field reads as unreadable, and only a complete, consistent one draws figures.
+          const history = readPublicAvailability(monitor.availability, generatedAt);
           return {
             name: str(monitor.name, 512), state: state(monitor.state), maintenance: monitor.maintenance === true,
             ...(certificate.notAfter && certificate.notBefore ? { certificate: { notBefore: str(certificate.notBefore, 64), notAfter: str(certificate.notAfter, 64) } } : {}),
             ...(tags.length ? { tags } : {}),
+            ...(history ? { history } : {}),
           };
         }),
       };
@@ -49,7 +64,8 @@ function normalize(value: unknown): PublicStatusPage {
       return {
         id: str(note.id, 128), title: str(note.title, 512), message: str(note.message, 8192),
         state: (NOTE_STATES.has(str(note.state)) ? note.state : 'investigating') as StatusPageAnnouncement['state'],
-        createdAt: typeof note.createdAt === 'number' ? note.createdAt : 0, updatedAt: typeof note.updatedAt === 'number' ? note.updatedAt : 0, pinned: note.pinned === true,
+        // 0 (unknown) for anything a Date can't hold: the note still shows, only its times are left out.
+        createdAt: validProjectionTime(note.createdAt) ? note.createdAt : 0, updatedAt: validProjectionTime(note.updatedAt) ? note.updatedAt : 0, pinned: note.pinned === true,
       };
     }),
   };
@@ -62,7 +78,7 @@ const NOTE: Record<string, { label: string; tone: Tone }> = {
   monitoring: { label: 'Monitoring', tone: 'pending' }, resolved: { label: 'Resolved', tone: 'up' },
 };
 
-function headline(page: PublicStatusPage): { title: string; text: string } {
+function headline(page: ShownPage): { title: string; text: string } {
   const monitors = page.groups.flatMap(group => group.monitors);
   const down = monitors.filter(m => m.state === 'down').length;
   const unknown = monitors.filter(m => m.state === 'unknown').length;
@@ -74,7 +90,62 @@ function headline(page: PublicStatusPage): { title: string; text: string } {
   }
 }
 
-type Load = { kind: 'loading' } | { kind: 'ok'; page: PublicStatusPage; at: number; from: string } | { kind: 'error'; message: string; notFound: boolean; last?: { page: PublicStatusPage; at: number; from: string } };
+/**
+ * One service's published 24 hours, under its current state and separate from it. Figures are truncated basis points
+ * from the node's millisecond totals, like the badge; the strip has an hourly table twin for exact values.
+ */
+function ObservedHistory({ name, history, now, legend }: { name: string; history: PublicObserved; now: number; legend: boolean }) {
+  if (history.kind !== 'available') {
+    return (
+      <div className="pub-obs">
+        <p className="pub-obs-off small">
+          <Glyph tone={history.kind === 'unavailable' ? 'unknown' : 'warn'} />
+          <span>{history.kind === 'unavailable'
+            ? <><b>Last 24 h: not available from this node right now.</b> Only a node that runs this check can report it, and it may be busy. Another node may have it.</>
+            : <><b>Last 24 h: couldn’t be read.</b> This node sent history in an unexpected form, so none is shown.</>}</span>
+        </p>
+      </div>
+    );
+  }
+  const { summary, buckets } = history;
+  const figures = observedFigures(summary);
+  return (
+    <div className="pub-obs">
+      <p className="pub-obs-figs">
+        <span className="pub-obs-k">Last 24 h</span>
+        <span className={summary.downMs ? 'dn' : undefined}><b>{availabilityText(summary)}</b> available{summary.downMs ? <> · down {duration(summary.downMs)}</> : null}</span>
+        <span><b>{percentText(figures.coverage)}</b> coverage</span>
+        <span className="muted">observed by this node, as of <Time at={history.to} now={now} /></span>
+      </p>
+      {figures.availability === null ? <p className="muted small pub-obs-none">No up or down time was observed in these 24 hours, so availability is unknown.</p> : null}
+      <ObservedStrip buckets={buckets} now={now} legend={legend} label={`${name}: ${stripWords(buckets)} Exact figures are in the hourly table.`} />
+      <details className="pub-obs-more">
+        <summary>Hourly figures<span className="vh"> for {name}</span></summary>
+        <div className="tbl-wrap scroll-y">
+          <table className="tbl">
+            <caption className="vh">Observed time for {name} by the node answering this page, one row per UTC hour, newest first. The first and last hours can be partial.</caption>
+            <thead><tr><th scope="col">Hour</th><th scope="col" className="num">Up</th><th scope="col" className="num">Down</th><th scope="col" className="num">Pending</th><th scope="col" className="num">Unknown</th><th scope="col" className="num">Maintenance</th><th scope="col" className="num">Available</th><th scope="col" className="num">Coverage</th></tr></thead>
+            <tbody>
+              {[...buckets].reverse().map(bucket => (
+                <tr key={bucket.startMs}>
+                  <td className="tn"><Time at={bucket.startMs} now={now} mode="short" /> – <Time at={bucket.endMs} now={now} mode="short" /></td>
+                  <td className="num">{duration(bucket.upMs)}</td><td className="num">{duration(bucket.downMs)}</td><td className="num">{duration(bucket.pendingMs)}</td>
+                  <td className="num">{duration(bucket.unknownMs)}</td><td className="num">{duration(bucket.maintenanceMs)}</td>
+                  <td className="num">{availabilityText(bucket)}</td><td className="num">{percentText(observedFigures(bucket).coverage)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** A loaded page and the selection it answers: the node it came from and the page address asked for. */
+interface Shown { page: ShownPage; at: number; from: string; slug: string }
+type Load = { kind: 'loading' } | ({ kind: 'ok' } & Shown) | { kind: 'error'; message: string; notFound: boolean; last?: Shown };
+const answers = (shown: Shown | undefined, base: string, slug: string): shown is Shown => shown !== undefined && shown.from === base && shown.slug === slug;
 
 export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: string; nodes: string[]; theme: ThemeControl; signedIn: boolean }) {
   const candidates = useMemo(() => {
@@ -82,8 +153,11 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
     for (const node of nodes.length ? nodes : [lastEndpoint()]) { try { const url = normalizeApiUrl(node); if (!out.includes(url)) out.push(url); } catch { /* ignore malformed */ } }
     return out;
   }, [nodes]);
-  const [active, setActive] = useState(0);
-  const base = candidates[active];
+  // A visitor's node choice belongs to the node list it was made in. A link with a different list starts again at its
+  // own first node; polls and refreshes keep the choice because they don't change the list.
+  const list = candidates.join('\n');
+  const [choice, setChoice] = useState<{ list: string; url: string } | null>(null);
+  const base = choice && choice.list === list && candidates.includes(choice.url) ? choice.url : candidates[0];
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [nonce, setNonce] = useState(0);
   const now = useNow(5000);
@@ -102,19 +176,26 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
     const run = async (): Promise<void> => {
       try {
         const value = await fetchPublicStatus(base, slug, controller.signal);
+        // A late answer for a node or page no longer selected never paints over the current selection.
         if (controller.signal.aborted) return;
-        setLoad({ kind: 'ok', page: normalize(value), at: Date.now(), from: base });
+        setLoad({ kind: 'ok', page: normalize(value), at: Date.now(), from: base, slug });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
         const notFound = error instanceof ApiFailure && error.status === 404;
         const message = notFound ? 'This node doesn’t publish a status page at this address.'
           : error instanceof ApiFailure && error.status === 0 ? 'This node can’t be reached from your browser right now.'
           : error instanceof Error ? error.message : 'The status page couldn’t be loaded.';
-        setLoad(previous => ({ kind: 'error', message, notFound, last: previous.kind === 'ok' && previous.from === base ? previous : previous.kind === 'error' && previous.last?.from === base ? previous.last : undefined }));
+        // "Not found" is the node's answer for an unpublished, renamed or conflicting page: the withdrawn page and its
+        // history are cleared, not kept as stale. Other failures keep the last answer for this same node and page.
+        setLoad(previous => ({
+          kind: 'error', message, notFound,
+          last: notFound ? undefined : previous.kind === 'ok' && answers(previous, base, slug) ? previous : previous.kind === 'error' && answers(previous.last, base, slug) ? previous.last : undefined,
+        }));
       }
       if (!controller.signal.aborted) timer = setTimeout(() => { if (!document.hidden) void run(); else timer = setTimeout(() => void run(), REFRESH_MS); }, REFRESH_MS);
     };
-    setLoad(previous => previous.kind === 'ok' && previous.from === base ? previous : { kind: 'loading' });
+    setLoad(previous => previous.kind === 'ok' && answers(previous, base, slug) ? previous
+      : previous.kind === 'error' && answers(previous.last, base, slug) ? previous : { kind: 'loading' });
     void run();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [base, slug, nonce]);
@@ -123,14 +204,18 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
   const page = shown?.page;
   const head = page ? headline(page) : null;
   const notes = page ? [...page.announcements.filter(note => note.pinned), ...page.announcements.filter(note => !note.pinned)] : [];
+  // The strip legend appears once, under the first service that draws one.
+  const firstStrip = page?.groups.flatMap(group => group.monitors).find(monitor => monitor.history?.kind === 'available');
 
   const useOther = (event: FormEvent): void => {
     event.preventDefault();
     try {
       const url = normalizeApiUrl(other);
+      const next = [url, ...candidates.filter(candidate => candidate !== url)];
       setOtherError(null);
-      navigate(publicHref(slug, [url, ...candidates.filter(candidate => candidate !== url)]));
-      setActive(0);
+      navigate(publicHref(slug, next));
+      // Even when the list is unchanged (the typed node was already first), the typed node becomes the selection.
+      setChoice({ list: next.join('\n'), url });
       setOther('');
     } catch (error) { setOtherError(error instanceof Error ? error.message : 'Enter a node address.'); }
   };
@@ -195,6 +280,7 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
                         </div>
                         {monitor.maintenance ? <span className="tag t-hold"><Icon name="wrench" />maintenance</span> : null}
                         <span className={`pub-st s-${monitor.state}`}><Glyph tone={tone(monitor.state)} />{WORD[monitor.state]}</span>
+                        {monitor.history ? <ObservedHistory name={monitor.name} history={monitor.history} now={now} legend={monitor === firstStrip} /> : null}
                       </li>
                     ))}
                   </ul>
@@ -216,7 +302,7 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
         <footer className="pub-foot">
           <details className="pub-source">
             <summary>
-              {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'just now'} · refreshes every 30 s</>
+              {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every 30 s</>
                 : <>Data source: <span className="mono">{base ?? 'none'}</span></>}
             </summary>
             <div className="pub-source-b">
@@ -224,8 +310,8 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
               {candidates.length > 1 ? (
                 <fieldset className="pub-nodes">
                   <legend className="vh">Node</legend>
-                  {candidates.map((candidate, index) => (
-                    <label key={candidate}><input type="radio" name={`${formId}-node`} checked={index === active} onChange={() => setActive(index)} /><span className="mono">{candidate}</span></label>
+                  {candidates.map(candidate => (
+                    <label key={candidate}><input type="radio" name={`${formId}-node`} checked={candidate === base} onChange={() => setChoice({ list, url: candidate })} /><span className="mono">{candidate}</span></label>
                   ))}
                 </fieldset>
               ) : null}
@@ -244,12 +330,16 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
             <details className="pub-source" onToggle={event => { const isOpen = (event.currentTarget as HTMLDetailsElement).open; setEmbedOpen(isOpen); if (isOpen) setBadgeNonce(n => n + 1); }}>
               <summary>Embed a status badge</summary>
               {embedOpen ? <div className="pub-source-b pub-embed">
-                <p className="small">A small image for a README or another site, served by <span className="mono">{shown.from}</span> without signing in. It shows the current state only: up, down, pending or unknown, with a maintenance segment during planned work.</p>
+                <p className="small">A small image for a README or another site, served by <span className="mono">{shown.from}</span> without signing in. A state badge shows the current state only: up, down, pending or unknown, with a maintenance segment during planned work. Services that publish their last 24 hours also have a 24 h observed badge.</p>
                 {addressCaveat(shown.from) ? <p className="small fwarn"><Glyph tone="warn" />{addressCaveat(shown.from)}</p> : null}
-                <BadgeList slug={slug} title={page.title} groups={page.groups} nodeUrl={shown.from} pageLink={`${location.origin}${location.pathname}${publicHref(slug, [shown.from, ...candidates.filter(candidate => candidate !== shown.from)])}`} nonce={badgeNonce} />
+                <BadgeList slug={slug} title={page.title} nodeUrl={shown.from} pageLink={`${location.origin}${location.pathname}${publicHref(slug, [shown.from, ...candidates.filter(candidate => candidate !== shown.from)])}`} nonce={badgeNonce}
+                  groups={page.groups.map(group => ({ id: group.id, name: group.name, monitors: group.monitors.map(monitor => ({ name: monitor.name, observed: monitor.history !== undefined })) }))} />
                 <p className="muted small">If the page’s address or a service’s public name changes, embedded badges stop loading.</p>
               </div> : null}
             </details>
+          ) : null}
+          {page?.groups.some(group => group.monitors.some(monitor => monitor.history)) ? (
+            <p className="muted small">“Last 24 h” figures are the answering node’s own record for services the operator chose to publish. Availability is up time ÷ (up + down) time; coverage is the share of the 24 hours with a known result. Pending and unknown time don’t count toward availability but lower coverage; gaps are never assumed up, and maintenance changes neither figure. Percentages are truncated, never rounded up: availability reads 100.00% only without down time, and coverage only when every moment had a result. Another node can show different figures, and nothing is merged across nodes.</p>
           ) : null}
           <p className="muted small">States are current results, not historical uptime or an SLA. Maintenance is shown beside a result and never turns a failure green. Powered by Uptime Canary.</p>
         </footer>

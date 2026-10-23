@@ -43,12 +43,44 @@ def legacy_fixture(source, output):
         "scope": "Three historical Go files with unchanged shared application code and current readonly modules; controlled compatibility fixture, not an original release artifact"}
 
 
+def publication_legacy_fixture(source, output):
+    """Restore the previous publication policy with five fragments, not a source copy."""
+    reference = "65fc953ddf430ae7e454027f2a163c1f871e1b51"
+    selected = ["apps/node-go/internal/canary/" + name for name in (
+        "wire_pages.go", "runtime.go", "status_pages.go", "badges.go", "badges_svg.go")]
+    added = "apps/node-go/internal/canary/public_availability.go"
+    changed = subprocess.check_output(["git", "diff", reference, "--name-only", "--",
+        "apps/node-go", "go.mod", "go.sum"], cwd=source, text=True).splitlines()
+    changed += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard",
+        "apps/node-go"], cwd=source, text=True).splitlines()
+    # Reject module changes, new embedded code/data and undeclared Go changes.
+    # Documentation and Go test files do not enter either production executable.
+    unsupported = [p for p in changed if p not in selected + [added]
+        and not p.endswith(("_test.go", ".md"))]
+    if unsupported:
+        raise ValueError("Source diverged from the declared protocol-14 fixture: " + ", ".join(unsupported))
+    overlay, hashes = {}, {}
+    for index, name in enumerate(selected):
+        raw = subprocess.check_output(["git", "show", reference + ":" + name], cwd=source)
+        backing = output / ("publication-legacy-" + str(index) + ".go")
+        backing.write_bytes(raw)
+        overlay[str(source / name)] = str(backing)
+        hashes[name] = hashlib.sha256(raw).hexdigest()
+    overlay[str(source / added)] = ""  # The file did not exist on protocol 14.
+    path = output / "publication-legacy-overlay.json"
+    path.write_text(json.dumps({"Replace": overlay}) + "\n", encoding="utf-8")
+    return path, {"referenceCommit": reference, "overlaySha256": hashes,
+        "excludedAddedFiles": [added], "scope": "Five historical production fragments and one absent added file; all other production inputs and modules unchanged from protocol 14. Rebuilt controlled fixture, not an original published artifact"}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context", type=Path, default=ROOT,
                         help="Existing source checkout; never copied or snapshotted")
     parser.add_argument("--test", action="append", help="Proof basename, e.g. push.test.ts")
-    parser.add_argument("--upgrade", action="store_true", help="Only the controlled protocol-13-to-14 compatibility proof; requires retained Git history")
+    upgrades = parser.add_mutually_exclusive_group()
+    upgrades.add_argument("--upgrade", action="store_true", help="Only the controlled protocol-13-to-14 compatibility proof; requires retained Git history")
+    upgrades.add_argument("--publication-upgrade", action="store_true", help="Only the controlled protocol-14-to-15 publication upgrade proof; requires retained Git history")
     args = parser.parse_args()
     output = guarded_output("process-proofs")
     source = args.context.resolve()
@@ -59,10 +91,11 @@ def main():
     if not (source / "go.mod").is_file():
         raise SystemExit("A source checkout is required")
     tests = sorted((ROOT / "apps/proof/test").glob("*.test.ts"))
-    if args.upgrade:
+    if args.upgrade or args.publication_upgrade:
         if args.test:
-            parser.error("--upgrade and --test cannot be combined")
-        tests = [ROOT / "apps/proof/test/protocol-upgrade.compat.ts"]
+            parser.error("Upgrade modes and --test cannot be combined")
+        name = "public-availability-upgrade.compat.ts" if args.publication_upgrade else "protocol-upgrade.compat.ts"
+        tests = [ROOT / "apps/proof/test" / name]
     if args.test:
         if any(Path(name).name != name or not name.endswith(".test.ts") for name in args.test):
             raise SystemExit("--test requires a proof basename")
@@ -97,8 +130,9 @@ def main():
         return result
 
     try:
-        if args.upgrade:
-            overlay, report["legacyFixture"] = legacy_fixture(source, output)
+        if args.upgrade or args.publication_upgrade:
+            factory = publication_legacy_fixture if args.publication_upgrade else legacy_fixture
+            overlay, report["legacyFixture"] = factory(source, output)
             legacy = output / ("canary-legacy.exe" if os.name == "nt" else "canary-legacy")
             built = run("build-legacy-fixture", [str(go), "build", "-mod=readonly", "-overlay", str(overlay),
                 "-trimpath", "-o", str(legacy), "./apps/node-go/cmd/canary"], source, 180)
@@ -123,10 +157,13 @@ def main():
         report["fixturesUnchanged"] = source_digest(ROOT) == fixtures_before
         report["binaryUnchanged"] = not report.get("binarySha256") or (
             hashlib.sha256(binary.read_bytes()).hexdigest() == report["binarySha256"])
+        report["legacyUnchanged"] = not report.get("legacySha256") or (
+            hashlib.sha256(legacy.read_bytes()).hexdigest() == report["legacySha256"])
         report["passed"] = report["passed"] and all(report[k] for k in (
-            "sourceUnchanged", "fixturesUnchanged", "binaryUnchanged"))
+            "sourceUnchanged", "fixturesUnchanged", "binaryUnchanged", "legacyUnchanged"))
         report["finishedAt"] = datetime.now(timezone.utc).isoformat()
-        retain_summary("upgrade-proofs" if args.upgrade else "process-proofs", report)
+        summary = "publication-upgrade-proofs" if args.publication_upgrade else "upgrade-proofs" if args.upgrade else "process-proofs"
+        retain_summary(summary, report)
         print(json.dumps(report, indent=2), flush=True)
     return 0 if report["passed"] else 1
 

@@ -161,6 +161,8 @@ async function launchBrowser() {
   const targets = await until(async () => { try { return await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json(); } catch { return false; } }, 'Chrome', 30000);
   ws = new WebSocket(targets.find(t => t.type === 'page').webSocketDebuggerUrl); await once(ws, 'open'); page = new Cdp(ws);
   for (const domain of ['Page', 'Runtime', 'Network']) await page.send(`${domain}.enable`);
+  // UI copy and percent fixtures intentionally use en-US; pure checks also cover comma formatting.
+  await page.send('Emulation.setLocaleOverride', { locale: 'en-US' });
   const allowed = new Set([state.origin, state.sink, ...state.nodes.map(n => n.url)]);
   await page.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
   page.on('Fetch.requestPaused', p => {
@@ -484,6 +486,11 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     await signIn({ ...A, token }, true); await nav(`#/monitors/${monitors.redis.id}`); await heading(monitors.redis.name); await text('Hidden from viewers'); await nav('#/channels/new'); await text('Viewers can’t change channels');
     await signIn(A, true); return { redactedAtServer: true, formsReadOnly: true };
   });
+  if (args.includes('--public-availability')) {
+    const { reviewPublishedAvailability } = await import('./public-availability-browser.mjs');
+    await reviewPublishedAvailability({ api, A, B, state, page, nav, heading, text, click, choose, fill,
+      until, step, sleep, report, setHook: value => { requestHook = value; } });
+  }
   await step('Browser: storage contains only endpoint/theme; reload forgets credential', async () => {
     const storage = await page.eval(`({local:{...localStorage},session:{...sessionStorage},cookie:document.cookie})`); assert.ok(Object.keys(storage.local).every(k => ['uptime-canary.endpoint','uptime-canary.theme'].includes(k))); assert.deepEqual(storage.session, {}); assert.equal(storage.cookie, '');
     for (const s of secrets) assert.ok(!JSON.stringify(storage).includes(s));

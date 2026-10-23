@@ -1,3 +1,5 @@
+import type { ObservedTimeTotals } from './index.js';
+
 /** Operator-authored publication data. No private monitor name is inherited. */
 export interface StatusPageMonitor {
   monitorId: string;
@@ -5,6 +7,8 @@ export interface StatusPageMonitor {
   showCertificate: boolean;
   /** Both this flag and each monitor assignment's public flag must be enabled. */
   showTags?: boolean;
+  /** Publish the serving node's last 24 hours of local observed coverage. Off by default. */
+  showAvailability?: boolean;
 }
 
 export interface StatusPageGroup {
@@ -60,6 +64,18 @@ export interface PublicStatusMonitor {
   maintenance: boolean;
   certificate?: PublicStatusCertificate;
   tags?: { name: string; color: string; value?: string }[];
+  availability?: PublicObservedAvailability;
+}
+
+/** Explicitly published local history; never a replicated/global uptime or SLA. */
+export interface PublicObservedAvailability {
+  status: 'available' | 'unavailable';
+  scope: 'serving-node';
+  from?: number;
+  to?: number;
+  summary?: ObservedTimeTotals;
+  /** UTC hourly intersections, including partial edge buckets; at most 25. */
+  buckets?: ObservedTimeTotals[];
 }
 
 export interface PublicStatusGroup {

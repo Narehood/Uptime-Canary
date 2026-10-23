@@ -1,10 +1,12 @@
 """Release gate: incomplete or skipped proof output cannot look successful."""
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("process_proofs", Path(__file__).with_name("process-proof-validation.py"))
 proofs = importlib.util.module_from_spec(spec)
@@ -12,6 +14,32 @@ spec.loader.exec_module(proofs)
 
 
 class ProofResultTests(unittest.TestCase):
+    def test_publication_fixture_rejects_undeclared_production_or_module_drift(self):
+        for name in ("go.mod", "go.sum", "apps/node-go/internal/canary/unreviewed.go",
+                     "apps/node-go/internal/jsonquery/jsvm/runtime.js"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as path:
+                with patch.object(proofs.subprocess, "check_output", side_effect=[name + "\n", ""]):
+                    with self.assertRaisesRegex(ValueError, "Source diverged"):
+                        proofs.publication_legacy_fixture(Path(path), Path(path))
+                self.assertEqual(list(Path(path).iterdir()), [], "drift refusal must precede fixture writes")
+
+    def test_publication_fixture_restores_only_declared_fragments_and_absent_file(self):
+        raw = b"package canary\n// Small synthetic historical fragment, never executed.\n"
+        with tempfile.TemporaryDirectory() as path:
+            source, output = Path(path) / "checkout", Path(path)
+            with patch.object(proofs.subprocess, "check_output", side_effect=["", "", *([raw] * 5)]):
+                overlay, report = proofs.publication_legacy_fixture(source, output)
+            replacements = json.loads(overlay.read_text())["Replace"]
+            added = str(source / "apps/node-go/internal/canary/public_availability.go")
+            self.assertEqual(replacements.pop(added), "", "added runtime file must be absent from the old build")
+            self.assertEqual(len(replacements), 5)
+            self.assertEqual(len(report["overlaySha256"]), 5)
+            for original, backing in replacements.items():
+                self.assertTrue(Path(original).is_relative_to(source))
+                self.assertTrue(Path(backing).is_relative_to(output))
+                self.assertEqual(Path(backing).read_bytes(), raw)
+            self.assertFalse(source.exists(), "the fixture must never copy or modify a checkout")
+
     def test_standalone_http_fixture_has_no_repository_import_dependency(self):
         with tempfile.TemporaryDirectory() as path:
             fixture = Path(path) / "fixture.py"

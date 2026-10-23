@@ -1,10 +1,19 @@
-# Portainer stack
+# Portainer and separate Compose stacks
 
-Use [deploy/portainer-stack.yml](../deploy/portainer-stack.yml) with a **Linux
-Docker Standalone** environment in Portainer. It runs one headless node and
-the optional dashboard. Deploy a separate stack with a unique node ID and
-its own two volumes for each additional node. This template is not a Swarm
-service definition.
+Use these Compose files with a **Linux Docker Standalone** environment in
+Portainer or with Docker Compose directly:
+
+| File | Services | Use |
+| --- | --- | --- |
+| [deploy/portainer-node.yml](../deploy/portainer-node.yml) | One Go node | Deploy once per monitoring host, with a unique node ID and its own two volumes. |
+| [deploy/portainer-dashboard.yml](../deploy/portainer-dashboard.yml) | Static dashboard only | Deploy once wherever browsers can reach it; it needs no node credentials, database, peer network or node container. |
+| [deploy/portainer-stack.yml](../deploy/portainer-stack.yml) | One node and dashboard together | Existing all-in-one deployment. |
+
+The separate files retain the same service settings as the combined file.
+They do not require one another or a shared Docker network. These templates
+are not Swarm service definitions. The root [compose.yaml](../compose.yaml)
+remains the build-from-checkout option, with the dashboard behind its `web`
+profile.
 
 The project is development software, not a validated release. There are no
 published release images. The template deliberately uses images already on
@@ -15,7 +24,8 @@ your selected Docker host and refuses implicit registry pulls.
 In the selected environment, open **Images → Build a new image**. Select
 the URL build method (under **Upload** in some versions), and provide the
 repository URL and Dockerfile path. Build twice, using the same commit for
-both images:
+both images if using the combined stack. For separate stacks, build only the
+image used by that stack:
 
 | Image tag | Git repository | Dockerfile at repository root |
 | --- | --- | --- |
@@ -59,7 +69,10 @@ Enter these variables in Portainer's stack environment section:
 | `CANARY_CORS_ORIGINS` | Exact dashboard browser origin, for example `https://canary.example.com` or `http://192.168.1.20:8080`. |
 
 Generate tokens in a password manager. Keep them in Portainer's environment
-configuration, outside the Git repository. No `.env` file is required.
+configuration, outside the Git repository. No `.env` file is required. These
+four required variables apply to the node-only and combined stacks. The
+dashboard-only stack needs none of them and must not receive account or
+cluster credentials.
 
 Optional variables:
 
@@ -80,8 +93,67 @@ An HTTPS dashboard needs an HTTPS node endpoint too. Terminate TLS at your
 reverse proxy and use matching browser origins. Plain HTTP transports tokens
 without encryption; use it only on a trusted network.
 
-The template adds `NET_RAW` only to the node for ICMP. Both images run as their
+The templates add `NET_RAW` only to the node for ICMP. Both images run as their
 existing nonroot users. Container logs rotate at 10 MiB × 3 per service.
+
+## Deploy separate dashboard and node stacks
+
+1. Create the dashboard stack using Compose path
+   `deploy/portainer-dashboard.yml`, for example with stack name
+   `canary-dashboard`. Set its image and bind address as needed. It serves
+   the UI on port 8080 by default; it has no node API.
+2. On each monitoring host, create a node stack using Compose path
+   `deploy/portainer-node.yml`, for example `canary-home-1` and
+   `canary-office-1`. Set the node's unique ID, management token, cluster
+   token and the exact external dashboard origin in `CANARY_CORS_ORIGINS`.
+   Expose the API using the host's LAN address or a reverse proxy.
+3. Open the dashboard, enter a browser-reachable node URL, then authenticate
+   to that node. Docker service names such as `node` are not browser URLs.
+   If the dashboard uses HTTPS, the node's browser URL must also use HTTPS.
+4. To form an HA cluster, configure `CANARY_PEERS` on the nodes with each
+   other's persistent IDs and container-reachable API URLs, sharing the
+   cluster token. Being selected in one dashboard does not peer the nodes.
+   Different Docker hosts need routed addresses; their private Docker DNS
+   names are not shared automatically. Keep the loopback bind when a reverse
+   proxy process runs directly on the Docker host. Change `CANARY_BIND_ADDRESS`
+   only when a peer or proxy on another host must reach the API directly, using
+   the intended host interface. A proxy in another container needs an explicit
+   network route to the node; that container's own loopback is not the Docker
+   host's loopback. Do not expose the API on the LAN just to use a host-local
+   reverse proxy.
+
+The dashboard sends no management token from its container. Authentication
+and API requests go from the browser to the selected node. Stopping or
+updating the dashboard does not stop probing or alerting; stopping a node
+does not stop the static dashboard, although that node's data is unavailable.
+Switching nodes is explicit; the dashboard does not automatically fail over.
+
+The same files work from a checkout with Docker Compose. Supply the node's
+required environment values through your shell or a private environment file,
+then use stable, separate project names:
+
+```sh
+docker compose -p canary-dashboard -f deploy/portainer-dashboard.yml up -d
+docker compose -p canary-home-1 -f deploy/portainer-node.yml up -d
+```
+
+These commands use images already present on their respective Docker hosts;
+they do not build or pull an image. A dashboard-only host needs only the web
+image. A node-only host needs only the node image. Build compatible versions
+from the same intended source reference.
+
+### Splitting an existing combined stack
+
+Keep the existing stack/project name for the node when changing its Compose
+path to `deploy/portainer-node.yml`. This preserves its existing project-scoped
+`canary-data` and `canary-identity` volumes. Stop/remove the old web service
+before reusing its host port for a separate dashboard; do not remove the node
+or its volumes. Deploy the dashboard under a new stack name, and update
+`CANARY_CORS_ORIGINS` if its browser origin changes.
+
+Renaming the node stack or moving it to another Docker host does not move
+the volumes. Use the documented stopped-node data/identity migration process
+for that operation; do not bootstrap another live node with the same ID.
 
 ## Preserve identity and data
 
@@ -103,10 +175,19 @@ peer protocol changes.
 
 ## Scope and references
 
-The template is checked as Compose configuration; a deployment through your
-Portainer instance has not been performed. Existing node/web Dockerfile checks
-are separate evidence and do not certify this stack or a complete release.
+The combined template has passed actual Docker Compose runtime validation,
+including readiness, CORS, private identity storage and restart persistence.
+On `0c3d131`, [workflow 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)
+also passed actual separate-project Compose runtime: independent networks, no
+dashboard credentials, CORS, private identity storage, independent stop/start
+and persistent node history. Configuration parsing and split-template parity
+passed, and all 565 source-manifest entries matched the committed source; see
+[the exact evidence](public-availability.md#split-deployment-checkpoint).
+That run predates the completed public-history interface. No deployment through
+a Portainer instance has been performed. These checks do not certify a complete
+release or cross-host networking.
 
 - [Portainer: add a stack and supply environment variables](https://docs.portainer.io/user/docker/stacks/add)
 - [Portainer: build an image](https://docs.portainer.io/user/docker/images/build)
 - [Docker: Compose pull policy](https://docs.docker.com/reference/compose-file/services/#pull_policy)
+- [Docker: published ports and loopback binding](https://docs.docker.com/engine/network/port-publishing/)
