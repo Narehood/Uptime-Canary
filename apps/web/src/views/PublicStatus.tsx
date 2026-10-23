@@ -5,7 +5,7 @@ import { duration } from '../availability';
 import { addressCaveat } from '../badges';
 import { ago, stamp, utc } from '../format';
 import { useNow } from '../hooks';
-import { availabilityText, observedFigures, percentText, readPublicAvailability, stripWords, type PublicObserved } from '../publicAvailability';
+import { availabilityText, observedFigures, percentText, readPublicAvailability, stripWords, validProjectionTime, type PublicObserved } from '../publicAvailability';
 import { href, navigate, publicHref } from '../router';
 import { ThemeButton, type ThemeControl } from '../theme';
 import { BadgeList } from '../ui/badges';
@@ -33,7 +33,9 @@ interface ShownPage extends Omit<PublicStatusPage, 'groups'> { groups: ShownGrou
 /** The public JSON comes from the network: keep only expected fields, as text, with safe fallbacks. */
 function normalize(value: unknown): ShownPage {
   const page = obj(value);
-  const generatedAt = typeof page.generatedAt === 'number' && Number.isFinite(page.generatedAt) ? page.generatedAt : 0;
+  // 0 means "unknown": the footer then shows no time, and no history can be anchored. A value a Date can't hold would
+  // otherwise throw while rendering the footer and take the whole page down.
+  const generatedAt = validProjectionTime(page.generatedAt) ? page.generatedAt : 0;
   return {
     slug: str(page.slug, 64), title: str(page.title, 512) || 'Status', description: str(page.description, 8192),
     state: state(page.state), maintenance: page.maintenance === true,
@@ -62,7 +64,8 @@ function normalize(value: unknown): ShownPage {
       return {
         id: str(note.id, 128), title: str(note.title, 512), message: str(note.message, 8192),
         state: (NOTE_STATES.has(str(note.state)) ? note.state : 'investigating') as StatusPageAnnouncement['state'],
-        createdAt: typeof note.createdAt === 'number' ? note.createdAt : 0, updatedAt: typeof note.updatedAt === 'number' ? note.updatedAt : 0, pinned: note.pinned === true,
+        // 0 (unknown) for anything a Date can't hold: the note still shows, only its times are left out.
+        createdAt: validProjectionTime(note.createdAt) ? note.createdAt : 0, updatedAt: validProjectionTime(note.updatedAt) ? note.updatedAt : 0, pinned: note.pinned === true,
       };
     }),
   };
@@ -299,7 +302,7 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
         <footer className="pub-foot">
           <details className="pub-source">
             <summary>
-              {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'just now'} · refreshes every 30 s</>
+              {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every 30 s</>
                 : <>Data source: <span className="mono">{base ?? 'none'}</span></>}
             </summary>
             <div className="pub-source-b">

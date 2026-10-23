@@ -459,3 +459,83 @@ All four archives were read in memory, without local downloads:
 That CI source predates the completed interface and new web-build pure-check
 step; its pass must not be extended to them. No deployment through Portainer's
 own UI or separate Docker hosts was exercised.
+
+## Completed review: Date-range and host-proxy guidance
+
+CodeRabbit review `5634028561` on `cb7de6e` posted two findings at
+2026-10-23 20:24:30 UTC. Both were checked against current source; the earlier
+cache issue was already marked addressed.
+
+The timestamp finding is valid: safe integers extend beyond JavaScript's
+[Date TimeClip range](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-timeclip).
+The new independent tracked pure check builds a coherent 24-hour metric ending
+at `8_640_000_000_000_000`; the exact boundary is a positive control, while
+`generatedAt = boundary + 1` must fail closed. This avoids a meaningless test
+that an existing frame mismatch would already reject. Native `toISOString()`
+throws above the boundary, but the unfixed reader accepted the metric:
+
+```text
+FAIL Date range: coherent boundary metrics never authorize an unrenderable projection timestamp
+actual kind: available
+expected kind: unreadable
+```
+
+The guarded pre-repair run failed one new group while all original 14 passed,
+in 4.141 seconds, source unchanged at fingerprint
+`0f5a4406117752a001b38de6d705bdeaf9cc1e8fa4fc9fc0f52e3855641402fe`.
+Scratch returned to zero. The regression and positive boundary control remain
+unchanged for the repair. Opus owns the reader and public-page clock sanitizer;
+the latter must also protect the footer when a page has no historical metric.
+An added browser group injects an out-of-Date projection both with and without
+history and requires the page to render without exceptions. It has not yet run.
+
+The deployment wording also needed correction. The instructions now explicitly
+retain loopback publication for a reverse proxy process on the Docker host;
+only a required direct connection from another host justifies selecting a
+different bind interface. Container-local loopback is distinguished from the
+Docker host. This follows [Docker's published-port documentation](https://docs.docker.com/engine/network/port-publishing/).
+No template networking or bind default changed, and no new deployment pass is
+claimed for this prose correction. Repaired frontend validation is pending.
+
+Opus added one shared positive/safe/Date-range check for the availability reader
+and page projection clock. Source inspection also confirmed that announcement
+creation/update numbers reached the same formatters without Date-range checks;
+both now use the shared sanitizer, preserving note content while suppressing
+unknown date labels. A second browser group covers that adjacent path with a
+valid page clock and invalid note dates. That adjacent group is post-repair
+coverage; no separate pre-repair browser failure is claimed.
+
+The workspace typecheck, all **15** tracked pure checks, browser-script syntax
+and disposable production build pass in **12.546 guarded seconds**, source
+unchanged at fingerprint
+`a357c014becc135f2804ee73fc81b8aa2d8bc31d00f7c57fbd24313d4185769d`.
+The unchanged coherent-boundary regression now passes, including the exact
+valid Date limit. Scratch peaked at 1,700,928 bytes and returned to zero, with
+no module-cache growth. The full 139-group browser run is the next gate.
+
+The repaired full browser run passes **139/139**, with zero exceptions or
+blocked external requests. The original 137 assertions remain unchanged, and
+both added Date-safety groups pass: an invalid projection clock with and
+without history, and invalid announcement dates alongside a valid current page,
+note and historical view. The coherent-boundary pure regression remains
+unchanged from its failing pre-repair run.
+
+The browser phase ran at 2026-10-23 20:34:42.092–20:36:04.494 UTC. Complete
+guard time was **129.422 seconds**, at the unchanged `a357c014...` fingerprint
+above. Application-manifest SHA-256:
+`efd7b9a5f669839737ebe943b58e8f6386242d33096c8af0670d0e86c6148fd3`;
+browser-node binary:
+`e6f152558b0295f126c30a29fd01f17a79afa68726f8c61adb6f1782fdd677d6`;
+JS: `95544ed27f9fb8a14d0c094e4243f04354bb425d5494c73b5d70aa4aaed1e6a2`;
+CSS: `d6456689765c26781177df2b2874709d68dc9cdd0c0b161ce405ffe2eff000c8`.
+Compact-result SHA-256:
+`7efb3626820c27c918b177bd4eb6548b4cba2ae918200ae4ff5823e24d91380a`.
+The Go production source is unchanged; the controlled upgrade remains scoped
+to its separately recorded binary and source checkpoint.
+
+The same earlier native-preview timeouts justify the documented bounded CDP
+fallback; no new preview or screenshot attempt was made. Scratch peaked at
+240,437,177 bytes and returned to zero; the repository returned to 1,257,865,418
+bytes and the cache to 267,047,922 bytes. Module-cache growth was zero. New
+exact-head CI is still required for the repaired commit. No review finding is
+waived because earlier CI passed on older source.

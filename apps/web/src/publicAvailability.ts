@@ -23,6 +23,18 @@ export type PublicObserved =
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const ms = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+/** The latest instant a JavaScript Date can hold; `toISOString` and `Intl` throw beyond it. */
+export const MAX_DATE_MS = 8_640_000_000_000_000;
+
+/**
+ * Whether a projection time (`generatedAt`) can be shown and can anchor figures: a positive safe integer of
+ * milliseconds that a Date can represent. The public page shows nothing time-based for anything else.
+ */
+export function validProjectionTime(value: unknown): value is number {
+  return ms(value) && value > 0 && value <= MAX_DATE_MS;
+}
+
 /** The node's percentages are `100 * (a / b)` in float64, the same operations as here; allow only rounding noise. */
 const agrees = (value: unknown, expected: number): boolean => typeof value === 'number' && Math.abs(value - expected) <= 1e-9;
 
@@ -47,9 +59,10 @@ function readTotals(value: unknown, startMs: number, endMs: number): ObservedTim
  * Strictly reads a public monitor's `availability` field. `undefined` (or null) means the operator didn't publish
  * history, so nothing is drawn. Only `status: "available"` authorizes numbers; its window, every bucket boundary, every
  * total and both percentages must match the contract exactly, or the whole reading is unreadable. `generatedAt` is the
- * page's own projection time and must be a positive safe integer; the window ends on the 30-second frame that contains
- * it. A missing or invalid projection time makes an available metric unreadable: no figures without a clock to anchor
- * them. `unavailable` carries no range or totals (its `from`/`to` are fixed zeros); one that does is unreadable instead.
+ * page's own projection time and must pass `validProjectionTime` (positive, safe, within the Date range); the window
+ * ends on the 30-second frame that contains it. A missing, invalid or unrepresentable projection time makes an
+ * available metric unreadable: no figures without a clock to anchor them. `unavailable` carries no range or totals
+ * (its `from`/`to` are fixed zeros); one that does is unreadable instead.
  */
 export function readPublicAvailability(value: unknown, generatedAt: number): PublicObserved | undefined {
   if (value === undefined || value === null) return undefined;
@@ -61,7 +74,7 @@ export function readPublicAvailability(value: unknown, generatedAt: number): Pub
   if (value.status !== 'available') return { kind: 'unreadable' };
   const { from, to } = value;
   if (!ms(from) || !ms(to) || to - from !== PUBLIC_WINDOW_MS || to % PUBLIC_FRAME_MS !== 0) return { kind: 'unreadable' };
-  if (!ms(generatedAt) || generatedAt <= 0 || to > generatedAt || generatedAt - to >= PUBLIC_FRAME_MS) return { kind: 'unreadable' };
+  if (!validProjectionTime(generatedAt) || to > generatedAt || generatedAt - to >= PUBLIC_FRAME_MS) return { kind: 'unreadable' };
   const summary = readTotals(value.summary, from, to);
   const raw = value.buckets;
   const count = bucketCount(from, to, HOUR);

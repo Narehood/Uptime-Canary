@@ -114,8 +114,13 @@ existing nonroot users. Container logs rotate at 10 MiB × 3 per service.
    other's persistent IDs and container-reachable API URLs, sharing the
    cluster token. Being selected in one dashboard does not peer the nodes.
    Different Docker hosts need routed addresses; their private Docker DNS
-   names are not shared automatically. For LAN or reverse-proxy peers, use
-   an appropriate `CANARY_BIND_ADDRESS` rather than the loopback default.
+   names are not shared automatically. Keep the loopback bind when a reverse
+   proxy process runs directly on the Docker host. Change `CANARY_BIND_ADDRESS`
+   only when a peer or proxy on another host must reach the API directly, using
+   the intended host interface. A proxy in another container needs an explicit
+   network route to the node; that container's own loopback is not the Docker
+   host's loopback. Do not expose the API on the LAN just to use a host-local
+   reverse proxy.
 
 The dashboard sends no management token from its container. Authentication
 and API requests go from the browser to the selected node. Stopping or
@@ -185,3 +190,4 @@ release or cross-host networking.
 - [Portainer: add a stack and supply environment variables](https://docs.portainer.io/user/docker/stacks/add)
 - [Portainer: build an image](https://docs.portainer.io/user/docker/images/build)
 - [Docker: Compose pull policy](https://docs.docker.com/reference/compose-file/services/#pull_policy)
+- [Docker: published ports and loopback binding](https://docs.docker.com/engine/network/port-publishing/)

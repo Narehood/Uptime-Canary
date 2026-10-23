@@ -87,10 +87,13 @@ Protocol 15 requires coordinated peer upgrades; main remains protocol 14.
   All 565 source-manifest entries match that commit. No Portainer-host or
   cross-host deployment has been exercised.
 - Opus completed the editor opt-in, public history presentation and uptime
-  badge sharing. The repaired interface passes workspace typechecking, 14 pure
-  checks, a disposable production build and **137/137** browser assertions.
+  badge sharing. The reviewed interface passes workspace typechecking, 15 pure
+  checks, a disposable production build and **139/139** browser assertions.
   The first browser run's navigation defect and its two blocked assertions
-  remain recorded as a failure. A controlled **14-to-15** process upgrade also
+  remain recorded as a failure. The subsequent Date-range finding has a failing
+  coherent-boundary regression and passing repair, with projection and adjacent
+  announcement safety checked in the browser. Host-local reverse-proxy guidance
+  now retains loopback binding. A controlled **14-to-15** process upgrade also
   passes, preserving exact historical totals, identities, account roles and
   receipts without opting old pages in. This is native Windows rebuilt-source
   evidence, not original release-artifact or Alpine upgrade evidence. Exact

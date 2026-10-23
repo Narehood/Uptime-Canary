@@ -126,6 +126,33 @@ export async function reviewPublishedAvailability(h) {
       assert.ok(!(await page.eval(`document.querySelector('.pub-obs').innerText`)).includes('100.00%'));
     });
   });
+  await step('Public observed: an out-of-Date projection clock cannot crash a page with or without history', async () => {
+    for (const withHistory of [true, false]) {
+      const invalid = structuredClone(measured);
+      invalid.generatedAt = 8_640_000_000_000_001;
+      if (!withHistory) delete invalid.groups[0].monitors[0].availability;
+      await fixtureResponse(invalid, async () => {
+        if (withHistory) await text('unexpected form');
+        else await until(() => page.eval(`document.querySelectorAll('.pub-obs').length === 0`), 'public page without history');
+        await heading(title);
+        assert.equal(report.exceptions.length, 0, 'invalid external clock reached a Date formatter');
+      });
+    }
+    await refresh(); await text('Hourly figures');
+  });
+  await step('Public observed: invalid announcement dates cannot hide a valid public page or its note', async () => {
+    const invalid = structuredClone(measured);
+    invalid.announcements = [{ id: 'clock-fixture', title: 'External timestamp safety',
+      message: 'An untrusted clock must not hide this public note', state: 'identified',
+      createdAt: 8_640_000_000_000_001, updatedAt: 1e20, pinned: false }];
+    await fixtureResponse(invalid, async () => {
+      await heading(title); await text('External timestamp safety');
+      assert.equal(await page.eval(`document.querySelectorAll('.pub-note time').length`), 0);
+      assert.ok(await page.eval(`!!document.querySelector('.pub-obs-more')`));
+      assert.equal(report.exceptions.length, 0, 'invalid announcement date reached a formatter');
+    });
+    await refresh(); await text('Hourly figures');
+  });
   await step('Public observed: zero known time is unknown availability and zero coverage', async () => {
     const empty = structuredClone(measured), metric = empty.groups[0].monitors[0].availability;
     for (const totals of [metric.summary, ...metric.buckets]) Object.assign(totals, {

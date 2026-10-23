@@ -190,6 +190,18 @@ check('badge addresses: uptime metric only with one service, exact parameter ord
   assert.throws(() => b.badgeUrl(node, 'services', undefined, 'uptime'));
   assert.throws(() => b.badgeUrl(`${node}/?token=x`, 'services', { group: 'web', monitor: 'API' }, 'uptime'));
 });
+check('Date range: coherent boundary metrics never authorize an unrenderable projection timestamp', () => {
+  const limit = 8_640_000_000_000_000;
+  assert.doesNotThrow(() => new Date(limit).toISOString());
+  assert.throws(() => new Date(limit + 1).toISOString(), RangeError);
+  // Keep the metric itself coherent and on the right frame, so an existing
+  // range/frame rejection cannot conceal the missing Date upper bound.
+  const edge = metric(limit, [{ s: limit - DAY, e: limit, state: 'up' }]);
+  assert.equal(pa.readPublicAvailability(edge, limit).kind, 'available');
+  assert.deepEqual(pa.readPublicAvailability(edge, limit + 1), { kind: 'unreadable' });
+  const beyond = Math.floor(8_990_000_000_000_000 / 30_000) * 30_000;
+  assert.deepEqual(pa.readPublicAvailability(metric(beyond, []), beyond + 1), { kind: 'unreadable' });
+});
 check('badge targets: observed flag is carried; duplicates stay unusable for both badges', () => {
   const targets = b.badgeTargets([
     { id: 'web', name: 'Web', monitors: [{ name: 'API', observed: true }, { name: 'Site' }, { name: 'Dup', observed: true }, { name: 'Dup' }] },
