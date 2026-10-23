@@ -11,7 +11,7 @@ const pageRecords = 512
 const pageTargetBytes = 256 * 1024
 
 // New semantics must not be silently discarded by an older peer decoder.
-const peerProtocol = 14
+const peerProtocol = 15
 
 type syncProgress struct{ Send, Receive string }
 type pageRecord struct {

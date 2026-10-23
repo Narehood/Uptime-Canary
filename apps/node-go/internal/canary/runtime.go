@@ -48,6 +48,7 @@ type Node struct {
 	maintenancePlans                               atomic.Pointer[compiledMaintenance]
 	maintenanceCompiler                            chan struct{}
 	maintenanceWindows                             *maintenanceWindowCache
+	publicAvailability                             publicAvailabilityCache
 	samples                                        map[string]Sample
 	probePolicies                                  map[string]localCheckPolicy
 	pushEvents                                     map[string]heartbeat.Event
