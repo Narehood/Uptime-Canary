@@ -63,3 +63,9 @@ upgrade proof uses three declared historical Go source fragments as temporary
 build-overlay fixtures; it never copies a source tree or a module/build cache.
 The dependency scan uses guarded outputs for npm cache and raw advisory pages.
 No scanner or source snapshot is installed or retained by a reviewer.
+
+The v3 source fingerprint additionally covers `.gitattributes`, because checkout
+conversion can change hash-pinned runtime bytes. Existing LF and CRLF Git blobs
+are kept byte for byte; no source tree is normalized. A new fingerprint fixture
+fails before this addition and passes afterward. Older v2 hashes keep their
+original scope and are not relabelled as including the checkout policy.

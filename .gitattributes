@@ -1,0 +1,4 @@
+# Hash-pinned runtime sources and retained regression fixtures use their Git
+# blob bytes, including existing LF or CRLF. Never rewrite them on checkout.
+# This disables automatic newline conversion, not text diffs or merges.
+* -text
