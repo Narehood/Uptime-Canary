@@ -177,7 +177,54 @@ The single guarded command took 51.469 seconds, source-v2 fingerprint
 `b301c9455ba85b2ced8d57351d31dbb96c7cb00567415fda022bea9b4bfd4b22`;
 source remained unchanged. Scratch peaked at 286,041,259 bytes and returned to
 zero; idle repository size was 1,238,771,840 bytes, with no module-cache growth.
-The earlier regression failure is preserved above. CI for the repair is
-pending; the green `6789fe9` checkpoint is not relabelled as covering the fix.
+The earlier regression failure is preserved above. The subsequent CI evidence
+for this repair is recorded below; the earlier green checkpoint remains scoped
+to `6789fe9`.
 The review's completion notices and informational docstring coverage warning
 do not change the project's behavioral requirements.
+
+## Repaired backend Alpine checkpoint
+
+Commit `1e3dd977f67c8c1664b148831658af6ca297173c` passed the four execution
+jobs in [workflow 40003648085](https://github.com/Narehood/Uptime-Canary/actions/runs/40003648085).
+The final job completed at **2026-10-23 18:55:10 UTC**. The independently read
+artifacts confirm:
+
+- All 11 original node smoke checks and the original web build/runtime checks
+  passed, including health, assets, headers, SPA fallback and nonroot execution.
+- All 18 process proofs passed against the original node image executable,
+  under nonroot/read-only/no-external-network policy. TAP has zero failures,
+  cancellations, skips or todos; container exit is zero and OOM is false.
+- Actual Portainer-template Compose runtime passed readiness, CORS, separate
+  private identity storage and configuration/history persistence after restart.
+- The full core race phase passed **887** test/subtest events, including the
+  new hot-cache regression; worker-parent packages passed **1,527**. Both have
+  zero failures, skips, unfinished tests, panics or race warnings. Source,
+  worker and fixture hashes remained unchanged. Helper packages passed race
+  checks separately; production worker children stay uninstrumented and capped.
+
+The common production worker SHA-256 was
+`4b9e254614593802e63b49042a5dafcec97c09b20d8461db2ea236f4ca78617f`.
+All artifacts contain the same **563-entry** source manifest, SHA-256
+`c05c7bf7faa6bbb40e2b8665c81a98986ece955bc822ead2f4803fdb7d017fe1`.
+Every entry matched committed `1e3dd97`. The two held modified UI files were
+checked against Git's committed versions; the untracked Opus helper is outside
+this CI source. Archives were inspected in memory and not retained locally.
+
+| Artifact | ID | Archive SHA-256 |
+| --- | --- | --- |
+| Node | 12522464022 | `bf42acbcd2f796b4d29a17b0eaae7dacd83682cabbaa2fbdc7e0b4470d8a4038` |
+| Web | 12522977646 | `3cca771e8fa5d5f3e24152b5fb533274ddc30bb3d0eac80d9142f13e1d342f63` |
+| Proof/Compose | 12522764345 | `cbafa5661133ee6bcd92d1b7befde85a3dc1805fa8297cf3b311b70569432393` |
+| Race | 12524697377 | `7ea11aa6012d7d7cc5ba0ac433e3d300c3f2f946e3cdf20d943af748e67e434b` |
+
+GitHub reports five successful checks, but CodeRabbit's latest success status
+corresponds to **skipping automatic re-review of a draft PR**. Its actual review
+covers `6789fe9`; no independent bot re-review of the repair is claimed.
+The original finding and before-fix failure remain recorded above.
+
+This validates the backend on Linux amd64, not the unfinished frontend, arm64
+execution or a release artifact. PR #1 remains draft; main remains protocol 14.
+Frontend ownership is still reserved for Opus. The final storage check found
+1,238,799,308 bytes in the repository and zero scratch, below the idle target;
+no VM, source snapshot, extra build cache or binary archive was created.
