@@ -117,8 +117,8 @@ development evidence, not a retained distributable or release approval.
 Three additional provenance fixture tests pass on Windows (4.172 seconds
 guarded), covering wrong/missing/duplicate build identity, target notice gaps and
 dirty or mismatched checkouts. They use tiny private Git fixtures and fixed
-metadata. Actual executable validation is still pending; the first attempted
-run is recorded below.
+metadata. After the version-parser correction below, the same three test
+functions passed again in 4.078 seconds, with source unchanged and zero scratch.
 
 The first actual Windows attempt on `187f486` stopped before compilation:
 target dependency checks found `github.com/mattn/go-isatty` and
@@ -143,12 +143,44 @@ fixtures cover pseudoversions and tags. This was a validator defect, not an
 application test failure. That guarded run took 22.594 seconds and removed all
 172,952,074 sampled scratch bytes; module growth was zero.
 
+### Completed local artifact checks
+
+All three targets pass on the exact clean checkout
+`93e5dc23a90c66c2098941da05047d4a387f2ef7`, source fingerprint
+`a1475ab7ad2efabcb9dceb697ee448db367d37678c095090d31717f8deb1971b`,
+using Go 1.27.3 and the development label `0.0.0-dev`:
+
+| Target | Guarded seconds | Archive bytes | Linked external notice sets | Execution |
+| --- | ---: | ---: | ---: | --- |
+| Windows amd64 | 73.969 | 17,253,356 | 42 | Extracted CLI help and two-node history/restart/withdrawal proof, 1/1, zero skips |
+| Linux amd64 | 40.484 | 17,145,073 | 40 | Cross-built on Windows; not executed |
+| Linux arm64 | 36.297 | 15,773,018 | 40 | Cross-built on Windows; not executed |
+
+Each target's two builds had identical executable bytes. All archive and
+extracted-file hashes, license bytes, clean Git revisions and target settings
+passed. These are repeated builds on one machine/toolchain, not independent
+multi-machine reproducibility certification or native Linux acceptance.
+
+| Target | Executable SHA-256 | Archive SHA-256 |
+| --- | --- | --- |
+| Windows amd64 | `a51ffb2d614ef3001221087500310e698be77f0d3cceb58aa68ca92903b117f4` | `726bc54035f1e6c090a749abbb86ec0ac4d202433585e7a9a40f659f4e938e69` |
+| Linux amd64 | `23b7e618729d55e1b54a18f3f7cde386ba3e15a3a7c3ec27e3ab31827b8d8efa` | `54cae901e163c9d142c650f590c33d36f8b2df11c2fd4d6c1e97b82edb52b3b6` |
+| Linux arm64 | `d4d774355210102fe888420cc86e6c03832c5029e1847a4e1bdf163c24bb7ee9` | `7e99a6b9bb604e63fe313800f33a31fc1177bccf494afd18d05dc6b5cdce03ba` |
+
+No binaries or archives were retained. Sampled scratch peaks were 169,484,591,
+434,174,587 and 397,777,798 bytes respectively, below the 512 MiB ceiling; every
+run returned scratch to zero. The largest sampled repository footprint was
+2,170,576,341 bytes, below 3 GiB. Final idle usage was 1,259,504,104 bytes with
+the shared owned cache below 256 MiB and zero module-cache growth. No VM,
+source snapshot, private cache, external notification or remote measurement
+was created. The failures above remain part of the record.
+
 Before calling a release ready, the producer still needs to build and validate
 real Windows/Linux artifacts, verify target-specific dependency notices and
 source provenance, execute the supported native/container gates including
 arm64, aggregate published checksums and publish reviewed binaries/images.
-The existing notice inventory primarily describes the verified Linux graph;
-packaging its bytes is not an audit of a different platform's dependency set.
+The notice inventory now covers the three declared CGO-disabled target graphs;
+its module coverage checks do not certify a different platform or build mode.
 Installation/upgrade guidance and reproducible tagged-release verification
 remain part of the broader [shipping work](shipping-progress.md). No tagged
 release, publication or full near-Kuma completion is claimed by this helper.
