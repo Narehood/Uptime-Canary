@@ -39,6 +39,14 @@ has moved. These development tags do not imply a tagged release or release
 approval. A commit tag identifies its source; pin an image digest when you
 need its exact bytes to remain fixed across a rebuild.
 
+Pending publishing runs queue rather than replacing one another. Before
+promoting `latest`, the publisher captures both previous digests. If a write
+fails, it attempts to restore every attempted tag, including a timed-out write
+that might have committed. A rollback failure leaves the job failed and
+requires repair. First publication has no previous tag to restore; a failed
+bootstrap remains incomplete. Updating two registry packages is not atomic:
+use matching commit tags or digests when a deployment requires a fixed pair.
+
 For a matching node/dashboard source revision, set `CANARY_IMAGE_TAG` to
 `sha-` followed by the full 40-character published commit. Set
 `CANARY_NODE_IMAGE` and `CANARY_WEB_IMAGE` to full references to override those

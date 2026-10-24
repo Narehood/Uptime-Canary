@@ -14,6 +14,7 @@ permissions:
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('container-images-pr-{0}', github.event.pull_request.number) || 'container-images-publish' }}
   cancel-in-progress: false
+  queue: max
 
 env:
   DOCKER_BUILD_RECORD_UPLOAD: "false"
@@ -36,6 +37,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Check promotion failure controls
+        run: python3 -B scripts/publish_container_images_test.py
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Image identity
@@ -78,6 +81,10 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Checkout promotion helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Log in to GitHub Container Registry
@@ -97,15 +104,8 @@ jobs:
             exit 0
           fi
           prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
-          for component in node web; do
-            docker buildx imagetools inspect "$prefix-$component:sha-$GITHUB_SHA" >/dev/null
-          done
-          for component in node web; do
-            docker buildx imagetools create --tag "$prefix-$component:latest" "$prefix-$component:sha-$GITHUB_SHA"
-            echo "Published \`$prefix-$component:latest\` and \`sha-$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
-          done
+          python3 -B scripts/publish-container-images.py --prefix "$prefix" --commit "$GITHUB_SHA"
           echo "Initial publication may require the package owner to make both GHCR packages public before anonymous pulls work." >> "$GITHUB_STEP_SUMMARY"
-          echo "published=true" >> "$GITHUB_OUTPUT"
       - name: Verify both images pull without credentials
         if: steps.promote.outputs.published == 'true'
         env:
