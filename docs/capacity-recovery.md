@@ -381,3 +381,61 @@ acceptance for each final Git head are tracked in
 updates leave the v3 source fingerprint unchanged, while the new Git identity
 still requires its own hosted artifacts. No tagged release or full near-parity
 sign-off is claimed.
+
+## Native Linux failure and scoped uncertainty follow-up
+
+The Windows checkpoint above does not establish Linux acceptance. On exact
+head `82a0573` (the same `69b2a3b5…` source fingerprint), hosted native Linux
+amd64 [run 40069898317](https://github.com/Narehood/Uptime-Canary/actions/runs/40069898317)
+passes 20/21 process proofs. Capacity fails after 72.297 seconds at the unchanged
+45-second gate requiring all observing-node slots to recover. Later recovery
+and quietness assertions do not run. The clean extracted Linux binary has
+SHA-256 `db8c011ef573633bb1016939981ef552be00b22e4868c431bf18679d6479c9a5`.
+Its recovery-phase diagnostics record 7,085 target requests, 1,098 notification
+requests, 755 rejections, 343 accepted identities, no repeated accepted requests
+and no fixture errors. The guard completes in 606.24 seconds; sampled scratch
+peaks at 436,935,245 bytes and returns to zero, with no module growth. This is
+a failed liveness gate, with no storage violation. The other six hosted jobs
+and CodeRabbit pass on that head; they do not waive the Linux failure.
+
+Commits `a4f5a23`, `db7141a` and `71c94c9` address a recurring cost in embedded
+uncertainty resolution. The previous global fixed-point implementation remains
+available as a comparison oracle. The production wrapper groups originals by
+exact monitor and generation, preserving original map keys and the existing
+fixed-point algorithm. Boundary identity checks still consult all originals;
+all facts and links remain available. A foreign-scope header in an original or
+any fact boundary selects the original global behavior, including nested raw
+local headers. No proof is discarded or promoted, and persistence, wire format
+and notification policies do not change. Focused independent source reviews
+find no material defect. The earlier profiles identify this cost but do not
+establish that it alone caused the hosted timeout.
+
+At `71c94c9`, Windows amd64 source fingerprint
+`236a1b663e1721228bd7a2c69035e45a2f8ea260bbcf57a35b89bd908c37fc1c`
+passes 25 focused differential controls and the complete changed canary package:
+996 passing test events, zero failures and the two expected question-mark
+filename skips. Vet and the proof typecheck pass. Controls compare public and
+nested private proof state, input immutability, reordered/delayed evidence,
+aliases, collisions and foreign-header fallback. The guard completes in
+263.031 seconds, with sampled scratch peak 523,294,773 bytes below 512 MiB,
+cleaned to zero, unchanged source and no module growth.
+
+The same source passes the unchanged capacity proof, 1/1 with no failures,
+skips or cancellations, on normal production binary
+`2adf6c1c0d4f69db56d7bfd12fd043515abb068c483daf44a9686252deea73f1`.
+Total test time is 45.489 seconds; this includes all phases and is distinct
+from the 45-second recovery-phase gate. The proof command takes 45.750 seconds,
+the build 64.797 seconds and the guard 118.968 seconds. Source, fixtures and
+binary stay unchanged. Scratch peaks at 437,702,568 bytes and returns to zero;
+the idle repository is 1,235,120,799 bytes, with no module growth.
+
+All original phases clear on Windows. The 24 API reads record P95 89 ms and
+maximum 103 ms; outage-to-fast acceptance is 3,649 ms and backlog drain is
+3,114 ms. History remains at eight samples per monitor, with provider peak
+concurrency 14. There are 343 acceptances across 271 identities and 72 repeated
+requests before receipt-converged quietness, with zero fixture errors. These
+measurements do not establish an overall CPU improvement or Linux recovery.
+The Linux failure remains recorded, and the repair requires fresh exact-head
+native Linux, Windows, arm64, Alpine, race and full 21-process acceptance in
+[PR #7](https://github.com/Narehood/Uptime-Canary/pull/7). No workload or deadline
+was relaxed, and no release approval is implied.

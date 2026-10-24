@@ -45,8 +45,11 @@ Follow-up code `695fbfa`, source fingerprint
 passes all 940 events in the changed canary package, vet, workspace typechecks,
 56 pure groups and 41 Python regressions. The two expected package skips are
 Windows question-mark filename cases; other Go packages retain their earlier
-scope. Newer process and hosted acceptance is tracked in
-[PR #6](https://github.com/Narehood/Uptime-Canary/pull/6), separately from Steam.
+scope. On clean head `b5eae3a`, all seven hosted jobs and CodeRabbit pass;
+[PR #6](https://github.com/Narehood/Uptime-Canary/pull/6) merges at
+`d4cc56d235952d63c7e65fe9ce726beb7a9881bd` on 2026-10-24 at 06:33:40 UTC.
+Its source tree equals the tested head. This is separate from Steam and is
+not a release sign-off.
 
 Storage fixes retain one owned cache, bound legacy browser-proof outputs, reap
 ordinary command descendants even after their parent exits, and fail validation
@@ -57,10 +60,10 @@ server; current acceptance uses the standalone guarded dashboard contract.
 Protected historical artifacts and user application data remain untouched.
 
 The capacity/recovery work continues in
-[PR #7](https://github.com/Narehood/Uptime-Canary/pull/7), stacked on the review
-repairs. Candidate `fc7090d` passes 953 changed-package events but fails its
-unchanged 45-second recovery-observation gate. The bounded channel-target
-cache at `1510938` passes 59 focused controls and the unchanged capacity process
+[PR #7](https://github.com/Narehood/Uptime-Canary/pull/7), now targeting main
+with the review repairs merged. Candidate `fc7090d` passes 953 changed-package
+events but fails its unchanged 45-second recovery-observation gate. The bounded
+channel-target cache at `1510938` passes 59 focused controls and the unchanged capacity process
 proof in 34.016 seconds, including restart, backlog drain, recovery and receipt-
 converged quietness. It records 316 acceptances across 272 identities, with 44
 repeated requests before convergence and no fixture errors. This is a fixed
@@ -68,6 +71,16 @@ workload result, not globally exactly-once delivery or a capacity SLA. Its
 source scope, the original failure and later integration gates are recorded in
 [capacity recovery](capacity-recovery.md) and the PR. The earlier `c84bbde` /
 `f94e237` results (3,794 events and 21 proofs) remain historical only.
+The integrated `b0d181c` Windows checkpoint passes 971 events and its capacity
+proof, but hosted native Linux amd64 at `82a0573` passes only 20/21 proofs:
+capacity fails the unchanged 45-second recovery gate. A scoped uncertainty
+resolver at `71c94c9` retains global identity checks and foreign-header fallback;
+independent source review finds no material defect. Its Windows acceptance
+passes 25 differential controls, the complete changed canary package (996
+events, two expected platform skips), vet, proof typecheck and the unchanged
+capacity proof (45.489 seconds total across all phases). This is not a Linux
+pass or a demonstrated overall CPU improvement. The preceding failure remains
+recorded and fresh exact-head hosted gates are required before merge.
 Retained-history costs, remaining monitor/provider/status-page parity, coherent
 upgrade/recovery acceptance and versioned release publication remain required.
 
