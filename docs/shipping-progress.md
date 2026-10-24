@@ -81,6 +81,16 @@ events, two expected platform skips), vet, proof typecheck and the unchanged
 capacity proof (45.489 seconds total across all phases). This is not a Linux
 pass or a demonstrated overall CPU improvement. The preceding failure remains
 recorded and fresh exact-head hosted gates are required before merge.
+The extracted native Linux amd64 package at `3b3da51` subsequently passes
+21/21 process proofs. A later review finds that the drain assertion counts
+monitors rather than every retained original delivery. Follow-up `4cbed02`
+adds read-only source/receipt witnesses and a monotonic obligation ledger;
+both peers must retain the satisfying receipt and the fixture must confirm
+provider acceptance. Its Windows run passes 1,005 canary events, vet, all three
+typechecks, 12 pure groups and the strengthened capacity case in 32.020 seconds,
+with no unsettled obligations. All original deadlines, including the additional
+240-second total gate, remain. This newer source still requires exact-head
+hosted acceptance; the preceding Linux pass has its own scope.
 Retained-history costs, remaining monitor/provider/status-page parity, coherent
 upgrade/recovery acceptance and versioned release publication remain required.
 

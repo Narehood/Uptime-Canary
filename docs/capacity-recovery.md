@@ -464,3 +464,56 @@ The Linux failure remains recorded, and the repair requires fresh exact-head
 native Linux, Windows, arm64, Alpine, race and full 21-process acceptance in
 [PR #7](https://github.com/Narehood/Uptime-Canary/pull/7). No workload or deadline
 was relaxed, and no release approval is implied.
+
+## Retained-obligation review follow-up
+
+The native Linux amd64 package at `3b3da51`, source `236a1b66…`, subsequently
+passes 21/21 process proofs in
+[run 40072971455](https://github.com/Narehood/Uptime-Canary/actions/runs/40072971455/job/120810202011).
+The extracted binary reports that exact clean commit, protocol 17, Linux amd64
+and Go 1.27.3; binary SHA-256 is
+`71aeade357119d3c1d93c74d689ff0469d4b6aaccafaa77c6091ed424019b1b5`.
+This clears that source's Linux gate, without erasing the `82a0573` failure.
+It precedes the stronger obligation assertions below.
+
+Review [4366366057](https://github.com/Narehood/Uptime-Canary/pull/7#discussion_r4366366057)
+identifies a proof gap: counting accepted monitors could declare drain while
+another original source still awaited retry. Commit `4cbed02` adds the retained
+ledger and concrete receipt witnesses described above, keeping the existing
+monitor coverage, restart and quietness assertions. Independent source review
+approves the focused repair. Twelve pure control groups include the decisive
+negative case (one accepted source and another independent 60-second retry),
+exact and sibling positives, alias splits, missing provenance/rows, receipt
+scope, exchange and enumeration failures. Nine Go test events exercise the
+receipt view's exact preference, source preservation, split invalidation and
+event/destination scope.
+
+On Windows amd64, exact source fingerprint
+`90209d5b89479c6ce721c5c9373f1f9def0fab6c34d769ed9058e789419e5f12`
+passes the complete changed canary package: 1,005 passing events, zero failures,
+with the two expected question-mark filename skips. Vet and all three workspace
+typechecks pass. The native guard completes in 313.453 seconds, with sampled
+scratch peak 523,429,078 bytes below 512 MiB, cleaned to zero. The pure controls
+pass in a separate 4.109-second bounded run at the same source fingerprint.
+
+The strengthened capacity case passes 1/1 in 32.020 seconds (32.265 seconds for
+the proof command, 67.125 seconds build, 113.250 seconds guarded), using binary
+`14bbcdff8c053cf0a35e2f12eca9c794dcfcada9ab68608f91b073624092dfb0`.
+It finishes with 320 exact and 159 sibling-satisfied **per-node obligations**,
+and zero unsettled obligations; these counts are distinct from provider delivery
+identities. The provider records 308 acceptances across 259 identities and 49
+repeated requests before quietness, with zero fixture errors. API P95 is 97 ms,
+maximum 149 ms; outage-to-fast acceptance is 3,413 ms and backlog drain is
+2,376 ms. History remains at eight samples per monitor and provider concurrency
+peaks at 13. Source, fixtures and binary remain unchanged. Scratch peaks at
+437,701,764 bytes and returns to zero; the idle repository is 1,235,467,743 bytes,
+with no module growth.
+
+Review [4366366054](https://github.com/Narehood/Uptime-Canary/pull/7#discussion_r4366366054)
+is addressed by documenting the existing 240-second aggregate acceptance gate;
+no phase or outer-runner deadline increases. The optional cache-eviction
+optimization remains deferred: bounded clear-all eviction is unchanged, with no
+demonstrated production regression or large-working-set throughput claim.
+The complete 21-process suite was not rerun locally for `4cbed02`; fresh
+exact-head hosted platform gates remain required before merge. This is not a
+tagged release, sustained capacity result or complete near-parity sign-off.
