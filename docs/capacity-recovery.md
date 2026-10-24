@@ -332,3 +332,52 @@ latter profile still attributes 30.34% cumulative CPU to source projection and
 18.49% to uncertainty resolution; these nested costs are not additive. The
 unchanged process workload remains the acceptance gate. No tagged release or
 complete near-parity sign-off follows from the diagnostic.
+
+
+## Integrated reviewed-source Windows acceptance
+
+The bounded channel-target cache at `1510938` passes its 59 focused target,
+suppression and integration events, vet and proof typecheck. Its unchanged
+capacity process case passes in 34.016 seconds, before the later parent review
+follow-ups. That result has source fingerprint
+`59d94f2d8d6dc6e30812600e24869c9b7c71dc07eb6f919113e277c6018ec157`.
+The earlier `fc7090d` recovery failure above remains a failure.
+
+Merge `b0d181c39bf0be2388af9c75e8cda51f1d50ebde` includes the parent PR #6
+frontier/privacy follow-ups and the bounded target cache. On Windows amd64,
+source fingerprint
+`69b2a3b5d3ec86edc3544999245a449328d7ece9eebfe76a513178ca7c198e02`
+passes the complete changed canary package: **971 passing test events**, zero
+failures, with the two expected question-mark filename skips. Vet and proof
+typecheck pass. Compilation and test execution are separate so their temporary
+storage does not overlap; the guard completes in 308.312 seconds, with sampled
+scratch peak 522,863,628 bytes below 512 MiB, cleaned to zero, unchanged source
+and no module growth. Other Go packages and frontend/Python checks retain the
+separate exact-source records in PR #6; no new all-package total is inferred.
+
+The same integrated source passes the unchanged production-binary capacity
+proof: **1/1**, zero failures, cancellations or skips, in 35.531 seconds.
+Build time is 68.719 seconds and total guard time is 118.719 seconds. Source,
+fixtures and binary remain unchanged; scratch peaks at 508,546,430 bytes and
+returns to zero, with no module growth. The idle repository is 1,234,921,511
+bytes, below 1.25 GiB. Binary SHA-256:
+`e1edccec7f7492957dc1f7c69e26229dc3c7a78667bec06afeaf6a42b33ff0b4`.
+
+All original phases clear: both nodes' observations, destination isolation,
+API reads, abrupt restart, retained retry attempts, backlog drain, local raw
+history limits, recovery delivery, stable source/destination keys and quietness
+after exact receipt exchange. The 24 API reads record P95 73 ms and maximum
+90 ms. Outage-to-fast acceptance is 3,468 ms; backlog drain is 2,232 ms. Raw
+history stays at the configured eight samples per monitor. The two provider
+pools together peak at 12 concurrent requests. There are 330 acceptances across
+263 identities and 67 repeated requests before converged quietness, with zero
+fixture errors. These are measured fixed-workload results, not globally
+exactly-once delivery, an SLA, maximum capacity or sustained multi-day evidence.
+
+The complete 21-case process suite was not rerun locally on this combined
+source; it is a required hosted gate. Linux/Alpine/race/native arm64 and review
+acceptance for each final Git head are tracked in
+[PR #7](https://github.com/Narehood/Uptime-Canary/pull/7). Markdown-only evidence
+updates leave the v3 source fingerprint unchanged, while the new Git identity
+still requires its own hosted artifacts. No tagged release or full near-parity
+sign-off is claimed.
