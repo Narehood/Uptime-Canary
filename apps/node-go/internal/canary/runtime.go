@@ -36,6 +36,8 @@ type Node struct {
 	heads                                          map[string][]Version
 	groups                                         map[string][]GroupVersion
 	resources                                      map[string][]ResourceVersion
+	channelTargets                                 map[string]channelTargetCache
+	channelTargetBytes                             int
 	revisionEdges                                  map[string]RevisionEdge
 	revisionClaims                                 map[string]RevisionClaim
 	graph                                          *revisionGraph
