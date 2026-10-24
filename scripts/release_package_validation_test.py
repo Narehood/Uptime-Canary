@@ -16,6 +16,21 @@ INFO = ("fixture: go1.27.3\n\tpath\tuptime-canary/apps/node-go/cmd/canary\n\tmod
 
 
 class ReleaseValidationTests(unittest.TestCase):
+    def test_declared_release_label_and_runtime_identity_must_match_the_archive(self):
+        # Original new-fixture assumption: require -ldflags in build metadata,
+        # then reject a different release label through verify_build_info.
+        # A real d3de153 build exposed that Go 1.27.3 intentionally omits
+        # -ldflags under -trimpath (cmd/go/internal/load/pkg.go:2470-2480).
+        # Source/target checks still apply; the native JSON check below must
+        # verify the actual label, rather than trusting synthetic flag text.
+        validation.verify_build_info(INFO, "windows-amd64", COMMIT, "go1.27.3")
+        identity = {"name": "Uptime-Canary", "version": "0.1.0-rc.1", "sourceCommit": COMMIT, "modified": False,
+                    "goVersion": "go1.27.3", "os": "windows", "arch": "amd64", "peerProtocol": 15}
+        self.assertEqual(validation.verify_runtime_identity(validation.json.dumps(identity), "windows-amd64", "0.1.0-rc.1", COMMIT, "go1.27.3", 15), identity)
+        for key, invalid in (("version", "0.1.0-rc.2"), ("sourceCommit", "b" * 40), ("modified", None), ("modified", 0),
+                             ("modified", True), ("os", "linux"), ("arch", "arm64"), ("peerProtocol", 14), ("goVersion", "go1.26.0")):
+            with self.subTest(key=key, invalid=invalid), self.assertRaises(ValueError):
+                validation.verify_runtime_identity(validation.json.dumps({**identity, key: invalid}), "windows-amd64", "0.1.0-rc.1", COMMIT, "go1.27.3", 15)
     def test_native_execution_cannot_be_claimed_by_a_cross_build_or_unknown_machine(self):
         self.assertEqual(validation.native_target("Linux", "aarch64"), "linux-arm64")
         self.assertEqual(validation.native_target("Windows", "AMD64"), "windows-amd64")
