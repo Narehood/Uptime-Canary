@@ -54,8 +54,8 @@ export function NodesView() {
       </div>
       <Card title="Accounts across nodes">
         <p className="prose">
-          Each node keeps its own accounts, and accounts aren’t replicated. Switching endpoints needs a token for an account on that node.
-          To use one login everywhere, create the same account, with the same token, on each node.
+          Each node keeps its own accounts, and accounts aren’t replicated. Switching endpoints needs an account on that node: sign in there with its password or account token.
+          To reuse one account token everywhere, create the same account, with the same token, on each node. Passwords and sessions stay local to each node.
         </p>
       </Card>
     </div>

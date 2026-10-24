@@ -33,12 +33,13 @@ const (
 	MaxResponseHeaderBytes = 32 << 10
 	MaxResponseBytes       = 64 << 10
 	MaxResponseHeaders     = 64
-	MaxConfigBytes         = 16 << 10
-	MaxRequestBytes        = 64 << 10
-	MaxURLBytes            = 2048
-	MaxTitleRunes          = 250
-	MaxTextBytes           = 16 << 10
-	MaxMetadataBytes       = 256
+	// The bounded decoded fields can expand sixfold in Go's JSON encoding.
+	MaxConfigBytes   = 32 << 10
+	MaxRequestBytes  = 64 << 10
+	MaxURLBytes      = 2048
+	MaxTitleRunes    = 250
+	MaxTextBytes     = 16 << 10
+	MaxMetadataBytes = 256
 )
 
 // Config contains secrets. Root must store it privately and redact before display.

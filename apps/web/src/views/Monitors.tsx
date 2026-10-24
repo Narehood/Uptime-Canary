@@ -35,7 +35,7 @@ export function MonitorsView() {
     <div className="view">
       <PageHead
         title="Monitors"
-        sub={`${plural(assessed.length, 'monitor')} · 24 check types · placement per monitor`}
+        sub={`${plural(assessed.length, 'monitor')} · ${CHECK_TYPES.length} check types · placement per monitor`}
         actions={<>
           {!tags.unsupported ? <a className="btn" href={href('tags')}><Icon name="config" />Tags</a> : null}
           {editable ? <a className="btn primary" href={href('monitors', 'new')}><Icon name="plus" />New monitor</a> : <ReadOnly>Viewers can’t edit monitors</ReadOnly>}

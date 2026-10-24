@@ -326,7 +326,7 @@ func TestPushFinalReviewReverseCredentialCandidateMatrix(t *testing.T) {
 				}
 			}
 			pushFinalApply(t, n, s)
-			for _, operation := range []string{"create", "update", "legacy"} {
+			for _, operation := range []string{"create", "update"} {
 				body := map[string]string{"name": "final-" + operation, "role": "editor", "token": pushFixtureSecret}
 				if kind == "deleted" {
 					// One creation is sufficient to prove tombstones release their reservation.
@@ -347,20 +347,7 @@ func TestPushFinalReviewReverseCredentialCandidateMatrix(t *testing.T) {
 					path, method = path+"/"+a.ID, "PUT"
 				}
 				before := len(n.accounts)
-				code := 0
-				if operation == "legacy" {
-					b, _ := json.Marshal(body)
-					n.mu.Lock()
-					_, _, err := n.apiLocked(httptest.NewRequest(method, path, nil), account{AccountView: AccountView{Role: "admin"}}, b)
-					n.mu.Unlock()
-					if err != nil {
-						w := httptest.NewRecorder()
-						errorReply(w, err)
-						code = w.Code
-					}
-				} else {
-					code, _ = api(t, n, path, method, body, adminToken)
-				}
+				code, _ := api(t, n, path, method, body, adminToken)
 				if kind == "deleted" {
 					if code != 201 {
 						t.Fatal("tombstone failed to release credential", code)

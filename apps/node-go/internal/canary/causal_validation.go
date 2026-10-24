@@ -109,9 +109,8 @@ func validRevisionKind(kind string) bool {
 
 func (n *Node) validateCausalFacts(s Snapshot) error {
 	bad := func() error { return fail(400, "Invalid causal evidence") }
-	if len(s.RevisionEdges) > pageRecords || len(s.RevisionClaims) > pageRecords || len(s.IncidentFacts) > pageRecords || len(s.EvidenceLinks) > pageRecords {
-		return bad()
-	}
+	// Record integrity also applies to atomic local operations such as restore
+	// activation. Only wire admission imposes the per-page cardinality limit.
 	for _, v := range s.RevisionEdges {
 		if !validRevisionKind(v.Kind) || identifier(v.EntityID, "entityId") != nil || identifier(v.Revision, "revision") != nil || !validIDs(v.Parents, maxClusterMembers) || !slices.Equal(v.Parents, unique(v.Parents)) || slices.Contains(v.Parents, v.Revision) || !validCommitment(v.PayloadHash) || v.ID != edgeID(v) || v.LegacyRoot != "" && !validCommitment(v.LegacyRoot) {
 			return bad()

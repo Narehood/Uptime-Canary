@@ -847,6 +847,7 @@ func (n *Node) evaluateMonitor(id string) {
 			}
 			active.MaintenanceComplete = n.maintenanceCovers(*m, *active, *active.ResolvedAt)
 			n.saveEpisode(*active)
+			n.completeDependencySuppressions(*m, *active)
 		}
 	}
 	if slices.Contains(m.NodeIDs, n.ID) && len(n.notificationTargets(*m)) != 0 {

@@ -1,6 +1,6 @@
 # Status badges
 
-Implemented in **working protocol 11** (development, not released). Every node serves a badge for each published status page at `/public/badge/<slug>.svg`, without an account, cookie or token. The route contract (selection, headers, 404 rules) is [docs/badges.md](../docs/badges.md); this file records the visual contract and the dashboard's share links. Preview, drawn from the renderer's own output: [`badges.svg`](badges.svg).
+Implemented in **protocol 11** (development, not released); protocol 15 adds an opt-in **24h observed** badge (below). Every node serves a badge for each published status page at `/public/badge/<slug>.svg`, without an account, cookie or token. The route contract (selection, headers, 404 rules) is [docs/badges.md](../docs/badges.md); this file records the visual contract and the dashboard's share links. Preview, drawn from the renderer's own output: [`badges.svg`](badges.svg).
 
 ![Six status badges at actual size: up, down, pending and unknown, then down with a maintenance segment and up with a maintenance segment.](badges.svg)
 
@@ -8,7 +8,7 @@ Implemented in **working protocol 11** (development, not released). Every node s
 - A badge describes **one published status-page selection**: the whole page (`/public/badge/<slug>.svg`) or one service picked by its **public section ID and public name** (`?group=<section ID>&monitor=<public name>`, exactly those two parameters). It reads the same public projection as the page, so anything a badge says is already public. Private monitor IDs, names and targets are never accepted or shown.
 - States are exactly `up`, `down`, `pending`, `unknown`. Stale, missing, paused, conflicting or unpublished data is `unknown` (or the page's "not found"), never `up`.
 - Maintenance is an **extra segment** beside the measured state. It never replaces or recolors it: a failure during planned work reads "down · maintenance".
-- No percentages. Observed-time availability exists only inside the dashboard, from one node, and is not published.
+- The status badge shows no percentages. A separate **24h observed** badge (`&metric=uptime`, protocol 15) exists only for a service whose page publishes its 24 h history: the answering node's availability of known time and its coverage of the 24 hours, both truncated to two decimals so a failure never reads 100.00%. No known time reads "unknown" beside its 0.00% coverage; a node that can't answer draws "unavailable" and no number. There is no whole-page figure, nothing is merged across nodes, and it isn't an SLA.
 - Two services with the same public name in the same section are ambiguous, so neither gets a badge (404). Drafts and conflicting pages have no badges.
 
 ## Visual rules (renderer)
@@ -17,6 +17,7 @@ Implemented in **working protocol 11** (development, not released). Every node s
 - Contrast (WCAG): white on `#0b7a0b` 5.5:1, on `#b02f2f` 6.4:1, on `#5c5b57` 6.8:1; ink on `#fab219` 10:1; the label text 15.9:1.
 - Only the outer corners are rounded (4 px), drawn as paths, so adjacent segments meet without notches and the state segment stays square where maintenance follows. Every word has a fixed `textLength`, so the layout can't overflow whichever fallback font renders it.
 - The root `<svg>` has `role="img"` and `<title>` "status: down, maintenance"; no scripts, links, external references or `url(`. Every byte comes from fixed tokens; any other state renders `unknown`.
+- The observed badge keeps the mark with a 97 px "24h observed" label. Its first segment is "99.95% up" in white on `#0b7a0b` only when no down time was observed, and on `#b02f2f` otherwise; "unknown" and "unavailable" use `#5c5b57`. Coverage follows on `#42413d` (white text 10.2:1). Its `<title>` reads like "24h observed: 99.95% up, 87.50% coverage". It uses the same outer-corner paths, `textLength` rule and fixed tokens; only digits are added.
 
 ## Visual review (2026-10-22)
 The first renderer (SHA-256 `0ccd4d63…`, inside the protocol-11 development binary `e6666539…`) matched the palette, glyphs and words, but its segment rectangles rounded all four corners, leaving visible notches at each joint, and its fixed widths left 12–18 px of trailing space after the word. The revised renderer `apps/node-go/internal/canary/badges_svg.go` (freeze SHA-256 `eb2c830a726241aa200e43409d07ee3c4024240a87e21df78c30f95d73fadf53`, same signature) fixes both. It was reviewed at actual 20 px size on white, `#0d1117` and `#f6f8fa` backgrounds and at 4× zoom. A scratch copy (package clause changed only) passes the conditions of the node's renderer test for all four states and an untrusted state, each with and without maintenance (10/10), and is `gofmt`-clean. It is included in the protocol-12 development binary `78a390ec…`, where the backend owner's badge, status-page and public-route tests pass and the dashboard's badge proof passes 23/23 with it.

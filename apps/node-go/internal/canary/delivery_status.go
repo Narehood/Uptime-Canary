@@ -50,6 +50,11 @@ func (n *Node) attemptView(a attempt) DeliveryAttemptView {
 			if v.State != "accepted" && i.MaintenanceComplete && !hasReceipt(receiptsForTarget(n.forEpisode(i), a.DestinationID), "down") {
 				v.State, v.NextAttemptAt, v.Held, v.ErrorCode = "cancelled", 0, false, "completed_during_maintenance"
 			}
+			if v.State != "accepted" && !hasReceipt(receiptsForTarget(n.forEpisode(i), a.DestinationID), "down") && n.targetSuppressionComplete(i, a.DestinationID) {
+				v.State, v.NextAttemptAt, v.Held, v.ErrorCode = "cancelled", 0, false, completedDependency
+			} else if completedDependencyAttempt(a) && v.State == "cancelled" && i.RetiredBy == "" && !i.MaintenanceComplete {
+				v.State, v.ErrorCode = "queued", ""
+			}
 			break
 		}
 	}

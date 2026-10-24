@@ -110,7 +110,12 @@ func sourceProjection(sources, pending map[string]Incident, incoming []Incident,
 			if old.MonitorID != h.MonitorID || old.Revision != h.Revision {
 				return fail(400, "Immutable incident identity collision")
 			}
+			// Source commitments keep their original identity even when a new
+			// alias sorts before it. Canonical IDs belong only to projections;
+			// reusing the old root under a canonical ID corrupts its fact scope.
+			originalID := h.ID
 			h = combine(old, h)
+			h.ID = originalID
 		}
 		full[h.ID] = h
 		return nil

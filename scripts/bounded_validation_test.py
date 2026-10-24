@@ -1,8 +1,12 @@
+import contextlib
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -114,6 +118,92 @@ class StorageGuards(unittest.TestCase):
             if child.poll() is None:
                 child.kill()
                 child.wait()
+
+    def test_stop_reaps_descendants_after_the_command_parent_exits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder) / 'late-child.txt'
+            child_code = ('import time; from pathlib import Path; time.sleep(1); '
+                          'Path(' + repr(str(marker)) + ').write_text("fixture only")')
+            parent_code = ('import subprocess,sys; subprocess.Popen('
+                           '[sys.executable,"-B","-c",' + repr(child_code) + '],'
+                           'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)')
+            options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
+            launch = getattr(guard, 'start_command', None)
+            parent = (launch([sys.executable, '-B', '-c', parent_code]) if launch else
+                      subprocess.Popen([sys.executable, '-B', '-c', parent_code], **options))
+            try:
+                self.assertEqual(parent.wait(timeout=5), 0)
+                guard.stop_tree(parent)
+                time.sleep(1.5)
+                self.assertFalse(marker.exists(), 'a descendant survived command cleanup')
+            finally:
+                guard.stop_tree(parent)
+
+    def test_command_preserves_piped_input_output_and_exit_status(self):
+        command = [sys.executable, '-B', '-c',
+                   'import sys; print(sys.stdin.read()); print("diagnostic", file=sys.stderr); sys.exit(7)']
+        process = guard.start_command(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, text=True)
+        try:
+            output, errors = process.communicate('private fixture', timeout=5)
+            self.assertEqual(process.returncode, 7)
+            self.assertEqual(output.strip(), 'private fixture')
+            self.assertEqual(errors.strip(), 'diagnostic')
+        finally:
+            guard.stop_tree(process)
+
+    def test_command_accepts_an_executable_without_arguments(self):
+        process = guard.start_command([sys.executable], stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            output, errors = process.communicate('print("single executable")\n', timeout=5)
+            self.assertEqual(process.returncode, 0, errors)
+            self.assertEqual(output.strip(), 'single executable')
+        finally:
+            guard.stop_tree(process)
+
+    def test_stopping_a_live_command_leaves_an_unrelated_sibling_running(self):
+        command = [sys.executable, '-B', '-c', 'import time; time.sleep(60)']
+        sibling = subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        process = guard.start_command(command)
+        try:
+            guard.stop_tree(process)
+            self.assertIsNotNone(process.poll())
+            self.assertIsNone(sibling.poll(), 'cleanup killed a command it did not own')
+        finally:
+            guard.stop_tree(process)
+            sibling.kill()
+            sibling.wait()
+
+    def test_log_capture_failure_cannot_be_reported_as_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            generated = root / '.canary'
+            generated.mkdir()
+            work, cache = generated / 'work/current', generated / 'cache/go-build'
+            log_path = work / 'latest.log'
+            original_open = Path.open
+
+            def open_fixture(path, *args, **kwargs):
+                if path == log_path:
+                    raise OSError('fixture capture failure')
+                return original_open(path, *args, **kwargs)
+
+            command = ['bounded_validation.py', '--timeout', '10', '--', sys.executable, '-B', '-c', 'pass']
+            paths = str(cache) + '\n' + str(root / 'modules') + '\n'
+            with contextlib.ExitStack() as patches:
+                for name, value in {'ROOT': root, 'GENERATED': generated, 'WORK': work,
+                                    'CACHE': cache, 'LOCK': generated / 'bounded-validation.lock'}.items():
+                    patches.enter_context(patch.object(guard, name, value))
+                patches.enter_context(patch.object(sys, 'argv', command))
+                patches.enter_context(patch.object(guard.subprocess, 'check_output', return_value=paths))
+                patches.enter_context(patch.object(Path, 'open', open_fixture))
+                patches.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                code = guard.main()
+            result = json.loads((work / 'latest.json').read_text())
+            self.assertNotEqual(code, 0, 'uncaptured output was reported as successful validation')
+            self.assertIn('capture', result.get('error', '').lower())
+            self.assertFalse((generated / 'bounded-validation.lock').exists())
 
 
 if __name__ == '__main__':

@@ -513,6 +513,9 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
       const base = urlProblem(draft.mailgunBase, draft.mailgunInsecure, 'API base URL', false);
       if (base) errors.baseUrl = base;
       config.mailgun = { ...(same?.mailgun ?? {}), apiKey: apiKey(draft.mailgunKey), domain, region: draft.mailgunRegion };
+      // Nodes accept an absent region as US, but the raw value is part of each recipient's destination identity:
+      // writing "US" over an absent region would make every recipient a new destination.
+      if (draft.mailgunRegion === 'US' && !same?.mailgun?.region) delete config.mailgun.region;
       if (draft.mailgunBase.trim()) config.mailgun.baseURL = draft.mailgunBase.trim(); else delete config.mailgun.baseURL;
       if (draft.mailgunInsecure) config.mailgun.allowInsecureHTTP = true; else delete config.mailgun.allowInsecureHTTP;
       break;
@@ -552,9 +555,25 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
   return { input, errors };
 }
 
+/**
+ * The form model, for scripts/frontend-review-pure.mjs. The functions keep their own names unexported because the
+ * contract harness appends `export { channelDraft, buildChannel }` to its review copy of this file.
+ */
+export const channelFormModel = { channelDraft, buildChannel };
+
 const PLACEHOLDERS = ['{{event_kind}}', '{{monitor_name}}', '{{monitor_id}}', '{{incident_id}}', '{{observations_summary}}', '{{idempotency_key}}'];
 
+/**
+ * The edit form mounts only once the stored channel is known, so its draft, disclosures and base revision come from
+ * that channel. A link opened before the channel list loaded shows a loading note and then mounts fresh.
+ */
 export function ChannelFormView({ id }: { id?: string }) {
+  const { channels } = useCanary();
+  const existing = id ? channels.map.get(id) : undefined;
+  return <ChannelFormBody key={existing ? `edit-${existing.channel.id}` : id ? 'missing' : 'new'} id={id} />;
+}
+
+function ChannelFormBody({ id }: { id?: string }) {
   const { channels, endpoint, editable, api, overview, stillCurrent } = useCanary();
   const existing = id ? channels.map.get(id) : undefined;
   const [draft, setDraft] = useState<ChannelDraft>(() => channelDraft(existing?.channel));
@@ -571,17 +590,12 @@ export function ChannelFormView({ id }: { id?: string }) {
   // The stored version as a draft, to tell a new destination from a credential rotation.
   const previous = useMemo(() => base ? channelDraft(base) : undefined, [base]);
   useEffect(() => { if (attempts) summaryRef.current?.focus(); }, [attempts, failure]);
-  // The channel list loads separately; adopt the stored channel once it arrives for a direct link.
-  useEffect(() => {
-    if (id && !base && existing) { setDraft(channelDraft(existing.channel)); setBase(existing.channel); }
-  }, [id, base, existing]);
 
   if (!editable) return <div className="view"><PageHead title={id ? 'Edit channel' : 'New channel'} /><Card><EmptyState title="Viewers can’t change channels">Sign in with an editor or admin account.</EmptyState></Card></div>;
   if (channels.unsupported) return <div className="view"><PageHead title="New channel" /><Card><EmptyState title={`${endpoint} doesn’t offer reusable channels`}>It probably runs an older Uptime-Canary version.</EmptyState></Card></div>;
   if (id && !existing) {
     return <div className="view"><PageHead crumbs={<a href={href('notifications')}>Notifications</a>} title="Edit channel" /><Card>{channels.list ? <EmptyState title="Channel not found">{endpoint} doesn’t know this channel. It may have been deleted.</EmptyState> : <p className="muted">Loading the channel from {endpoint}…</p>}</Card></div>;
   }
-  if (id && !base) return <div className="view"><PageHead title="Edit channel" /><Card><p className="muted">Loading…</p></Card></div>;
 
   const { input, errors } = buildChannel(draft, base);
   const visible = showErrors ? errors : {};
@@ -593,7 +607,8 @@ export function ChannelFormView({ id }: { id?: string }) {
   const changedElsewhere = Boolean(current && base && current.revision !== base.revision);
   const conflicted = Boolean(existing?.configConflict);
   const users = current ? overview.monitors.filter(view => view.monitor.notificationIds?.includes(current.id)).length : 0;
-  const stored = (key: keyof ChannelDraft): boolean => Boolean(current && base?.config.kind === draft.kind && initial[key]);
+  // Secrets stored in the revision being edited (after "Load latest" too), for the "Saving removes" warnings.
+  const stored = (key: keyof ChannelDraft): boolean => Boolean(current && base?.config.kind === draft.kind && previous?.[key]);
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
