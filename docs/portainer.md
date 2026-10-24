@@ -66,7 +66,7 @@ Enter these variables in Portainer's stack environment section:
 | `CANARY_NODE_ID` | Unique persistent identity, for example `canary-home-1`. Never reuse for another live node. |
 | `CANARY_ADMIN_TOKEN` | A fresh random token, at least 32 characters. Used only for management. |
 | `CANARY_CLUSTER_TOKEN` | A different fresh random token, at least 32 characters. Share only among members of this cluster. |
-| `CANARY_CORS_ORIGINS` | Exact dashboard browser origin, for example `https://canary.example.com` or `http://192.168.1.20:8080`. |
+| `CANARY_CORS_ORIGINS` | Exact dashboard browser origin, for example `https://canary.example.com` or `http://192.168.1.20:18347`. |
 
 Generate tokens in a password manager. Keep them in Portainer's environment
 configuration, outside the Git repository. No `.env` file is required. These
@@ -81,7 +81,7 @@ Optional variables:
 | `CANARY_NODE_NAME` | `Uptime Canary` |
 | `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | The locally built image tags above. |
 | `CANARY_BIND_ADDRESS`, `CANARY_WEB_BIND_ADDRESS` | `127.0.0.1`. Set to the host's LAN IP to access from another computer, or keep loopback behind a local reverse proxy. |
-| `CANARY_PORT`, `CANARY_WEB_PORT` | Published host ports `3100` and `8080`. Container ports remain fixed. |
+| `CANARY_PORT`, `CANARY_WEB_PORT` | Published host ports `3100` and `18347`. The dashboard's container port remains `8080`. |
 | `CANARY_PEERS` | `[]`, or a JSON array such as `[{"id":"canary-home-2","url":"http://192.168.1.21:3100"}]`. URLs must be reachable from the node container. |
 | History and timing settings | Defaults match `compose.yaml`; edit the explicit variables in the template as needed. |
 
@@ -96,12 +96,20 @@ without encryption; use it only on a trusted network.
 The templates add `NET_RAW` only to the node for ICMP. Both images run as their
 existing nonroot users. Container logs rotate at 10 MiB × 3 per service.
 
+The dashboard's default host port is `18347`; `CANARY_WEB_PORT` can override it.
+Existing explicit port settings are preserved. When changing ports, update
+`CANARY_CORS_ORIGINS` on each node to the exact origin you open in your browser,
+then redeploy/restart that node. Existing stack variables and `.env` files are
+not rewritten automatically. Keep `CANARY_WEB_PORT=8080` if you intentionally
+want the earlier host mapping. The listener and health check inside the
+dashboard container still use port `8080`.
+
 ## Deploy separate dashboard and node stacks
 
 1. Create the dashboard stack using Compose path
    `deploy/portainer-dashboard.yml`, for example with stack name
    `canary-dashboard`. Set its image and bind address as needed. It serves
-   the UI on port 8080 by default; it has no node API.
+   the UI on host port 18347 by default; it has no node API.
 2. On each monitoring host, create a node stack using Compose path
    `deploy/portainer-node.yml`, for example `canary-home-1` and
    `canary-office-1`. Set the node's unique ID, management token, cluster
