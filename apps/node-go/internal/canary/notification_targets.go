@@ -216,14 +216,15 @@ func completedDependencyAttempt(a attempt) bool {
 	return a.State == "cancelled" && a.ErrorCode == completedDependency
 }
 
+// Peer up-observation frontiers can grow without extending an outage. Keep
+// resolution changes strict: historical dependency timing is otherwise unknown.
 func dependencyBoundary(i Incident) string {
 	return contentID(struct {
 		Monitor, Revision string
 		Opened            int64
 		Resolved          *int64
-		Closed            map[string]int64
 		Runs              map[string][]int64
-	}{i.MonitorID, i.Revision, i.OpenedAt, i.ResolvedAt, i.Closed, i.Runs})
+	}{i.MonitorID, i.Revision, i.OpenedAt, i.ResolvedAt, i.Runs})
 }
 
 // Legacy incident-wide metadata cannot establish which named route was held.
