@@ -190,6 +190,14 @@ func (n *Node) deliveryHold(m Monitor, i Incident, t notificationTarget, held bo
 		a = attempt{ID: attemptIdentity(m.ID, i.ID, "down", 0, t.ID), MonitorID: m.ID, IncidentID: i.ID, Kind: "down", DestinationID: t.ID, ChannelID: t.ChannelID, TargetRevision: t.Revision, Provider: t.Provider, State: "queued"}
 	}
 	previous := a
+	if completedDependencyAttempt(a) {
+		if a.SuppressionBoundary == dependencyBoundary(i) && i.Closed != nil {
+			return a.ReleasedAt
+		}
+		// New evidence can extend or reopen a previously completed lifetime.
+		// Its old local cancellation cannot discard that newly owed work.
+		a.State, a.ErrorCode, a.SuppressionBoundary = "queued", "", ""
+	}
 	if a.Held && !held {
 		a.ReleasedAt = n.now()
 	}
@@ -200,4 +208,97 @@ func (n *Node) deliveryHold(m Monitor, i Incident, t notificationTarget, held bo
 		}
 	}
 	return a.ReleasedAt
+}
+
+const completedDependency = "completed_during_dependency"
+
+func completedDependencyAttempt(a attempt) bool {
+	return a.State == "cancelled" && a.ErrorCode == completedDependency
+}
+
+// Peer up-observation frontiers can grow without extending an outage. Keep
+// resolution changes strict: historical dependency timing is otherwise unknown.
+func dependencyBoundary(i Incident) string {
+	return contentID(struct {
+		Monitor, Revision string
+		Opened            int64
+		Resolved          *int64
+		Runs              map[string][]int64
+	}{i.MonitorID, i.Revision, i.OpenedAt, i.ResolvedAt, i.Runs})
+}
+
+// Legacy incident-wide metadata cannot establish which named route was held.
+// Missing local, destination-specific completion evidence therefore fails open.
+func (n *Node) targetSuppressionComplete(i Incident, destination string) bool {
+	if destination == "" {
+		return i.SuppressedComplete
+	}
+	if i.Closed == nil {
+		return false
+	}
+	boundary := dependencyBoundary(i)
+	for _, a := range n.attempts {
+		if a.MonitorID == i.MonitorID && a.DestinationID == destination && a.Kind == "down" &&
+			slices.Contains(episodeIDs(i), a.IncidentID) && completedDependencyAttempt(a) && a.SuppressionBoundary == boundary {
+			return true
+		}
+	}
+	return false
+}
+
+// Called only at an observed closure, never to infer an old episode's coverage
+// from a dependency that became healthy/delivered at a later time.
+func (n *Node) completeDependencySuppressions(m Monitor, i Incident) {
+	if i.Closed == nil || i.ResolvedAt == nil {
+		return
+	}
+	// An interrupted local source can close a larger reconciled episode. Bind
+	// completion to that resulting lifetime, including every observer's runs.
+	var projection *Incident
+	for _, candidate := range n.episodes {
+		if candidate.MonitorID == i.MonitorID && candidate.Revision == i.Revision && slices.Contains(episodeIDs(candidate), i.ID) {
+			if projection != nil || candidate.Closed == nil || candidate.ResolvedAt == nil {
+				return // Ambiguous or still-open history cannot complete delivery.
+			}
+			copy := candidate
+			projection = &copy
+		}
+	}
+	if projection == nil {
+		return
+	}
+	i = *projection
+	for _, target := range n.notificationTargets(m) {
+		if target.ChannelID == "" || hasReceipt(receiptsForTarget(n.forEpisode(i), target.ID), "down") {
+			continue
+		}
+		group, reason, grace := n.suppressionForTarget(m, target)
+		covered := group != "" && reason != "Waiting for outage dependency grace period"
+		insideGrace := grace > 0 && *i.ResolvedAt < i.OpenedAt+grace
+		if !covered && !insideGrace {
+			continue
+		}
+		found := false
+		for id, a := range n.attempts {
+			if a.MonitorID != m.ID || a.DestinationID != target.ID || a.Kind != "down" || !slices.Contains(episodeIDs(i), a.IncidentID) {
+				continue
+			}
+			found = true
+			a.State, a.ErrorCode, a.Held, a.NextAt = "cancelled", completedDependency, false, 0
+			a.SuppressionBoundary = dependencyBoundary(i)
+			if !n.dbPut("attempts", id, a) {
+				return
+			}
+			n.attempts[id] = a
+		}
+		if !found {
+			a := attempt{ID: attemptIdentity(m.ID, i.ID, "down", 0, target.ID), MonitorID: m.ID, IncidentID: i.ID,
+				Kind: "down", DestinationID: target.ID, ChannelID: target.ChannelID, TargetRevision: target.Revision,
+				Provider: target.Provider, State: "cancelled", ErrorCode: completedDependency, SuppressionBoundary: dependencyBoundary(i)}
+			if !n.dbPut("attempts", a.ID, a) {
+				return
+			}
+			n.attempts[a.ID] = a
+		}
+	}
 }

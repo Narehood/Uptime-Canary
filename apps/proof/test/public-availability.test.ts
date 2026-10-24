@@ -70,12 +70,23 @@ test('public observed history requires opt-in, stays local and preserves coverag
     const metric = r.body.groups[0]?.monitors[0]?.availability;
     return r.body.state === 'down' && metric?.status === 'available' && (metric.summary?.downMs ?? 0) > 0;
   }, 45_000);
+  await c.wait('the restarting node has retained UP time and now observes DOWN', async () => {
+    const r = await publicView(b);
+    privacy(r.text);
+    const metric = r.body.groups[0]?.monitors[0]?.availability;
+    return r.body.state === 'down' && metric?.status === 'available' &&
+      (metric.summary?.upMs ?? 0) > 0 && (metric.summary?.downMs ?? 0) > 0;
+  }, 45_000);
   await c.stop(b);
   await c.start(b);
   await c.wait('persisted local history returns after process restart', async () => {
     const r = await publicView(b);
     privacy(r.text);
-    return r.status === 200 && r.body.groups[0]?.monitors[0]?.availability?.status === 'available';
+    const metric = r.body.groups[0]?.monitors[0]?.availability;
+    // The monitor remains DOWN. Positive UP time must come from its retained
+    // pre-restart history rather than newly observed samples after startup.
+    return r.status === 200 && r.body.state === 'down' && metric?.status === 'available' &&
+      (metric.summary?.upMs ?? 0) > 0 && (metric.summary?.downMs ?? 0) > 0;
   });
   selected.groups[0]!.monitors[0]!.showAvailability = false;
   saved = await c.api<StatusPage>(a, `/api/status-pages/${saved.body.id}`, { method: 'PUT', body: { ...selected, revision: saved.body.revision } });

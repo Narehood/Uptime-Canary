@@ -225,7 +225,7 @@ function buildMaintenance(d: MDraft): { input?: MaintenanceInput; errors: Partia
   if (d.strategy !== 'cron' && !/^([01]\d|2[0-3]):[0-5]\d$/u.test(d.startTime)) errors.startTime = 'Enter a start time like 02:00.';
   const duration = Number(d.duration) * UNIT_MIN[d.durationUnit];
   if (!Number.isInteger(duration) || duration < 1 || duration > 44_640) errors.duration = 'Use 1 minute to 31 days, in whole minutes.';
-  const schedule: MaintenanceSchedule = { strategy: d.strategy, timezone, startDate: d.startDate, endDate: d.strategy === 'once' ? d.endDate : d.endDate, durationMinutes: duration };
+  const schedule: MaintenanceSchedule = { strategy: d.strategy, timezone, startDate: d.startDate, endDate: d.endDate, durationMinutes: duration };
   if (d.strategy !== 'cron') schedule.startTime = d.startTime;
   if (d.strategy === 'interval') {
     const n = Number(d.intervalDays);

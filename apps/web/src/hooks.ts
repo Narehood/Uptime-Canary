@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { isAbort } from './api';
+import { session } from './session';
 
 /** Re-renders on an interval; used only for honest "n s ago" ages. */
 export function useNow(intervalMs = 1000): number {
@@ -22,7 +23,8 @@ export interface Resource<T> {
 
 /**
  * Loads data for a view, aborting on unmount or when `key` changes (for example after an endpoint switch).
- * Optional refreshes are sequential, never overlapping, and keep the previous data on failure.
+ * Optional refreshes are sequential, never overlapping, and keep the previous data on failure. While the overview poll
+ * reports the credential rejected (401), they wait instead of sending it again; `reload` still asks at once.
  */
 export function useResource<T>(key: string, load: (signal: AbortSignal) => Promise<T>, refreshMs?: number): Resource<T> {
   const [state, setState] = useState<{ key: string; data?: T; error?: unknown; loading: boolean; loadedAt?: number }>({ key, loading: true });
@@ -41,7 +43,11 @@ export function useResource<T>(key: string, load: (signal: AbortSignal) => Promi
         if (controller.signal.aborted || isAbort(error)) return;
         setState(previous => ({ key, data: previous.key === key ? previous.data : undefined, error, loading: false, loadedAt: previous.key === key ? previous.loadedAt : undefined }));
       }
-      if (refreshMs && !controller.signal.aborted) timer = setTimeout(() => { void run(); }, refreshMs);
+      if (refreshMs && !controller.signal.aborted) timer = setTimeout(refresh, refreshMs);
+    };
+    const refresh = (): void => {
+      if (session.getSnapshot().connection?.link === 'rejected') timer = setTimeout(refresh, refreshMs);
+      else void run();
     };
     void run();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };

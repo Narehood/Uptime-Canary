@@ -26,7 +26,7 @@
 <line x1="44" y1="202" x2="288" y2="202" stroke="#3b3b37"/>
 <rect x="44" y="212" width="244" height="36" rx="9" fill="#292926"/>
 <polyline points="56,230 61,230 64,223 68,237 71,230 76,230" fill="none" stroke="#0ca30c" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-<text class="s" x="88" y="235.5" font-size="15" fill="#f0efec">Checks: 24 types + push</text>
+<text class="s" x="88" y="235.5" font-size="15" fill="#f0efec">Checks: 28 types</text>
 <rect x="44" y="256" width="244" height="36" rx="9" fill="#292926"/>
 <path d="M59 278C61 275 60 265 66 265C72 265 71 275 73 278Z" fill="none" stroke="#ffd23f" stroke-width="2" stroke-linejoin="round"/><circle cx="66" cy="281" r="1.8" fill="#ffd23f"/>
 <text class="s" x="88" y="279.5" font-size="15" fill="#f0efec">Alerts, maintenance, groups</text>
@@ -45,7 +45,7 @@
 <line x1="358" y1="202" x2="602" y2="202" stroke="#3b3b37"/>
 <rect x="358" y="212" width="244" height="36" rx="9" fill="#292926"/>
 <polyline points="370,230 375,230 378,223 382,237 385,230 390,230" fill="none" stroke="#0ca30c" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-<text class="s" x="402" y="235.5" font-size="15" fill="#f0efec">Checks: 24 types + push</text>
+<text class="s" x="402" y="235.5" font-size="15" fill="#f0efec">Checks: 28 types</text>
 <rect x="358" y="256" width="244" height="36" rx="9" fill="#292926"/>
 <path d="M373 278C375 275 374 265 380 265C386 265 385 275 387 278Z" fill="none" stroke="#ffd23f" stroke-width="2" stroke-linejoin="round"/><circle cx="380" cy="281" r="1.8" fill="#ffd23f"/>
 <text class="s" x="402" y="279.5" font-size="15" fill="#f0efec">Alerts, maintenance, groups</text>
@@ -64,7 +64,7 @@
 <line x1="672" y1="202" x2="916" y2="202" stroke="#3b3b37"/>
 <rect x="672" y="212" width="244" height="36" rx="9" fill="#292926"/>
 <polyline points="684,230 689,230 692,223 696,237 699,230 704,230" fill="none" stroke="#0ca30c" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-<text class="s" x="716" y="235.5" font-size="15" fill="#f0efec">Checks: 24 types + push</text>
+<text class="s" x="716" y="235.5" font-size="15" fill="#f0efec">Checks: 28 types</text>
 <rect x="672" y="256" width="244" height="36" rx="9" fill="#292926"/>
 <path d="M687 278C689 275 688 265 694 265C700 265 699 275 701 278Z" fill="none" stroke="#ffd23f" stroke-width="2" stroke-linejoin="round"/><circle cx="694" cy="281" r="1.8" fill="#ffd23f"/>
 <text class="s" x="716" y="279.5" font-size="15" fill="#f0efec">Alerts, maintenance, groups</text>

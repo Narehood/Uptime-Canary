@@ -15,18 +15,26 @@ should be fixed before shipping.**
 Keep the existing Vite server on port 5173. From the repository root:
 
 ```powershell
-node scripts/browser-auth-proof.mjs
-node scripts/browser-auth-proof.mjs --regressions
+python scripts/bounded_validation.py --timeout 900 -- node scripts/browser-auth-proof.mjs
+python scripts/bounded_validation.py --timeout 900 -- node scripts/browser-auth-proof.mjs --regressions
 ```
 
 The first command exercises normal flows. The second probes state retained across
-node switches and exits 1 when it reproduces findings. Both build a unique Go
-executable directly, without `scripts/go.mjs serve` or reading `.env`. Each run
-creates two fresh databases and generated credentials under a unique
-`.canary/browser-auth-proof/run-*/` directory, uses random loopback ports, and
-launches its own hidden headless Chrome with a separate profile and CDP port.
-The Chrome path defaults to the installed Windows Chrome; `CHROME_PATH` and
-`CANARY_GO` may override executable paths.
+node switches and exits 1 when it reproduces findings. Both build a private Go
+executable directly, without `scripts/go.mjs serve` or reading `.env`. Current
+runs place both fresh databases, generated credentials, binary, browser profile,
+web build and screenshots below `.canary/work/current/outputs/browser-auth-proof`.
+Only the overwritten compact `.canary/browser-auth-proof-current.json` survives
+guard cleanup. Changed source or failed output capture cannot count as a pass.
+The existing Vite server is a prerequisite, not an additional validation process
+started by this runner; the current standalone dashboard contract gate manages
+its own disposable build and server instead. `CHROME_PATH` can select Chrome;
+the guard uses the existing pinned Go toolchain and removes `CANARY_*` settings.
+
+This storage conversion does not rerun the original functional proof. The
+2026-10-22 results below originally used `.canary/browser-auth-proof/run-*/`.
+Those retained historical artifacts, including protected `run-ZgaV8S`, are
+unchanged. Their original failures and platform/source limitations remain.
 
 Both node fixtures allow exactly `http://localhost:5173` and
 `http://127.0.0.1:5173` through CORS. `BROWSER_AUTH_PROOF_ORIGIN` selects one of

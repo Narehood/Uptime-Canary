@@ -263,7 +263,7 @@ func (n *Node) maintenanceCovers(m Monitor, i Incident, end int64) bool {
 	plans := []*maintenanceEngine.Plan{}
 	cache := n.currentMaintenancePlans()
 	for _, heads := range n.resources {
-		if len(heads) != 1 || heads[0].Resource.Kind != resourceMaintenance || heads[0].Resource.Deleted || heads[0].Resource.UpdatedAt > i.OpenedAt {
+		if len(heads) != 1 || !n.resourceVersionReady(heads[0]) || heads[0].Resource.Kind != resourceMaintenance || heads[0].Resource.Deleted || heads[0].Resource.UpdatedAt > i.OpenedAt {
 			continue
 		}
 		in := maintenanceOf(heads[0].Resource)

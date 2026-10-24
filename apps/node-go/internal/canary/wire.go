@@ -59,7 +59,7 @@ func (n *Node) validateSnapshot(b []byte, expected string) (Snapshot, error) {
 	if len(s.Heartbeats) > pageRecords || n.validatePushEvents(s.Heartbeats) != nil {
 		return bad()
 	}
-	if n.validateCausalFacts(s) != nil {
+	if len(s.RevisionEdges) > pageRecords || len(s.RevisionClaims) > pageRecords || len(s.IncidentFacts) > pageRecords || len(s.EvidenceLinks) > pageRecords || n.validateCausalFacts(s) != nil {
 		return bad()
 	}
 	// Only omission denotes the self-contained prototype representation. Null

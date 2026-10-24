@@ -302,24 +302,25 @@ type Snapshot struct {
 	preparedMaintenance compiledMaintenance
 }
 type attempt struct {
-	ID             string `json:"id"`
-	MonitorID      string `json:"monitorId"`
-	IncidentID     string `json:"incidentId"`
-	Kind           string `json:"kind"`
-	Slot           int64  `json:"slot"`
-	Failures       int    `json:"failures"`
-	NextAt         int64  `json:"nextAt"`
-	DestinationID  string `json:"destinationId,omitempty"`
-	ChannelID      string `json:"channelId,omitempty"`
-	TargetRevision string `json:"targetRevision,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	State          string `json:"state,omitempty"`
-	LastAt         int64  `json:"lastAttemptAt,omitempty"`
-	HTTPStatus     int    `json:"httpStatus,omitempty"`
-	ErrorCode      string `json:"errorCode,omitempty"`
-	ProviderID     string `json:"providerId,omitempty"`
-	Held           bool   `json:"held,omitempty"`
-	ReleasedAt     int64  `json:"releasedAt,omitempty"`
+	ID                  string `json:"id"`
+	MonitorID           string `json:"monitorId"`
+	IncidentID          string `json:"incidentId"`
+	Kind                string `json:"kind"`
+	Slot                int64  `json:"slot"`
+	Failures            int    `json:"failures"`
+	NextAt              int64  `json:"nextAt"`
+	DestinationID       string `json:"destinationId,omitempty"`
+	ChannelID           string `json:"channelId,omitempty"`
+	TargetRevision      string `json:"targetRevision,omitempty"`
+	Provider            string `json:"provider,omitempty"`
+	State               string `json:"state,omitempty"`
+	LastAt              int64  `json:"lastAttemptAt,omitempty"`
+	HTTPStatus          int    `json:"httpStatus,omitempty"`
+	ErrorCode           string `json:"errorCode,omitempty"`
+	ProviderID          string `json:"providerId,omitempty"`
+	Held                bool   `json:"held,omitempty"`
+	ReleasedAt          int64  `json:"releasedAt,omitempty"`
+	SuppressionBoundary string `json:"suppressionBoundary,omitempty"`
 }
 type Peer struct {
 	ID   string `json:"id"`

@@ -1,6 +1,77 @@
 # Shipping progress
 
-## Current checkpoint: merged protocol 16; Steam protocol 17 in development
+## Full-codebase review after the protocol-17 merge, 2026-10-24
+
+Steam PR #5 merged at `64142f9baefb4774bbd43655396214edcdce1983`.
+Its tree matches final PR head `e3e7507`: container workflow `40056523887`
+passed node/web/proof/race, and native-package workflow `40056523885` passed
+Windows amd64, Linux amd64 and native Linux arm64. All 598 entries in each
+container source manifest matched that head's exact Git blobs; each extracted
+native executable passed 20/20 process proofs. These are development artifacts,
+not a tagged release or completion of the near-Uptime-Kuma goal.
+
+The subsequent `fix/full-codebase-review` branch addresses independently
+reviewed defects in destination-specific dependency completion, incomplete
+maintenance proof, restore activation above 512 live heads, canonical-alias
+source identity, email acknowledgement parsing, encoded notification limits,
+Globalping trust parsing, and dashboard editing/session handling. The review
+also removes a dormant duplicate account writer and strengthens process proofs
+that previously asserted less than their descriptions. Desired-behavior
+failures are committed before repairs; follow-up review caught and reproduced
+two projection/status issues in the new suppression implementation before
+acceptance. No failing notification or recovery expectation was relaxed.
+
+The review covers first-party core, monitor, worker, dashboard, shared-contract,
+proof and tooling paths. Core review read all 72 assigned production Go files;
+monitor review checked all active engines and custom evaluator/Goja patches.
+Pinned upstream runtime files received provenance verification and focused
+inspection, not a complete independent audit. Frontend/proof review combined
+full reads with targeted inspection; binary artwork and every historical test
+body were not exhaustively reviewed. This is a broad engineering review, not a
+proof that no defect remains.
+
+PR #6's original checkpoint `5029cd9` passes the complete Windows native run:
+3,888 Go test events and node-wide vet, with four expected platform skips. It
+also passes 56 pure checks, 40 Python regressions, the production dashboard's
+150/150 contract checks and all 20 process proofs. All seven hosted jobs pass
+on that exact head. Those results retain their original source scope.
+
+Subsequent review reproduces a peer frontier refinement reviving a completed
+child alert, in memory and after restart. The repair excludes closure vectors
+from the completion fingerprint while keeping resolution-time changes strict
+and fail-open. Privacy and descendant-exit controls are also strengthened.
+Follow-up code `695fbfa`, source fingerprint
+`ce88750b792f3635192d81ef53c570de227202fcdd8565ce0d88f70dd495db86`,
+passes all 940 events in the changed canary package, vet, workspace typechecks,
+56 pure groups and 41 Python regressions. The two expected package skips are
+Windows question-mark filename cases; other Go packages retain their earlier
+scope. Newer process and hosted acceptance is tracked in
+[PR #6](https://github.com/Narehood/Uptime-Canary/pull/6), separately from Steam.
+
+Storage fixes retain one owned cache, bound legacy browser-proof outputs, reap
+ordinary command descendants even after their parent exits, and fail validation
+when log capture fails. Windows containment uses an owned job; POSIX containment
+is the original process group, so deliberately detached sessions remain a
+documented limit. The legacy auth proof still needs an existing loopback Vite
+server; current acceptance uses the standalone guarded dashboard contract.
+Protected historical artifacts and user application data remain untouched.
+
+The capacity/recovery work continues in
+[PR #7](https://github.com/Narehood/Uptime-Canary/pull/7), stacked on the review
+repairs. Candidate `fc7090d` passes 953 changed-package events but fails its
+unchanged 45-second recovery-observation gate. The bounded channel-target
+cache at `1510938` passes 59 focused controls and the unchanged capacity process
+proof in 34.016 seconds, including restart, backlog drain, recovery and receipt-
+converged quietness. It records 316 acceptances across 272 identities, with 44
+repeated requests before convergence and no fixture errors. This is a fixed
+workload result, not globally exactly-once delivery or a capacity SLA. Its
+source scope, the original failure and later integration gates are recorded in
+[capacity recovery](capacity-recovery.md) and the PR. The earlier `c84bbde` /
+`f94e237` results (3,794 events and 21 proofs) remain historical only.
+Retained-history costs, remaining monitor/provider/status-page parity, coherent
+upgrade/recovery acceptance and versioned release publication remain required.
+
+## Historical checkpoint: merged protocol 16; Steam protocol 17 in development
 
 All four requested PRs (#1–#4) are merged. Main `187f3ae` passed all seven
 hosted jobs in workflows [40043011544](https://github.com/Narehood/Uptime-Canary/actions/runs/40043011544)

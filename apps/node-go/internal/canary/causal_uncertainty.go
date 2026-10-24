@@ -364,5 +364,6 @@ func (n *Node) evaluateInterrupted(m Monitor, observations []Sample) {
 		}
 		i.MaintenanceComplete = n.maintenanceCovers(m, i, *i.ResolvedAt)
 		n.saveEpisode(i)
+		n.completeDependencySuppressions(m, i)
 	}
 }

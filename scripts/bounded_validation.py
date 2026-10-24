@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import stat
 import subprocess
 import sys
@@ -18,6 +17,7 @@ import threading
 import time
 
 from validation_paths import filesystem_path
+from validation_process import start_command, stop_tree
 
 MIB = 1024 ** 2
 ROOT = Path(__file__).resolve().parent.parent
@@ -144,17 +144,6 @@ def breach(current, baseline):
     return None
 
 
-def stop_tree(process):
-    if process.poll() is not None:
-        return
-    if os.name == 'nt':
-        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    else:
-        os.killpg(process.pid, signal.SIGKILL)
-    process.wait()
-
-
 def main():
     global SCRATCH_LIMIT
     parser = argparse.ArgumentParser(description=__doc__)
@@ -212,35 +201,42 @@ def main():
         env.update({'GOCACHE': str(CACHE), 'GOMODCACHE': str(module_path),
                     'GOTMPDIR': str(WORK / 'tmp'), 'TMP': str(WORK / 'tmp'),
                     'TEMP': str(WORK / 'tmp'), 'GOFLAGS': '-p=1 -mod=readonly'})
-        options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
-        process = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, **options)
+        process = start_command(command, cwd=str(cwd), env=env, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
         log_path = WORK / 'latest.log'
         result['outputBytes'] = 0
 
         def collect():
-            with log_path.open('wb') as log:
-                while chunk := process.stdout.read1(16384):
-                    available = max(0, LOG_LIMIT - result['outputBytes'])
-                    log.write(chunk[:available])
-                    log.flush()
-                    result['outputBytes'] += len(chunk)
+            try:
+                with log_path.open('wb') as log:
+                    while chunk := process.stdout.read1(16384):
+                        available = max(0, LOG_LIMIT - result['outputBytes'])
+                        captured = chunk[:available]
+                        if log.write(captured) != len(captured):
+                            raise OSError('Incomplete log write')
+                        log.flush()
+                        result['outputBytes'] += len(chunk)
+            except (OSError, ValueError) as error:
+                result['captureError'] = 'Command output capture failed: ' + str(error)
         reader = threading.Thread(target=collect, daemon=True)
         reader.start()
         while process.poll() is None:
             current = usage(module_path, external_cache)
             for field, count in current.items():
                 result['peakObserved'][field] = max(count, result['peakObserved'][field])
-            problem = breach(current, baseline)
+            problem = breach(current, baseline) or result.get('captureError')
             if problem or time.monotonic() - start > args.timeout:
                 result['stopped'] = problem or 'Command timeout'
                 stop_tree(process)
                 break
             time.sleep(2)
         process.wait()
+        stop_tree(process)
         reader.join(timeout=5)
         if reader.is_alive():
             raise StorageError('Command left an open output pipe; do not start another build')
+        if result.get('captureError'):
+            raise StorageError(result['captureError'])
         result['exitCode'] = process.returncode
         result['logTruncated'] = result['outputBytes'] > LOG_LIMIT
     except (StorageError, OSError) as error:
@@ -248,6 +244,8 @@ def main():
     finally:
         if process is not None:
             stop_tree(process)
+            if process.stdout is not None and (reader is None or not reader.is_alive()):
+                process.stdout.close()
         try:
             remove_scratch(WORK / 'tmp')
             remove_scratch(WORK / 'outputs')

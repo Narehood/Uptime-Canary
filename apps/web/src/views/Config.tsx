@@ -5,7 +5,7 @@ import type {
 import { ApiFailure, describeFailure } from '../api';
 import { acceptedStatusText, typeLabel } from '../checks';
 import { useCanary, type Canary } from '../context';
-import { andList, maskedUrl, plural, shortRev, span } from '../format';
+import { MASK, andList, maskedUrl, plural, secretNamed, shortRev, span } from '../format';
 import { useResource } from '../hooks';
 import { messagingRoute } from '../messaging';
 import { candidateOrder, groupPath } from '../model';
@@ -112,7 +112,7 @@ function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
 function maskOptions(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
   if (Array.isArray(value)) return value.map(maskOptions);
-  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, /password|secret|token|key|dsn|passphrase|community|body|headers|metadata|basicauth|proxyurl/iu.test(key) && !/^(apiversion|keyword)$/iu.test(key) ? '•••' : maskOptions(inner)]));
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, secretNamed(key) ? MASK : maskOptions(inner)]));
 }
 
 function groupRows(ctx: Canary): Row<Group>[] {

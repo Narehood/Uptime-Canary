@@ -318,6 +318,9 @@ async function review() {
     discord: { kind: 'discord', webhook: { url: 'https://discord.com/api/webhooks/123456789/review-fixture-never-send' } },
     smtp: { kind: 'smtp', smtp: { server: '127.0.0.1', port: 2525, tlsMode: 'starttls', username: 'review', password: 'review-smtp-password' }, sender: { email: 'review@example.test', name: 'Review' }, recipients: [{ email: 'recipient@example.test', name: 'Recipient' }] },
     mailgun: { kind: 'mailgun', mailgun: { apiKey: 'review-mailgun-key', domain: 'example.test', region: 'EU', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
+    // Go accepts an absent region as US, and the raw value is part of each recipient's destination ID: a form rename
+    // must not write "US" over it (2026-10-24 review M1).
+    'mailgun-default-region': { kind: 'mailgun', mailgun: { apiKey: 'review-mailgun-key', domain: 'example.test', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
     brevo: { kind: 'brevo', brevo: { apiKey: 'review-brevo-key', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
     mandrill: { kind: 'mandrill', mandrill: { apiKey: 'review-mandrill-key', baseURL: state.sink, allowInsecureHTTP: true }, sender: { email: 'review@example.test' }, recipients: [{ email: 'recipient@example.test' }] },
     slack: { kind: 'slack', slack: { webhookURL: state.sink + '/services/T0REVIEW/B0REVIEW/review-slack-secret', allowInsecureHTTP: true } },

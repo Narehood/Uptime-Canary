@@ -70,7 +70,6 @@ function FieldInput({ field, values, set, errors, disabled, stored }: {
   const text = typeof value === 'string' ? value : '';
   const error = errors[field.key];
   const optional = !field.required;
-  const label = optional && field.kind !== 'bool' && field.kind !== 'select' ? `${field.label}` : field.label;
   switch (field.kind) {
     case 'bool':
       return <CheckField label={field.label} checked={value === true} onChange={on => set(field.key, on)} hint={field.hint} disabled={disabled} danger={field.danger} />;
@@ -79,7 +78,7 @@ function FieldInput({ field, values, set, errors, disabled, stored }: {
         ? <Seg legend={field.label} name={`${id}-${field.key}`} value={text} options={field.options ?? []} onChange={next => set(field.key, next)} disabled={disabled} hint={field.hint} full={field.full} />
         : <SelectField label={field.label} value={text} options={field.options ?? []} onChange={next => set(field.key, next)} disabled={disabled} hint={field.hint} error={error} full={field.full} />;
     case 'secret':
-      return <SecretField label={label} optional={optional} value={text} onChange={next => set(field.key, next)} error={error} hint={field.hint} placeholder={field.placeholder} disabled={disabled} full={field.full} storedSet={Boolean(stored[field.key])} />;
+      return <SecretField label={field.label} optional={optional} value={text} onChange={next => set(field.key, next)} error={error} hint={field.hint} placeholder={field.placeholder} disabled={disabled} full={field.full} storedSet={Boolean(stored[field.key])} />;
     case 'pem':
       return <PemField label={field.label} kind={field.pem ?? 'certificate'} value={text} onChange={next => set(field.key, next)} error={error} hint={field.hint} disabled={disabled} />;
     case 'textarea': case 'json': case 'lines':
@@ -157,7 +156,7 @@ export function openServiceSections(protocol: ProtocolKey, values: Values): Reco
       const value = field.kind === 'condition' ? values[`${field.key}.operator`] : field.kind === 'jsonata' ? values[`${field.key}.expression`] : values[field.key];
       return Array.isArray(value) ? value.length > 0 : Boolean(value);
     })());
-    out[`svc-${section}`] = filled && section !== 'tls' ? true : filled;
+    out[`svc-${section}`] = filled;
   }
   return out;
 }
