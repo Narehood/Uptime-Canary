@@ -5,6 +5,7 @@ These never create namespaces, invoke sudo, or signal a real process.
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +15,28 @@ spec.loader.exec_module(launcher)
 
 
 class PM2NamespaceRefusalTests(unittest.TestCase):
+    def test_regular_fixture_dependencies_are_admitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'node_modules').mkdir()
+            (root / 'node_modules/package.json').write_text('{}')
+            launcher.require_link_free_fixture(root)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux npm executable links')
+    def test_fixture_symlinks_are_refused_without_following_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / 'package'
+            (root / 'node_modules/.bin').mkdir(parents=True)
+            outside = parent / 'preserved'
+            outside.write_text('unchanged')
+            link = root / 'node_modules/.bin/tool'
+            link.symlink_to(outside)
+            with self.assertRaisesRegex(RuntimeError, 'unsupported link'):
+                launcher.require_link_free_fixture(root)
+            self.assertEqual(outside.read_text(), 'unchanged')
+            self.assertTrue(link.is_symlink())
+
     def test_cleanup_refuses_an_ordinary_process_before_signalling(self):
         with patch.object(launcher, 'namespace_supervisor', return_value=False), patch.object(launcher.os, 'kill') as kill:
             with self.assertRaisesRegex(RuntimeError, 'private PID namespace'):

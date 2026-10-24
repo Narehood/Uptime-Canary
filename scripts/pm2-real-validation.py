@@ -14,6 +14,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -27,6 +28,19 @@ from validation_workspace import ROOT, guarded_output, retain_summary, tap_count
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def require_link_free_fixture(root):
+    # The storage guard deliberately refuses links. Inspect without following
+    # them before executing the fixture; npm CLI shims are unnecessary here.
+    pending = [root]
+    while pending:
+        path = pending.pop()
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+            raise RuntimeError('Fixture dependencies contain an unsupported link')
+        if stat.S_ISDIR(info.st_mode):
+            pending.extend(path.iterdir())
 
 
 def fixture_inputs(output):
@@ -44,8 +58,9 @@ def fixture_inputs(output):
                 'npm_config_userconfig': str(output / 'npm-user.conf'),
                 'npm_config_globalconfig': str(output / 'npm-global.conf'),
                 'npm_config_registry': 'https://registry.npmjs.org', 'npm_config_update_notifier': 'false'})
-    subprocess.run([shutil.which('npm'), 'ci', '--ignore-scripts', '--omit=optional', '--no-audit', '--no-fund',
+    subprocess.run([shutil.which('npm'), 'ci', '--ignore-scripts', '--omit=optional', '--no-audit', '--no-fund', '--no-bin-links',
                     '--prefix', str(package)], env=env, check=True, timeout=120)
+    require_link_free_fixture(package)
     lock = json.loads((package / 'package-lock.json').read_text())
     if lock['packages']['node_modules/pm2']['version'] != '6.0.8':
         raise ValueError('Unexpected fixture PM2 version')
@@ -56,7 +71,7 @@ def fixture_inputs(output):
     for name, expected in pins:
         if digest(package / 'node_modules/pm2' / name) != expected:
             raise ValueError('Installed PM2 source differs: ' + name)
-    return {'version': '6.0.8', 'coreFilesVerified': len(pins), 'resolvedPackages': len(lock['packages']),
+    return {'version': '6.0.8', 'coreFilesVerified': len(pins), 'resolvedPackages': len(lock['packages']), 'linkFree': True,
             'lockSha256': digest(source / 'package-lock.json'), 'managerSha256': digest(helper)}
 
 
