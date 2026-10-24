@@ -1,9 +1,9 @@
 # One static dashboard, with no node, credentials or persistent data.
-# Also usable with docker compose -f this-file. See docs/portainer.md.
+# Pull from GHCR; also usable with docker compose -f this-file.
 services:
   web:
-    image: ${CANARY_WEB_IMAGE:-uptime-canary-web:development}
-    pull_policy: never
+    image: ${CANARY_WEB_IMAGE:-ghcr.io/narehood/uptime-canary-web:${CANARY_IMAGE_TAG:-latest}}
+    pull_policy: ${CANARY_PULL_POLICY:-missing}
     restart: unless-stopped
     read_only: true
     tmpfs:

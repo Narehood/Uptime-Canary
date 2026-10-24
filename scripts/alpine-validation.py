@@ -145,11 +145,11 @@ def main():
             node_port, web_port = node_socket.getsockname()[1], web_socket.getsockname()[1]
         node_url = "http://127.0.0.1:" + str(node_port)
         web_url = "http://127.0.0.1:" + str(web_port)
-        node_env = {**base_env, "CANARY_NODE_IMAGE": node_image,
+        node_env = {**base_env, "CANARY_NODE_IMAGE": node_image, "CANARY_PULL_POLICY": "never",
             "CANARY_NODE_ID": node_project, "CANARY_ADMIN_TOKEN": token,
             "CANARY_CLUSTER_TOKEN": cluster, "CANARY_CORS_ORIGINS": web_url,
             "CANARY_PORT": str(node_port)}
-        web_env = {**base_env, "CANARY_WEB_IMAGE": web_image, "CANARY_WEB_PORT": str(web_port)}
+        web_env = {**base_env, "CANARY_WEB_IMAGE": web_image, "CANARY_PULL_POLICY": "never", "CANARY_WEB_PORT": str(web_port)}
 
         def compose(project, filename):
             return ["docker", "compose", "--ansi", "never", "--env-file", "/dev/null",
@@ -220,7 +220,7 @@ def main():
             node_port, web_port = node_socket.getsockname()[1], web_socket.getsockname()[1]
         node_url, web_url = "http://127.0.0.1:" + str(node_port), "http://127.0.0.1:" + str(web_port)
         env = {k: v for k, v in os.environ.items() if not k.startswith("CANARY_")}
-        env.update({"CANARY_NODE_IMAGE": node_image, "CANARY_WEB_IMAGE": web_image,
+        env.update({"CANARY_NODE_IMAGE": node_image, "CANARY_WEB_IMAGE": web_image, "CANARY_PULL_POLICY": "never",
             "CANARY_NODE_ID": prefix, "CANARY_ADMIN_TOKEN": token, "CANARY_CLUSTER_TOKEN": cluster,
             "CANARY_CORS_ORIGINS": web_url, "CANARY_PORT": str(node_port), "CANARY_WEB_PORT": str(web_port)})
         compose = ["docker", "compose", "--ansi", "never", "--env-file", "/dev/null", "--project-name", prefix,

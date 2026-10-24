@@ -125,6 +125,8 @@ Rail (primary nav)                    Top bar (global context)
 
 Hash routes keep the static web container simple and never carry tokens or API data. The only route with a query string is the public status page, whose `node` parameters are public node addresses chosen by whoever shares the link (Proposed).
 
+The bundle carries no build-time node address, credential or setting, and its nginx serves files without proxying, so one dashboard image can serve every installation; the browser chooses the node at sign-in. The dashboard image the publishing workflow builds, `ghcr.io/narehood/uptime-canary-web` (`latest`, or `sha-<commit>` matching the node image), relies on this. Configuring that workflow doesn't publish the image; which tags exist, and when a deploy can pull them without credentials, is covered under [published images](../README.md#published-images) in the README (Agreed).
+
 | Route | Purpose | API sources |
 |---|---|---|
 | `#/overview` | What needs attention now, from this endpoint's view | `GET /api/overview` |
