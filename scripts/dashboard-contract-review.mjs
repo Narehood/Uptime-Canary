@@ -242,11 +242,12 @@ async function review() {
     monitors[type] = saved.value;
     return { id: m.id, protocol: key, fieldCount: f.SERVICE_FIELDS[key].length, optionsPreserved: true };
   });
-  // Protocol 16 adds system-service to the previously accepted 26-type catalogue.
-  await step('Catalogue matches all 27 implemented check types, including Globalping and system-service', async () => {
-    assert.equal(f.CHECK_TYPES.length, 27); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 27);
+  // Protocol 16 accepted 27 types; protocol 17 explicitly adds the Steam directory monitor.
+  await step('Catalogue matches all 28 implemented check types, including Globalping, system-service and Steam', async () => {
+    assert.equal(f.CHECK_TYPES.length, 28); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 28);
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'globalping'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'system-service'));
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'steam'));
     assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
     assert.equal(f.PROVIDERS.length, 11);
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
@@ -288,15 +289,20 @@ async function review() {
     manual: { manual: { state: 'up', message: 'Review manual result' } },
     push: { push: { token: secret(), allowGet: true } },
     'system-service': { target: 'getty@tty1.service' },
+    // Go accepts this clean method-named base prefix. Its original form-only
+    // refusal blocked metadata saves; keep the real API/form regression here.
+    steam: { target: '127.0.0.9:27015', steam: { apiKey: 'review-steam-private-key', apiUrl: state.sink + '/internal/IGameServersService/GetServerList/v1/', allowInsecureApi: true, apiFailureIsDown: true, skipLatency: true, packetSize: 0 } },
   };
   for (const [type, options] of Object.entries(networkOptions)) await step(`API + form: ${type} preserves all non-service options and nullable omission`, async () => {
     if (options.push) secrets.add(options.push.token);
+    if (options.steam) secrets.add(options.steam.apiKey);
     const made = await api(A, '/api/monitors', 'POST', base(type, options)); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.draftFrom(m, [A.id]), initial = structuredClone(d); d.name += ' renamed'; const built = f.build(d, m, initial); assert.ok(built.input, JSON.stringify({ ...built.errors, ...built.serviceErrors }));
     const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text);
-    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
+    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
     assert.equal(saved.value.target, m.target);
     if (type === 'push') { assert.equal(saved.value.pushStartedAt, m.pushStartedAt); assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision); }
+    if (type === 'steam') assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
     networkMonitors[type] = saved.value; return { id: m.id, allOptionsPreserved: true };
   });
   const maintenanceWindows = {};
@@ -385,6 +391,50 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     assert.equal(saved.value.checkGeneration, m.checkGeneration);
     return { serverValidatedProjection: true, actualMultiHeadConflict: false };
   });
+  await step('Browser: Steam fields preserve options and reject an invalid game port before saving', async () => {
+    const m = networkMonitors.steam;
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await text('Each check tells the Steam API which server you watch');
+    assert.equal(await page.eval(`__field('Server address').value`), m.target);
+    assert.equal(await page.eval(`__field('Steam Web API key').type`), 'password');
+    const before = report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length;
+    await fill('Server address', '127.0.0.9:0'); await click('Save changes'); await text('whole number from 1 to 65535');
+    assert.equal(report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length, before);
+    await fill('Server address', m.target); await fill('Name', 'Review Steam fields renamed'); await click('Save changes');
+    await heading('Review Steam fields renamed');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.deepEqual(saved.steam, m.steam);
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    networkMonitors.steam = saved;
+    return { targetPreserved: true, optionsPreserved: true, generationPreserved: true, noDirectoryRequests: saved.enabled === false };
+  });
+  await step('Browser: Steam key remains hidden in a revealed JSON preview and keep-current restores the original', async () => {
+    const m = networkMonitors.steam;
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    const replacement = 'review-steam-replacement-key'; secrets.add(replacement);
+    await fill('Steam Web API key', replacement); await text('Saving a different key starts a new check generation');
+    await click('Keep the current key'); assert.equal(await page.eval(`__field('Steam Web API key').value`), m.steam.apiKey);
+    await disclose('JSON (advanced)'); await text('The Steam API key always stays masked here'); await click('Show credentials');
+    const preview = await page.eval(`document.querySelector('[aria-label="Monitor JSON preview"]').textContent`);
+    assert.ok(!preview.includes(m.steam.apiKey) && !preview.includes(replacement));
+    const parsed = JSON.parse(preview); assert.equal(parsed.steam.packetSize, 0); assert.equal(parsed.steam.apiUrl, m.steam.apiUrl);
+    assert.ok(!JSON.stringify(f.masked(m)).includes(m.steam.apiKey));
+    return { revealedPreviewKeyHidden: true, optionalZeroKept: true, keyRestored: true };
+  });
+  await step('Steam conflict projection retains private options in both display modes', async () => {
+    const m = networkMonitors.steam;
+    const ctx = { groupMap: new Map(), role: 'admin', channels: { map: new Map() }, tags: { map: new Map() } };
+    let projected;
+    for (const reveal of [false, true]) {
+      projected = Object.assign({}, ...f.monitorRows(ctx, reveal).map(row => row.project(m)));
+      assert.deepEqual(projected.steam, m.steam); assert.equal(projected.target, m.target);
+    }
+    const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...projected, revision: m.revision });
+    assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.steam, m.steam);
+    assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+    networkMonitors.steam = saved.value;
+    return { serverValidatedProjection: true, bothDisplayModes: true, actualMultiHeadConflict: false };
+  });
   for (const [type, m] of Object.entries(monitors)) await step(`Browser: rename ${type} preserves stored service bytes`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'); const saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved); assert.deepEqual(saved.service, m.service); return { id: m.id, servicePreserved: true };
@@ -410,7 +460,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   for (const [type, m] of Object.entries(networkMonitors)) await step(`Browser: rename ${type} preserves full stored options`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'), saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved);
-    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved[key], m[key], key);
+    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved[key], m[key], key);
     if (type === 'push') assert.equal(saved.pushStartedAt, m.pushStartedAt);
     networkMonitors[type] = saved; return { id: m.id, optionsPreserved: true };
   });
@@ -512,10 +562,13 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   });
   await step('Viewer: API and UI hide monitor/channel/push credentials and disable editing', async () => {
     const token = secret(); secrets.add(token); const made = await api(A, '/api/accounts', 'POST', { name: `review-viewer-${Date.now()}`, role: 'viewer', token }); assert.equal(made.status, 201, made.text);
-    const raw = await api(A, '/api/overview', 'GET', undefined, token); for (const value of ['review-password', 'review-hook-key', networkMonitors.push.push.token, 'private-body', 'private-header']) assert.ok(!raw.text.includes(value));
+    const raw = await api(A, '/api/overview', 'GET', undefined, token); for (const value of ['review-password', 'review-hook-key', networkMonitors.push.push.token, networkMonitors.steam.steam.apiKey, 'private-body', 'private-header']) assert.ok(!raw.text.includes(value));
     const c = await api(A, '/api/notification-channels', 'GET', undefined, token);
     for (const value of ['review-hook-key', 'review-smtp-password', 'review-slack-secret', 'review-telegram-token', '-1001234567890', 'review-topic', 'tk_review-ntfy-token', 'review-gotify-token', 'a'.repeat(30), 'u'.repeat(30)]) assert.ok(!c.text.includes(value), 'viewer received private channel configuration');
-    await signIn({ ...A, token }, true); await nav(`#/monitors/${monitors.redis.id}`); await heading(monitors.redis.name); await text('Hidden from viewers'); await nav('#/channels/new'); await text('Viewers can’t change channels');
+    await signIn({ ...A, token }, true); await nav(`#/monitors/${monitors.redis.id}`); await heading(monitors.redis.name); await text('Hidden from viewers');
+    await nav(`#/monitors/${networkMonitors.steam.id}`); await heading(networkMonitors.steam.name); await text('Hidden from viewers');
+    assert.ok(!(await page.eval('document.body.innerText')).includes(networkMonitors.steam.steam.apiKey));
+    await nav('#/channels/new'); await text('Viewers can’t change channels');
     await signIn(A, true); return { redactedAtServer: true, formsReadOnly: true };
   });
   if (args.includes('--public-availability')) {

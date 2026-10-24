@@ -1,6 +1,23 @@
 # Shipping progress
 
-## Validated main checkpoint: protocol 14, 2026-10-23
+## Current checkpoint: merged protocol 16; Steam protocol 17 in development
+
+All four requested PRs (#1–#4) are merged. Main `187f3ae` passed all seven
+hosted jobs in workflows [40043011544](https://github.com/Narehood/Uptime-Canary/actions/runs/40043011544)
+and [40043011690](https://github.com/Narehood/Uptime-Canary/actions/runs/40043011690).
+Native Windows amd64, Linux amd64 and native Linux arm64 each passed 19/19
+process proofs. Container checks, combined and separate Compose deployments,
+web runtime and Linux race checks passed. All 587 source-manifest Git blobs
+were independently verified. These results cover protocol 16, not Steam.
+
+The protocol-17 Steam feature has local Windows all-package, process and
+browser evidence, including the final CA-form repair (17 pure groups and 148/148 browser checks). See
+[the exact source and platform scope](steam-monitors.md). Hosted protocol-17
+checks and review remain pending. No tagged release has been published.
+
+The following protocol-14 records are preserved as historical milestones.
+
+## Validated historical checkpoint: protocol 14, 2026-10-23
 
 The ready-to-ship independent Go/SQLite HA system with near-Uptime-Kuma
 monitoring and notification abilities remains the goal. The green workflow is

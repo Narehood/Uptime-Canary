@@ -12,6 +12,7 @@ import { groupPath } from '../model';
 import { notify } from '../notices';
 import { href, navigate } from '../router';
 import { SERVICE_PROTOCOL, buildJsonata, buildService, jsonataDraft, maskService, serviceValues, type JsonataDraft, type ProtocolKey, type Values } from '../serviceSpecs';
+import { STEAM_FIELD_LABEL, STEAM_SECTION, buildSteam, steamDraftFrom, steamMasked, type SteamDraft, type SteamField } from '../steam';
 import { serviceNameProblem, systemdUnit } from '../systemService';
 import { Banner, Card, CopyButton, EmptyState, ErrorText, PageHead, Rev, Time } from '../ui/bits';
 import {
@@ -23,6 +24,7 @@ import { safeColor } from '../ui/tags';
 import { ProviderIcon, providerLabel, recipientCount } from './Channels';
 import { GlobalpingFields } from './GlobalpingFields';
 import { JsonataInputs, ServiceFields, openServiceSections } from './ServiceFields';
+import { SteamFields } from './SteamFields';
 
 type Auth = 'none' | 'basic' | 'bearer' | 'oauth2';
 type Proxy = 'none' | 'url' | 'env';
@@ -63,6 +65,8 @@ interface Draft {
   manualState: ManualState; manualMessage: string;
   pushToken: string; pushAllowGet: boolean;
   gp: GpDraft;
+  /** The Steam game server: its address and its `steam` options. */
+  steam: SteamDraft;
   /** Per service type, so switching types keeps what was typed. */
   service: Partial<Record<MonitorType, Values>>;
   repeatOn: boolean;
@@ -122,6 +126,7 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
     manualState: (monitor?.manual?.state ?? '') as ManualState, manualMessage: monitor?.manual?.message ?? '',
     pushToken: monitor?.push?.token ?? '', pushAllowGet: Boolean(monitor?.push?.allowGet),
     gp: gpDraftFrom(monitor?.type === 'globalping' ? monitor.globalping : undefined, monitor?.type === 'globalping' ? monitor.target : ''),
+    steam: steamDraftFrom(monitor?.type === 'steam' ? monitor.steam : undefined, monitor?.type === 'steam' ? monitor.target : ''),
     service: monitor && protocol ? { [monitor.type]: serviceValues(protocol, monitor.service?.[protocol]) } : {},
     repeatOn: Boolean(monitor?.repeatAfterMs),
     repeat: toDraft(monitor?.repeatAfterMs || 900_000),
@@ -221,7 +226,7 @@ type Field =
   | 'name' | 'target' | 'interval' | 'timeout' | 'retries' | 'retryInterval' | 'expected' | 'method' | 'headers' | 'body' | 'redirects' | 'auth' | 'proxy'
   | 'keyword' | 'jsonPath' | 'jsonExpected' | 'jsonata' | 'oauth' | 'wsHeaders' | 'wsAuth' | 'wsProxy'
   | 'tlsServerName' | 'tlsCa' | 'tlsCert' | 'tlsKey' | 'tlsMinDays' | 'dnsServer' | 'dnsExpected' | 'pingCount' | 'pingSize' | 'manualMessage'
-  | 'repeat' | 'webhook' | 'channels' | 'tags' | 'nodes' | 'size' | 'pushToken' | GpField;
+  | 'repeat' | 'webhook' | 'channels' | 'tags' | 'nodes' | 'size' | 'pushToken' | GpField | SteamField;
 
 const FIELD_LABEL: Record<Field, string> = {
   name: 'Name', target: 'Target', interval: 'Interval', timeout: 'Timeout', retries: 'Retries', retryInterval: 'Retry interval', expected: 'Accepted status', method: 'Method',
@@ -231,6 +236,7 @@ const FIELD_LABEL: Record<Field, string> = {
   dnsExpected: 'Expected records', pingCount: 'Packets', pingSize: 'Payload size', manualMessage: 'Status message', repeat: 'Repeat', webhook: 'Webhook URL',
   channels: 'Notification channels', tags: 'Tags', nodes: 'Run on', size: 'Size', pushToken: 'Push token',
   ...GP_FIELD_LABEL,
+  ...STEAM_FIELD_LABEL,
 };
 
 /** Which disclosure holds a field, so a failed save opens the sections that need attention. */
@@ -238,6 +244,7 @@ const SECTION_OF: Partial<Record<Field, string>> = {
   headers: 'request', body: 'request', redirects: 'request', auth: 'access', proxy: 'access', keyword: 'response', jsonPath: 'response', jsonata: 'response', oauth: 'access', jsonExpected: 'response',
   wsHeaders: 'ws', wsAuth: 'ws', wsProxy: 'ws', tlsServerName: 'tls', tlsCa: 'tls', tlsCert: 'tls', tlsKey: 'tls', tlsMinDays: 'tls', webhook: 'legacy',
   ...GP_SECTION,
+  ...STEAM_SECTION,
 };
 
 type Errors = Partial<Record<Field, string>>;
@@ -305,8 +312,9 @@ interface Groups {
   service?: MonitorInput['service'];
   push?: MonitorInput['push'];
   globalping?: MonitorInput['globalping'];
+  steam?: MonitorInput['steam'];
 }
-const GROUP_KEYS = ['expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'ping', 'manual', 'service', 'push', 'globalping'] as const;
+const GROUP_KEYS = ['expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'ping', 'manual', 'service', 'push', 'globalping', 'steam'] as const;
 
 /** Builds every option object for the draft's type from the draft alone, starting from the original's objects. */
 function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors, serviceErrors: Record<string, string>): Groups {
@@ -419,6 +427,7 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
     groups.push = p;
   }
   if (type === 'globalping') groups.globalping = buildGlobalping(same ? original?.globalping : undefined, draft.gp, errors).value;
+  if (type === 'steam') groups.steam = buildSteam(same ? original?.steam : undefined, draft.steam, errors).value;
   const protocol = protocolOf(type);
   if (protocol) {
     const stored = same ? original?.service?.[protocol] : undefined;
@@ -523,8 +532,8 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   if (Object.keys(errors).length || Object.keys(serviceErrors).length) return { errors, serviceErrors };
 
   const input = (original ? inputOf(original) : {}) as MonitorInput;
-  for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'retries', 'retryIntervalMs', 'notificationIds', 'tags'] as const) delete input[key];
-  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
+  for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'retries', 'retryIntervalMs', 'notificationIds', 'tags'] as const) delete input[key];
+  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'steam' ? draft.steam.target.trim() : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
   Object.assign(input, { name, type, target, intervalMs: interval!, timeoutMs: timeout!, nodeIds: [...draft.nodeIds].sort(), enabled: draft.enabled, repeatAfterMs: repeat ?? 0 });
   for (const key of GROUP_KEYS) if (groups[key] !== undefined) (input as unknown as Record<string, unknown>)[key] = groups[key];
   if (retries) input.retries = retries;
@@ -564,6 +573,7 @@ function masked(input: MonitorInput): MonitorInput {
   if (copy.webhookUrl) copy.webhookUrl = maskedUrl(copy.webhookUrl);
   if (copy.push?.token) copy.push = { ...copy.push, token: '•••' };
   if (copy.globalping) copy.globalping = gpMasked(copy.globalping);
+  if (copy.steam) copy.steam = steamMasked(copy.steam);
   const protocol = protocolOf(copy.type);
   if (protocol && copy.service?.[protocol]) copy.service = { [protocol]: maskService(protocol, copy.service[protocol]) } as MonitorInput['service'];
   return copy;
@@ -603,7 +613,7 @@ function RequestFields({ d, set, errors, prefix, disabled, websocket, oauth }: {
 const authSummary = (d: RequestDraft): string => `${d.auth === 'oauth2' ? 'OAuth2 client credentials' : d.auth === 'basic' ? 'Basic auth' : d.auth === 'bearer' ? 'Bearer token' : 'No authentication'} · ${d.proxy === 'url' ? 'proxy' : d.proxy === 'env' ? 'environment proxy' : 'direct'}`;
 const sizeText = (text: string): string => { const n = bytes(text); return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KiB`; };
 
-const CATEGORIES: CheckCategory[] = ['web', 'remote', 'local', 'data', 'messaging', 'infra', 'manual'];
+const CATEGORIES: CheckCategory[] = ['web', 'remote', 'game', 'local', 'data', 'messaging', 'infra', 'manual'];
 
 function TypePicker({ value, onChange, disabled, name, locked }: { value: MonitorType; onChange: (type: MonitorType) => void; disabled: boolean; name: string; locked: boolean }) {
   const [open, setOpen] = useState(!locked);
@@ -727,7 +737,8 @@ function JsonPanel({ input, onImport, disabled }: { input?: MonitorInput; onImpo
   const [reveal, setReveal] = useState(false);
   const [text, setText] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  const shown = input ? JSON.stringify(reveal ? input : masked(input), null, 2) : null;
+  // The Steam API key stays masked even when credentials are shown: it is only ever visible in its own field.
+  const shown = input ? JSON.stringify(reveal ? (input.steam ? { ...input, steam: steamMasked(input.steam) } : input) : masked(input), null, 2) : null;
   const apply = (): void => {
     let parsed: unknown;
     try { parsed = JSON.parse(text); } catch { setMessage('That isn’t valid JSON.'); return; }
@@ -743,7 +754,7 @@ function JsonPanel({ input, onImport, disabled }: { input?: MonitorInput; onImpo
           {shown ? <CopyButton value={shown} label={reveal ? 'Copy, with credentials' : 'Copy'} /> : null}
           <button type="button" className="btn sm" aria-pressed={reveal} onClick={() => setReveal(v => !v)}><Icon name={reveal ? 'eyeOff' : 'eye'} />{reveal ? 'Hide credentials' : 'Show credentials'}</button>
         </div>
-        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them.</small>
+        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}</small>
       </div>
       <TextAreaField full mono optional label="Fill the form from JSON" value={text} onChange={setText} rows={4} disabled={disabled} placeholder={'{ "name": "API", "type": "http", "target": "https://…" }'}
         hint="Fills the fields above from a monitor object. Nothing is saved until you save the form. Settings the form doesn’t show are not imported." />
@@ -929,6 +940,7 @@ function MonitorFormBody({ id }: { id?: string }) {
       gpApi: Boolean(d.gp.apiUrl || d.gp.token || d.gp.ca || d.gp.insecure || d.gp.failureDown),
       gpRequest: d.gp.headers.length > 0,
       gpResponse: Boolean(d.gp.statuses || d.gp.keyword || d.gp.jsonata.expression),
+      steamApi: Boolean(d.steam.apiUrl || d.steam.ca || d.steam.insecure),
       ...(protocol && d.service[d.type] ? openServiceSections(protocol, d.service[d.type]!) : {}),
     };
   });
@@ -1105,6 +1117,11 @@ function MonitorFormBody({ id }: { id?: string }) {
               onUseTimeout={ms => set('timeout', toDraft(ms))} />
           ) : null}
 
+          {type === 'steam' ? (
+            <SteamFields d={draft.steam} set={change => setDraft(d => ({ ...d, steam: { ...d.steam, ...change } }))} errors={visibleErrors} disabled={saving} open={open} onToggle={toggle}
+              storedKey={initial?.type === 'steam' ? initial.steam.apiKey : ''} timeoutMs={fromDraft(draft.timeout)} intervalMs={fromDraft(draft.interval)} nodeCount={draft.nodeIds.length} />
+          ) : null}
+
           {type === 'push' ? (
             <PushFields token={draft.pushToken} allowGet={draft.pushAllowGet} stored={initial?.type === 'push' ? initial.pushToken : ''} disabled={saving} error={visibleErrors.pushToken}
               onToken={value => set('pushToken', value)} onAllowGet={value => set('pushAllowGet', value)} interval={fromDraft(draft.interval)} />
@@ -1250,6 +1267,8 @@ function MonitorFormBody({ id }: { id?: string }) {
             error={visibleErrors.nodes} disabled={saving}
             hint={type === 'system-service'
               ? 'Each chosen node checks the service on its own operating system, so choose nodes installed on the machines you want to watch. Out-of-view nodes receive the monitor when they reconnect.'
+              : type === 'steam'
+              ? 'Each chosen node resolves the host and calls the Steam API itself with the key, so every node counts against the key’s daily limit. All of them ask the same directory: more nodes tell a node’s own DNS or API path apart, not the route to the game server. Out-of-view nodes receive the monitor when they reconnect.'
               : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
           />
           <div className="fld full">

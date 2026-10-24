@@ -15,15 +15,17 @@ the [migration notes](../apps/node-go/internal/jsonquery/RUNTIME_MIGRATION.md)
 record the narrow accepted expectation changes. The earlier failed candidate
 and emulated-platform results remain historical evidence, not current results.
 
-Current development source includes 27 monitor types, sixteen service engines,
+Current development source includes 28 monitor types, sixteen service engines,
 passive push, manual checks, Globalping, HTTP OAuth2, HTTP/MQTT/SNMP/MongoDB
 JSONata, retries/inversion, maintenance, group hierarchy, tags, local observed
 availability, public status pages and current-state badges. Protocol 15 adds
 default-off public 24 h observed history and uptime badges, validated at PR #1
 head `e12ba9e` by the complete CI workflow and exact artifact manifests. Protocol
 16 adds local systemd/Windows service monitoring, whose Windows suites and
-143/143 dashboard groups pass; actual Linux/race/CI on that source remains
-pending. See [system-service evidence](system-services.md). Package READMEs
+143/143 dashboard groups pass; merged main `187f3ae` subsequently passed
+all seven hosted jobs, including native Linux arm64 and Linux race checks.
+Protocol 17 adds Steam directory membership with local Windows acceptance;
+its hosted Linux/race checks and review remain pending. See [system-service evidence](system-services.md). Package READMEs
 state the options and protocol differences. Notifications include eleven
 native providers with typed configuration, destination-specific identities,
 durable attempts and peer receipts. Accounts support passwords, MFA, sessions
@@ -41,14 +43,15 @@ scopes are in [the protocol-14 checkpoint](protocol14-checkpoint.md) and
 [container validation](container-validation.md). These checks do not declare
 the complete near-parity goal achieved.
 
-Remaining feature gaps include final system-service validation, PM2, browser checks, Tailscale,
-GameDig and Steam; additional options within implemented protocols; more of the
+Remaining feature gaps include hosted Steam validation, PM2, browser checks,
+Tailscale and GameDig; additional options within implemented protocols; more of the
 upstream notification catalogue; and custom domains, subscriptions and
 status-page styling. Published observed history is explicitly one answering
 node's record, with separate availability and coverage; current-state badges
 still do not imply an uptime metric. Generic webhooks do not count as native
-provider coverage. SMS remains explicitly deferred. Arm64 execution and tagged,
-reproducible release-artifact publication remain separate operational work.
+provider coverage. SMS remains explicitly deferred. Native arm64 execution passed for protocol 16;
+protocol-17 arm64 checks and tagged, reproducible release-artifact publication
+remain separate operational work.
 
 Retained causal evidence and local delivery provenance are not forever bounded
 by the wire-page limits. Their long-run storage, heap and lock costs remain

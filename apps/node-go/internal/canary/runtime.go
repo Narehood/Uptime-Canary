@@ -268,6 +268,9 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 			if m.Type == "system-service" {
 				return SystemServiceProbe(ctx, m)
 			}
+			if m.Type == "steam" {
+				return SteamProbe(ctx, m)
+			}
 			if m.Type == "globalping" {
 				return GlobalpingProbe(ctx, m)
 			}

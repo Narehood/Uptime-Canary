@@ -23,11 +23,13 @@ const check = (name, fn) => { try { fn(); console.log(`PASS ${name}`); } catch (
 const EARLIER = ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp', 'globalping', 'postgres', 'mysql', 'sqlserver', 'oracledb', 'mongodb', 'redis',
   'docker', 'mqtt', 'rabbitmq', 'kafka-producer', 'grpc', 'sftp', 'ntp', 'snmp', 'radius', 'sip-options', 'push', 'manual'];
 
-check('catalogue: 27 unique types, the 26 earlier ones in their order, plus system-service', () => {
+// Protocol 17 explicitly adds Steam; retain every earlier catalogue/order assertion.
+check('catalogue: 28 unique types, the 26 earlier ones in their order, plus system-service and Steam', () => {
   const types = checks.CHECK_TYPES.map(entry => entry.type);
-  assert.equal(types.length, 27);
-  assert.equal(new Set(types).size, 27);
-  assert.deepEqual(types.filter(type => type !== 'system-service'), EARLIER);
+  assert.equal(types.length, 28);
+  assert.equal(new Set(types).size, 28);
+  assert.ok(types.includes('steam'));
+  assert.deepEqual(types.filter(type => type !== 'system-service' && type !== 'steam'), EARLIER);
   assert.equal(Object.keys(specs.SERVICE_PROTOCOL).length, 16);
 });
 
