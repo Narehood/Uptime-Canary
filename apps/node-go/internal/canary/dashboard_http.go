@@ -385,7 +385,13 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 	if err != nil {
 		return row, fail(503, "Saved node credentials are unavailable")
 	}
-	if row.Local && row.NodeID == "pending" {
+	if row.Local && row.Unproved {
+		if row.State == "removing" {
+			d.mu.Lock()
+			err = d.deleteRegistry(id)
+			d.mu.Unlock()
+			return registeredNodeRecord{}, err
+		}
 		row, secret, err = d.identifyLocal(ctx, row, secret)
 		if err != nil {
 			d.mu.Lock()
@@ -393,6 +399,11 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 			_ = d.saveRegistry(row)
 			d.mu.Unlock()
 			return row, err
+		}
+		if row.ID != id {
+			// Discovery adopted an existing registration and its role bundle;
+			// the unused placeholder was removed in the same transaction.
+			return row, nil
 		}
 	}
 	method, token := "POST", secret.EnrollmentToken
@@ -435,13 +446,7 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 		return row, err
 	}
 	if method == "DELETE" {
-		n := d.accounts.node
-		n.mu.Lock()
-		err = n.identityTransactionLocked(func(e dbExec) error { return remove(e, "dashboardRegistry", id) })
-		n.mu.Unlock()
-		if err == nil {
-			delete(d.registry, id)
-		}
+		err = d.deleteRegistry(id)
 		return registeredNodeRecord{}, err
 	}
 	// Retain bootstrap only while a journal needs it. Active removal uses the
@@ -467,7 +472,7 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 		errorReply(w, fail(404, "Registered node not found"))
 		return
 	}
-	if row.Local {
+	if row.Local && d.localURL != "" && row.URL == d.localURL {
 		d.mu.Unlock()
 		errorReply(w, fail(409, "The bundled local node is managed in deployment settings"))
 		return

@@ -94,7 +94,7 @@ standalone dashboard requires its browser origin and can start with no nodes.
 | `CANARY_PULL_POLICY` | `missing`; use `never` only for preloaded/offline image overrides. |
 | `CANARY_BIND_ADDRESS`, `CANARY_WEB_BIND_ADDRESS` | `127.0.0.1`; use the intended private host interface if a remote proxy/peer needs it. |
 | `CANARY_PORT`, `CANARY_WEB_PORT` | Host ports 3100 and 18347. Dashboard container port remains 8080. |
-| `CANARY_LOCAL_NODE_URL`, `CANARY_LOCAL_NODE_TOKEN` | Initial local auto-enrollment. The bundle supplies `http://node:3100` and the node admin token. A standalone dashboard can leave both empty. |
+| `CANARY_LOCAL_NODE_URL`, `CANARY_LOCAL_NODE_TOKEN` | Local auto-enrollment. The bundle supplies `http://node:3100` and the node admin token. A standalone dashboard can leave both empty. Corrected values are applied to unfinished enrollment after redeployment; see below for already provisioned nodes. |
 | `CANARY_PEERS` | `[]`, or explicit peer IDs and node-reachable URLs. Registry enrollment does not configure these. |
 
 Deploy and open the dashboard URL. On first use, obtain the private setup code
@@ -109,6 +109,23 @@ accounts, editors manage monitoring configuration, and viewers read with the
 node's own secret redaction. A bundled local node is registered automatically,
 including a visible starting entry while it is unavailable. A standalone
 installation starts with **No nodes yet**. Login needs no answering node.
+
+If the local enrollment credential was wrong, correct it and redeploy: the
+unfinished registration keeps its role credentials and retries with the new
+value. Its address can also be corrected before identity discovery. Once a
+node identity is proved, changing the configured address does not silently
+send its credentials to another destination. The old card exposes **Remove**;
+keep its old endpoint reachable until revocation completes, then the new local
+destination is added automatically. Clearing the local settings exposes the
+same removal action. An undiscovered placeholder can be removed without
+contacting a node; provisioned role credentials still require confirmed remote
+revocation. Do not delete dashboard volumes to repair these settings.
+
+If the configured node is already registered manually, its registration and
+role bundle are reused. Adopting it through a different address requires the
+same node identity and successful verification of every existing role there.
+Changing the enrollment token after successful enrollment does not rotate the
+saved role credentials.
 
 Use **Nodes > Add node** to enter a label, the private origin reachable from the
 dashboard server and an admin enrollment credential. Verification is read-only:

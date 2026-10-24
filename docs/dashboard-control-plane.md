@@ -157,7 +157,7 @@ a monitoring node. Auth status additionally returns `dashboard: true`.
 | `POST /api/dashboard/nodes` `{ticket}` | 201 registered node after durable enrollment. An ambiguous or interrupted enrollment remains visible as `enrolling`, with retry/removal actions. |
 | `POST /api/dashboard/nodes/{id}/check` | Recheck node identity and reachability; return registered node. Any dashboard role may read/check. |
 | `POST /api/dashboard/nodes/{id}/retry` | Admin retries unfinished enrollment or removal. |
-| `DELETE /api/dashboard/nodes/{id}` | 204 after confirmed remote revocation, otherwise 202 `removing`; local bundled node cannot be removed in UI. |
+| `DELETE /api/dashboard/nodes/{id}` | 204 after confirmed remote revocation, otherwise 202 `removing`; a bundled node is protected while its address still matches current deployment settings. An unproved placeholder has no remote credentials to revoke. |
 
 Monitoring requests use the ordinary `/api/overview`, monitors, channels, groups,
 maintenance, history, status-page and tag routes, with header
@@ -200,3 +200,14 @@ preview snapshot timed out twice, so the documented Chrome/CDP fallback used
 one disposable profile. Each guarded run kept source unchanged, cleaned its
 scratch to zero and left the module cache unchanged. This is local evidence;
 it does not establish hosted platform, live-provider or release acceptance.
+
+The local-configuration review repair on source `b442b0425e83f33ed01d719e7c010713a8ed7833d7fe493fe5340e7333d1b86b`
+passed the full Windows amd64 `canary` package (1,102 passing test events,
+zero failures, two expected Windows filename skips) and vet in 243.922 seconds
+guarded. The new setup-recovery regressions first failed on the original code.
+They cover corrected settings, restart, manual registration adoption, role
+verification, busy operations, transaction rollback, and confirmed revocation
+even for a real node named `pending`. Sampled scratch peaked at 393,994,666
+bytes and returned to zero; source and the module cache stayed unchanged.
+The earlier 170 browser checks retain their original source scope. Fresh
+hosted checks are required for this repair; it is not release acceptance.

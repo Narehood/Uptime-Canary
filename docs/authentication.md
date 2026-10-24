@@ -67,7 +67,8 @@ Bootstrap environment credentials initialize only an empty account database;
 they cannot resurrect a revoked token or undo account edits on restart.
 
 The API accepts explicit bearer credentials rather than ambient cookies, so a
-separately hosted dashboard does not depend on third-party cookie access. Exact
+separately hosted dashboard does not depend on third-party cookie access.
+
 Container dashboards own a separate account domain and shared node registry.
 Their first owner requires the private server setup code; later accounts are
 administrator-controlled. Login works without a monitoring node. The server

@@ -36,6 +36,8 @@ type registeredNodeRecord struct {
 	RegisteredNode
 	// Authenticated against ID, URL and proved node identity; never public JSON.
 	Credentials string `json:"credentials"`
+	// Distinguish an undiscovered placeholder from a real node named pending.
+	Unproved bool `json:"unproved,omitempty"`
 }
 
 type dashboardNodeSecrets struct {
@@ -127,6 +129,9 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 	for id, row := range loaded {
 		if id != row.ID || row.NodeID == "" || !slices.Contains([]string{"enrolling", "removing", "starting", "answering", "not-answering", "credential-refused", "different-node"}, row.State) {
 			return nil, errors.New("Invalid dashboard registry record")
+		}
+		if row.Unproved && (!row.Local || row.NodeID != "pending" || (row.State != "enrolling" && row.State != "removing")) {
+			return nil, errors.New("Invalid unproved local registration")
 		}
 		canonical, e := dashboardNodeURL(row.URL)
 		if e != nil || canonical != row.URL {
@@ -234,10 +239,26 @@ func (d *Dashboard) commitRegistry(row registeredNodeRecord, r *http.Request, ac
 
 func (d *Dashboard) publicNode(row registeredNodeRecord, role string) RegisteredNode {
 	v := row.RegisteredNode
+	// Local means managed by the current deployment, rather than an immutable
+	// reason to hide removal after that deployment was disabled or moved.
+	v.Local = row.Local && d.localURL != "" && row.URL == d.localURL
 	if role != "admin" {
 		v.URL = ""
 	}
 	return v
+}
+
+// Caller holds d.mu. Only use after remote revocation, or for an unproved
+// placeholder which has never sent any role-enrollment mutation.
+func (d *Dashboard) deleteRegistry(id string) error {
+	n := d.accounts.node
+	n.mu.Lock()
+	err := n.identityTransactionLocked(func(e dbExec) error { return remove(e, "dashboardRegistry", id) })
+	n.mu.Unlock()
+	if err == nil {
+		delete(d.registry, id)
+	}
+	return err
 }
 
 func (d *Dashboard) nodeRequest(ctx context.Context, row registeredNodeRecord, token, method, path string, body []byte) (*http.Response, []byte, error) {
