@@ -54,6 +54,27 @@ func uniqueValue(d *json.Decoder, depth int, budget *int) bool {
 	}
 }
 
+func exactAuthorityKeys(object map[string]json.RawMessage, names ...string) bool {
+	for key := range object {
+		for _, name := range names {
+			if key != name && strings.EqualFold(key, name) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func directoryError(object map[string]json.RawMessage) bool {
+	for key := range object {
+		switch strings.ToLower(key) {
+		case "error", "error_code", "errormsg":
+			return true
+		}
+	}
+	return false
+}
+
 func directoryResult(raw []byte, address net.IP, port string) (listed, valid bool) {
 	if len(raw) == 0 || len(raw) > 64<<10 || !utf8.Valid(raw) {
 		return false, false
@@ -68,11 +89,11 @@ func directoryResult(raw []byte, address net.IP, port string) (listed, valid boo
 		return false, false
 	}
 	var root map[string]json.RawMessage
-	if json.Unmarshal(raw, &root) != nil || root == nil {
+	if json.Unmarshal(raw, &root) != nil || root == nil || !exactAuthorityKeys(root, "response") || directoryError(root) {
 		return false, false
 	}
 	var response map[string]json.RawMessage
-	if json.Unmarshal(root["response"], &response) != nil || response == nil {
+	if json.Unmarshal(root["response"], &response) != nil || response == nil || !exactAuthorityKeys(response, "servers") || directoryError(response) {
 		return false, false
 	}
 	// An absent repeated field in an otherwise empty protobuf response is an
@@ -81,18 +102,13 @@ func directoryResult(raw []byte, address net.IP, port string) (listed, valid boo
 	if !present {
 		return false, len(response) == 0
 	}
-	for _, key := range []string{"error", "error_code", "errormsg"} {
-		if _, present := response[key]; present {
-			return false, false
-		}
-	}
 	var servers []map[string]json.RawMessage
 	if json.Unmarshal(value, &servers) != nil || servers == nil || len(servers) > 128 {
 		return false, false
 	}
 	for _, server := range servers {
 		var addr string
-		if json.Unmarshal(server["addr"], &addr) != nil || len(addr) > 320 {
+		if !exactAuthorityKeys(server, "addr") || json.Unmarshal(server["addr"], &addr) != nil || len(addr) > 320 {
 			return false, false
 		}
 		host, foundPort, err := net.SplitHostPort(addr)

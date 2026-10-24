@@ -2,6 +2,9 @@ package steam
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -29,6 +32,21 @@ func TestSteamConfigurationAndExactOptions(t *testing.T) {
 	if Validate(base) != nil {
 		t.Fatal("valid bounded configuration refused")
 	}
+	// The API option is a base/prefix, not a hard-coded route validator. A
+	// custom gateway may legitimately use even the method's name as its prefix.
+	for _, prefix := range []string{"/IGameServersService/GetServerList/v1/", "/internal/IGameServersService/GetServerList/v1", "/igameserversservice/getserverlist/V1/"} {
+		c := fixtureConfig("https://example.test" + prefix)
+		if Validate(c) != nil {
+			t.Fatal("clean API prefix was refused", prefix)
+		}
+	}
+	// Go's whitespace definition includes NEL. A whitespace-only CA adds no
+	// trust, but remains a valid stored option that an editor must preserve.
+	whiteCA := base
+	whiteCA.Options.APICA = string(rune(0x85))
+	if Validate(whiteCA) != nil {
+		t.Fatal("Go-whitespace-only trust input was refused")
+	}
 	for _, edit := range []func(*Config){
 		func(c *Config) { c.Target = "127.0.0.1" }, func(c *Config) { c.Target = "-switch:1" },
 		func(c *Config) { c.Target = "127.0.0.1:0" }, func(c *Config) { c.Target = "127.0.0.1:65536" },
@@ -40,6 +58,7 @@ func TestSteamConfigurationAndExactOptions(t *testing.T) {
 		func(c *Config) { c.Options.APIURL = "https://user:private@example.test" },
 		func(c *Config) { c.Options.APIURL = "https://example.test?key=private" },
 		func(c *Config) { c.Options.APIURL = "https://example.test#private" },
+		func(c *Config) { c.Options.APIURL = "https://example.test:" },
 		func(c *Config) { c.Options.APIURL = "https://example.test/a/../b" },
 		func(c *Config) { c.Options.APIURL = "https://example.test/a%2fb" },
 		func(c *Config) { c.Options.APICA = "malformed private CA" },
@@ -83,6 +102,11 @@ func TestSteamDirectoryRequiresExactCompleteMembershipEvidence(t *testing.T) {
 		{`{"response":{"servers":null}}`, false, false}, {`{"response":null}`, false, false},
 		{`{"response":{"error":"private"}}`, false, false}, {`{}`, false, false},
 		{`{"Response":{"servers":[]}}`, false, false},
+		{`{"response":{"servers":[{"addr":"127.0.0.9:27015"}]},"Response":{}}`, false, false},
+		{`{"response":{"servers":[{"addr":"127.0.0.9:27015"}],"Servers":[]}}`, false, false},
+		{`{"response":{"servers":[{"addr":"127.0.0.9:27015","Addr":"127.0.0.8:27015"}]}}`, false, false},
+		{`{"response":{"servers":[{"addr":"127.0.0.9:27015"}]},"error":"private"}`, false, false},
+		{`{"response":{"servers":[{"addr":"127.0.0.9:27015"}],"Error":"private"}}`, false, false},
 		{`{"response":{"servers":[],"error":"private"}}`, false, false},
 		{`{"response":{"servers":[],"servers":[{"addr":"127.0.0.9:27015"}]}}`, false, false},
 		{`{"response":{"servers":[{"addr":"127.0.0.8:27015","addr":"127.0.0.9:27015"}]}}`, false, false},
@@ -252,5 +276,100 @@ func TestSteamDeadlineCancellationAndDNSPreference(t *testing.T) {
 	}
 	if _, err := resolve(context.Background(), "server.example.test", func(context.Context, string) ([]net.IPAddr, error) { return nil, errors.New("private resolver error") }); err == nil {
 		t.Fatal("failed resolver produced an address")
+	}
+}
+
+func TestSteamAPIDeadlinePolicyPreservesParentCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer server.Close()
+	for _, failureIsDown := range []bool{false, true} {
+		c := fixtureConfig(server.URL)
+		c.Timeout = 60 * time.Millisecond
+		c.Options.APIFailureIsDown = failureIsDown
+		want := "pending"
+		if failureIsDown {
+			want = "down"
+		}
+		if result := Check(context.Background(), c); result.State != want || result.LatencyAvailable || strings.Contains(result.Message, privateKeyFixture) {
+			t.Fatal("own API deadline ignored provider policy or leaked credentials", failureIsDown, result)
+		}
+		parent, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		c.Timeout = time.Second
+		result := Check(parent, c)
+		cancel()
+		if result.State != "pending" || result.LatencyAvailable {
+			t.Fatal("parent expiry became a target outage", failureIsDown, result)
+		}
+	}
+}
+
+func TestSteamTLSHostnameAndMinimumVersionRemainRequired(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"response":{"servers":[{"addr":"127.0.0.9:27015"}]}}`))
+	})
+	trusted := httptest.NewTLSServer(handler)
+	defer trusted.Close()
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: trusted.Certificate().Raw})
+	legacy := httptest.NewUnstartedServer(handler)
+	legacy.TLS = &tls.Config{MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS11, Certificates: trusted.TLS.Certificates}
+	legacy.StartTLS()
+	defer legacy.Close()
+	c := fixtureConfig(legacy.URL)
+	c.Options.APICA = string(ca)
+	if result := Check(context.Background(), c); result.State != "pending" {
+		t.Fatal("trusted API negotiated a forbidden TLS version", result)
+	}
+	template := *trusted.Certificate()
+	template.IPAddresses, template.DNSNames = nil, []string{"wrong.fixture.invalid"}
+	template.IsCA, template.BasicConstraintsValid = true, true
+	template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, template.PublicKey, trusted.TLS.Certificates[0].PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongHost := httptest.NewUnstartedServer(handler)
+	wrongHost.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: trusted.TLS.Certificates[0].PrivateKey}}}
+	wrongHost.StartTLS()
+	defer wrongHost.Close()
+	c.Options.APIURL = wrongHost.URL
+	c.Options.APICA = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	if result := Check(context.Background(), c); result.State != "pending" {
+		t.Fatal("additive API trust bypassed hostname verification", result)
+	}
+}
+
+func TestSteamResponseHeadersAndBodyDeadlineRemainBounded(t *testing.T) {
+	for _, mode := range []string{"headers", "body"} {
+		t.Run(mode, func(t *testing.T) {
+			var entered atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				entered.Add(1)
+				if mode == "headers" {
+					w.Header().Set("X-Fixture", strings.Repeat("x", 33<<10))
+					_, _ = w.Write([]byte(`{"response":{"servers":[{"addr":"127.0.0.9:27015"}]}}`))
+					return
+				}
+				w.WriteHeader(200)
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			}))
+			defer server.Close()
+			c := fixtureConfig(server.URL)
+			c.Timeout = 500 * time.Millisecond
+			for _, failureIsDown := range []bool{false, true} {
+				c.Options.APIFailureIsDown = failureIsDown
+				want := "pending"
+				if failureIsDown {
+					want = "down"
+				}
+				started := time.Now()
+				if result := Check(context.Background(), c); result.State != want || result.LatencyAvailable || time.Since(started) > 3*time.Second {
+					t.Fatal("unbounded provider work or incorrect failure attribution", failureIsDown, result)
+				}
+			}
+			if entered.Load() != 2 {
+				t.Fatal("both transport boundaries must be exercised by actual loopback requests", entered.Load())
+			}
+		})
 	}
 }

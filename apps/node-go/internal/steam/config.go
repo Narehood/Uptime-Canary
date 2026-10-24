@@ -129,7 +129,7 @@ func prepare(c Config) (*prepared, error) {
 	}
 	u, err := url.Parse(base)
 	if err != nil || u == nil || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery ||
-		u.Fragment != "" || u.Hostname() == "" || u.RawPath != "" ||
+		u.Fragment != "" || u.Hostname() == "" || strings.HasSuffix(u.Host, ":") || u.RawPath != "" ||
 		u.Scheme != "https" && !(u.Scheme == "http" && c.Options.AllowInsecureAPI) ||
 		strings.Contains(u.Hostname(), "%") || icmp.Validate(icmp.Config{Target: u.Hostname(), Timeout: time.Second}) != nil {
 		return nil, errConfig

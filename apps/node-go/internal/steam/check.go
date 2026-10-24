@@ -34,10 +34,13 @@ func check(ctx context.Context, c Config, deps dependencies) Result {
 	if err != nil {
 		return Result{State: "down", Message: "Invalid Steam configuration"}
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 	unavailable := func() Result {
-		if c.Options.APIFailureIsDown && ctx.Err() == nil {
+		// The monitor's own API deadline is a provider failure governed by
+		// the configured policy. Caller cancellation/expiry is no observation.
+		if c.Options.APIFailureIsDown && parent.Err() == nil {
 			return Result{State: "down", Message: "Steam directory API unavailable"}
 		}
 		return Result{State: "pending", Message: "Steam directory API unavailable"}
