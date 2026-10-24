@@ -15,7 +15,7 @@ const contents = [
   `CANARY_ADMIN_TOKEN=${randomBytes(32).toString('hex')}`,
   `CANARY_CLUSTER_TOKEN=${randomBytes(32).toString('hex')}`,
   'CANARY_PEERS=[]',
-  'CANARY_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080',
+  'CANARY_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:18347,http://127.0.0.1:18347',
   '',
 ].join('\n');
 try {

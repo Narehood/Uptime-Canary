@@ -105,6 +105,13 @@ func (n *Node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		n.mu.Lock()
+		// An expired request may have waited behind a costly peer merge. Its
+		// sender retains its cursors, so leave the page for a live retry.
+		if r.Context().Err() != nil {
+			n.mu.Unlock()
+			errorReply(w, fail(http.StatusRequestTimeout, "Peer request cancelled"))
+			return
+		}
 		if n.stopped || n.fault != nil {
 			n.mu.Unlock()
 			errorReply(w, fail(503, "Runtime unavailable"))

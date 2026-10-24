@@ -517,3 +517,45 @@ demonstrated production regression or large-working-set throughput claim.
 The complete 21-process suite was not rerun locally for `4cbed02`; fresh
 exact-head hosted platform gates remain required before merge. This is not a
 tagged release, sustained capacity result or complete near-parity sign-off.
+
+## PR #9: expired peer requests and recovery freshness
+
+At `b41a266`, the [Alpine proof job](https://github.com/Narehood/Uptime-Canary/actions/runs/40106276690/job/120908810571)
+passes 21 of 22 process proofs; capacity fails the unchanged 45-second
+all-observer recovery gate. The complete capacity test takes 75.291 seconds.
+Both processes remain alive and their local observations are Up, approximately
+130–167 ms old, while the sampled remote observations are 11–29 seconds old.
+The remaining receipt and quietness assertions are not reached. The node,
+dashboard and race jobs pass; those results do not waive the recovery failure.
+The application and process-proof source at this head is unchanged from PR #8,
+so this evidence does not attribute the failure to the dashboard port change.
+
+Source inspection identifies an amplification path: an authenticated snapshot
+request can expire while waiting for the state mutex, then still merge its page,
+evaluate monitoring and construct a response after admission. Its sender keeps
+the old cursors on a failed exchange and retries that position. The new
+`TestPeerSnapshotCancelledBeforeAdmissionDoesNotPublish` reproduces publication
+and HTTP 200 before the repair, both for an already cancelled request and for
+cancellation while the mutex is unavailable. The repair checks cancellation
+immediately after acquiring the mutex, before applying any state. A live retry
+still commits the page. Pages already admitted retain their existing atomic
+publication and evaluation behavior; paging, receipt ordering, workload,
+freshness and deadlines are unchanged.
+
+This establishes an abandoned-request defect, not its share of the observed
+capacity failure. Fresh exact-source hosted acceptance remains required.
+
+On Windows amd64, source fingerprint
+`441ea3ee7aaf32340dc38cbe903cc458de9b5499a4ec691a850ad31ec3f4437c`
+passes the complete changed canary package: 1,071 passing events, no failures,
+and the two expected question-mark filename skips. Vet passes. The unchanged
+capacity proof passes 1/1 with no failures or skips; its command takes 32.969
+seconds after a 74.906-second build. Binary SHA-256 is
+`f6d6dda9669ac6047100fbecf4cfcab67d97e8b45c9dd10b1fc7704cdf681a38`.
+Source, fixtures and binary remain unchanged. Sampled scratch peaks at
+509,266,459 bytes and is cleaned to zero, with no module-cache growth.
+The private report collector fails after the successful proof while parsing
+non-object JSON; the proof's own saved result preserves its pass, and a
+separate bounded evidence check verifies the component results. This is not
+an aggregate runner pass, an Alpine acceptance or a measured speedup. The
+collector is corrected without rerunning the application tests.

@@ -17,7 +17,7 @@ def validate(root):
         "CANARY_NODE_ID": "ci-config-only",
         "CANARY_ADMIN_TOKEN": "ci-admin-fixture-000000000000000000000000",
         "CANARY_CLUSTER_TOKEN": "ci-cluster-fixture-0000000000000000000000",
-        "CANARY_CORS_ORIGINS": "http://127.0.0.1:8080",
+        "CANARY_CORS_ORIGINS": "http://127.0.0.1:18347",
     }
 
     def config(name, environment):
@@ -42,10 +42,34 @@ def validate(root):
     assert not web.get("volumes")
     assert not web["services"]["web"].get("environment")
     # The default build-from-checkout entry point must keep working too.
-    local = config("compose.yaml", {**clean, **fixture, "COMPOSE_PROFILES": "web"})
+    local_fixture = {key: value for key, value in fixture.items() if key != "CANARY_CORS_ORIGINS"}
+    local = config("compose.yaml", {**clean, **local_fixture, "COMPOSE_PROFILES": "web"})
     assert set(local["services"]) == {"node", "web"}
+    assert set(local["services"]["node"]["environment"]["CANARY_CORS_ORIGINS"].split(",")) == {
+        "http://localhost:18347", "http://127.0.0.1:18347"}
+
+    def dashboard_port(rendered, published):
+        ports = rendered["services"]["web"]["ports"]
+        assert len(ports) == 1
+        assert ports[0]["target"] == 8080
+        assert str(ports[0]["published"]) == str(published)
+        assert ports[0]["host_ip"] == "127.0.0.1"
+
+    for rendered in (combined, web, local):
+        dashboard_port(rendered, 18347)
+    # Explicit earlier and custom host ports remain supported. The browser
+    # origin must follow the selected host mapping, not the internal listener.
+    for published in (8080, 19283):
+        origin = "http://127.0.0.1:" + str(published)
+        override = {**clean, **fixture, "CANARY_WEB_PORT": str(published), "CANARY_CORS_ORIGINS": origin}
+        for name in ("deploy/portainer-stack.yml", "deploy/portainer-dashboard.yml", "compose.yaml"):
+            rendered = config(name, {**override, "COMPOSE_PROFILES": "web"})
+            dashboard_port(rendered, published)
+            if "node" in rendered["services"]:
+                assert rendered["services"]["node"]["environment"]["CANARY_CORS_ORIGINS"] == origin
     print("PASS combined, node-only, dashboard-only and build-from-checkout Compose configuration")
     print("PASS split service parity, independent dashboard configuration and private node volumes")
+    print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
 
 
 if __name__ == "__main__":

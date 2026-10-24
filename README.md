@@ -60,7 +60,7 @@ Uptime-Canary runs as a small group of independent, headless Go nodes. Each node
 
 ## Quickstart
 
-This runs one headless node on your machine. You don't need Docker.
+This runs one headless node on your machine. You don't need Docker. For step-by-step Docker, Portainer and testing setup, see the [Setup and Testing](https://github.com/Narehood/Uptime-Canary/wiki/Setup-and-Testing) wiki page.
 
 **You need:** Go 1.27.3 or newer (the npm scripts use `CANARY_GO`, then a portable Go in `.canary/tools/go`, then `go` on your `PATH`), and Node.js 24 (24.13 or newer, below 25) with npm for the setup script, CLI wrapper and dashboard.
 
@@ -219,8 +219,12 @@ A badge shows the current state only: unknown when results are stale, missing or
 | **Local, headless** | `npm run dev` | API `:3100` | ✅ |
 | **Local + dashboard** | `npm run dev`, then `npm run dev:web` | UI `:5173` | ✅ browser-proved on private fixtures |
 | **Docker, headless** | `docker compose up --build -d node` | API `:3100` | ⚠️ images and the identity-volume layout verified with `docker run`; node image passed 11/11 CI container checks, most recently on `4d51a6a`; the repository `compose.yaml` itself not yet run |
-| **Docker + dashboard** | `docker compose --profile web up --build -d` | UI `:8080` | ⚠️ node and web images passed CI, most recently on `4d51a6a`; the repository `compose.yaml` itself not yet run |
-| **Portainer stacks** | Images built on the Docker host, then separate [node and dashboard stacks](docs/portainer.md) (`deploy/portainer-node.yml` per monitoring host, `deploy/portainer-dashboard.yml` once) or the combined `deploy/portainer-stack.yml` | API `:3100`, UI `:8080` | ⚠️ read-only root with a bounded `/tmp`; the separate stacks passed as actual Compose projects in CI on `0c3d131` ([run 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)), after the single template's run on `4d51a6a`; not yet run in Portainer's UI, across hosts or on arm64 |
+| **Docker + dashboard** | `docker compose --profile web up --build -d` | UI `:18347` | ⚠️ node and web images passed CI, most recently on `4d51a6a`; the repository `compose.yaml` itself not yet run |
+| **Portainer stacks** | Images built on the Docker host, then separate [node and dashboard stacks](docs/portainer.md) (`deploy/portainer-node.yml` per monitoring host, `deploy/portainer-dashboard.yml` once) or the combined `deploy/portainer-stack.yml` | API `:3100`, UI `:18347` | ⚠️ read-only root with a bounded `/tmp`; the separate stacks passed as actual Compose projects in CI on `0c3d131` ([run 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)), after the single template's run on `4d51a6a`; not yet run in Portainer's UI, across hosts or on arm64 |
+
+The dashboard container publishes host port **18347** by default (`CANARY_WEB_PORT`), chosen to stay clear of ports common self-hosted apps use, such as 8080. Nothing stops another app from using 18347; if it's taken, set `CANARY_WEB_PORT` to a free port. Inside the container, nginx and its health check still listen on 8080. Earlier CI records keep the ports and exact source they tested; validation of this host-port change is recorded with its pull request.
+
+**Existing installations:** a `CANARY_WEB_PORT` you set explicitly keeps applying. Without one, the dashboard moves to 18347, but an existing `CANARY_CORS_ORIGINS` still names the old `:8080` origins (`npm run init` never rewrites an existing `.env`, and Portainer keeps your stack variables), so the node refuses the dashboard's browser origin. Either set `CANARY_WEB_PORT=8080`, or add the exact address you open the dashboard at, such as `http://localhost:18347`, to `CANARY_CORS_ORIGINS` on every node it signs in to. Update that origin whenever you change the host port.
 
 Every port listens on `127.0.0.1` by default. All images are Alpine Linux, build stages included; the node runs as an unprivileged user with `no-new-privileges`, and Compose grants `NET_RAW` only for ping. Each node needs its own volumes: `canary-data` at `/data` for the database and a separate `canary-identity` at `/identity` for identity state. Never share them between nodes, and keep the identity volume when you restore a database. Containers created before the identity volume existed need a one-time, stopped-node copy: see [backups](docs/backups.md).
 
@@ -235,7 +239,8 @@ Every port listens on `127.0.0.1` by default. All images are Alpine Linux, build
 | `CANARY_PEERS` | `[]` | JSON array of `{ "id", "url", "name"? }` for the other nodes |
 | `CANARY_HOST` / `CANARY_PORT` | `127.0.0.1` / `3100` | API listener without Docker |
 | `CANARY_DB` | `.canary/canary.db` | SQLite path (`/data/canary.db` in Docker) |
-| `CANARY_CORS_ORIGINS` | dashboard dev and container origins | Browser origins allowed to call the management API |
+| `CANARY_WEB_PORT` | `18347` | Published dashboard host port (Compose and Portainer); the container itself listens on 8080 |
+| `CANARY_CORS_ORIGINS` | dashboard dev (`:5173`) and container (`:18347`) origins | Exact browser origins allowed to call the management API; update it when the dashboard's host port changes |
 | `CANARY_HISTORY_LIMIT`, `CANARY_HISTORY_RETENTION_MS` | `1000`, 7 days | Local samples kept per monitor |
 | `CANARY_SYNC_INTERVAL_MS`, `CANARY_NOTIFICATION_DELAY_MS`, `CANARY_PEER_TIMEOUT_MS` | `1000`, `1500`, `2000` | Sync cadence, stagger between senders, peer timeout |
 | `CANARY_IDENTITY_DIRECTORY` | `.canary-identities` beside the database; `/identity` in containers | Separately retained identity state (its own `canary-identity` volume in Compose), needed to activate a restore; see [backups](docs/backups.md) |
