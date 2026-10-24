@@ -15,40 +15,56 @@ are not Swarm service definitions. The root [compose.yaml](../compose.yaml)
 remains the build-from-checkout option, with the dashboard behind its `web`
 profile.
 
-The project is development software, not a validated release. There are no
-published release images. The template deliberately uses images already on
-your selected Docker host and refuses implicit registry pulls.
+The project is development software, not a validated release. The templates
+pull development images from GitHub Container Registry (GHCR), following the
+same deployment pattern as [WebTools](https://github.com/Narehood/webtools).
+No image build, Git checkout, Go or Node.js installation is required on your
+Portainer host. The initial published image profile is Linux amd64.
 
-## Prepare images
+## Images are pulled from GitHub
 
-In the selected environment, open **Images → Build a new image**. Select
-the URL build method (under **Upload** in some versions), and provide the
-repository URL and Dockerfile path. Build twice, using the same commit for
-both images if using the combined stack. For separate stacks, build only the
-image used by that stack:
+The combined stack pulls both images; separate stacks pull only the image
+they use:
 
-| Image tag | Git repository | Dockerfile at repository root |
-| --- | --- | --- |
-| `uptime-canary-node:development` | `https://github.com/Narehood/Uptime-Canary.git` | `Dockerfile.node` |
-| `uptime-canary-web:development` | `https://github.com/Narehood/Uptime-Canary.git` | `Dockerfile.web` |
+| Service | Default image |
+| --- | --- |
+| Node | `ghcr.io/narehood/uptime-canary-node:latest` |
+| Dashboard | `ghcr.io/narehood/uptime-canary-web:latest` |
 
-Select the intended Git reference in your build workflow. Build on the host
-where the stack will run, not just on the Portainer server. If your Portainer
-version or remote agent cannot build from Git, build on a separate build host
-and push to your own registry, then pull both images into the target environment
-through **Images**. Set `CANARY_NODE_IMAGE` and `CANARY_WEB_IMAGE` to those exact
-tags or digests. No build runs inside this stack.
+GitHub Actions builds the existing Dockerfiles. Pull requests build without
+publishing. Pushes to `main`, or a manual **Container images** run on `main`,
+publish `sha-<full commit>` tags and advance `latest` after both images build
+successfully. A run for an older commit does not advance `latest` after `main`
+has moved. These development tags do not imply a tagged release or release
+approval. A commit tag identifies its source; pin an image digest when you
+need its exact bytes to remain fixed across a rebuild.
 
-With CLI access on the target host, the equivalent commands from a checked-out
-commit are:
+Pending publishing runs queue rather than replacing one another. Before
+promoting `latest`, the publisher captures both previous digests. If a write
+fails, it attempts to restore every attempted tag, including a timed-out write
+that might have committed. A rollback failure leaves the job failed and
+requires repair. First publication has no previous tag to restore; a failed
+bootstrap remains incomplete. Updating two registry packages is not atomic:
+use matching commit tags or digests when a deployment requires a fixed pair.
 
-```sh
-docker build -f Dockerfile.node -t uptime-canary-node:development .
-docker build -f Dockerfile.web -t uptime-canary-web:development .
-```
+For a matching node/dashboard source revision, set `CANARY_IMAGE_TAG` to
+`sha-` followed by the full 40-character published commit. Set
+`CANARY_NODE_IMAGE` and `CANARY_WEB_IMAGE` to full references to override those
+defaults, including private-registry images or digests. An existing stack
+override using `uptime-canary-*:development` still selects that local image;
+remove the old override to use the GHCR default.
 
-Both builds use the existing repository Dockerfiles. They download build
-dependencies and need ordinary Docker build storage on that host.
+Public GHCR images require no registry login. GitHub initially creates new
+packages as private: the repository owner must make each package public once
+under **Packages → package → Package settings → Change visibility**. An image
+is not ready for anonymous deployment until its publishing run succeeds and
+an unauthenticated pull works. A `denied` or `unauthorized` error is not a
+missing local build. See [GitHub's package visibility instructions](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+
+For optional local builds, use the root `compose.yaml` with its `web` profile,
+or build the two Dockerfiles yourself and set the full image overrides. Set
+`CANARY_PULL_POLICY=never` for preloaded/offline images. The default policy is
+`missing`; Docker also refreshes the `latest` tag under that policy.
 
 ## Create the stack
 
@@ -79,7 +95,9 @@ Optional variables:
 | Variable | Default / use |
 | --- | --- |
 | `CANARY_NODE_NAME` | `Uptime Canary` |
-| `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | The locally built image tags above. |
+| `CANARY_IMAGE_TAG` | `latest`; use the same published `sha-<full commit>` tag for a pinned pair. |
+| `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | Optional full image references; override each GHCR default. Remove old local-development overrides to switch. |
+| `CANARY_PULL_POLICY` | `missing`; use `never` only for preloaded/offline image overrides. |
 | `CANARY_BIND_ADDRESS`, `CANARY_WEB_BIND_ADDRESS` | `127.0.0.1`. Set to the host's LAN IP to access from another computer, or keep loopback behind a local reverse proxy. |
 | `CANARY_PORT`, `CANARY_WEB_PORT` | Published host ports `3100` and `18347`. The dashboard's container port remains `8080`. |
 | `CANARY_PEERS` | `[]`, or a JSON array such as `[{"id":"canary-home-2","url":"http://192.168.1.21:3100"}]`. URLs must be reachable from the node container. |
@@ -152,10 +170,9 @@ docker compose -p canary-dashboard -f deploy/portainer-dashboard.yml up -d
 docker compose -p canary-home-1 -f deploy/portainer-node.yml up -d
 ```
 
-These commands use images already present on their respective Docker hosts;
-they do not build or pull an image. A dashboard-only host needs only the web
-image. A node-only host needs only the node image. Build compatible versions
-from the same intended source reference.
+These commands pull images from GHCR without building locally. A dashboard-only
+host pulls only the web image. A node-only host pulls only the node image.
+Use the same published `CANARY_IMAGE_TAG` for compatible source versions.
 
 ### Splitting an existing combined stack
 
@@ -183,10 +200,11 @@ a safe way to clone a node. Follow the existing backup/restore instructions befo
 using historical data. Do not restore an old identity directory alongside an old
 database, or delete it to bypass a lock or startup refusal.
 
-After rebuilding images, update/redeploy without removing volumes. Leave
-automatic GitOps updates off while using development builds: a YAML update does
-not rebuild these local image tags. Upgrade all cluster nodes together when the
-peer protocol changes.
+Update/redeploy without removing volumes. Development `latest` images can
+advance; pin the common commit tag or full image digests for controlled
+upgrades. Automatic GitOps updates are optional, not required to pull an image
+when deploying a stack. Upgrade all cluster nodes together when the peer
+protocol changes.
 
 ## Scope and references
 

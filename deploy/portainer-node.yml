@@ -1,9 +1,9 @@
 # One independent Go node. Also usable with docker compose -f this-file.
-# See docs/portainer.md; build/pull the node image on this Docker host first.
+# Pull the node image from GHCR. See docs/portainer.md for pinning and overrides.
 services:
   node:
-    image: ${CANARY_NODE_IMAGE:-uptime-canary-node:development}
-    pull_policy: never
+    image: ${CANARY_NODE_IMAGE:-ghcr.io/narehood/uptime-canary-node:${CANARY_IMAGE_TAG:-latest}}
+    pull_policy: ${CANARY_PULL_POLICY:-missing}
     init: true
     restart: unless-stopped
     read_only: true

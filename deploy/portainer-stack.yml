@@ -1,10 +1,10 @@
 # Portainer Docker Standalone stack. See docs/portainer.md before deploying.
-# Build or pull both images onto the selected Docker host first.
-# No published release images are assumed; never pull an unrelated image name.
+# Pull node and dashboard images from GitHub Container Registry.
+# CANARY_IMAGE_TAG pins both images; full image overrides remain supported.
 services:
   node:
-    image: ${CANARY_NODE_IMAGE:-uptime-canary-node:development}
-    pull_policy: never
+    image: ${CANARY_NODE_IMAGE:-ghcr.io/narehood/uptime-canary-node:${CANARY_IMAGE_TAG:-latest}}
+    pull_policy: ${CANARY_PULL_POLICY:-missing}
     init: true
     restart: unless-stopped
     read_only: true
@@ -44,8 +44,8 @@ services:
         max-file: "3"
 
   web:
-    image: ${CANARY_WEB_IMAGE:-uptime-canary-web:development}
-    pull_policy: never
+    image: ${CANARY_WEB_IMAGE:-ghcr.io/narehood/uptime-canary-web:${CANARY_IMAGE_TAG:-latest}}
+    pull_policy: ${CANARY_PULL_POLICY:-missing}
     restart: unless-stopped
     read_only: true
     tmpfs:

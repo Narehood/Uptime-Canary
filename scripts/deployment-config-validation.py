@@ -41,6 +41,26 @@ def validate(root):
     assert set(node["volumes"]) == {"canary-data", "canary-identity"}
     assert not web.get("volumes")
     assert not web["services"]["web"].get("environment")
+    # A fresh Portainer environment must pull real GHCR names, with no build
+    # context or preloaded development-image requirement.
+    for rendered in (combined, node, web):
+        for component, service in rendered["services"].items():
+            assert service["image"] == f"ghcr.io/narehood/uptime-canary-{component}:latest"
+            assert service["pull_policy"] == "missing"
+            assert "build" not in service
+    pinned = "sha-" + "a" * 40
+    for name in ("deploy/portainer-stack.yml", "deploy/portainer-node.yml", "deploy/portainer-dashboard.yml"):
+        rendered = config(name, {**clean, **fixture, "CANARY_IMAGE_TAG": pinned})
+        for component, service in rendered["services"].items():
+            assert service["image"] == f"ghcr.io/narehood/uptime-canary-{component}:{pinned}"
+        # Full image references retain their own tags/digests and take
+        # precedence over the common tag. Offline local fixtures never pull.
+        references = {"node": "private.example.test/node:local", "web": "private.example.test/web@sha256:" + "b" * 64}
+        rendered = config(name, {**clean, **fixture, "CANARY_IMAGE_TAG": pinned,
+            "CANARY_NODE_IMAGE": references["node"], "CANARY_WEB_IMAGE": references["web"], "CANARY_PULL_POLICY": "never"})
+        for component, service in rendered["services"].items():
+            assert service["image"] == references[component]
+            assert service["pull_policy"] == "never"
     # The default build-from-checkout entry point must keep working too.
     local_fixture = {key: value for key, value in fixture.items() if key != "CANARY_CORS_ORIGINS"}
     local = config("compose.yaml", {**clean, **local_fixture, "COMPOSE_PROFILES": "web"})
@@ -70,6 +90,7 @@ def validate(root):
     print("PASS combined, node-only, dashboard-only and build-from-checkout Compose configuration")
     print("PASS split service parity, independent dashboard configuration and private node volumes")
     print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
+    print("PASS GHCR pulls, matching commit tags, full image overrides and offline pull policy")
 
 
 if __name__ == "__main__":
