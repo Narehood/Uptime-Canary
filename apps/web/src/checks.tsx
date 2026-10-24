@@ -3,9 +3,10 @@ import type { CertificateSummary, HTTPMonitorOptions, Monitor, MonitorInput, Mon
 import { maskedUrl, plural, span } from './format';
 import { gpCanonical, gpFacts } from './globalping';
 import { SERVICE_PROTOCOL, serviceFacts } from './serviceSpecs';
+import { steamCanonical, steamFacts } from './steam';
 import { systemdUnit } from './systemService';
 
-export type CheckCategory = 'web' | 'remote' | 'local' | 'data' | 'messaging' | 'infra' | 'manual';
+export type CheckCategory = 'web' | 'remote' | 'game' | 'local' | 'data' | 'messaging' | 'infra' | 'manual';
 
 export interface CheckType {
   type: MonitorType;
@@ -23,6 +24,7 @@ export interface CheckType {
 export const CATEGORY_LABEL: Record<CheckCategory, string> = {
   web: 'Web and network',
   remote: 'Remote probes (third party)',
+  game: 'Game servers',
   local: 'On each node’s own system',
   data:'Databases and caches',
   messaging: 'Messaging and containers',
@@ -40,6 +42,7 @@ export const CHECK_TYPES: CheckType[] = [
   { type: 'websocket', label: 'WebSocket', short: 'ws', category: 'web', hint: 'Upgrade and ping/pong', targetLabel: 'URL', placeholder: 'wss://stream.example.com/socket', targetHint: 'A ws:// or wss:// address. Up when the upgrade succeeds and a ping gets its pong.' },
   { type: 'smtp', label: 'SMTP', short: 'smtp', category: 'web', hint: 'Greeting, EHLO, TLS', targetLabel: 'Host and port', placeholder: 'mail.example.com:587', targetHint: 'host:port. Sends no login and no mail: greeting, EHLO and the chosen TLS mode only.' },
   { type: 'globalping', label: 'Globalping', short: 'gp', category: 'remote', hint: 'Ping, HTTP or DNS from a probe elsewhere' },
+  { type: 'steam', label: 'Steam game server', short: 'steam', category: 'game', hint: 'Listed in Steam’s server directory' },
   {
     type: 'system-service', label: 'System service', short: 'svc', category: 'local', hint: 'systemd or Windows service state', targetLabel: 'Internal service name', placeholder: 'sshd.service or Spooler',
     targetHint: 'The internal name, not the display name: sshd or sshd.service for systemd, Spooler (not “Print Spooler”) on Windows. Letters, digits, dots, underscores, hyphens and @; no spaces, paths or patterns.',
@@ -119,7 +122,7 @@ export function inputOf(monitor: Monitor): MonitorInput {
  * generation, which closes an open incident administratively, without a recovery alert. Name, schedule interval,
  * retry spacing, alert destinations, repeat, group and manual status keep the incident.
  */
-const CHECK_FIELDS = ['type', 'target', 'timeoutMs', 'enabled', 'nodeIds', 'expectedStatusCodes', 'upsideDown', 'retries', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'push', 'globalping'] as const;
+const CHECK_FIELDS = ['type', 'target', 'timeoutMs', 'enabled', 'nodeIds', 'expectedStatusCodes', 'upsideDown', 'retries', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'push', 'globalping', 'steam'] as const;
 const norm = (key: string, value: unknown): unknown => {
   if (key === 'nodeIds' && Array.isArray(value)) return [...value].sort();
   if ((key === 'upsideDown' || key === 'enabled') && !value) return false;
@@ -127,6 +130,8 @@ const norm = (key: string, value: unknown): unknown => {
   if (key === 'expectedStatusCodes' && Array.isArray(value) && !value.length) return undefined;
   // The node compares Globalping options through Go's omitempty encoding.
   if (key === 'globalping') return value === undefined || value === null ? undefined : gpCanonical(value);
+  // Every Steam option counts, the API key included; the comparison follows Go's omitempty encoding.
+  if (key === 'steam') return value === undefined || value === null ? undefined : steamCanonical(value);
   return value ?? undefined;
 };
 export function checkChanges(before: MonitorInput, after: MonitorInput): string[] {
@@ -145,10 +150,11 @@ const CHECK_FIELD_WORDS: Record<string, string> = {
   type: 'check type', target: 'target', timeoutMs: 'timeout', enabled: 'active state', nodeIds: 'locations', expectedStatusCodes: 'accepted statuses',
   upsideDown: 'inverted result', retries: 'retry count', http: 'HTTP options', tls: 'TLS options', dns: 'DNS options', websocket: 'WebSocket options',
   smtp: 'SMTP options', service: `service options`, ping: 'ping options', push: 'push token or GET setting', intervalMs: 'heartbeat interval', globalping: 'Globalping options',
+  steam: 'Steam API key or options',
 };
 /** `type` is the edited monitor's type, for words that depend on it: a system service's target is its service name. */
 export const checkChangeWords = (keys: string[], type?: string): string[] =>
-  keys.map(key => key === 'target' && type === 'system-service' ? 'service name' : CHECK_FIELD_WORDS[key] ?? key);
+  keys.map(key => key === 'target' && type === 'system-service' ? 'service name' : key === 'target' && type === 'steam' ? 'server address' : CHECK_FIELD_WORDS[key] ?? key);
 
 /** "200–299, 301" from a list of codes. */
 export function statusCodesText(codes: number[] | undefined): string {
@@ -294,6 +300,7 @@ export function checkFacts(m: Monitor, { viewer, reveal }: { viewer: boolean; re
   }
   if (isServiceType(m.type)) facts.push(...serviceFacts(m, viewer, reveal));
   if (m.type === 'globalping') facts.push(...gpFacts(m, viewer, reveal));
+  if (m.type === 'steam') facts.push(...steamFacts(m, viewer, reveal));
   if (m.retries) facts.push({ label: 'Retries', value: <>{plural(m.retries, 'failed check')} tolerated as pending before down{m.retryIntervalMs ? <>, spaced {span(m.retryIntervalMs)}</> : null}</> });
   else if (m.retryIntervalMs && m.retryIntervalMs !== m.intervalMs) facts.push({ label: 'While failing', value: <>Checks every {span(m.retryIntervalMs)}</> });
   if (m.upsideDown) facts.push({ label: 'Result', value: <span className="warn-text">Inverted: up when the check fails</span> });

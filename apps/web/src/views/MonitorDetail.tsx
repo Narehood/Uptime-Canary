@@ -37,6 +37,20 @@ function interpretation(view: MonitorView, a: Assessment): ReactNode {
       default: break;
     }
   }
+  // Every node asks the same Steam directory, so locations differ by DNS answer or API path, not by the route to the server.
+  if (view.monitor.type === 'steam') {
+    switch (a.kind) {
+      case 'everywhere': return a.total === 1
+        ? <>Failing on {ids(a.failing)}, the only node assigned. It asked Steam’s directory whether the server is listed.</>
+        : 'Failing on every assigned node. They all ask the same Steam directory, so the server most likely isn’t listed (stopped, private, or listed under another address or port), or, where API failures count as down, the Steam API is failing for all of them.';
+      case 'partial': return <>
+        Failing on {ids(a.failing)}{a.passing.length ? <> but passing on {ids(a.passing)}</> : null}. Every node asks the same Steam directory, so a split usually means the nodes resolved the host to different addresses or, where API failures count as down, that some of them couldn’t reach the API. It says little about the route to the game server.
+        {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
+      </>;
+      case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the Steam API couldn’t be reached, timed out, answered with an error or sent an answer that isn’t a valid directory listing. Pending is neither up nor down and never sends a recovery.</>;
+      default: break;
+    }
+  }
   switch (a.kind) {
     case 'paused': return 'Paused. No node checks it and no alerts are sent until it’s resumed.';
     case 'conflict': return 'Nodes hold different versions of this monitor. Results show as unknown until someone resolves the conflict.';
@@ -332,7 +346,7 @@ function HistoryCard({ view }: { view: MonitorView }) {
                   <h3 className="mini-h">Response time</h3>
                   {measured.length
                     ? <LatencyChart samples={samples} now={overview.now} label={`Response time measured by ${endpoint} over ${samples.length} checks; ${measured.length} with a measured round trip`} />
-                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual and system service checks, and unavailable ICMP replies, have no latency.</p>}
+                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual and system service checks, Steam checks without a measured echo, and unavailable ICMP replies have no latency.</p>}
                   <div className="legend"><span><i className="sw line" />Response time (measured, successful checks)</span><span><i className="sw band" />Failed checks</span></div>
                 </div>
               )}
@@ -352,7 +366,7 @@ function Facts({ view }: { view: MonitorView }) {
   const group = m.groupId ? groupMap.get(m.groupId) : undefined;
   const dependency = group?.group.outageMonitorId ? monitorMap.get(group.group.outageMonitorId)?.monitor : undefined;
   const facts = checkFacts(m, { viewer, reveal });
-  const hasSecrets = !viewer && Boolean(m.webhookUrl || m.http?.headers || m.http?.body || m.http?.proxyUrl || m.websocket?.headers || m.websocket?.proxyUrl || m.service || m.globalping?.token || m.globalping?.http?.headers || m.globalping?.apiUrl);
+  const hasSecrets = !viewer && Boolean(m.webhookUrl || m.http?.headers || m.http?.body || m.http?.proxyUrl || m.websocket?.headers || m.websocket?.proxyUrl || m.service || m.globalping?.token || m.globalping?.http?.headers || m.globalping?.apiUrl || m.steam?.apiUrl);
   return (
     <>
       <dl className="kv">

@@ -1314,3 +1314,30 @@ Local storage after acceptance remained about **1.17 GiB**, zero scratch and
 one bounded cache; no VM, source snapshot, archive or binary collection was
 created. This is a coherent development checkpoint, not complete parity or
 whole-project release certification.
+
+
+## Merged protocol-16 main checkpoint, 187f3ae
+
+Workflows [40043011544](https://github.com/Narehood/Uptime-Canary/actions/runs/40043011544)
+and [40043011690](https://github.com/Narehood/Uptime-Canary/actions/runs/40043011690)
+completed successfully on `187f3aeb252afdfa27442576febaeb735aae77c7`.
+All seven artifact manifests were inspected against the exact Git blobs:
+587 entries match. The four container manifests share SHA-256
+`a6baeb7eaf94625eec596fbabed34f1f4b27fe7b8fd7bbbe98eeae4cc5f17110`.
+
+Native Windows amd64, Linux amd64 and Linux arm64 each passed all 19 process
+proofs, with clean build identity for this commit and protocol 16. Linux jobs
+also executed Alpine help checks. Their guarded scratch peaks were
+429,050,719, 434,239,837 and 429,562,410 bytes respectively; each cleaned to zero.
+The node container passed 11 checks. The web runtime/assets/headers/SPA and
+nonroot checks passed. The proof job passed 19/19 and exercised both combined
+and separate Compose deployments. Core and worker-parent race summaries
+recorded 893 and 1,528 passing events, zero failures/skips/races; helper race
+packages are separate. Capped worker children intentionally remain
+uninstrumented. The production worker SHA-256 was
+`088f9e7c3818948a94fd41760d4488cbd8fcd109f4ac41e1a3fbe94c38e16ca8`.
+
+This is merged protocol-16 evidence. It does not validate the later Steam
+protocol-17 branch, certify the Portainer UI/cross-host deployment, publish a
+tagged release or establish complete Kuma parity. Earlier failures above remain
+historical and have not been relabelled as passes.

@@ -931,10 +931,10 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .sp-obs-note { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--accent-wash); color: var(--text-1); }
 .sp-obs-note .ic { flex: none; margin-top: 2px; }
 
-.gp-note, .gp-timing { display: flex; gap: 10px; align-items: flex-start; border-radius: 11px; padding: 10px 12px; font-size: 13px; color: var(--text-2); background: var(--surface-2); }
-.gp-note { background: var(--accent-wash); color: var(--text-1); }
-.gp-note .ic, .gp-timing .ic { flex: none; margin-top: 2px; }
-.gp-timing .linkbtn { font-size: inherit; }
+.gp-note, .gp-timing, .steam-note, .steam-timing { display: flex; gap: 10px; align-items: flex-start; border-radius: 11px; padding: 10px 12px; font-size: 13px; color: var(--text-2); background: var(--surface-2); }
+.gp-note, .steam-note { background: var(--accent-wash); color: var(--text-1); }
+.gp-note .ic, .gp-timing .ic, .steam-note .ic, .steam-timing .ic { flex: none; margin-top: 2px; }
+.gp-timing .linkbtn, .steam-key-new .linkbtn { font-size: inherit; }
 
 /* System service: where the check runs (each node's own OS) and the unit names each platform reads. */
 .svc-note { display: flex; gap: 10px; align-items: flex-start; border-radius: 11px; padding: 10px 12px; font-size: 13px; background: var(--accent-wash); color: var(--text-1); }

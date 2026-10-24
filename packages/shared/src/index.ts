@@ -1,6 +1,6 @@
 /** Public management API contract. Runtime coordination types remain private to the node. */
 export * from './status.js';
-export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service';
+export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam';
 export type ObservationState = 'up' | 'down' | 'unknown' | 'pending';
 export type Role = 'admin' | 'editor' | 'viewer';
 
@@ -41,6 +41,17 @@ export interface MonitorInput {
   push?: { token: string; allowGet?: boolean };
   /** Remote measurement; API trust/credentials and query text are private. */
   globalping?: GlobalpingMonitorOptions;
+  steam?: SteamMonitorOptions;
+}
+
+export interface SteamMonitorOptions {
+  apiKey: string;
+  apiUrl?: string;
+  apiCa?: string;
+  allowInsecureApi?: boolean;
+  apiFailureIsDown?: boolean;
+  skipLatency?: boolean;
+  packetSize?: number;
 }
 
 export interface GlobalpingMonitorOptions {
