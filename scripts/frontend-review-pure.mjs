@@ -213,23 +213,33 @@ await check('F1 preview: credential-named text in unknown service fields is hidd
       redis: {
         address: 'cache.internal:6379', password: 'redis-secret', sentinelPassword: 'nested-secret',
         tls: { serverName: 'cache.internal', clientKeyPem: 'tls-key', futureKeyId: 'tls-nested-secret' },
-        futureOption: { nullable: null, apiToken: 'option-secret', label: 'plain' },
+        futureOption: { nullable: null, apiToken: 'option-secret', label: 'plain', authorization: 'Bearer option-bearer' },
+        clientCredential: 'redis-credential',
       },
-      futureEnvelope: { enabled: true, token: 'future-secret', region: 'eu', retries: 3, headers: { 'X-Key': 'header-secret' }, items: [{ secretRef: 'list-secret', label: 'plain' }] },
+      futureEnvelope: {
+        enabled: true, token: 'future-secret', region: 'eu', retries: 3, headers: { 'X-Key': 'header-secret' }, items: [{ secretRef: 'list-secret', label: 'plain' }],
+        authorization: 'Bearer envelope-bearer', credentials: { id: 'review', value: 'envelope-credential' }, authMethod: 'scram-sha-256',
+      },
       futureSecret: 'sibling-secret',
       sftp: { address: 'files.internal:22', username: 'review', hostKeySha256: 'SHA256:review-fingerprint', unsafeIgnoreHostKey: false, privateKeyPem: 'sftp-key' },
     },
   };
   const preview = pm.masked(input);
   const text = JSON.stringify(preview);
-  for (const secret of ['redis-secret', 'nested-secret', 'tls-key', 'tls-nested-secret', 'option-secret', 'future-secret', 'header-secret', 'list-secret', 'sibling-secret', 'sftp-key'])
+  for (const secret of ['redis-secret', 'nested-secret', 'tls-key', 'tls-nested-secret', 'option-secret', 'future-secret', 'header-secret', 'list-secret', 'sibling-secret', 'sftp-key',
+    'option-bearer', 'redis-credential', 'envelope-bearer', 'envelope-credential'])
     assert.ok(!text.includes(secret), secret);
-  assert.deepEqual(preview.service.futureEnvelope, { enabled: true, token: MASK, region: 'eu', retries: 3, headers: { 'X-Key': MASK }, items: [{ secretRef: MASK, label: 'plain' }] });
+  // Authorization and credential names are hidden (PR #6 review); other auth settings, such as a method name, are not.
+  assert.deepEqual(preview.service.futureEnvelope, {
+    enabled: true, token: MASK, region: 'eu', retries: 3, headers: { 'X-Key': MASK }, items: [{ secretRef: MASK, label: 'plain' }],
+    authorization: MASK, credentials: { id: MASK, value: MASK }, authMethod: 'scram-sha-256',
+  });
   assert.equal(preview.service.futureSecret, MASK);
   assert.deepEqual(preview.service.redis, {
     address: 'cache.internal:6379', password: MASK, sentinelPassword: MASK,
     tls: { serverName: 'cache.internal', clientKeyPem: MASK, futureKeyId: MASK },
-    futureOption: { nullable: null, apiToken: MASK, label: 'plain' },
+    futureOption: { nullable: null, apiToken: MASK, label: 'plain', authorization: MASK },
+    clientCredential: MASK,
   });
   // Known fields keep their own rules: a host key fingerprint is not a credential, though its name has "key".
   assert.deepEqual(preview.service.sftp, { address: 'files.internal:22', username: 'review', hostKeySha256: 'SHA256:review-fingerprint', unsafeIgnoreHostKey: false, privateKeyPem: MASK });
@@ -237,10 +247,15 @@ await check('F1 preview: credential-named text in unknown service fields is hidd
   assert.equal(input.service.futureEnvelope.token, 'future-secret', 'the input itself is untouched');
 });
 
-await check('F1 secretNamed: the Config pattern moved to format.ts unchanged', () => {
+await check('F1 secretNamed: the Config pattern moved to format.ts, plus authorization and credential names', () => {
   for (const key of ['password', 'clientSecret', 'apiToken', 'apiKey', 'dsn', 'privateKeyPassphrase', 'community', 'body', 'headers', 'metadata', 'basicAuth', 'proxyUrl'])
     assert.equal(fmt.secretNamed(key), true, key);
   for (const key of ['apiVersion', 'keyword', 'enabled', 'region', 'address', 'username']) assert.equal(fmt.secretNamed(key), false, key);
+  // PR #6 review: unknown fields such as `authorization: 'Bearer <token>'` were shown. Only these names are added, not every
+  // auth setting: the node's own authMethod/authProtocol/authVersion fields name a method, not a credential.
+  for (const key of ['authorization', 'Authorization', 'proxyAuthorization', 'credential', 'credentials', 'clientCredentials'])
+    assert.equal(fmt.secretNamed(key), true, key);
+  for (const key of ['authMethod', 'authProtocol', 'authVersion', 'unsafeAllowMissingMessageAuthenticator']) assert.equal(fmt.secretNamed(key), false, key);
 });
 
 await scope.unregister();
