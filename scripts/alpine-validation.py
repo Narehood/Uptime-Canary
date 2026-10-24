@@ -77,7 +77,7 @@ def main():
         summary["checks"].append({"name": name, "passed": True, "evidence": evidence})
         print("PASS " + name, flush=True)
 
-    def request(base, path, body=None, authenticated=True, expected=200, credential=None, registration=None):
+    def request(base, path, body=None, authenticated=True, expected=200, credential=None, registration=None, parse_json=True):
         headers = {"Authorization": "Bearer " + (credential or token)} if authenticated else {}
         if registration: headers["X-Canary-Registered-Node"] = registration
         if body is not None: headers["Content-Type"] = "application/json"
@@ -90,6 +90,8 @@ def main():
             data = response.read()
             if response.status != expected:
                 raise AssertionError(f"{path}: expected {expected}, got {response.status}: {data[:300]!r}")
+            if not parse_json:
+                return data
             return json.loads(data) if data else None
 
     def eventually(label, call, timeout=120):
@@ -157,7 +159,7 @@ def main():
         assert request(web_url, "/api/overview", credential=owner)["monitors"] == []
         cmd("Restart standalone dashboard with retained account/key volumes", "docker", "restart", web, timeout=60)
         eventually("Independent account survives dashboard restart", lambda: request(web_url, "/api/auth/me", credential=owner))
-        request(web_url, "/internal/snapshot", authenticated=False, expected=404)
+        assert request(web_url, "/internal/snapshot", authenticated=False, expected=404, parse_json=False) == b"404 page not found\n"
         with urllib.request.urlopen(web_url + "/canary-config.js", timeout=5) as response:
             config = response.read().decode()
             assert "__CANARY_DASHBOARD_CONTROL_PLANE__ = true" in config
