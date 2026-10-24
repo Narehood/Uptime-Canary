@@ -143,6 +143,17 @@ configurations retain their original single-destination grouping behavior.
 The node never diagnoses internet, power or VPN failure solely from a failed
 dependency check.
 
+A node records completion for a named destination only when it observes the
+child close with applicable dependency or grace evidence. That local record
+survives its own database restart. Peers without the destination's historical
+record fail open; incident-wide legacy suppression cannot supply that proof.
+A successful down receipt takes precedence and still requires recovery.
+Peer up-observation frontiers may advance without adding outage runs, so that
+refinement preserves completion when the opening, runs and resolution time
+stay unchanged. A changed resolution time remains uncertain and fails open:
+parent acceptance may have followed a newly earlier resolution, and wall-clock
+comparison across nodes is not introduced as historical authority.
+
 Delivery status contains fixed error codes, HTTP status, attempts/failures,
 next retry time and hashed provider acknowledgement IDs. It never returns raw
 provider bodies, addresses, private error strings or secret URLs. Unavailable
