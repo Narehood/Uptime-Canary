@@ -241,3 +241,41 @@ to zero, with no shared module growth. The idle repository remains under its
 1.25 GiB target. Full process-suite, hosted Linux/Alpine/race/arm64 validation
 and review of this candidate remain pending. None of these local results
 certifies another branch, a tagged artifact or the complete shipping goal.
+
+
+## Integrated protocol-17 local result
+
+The capacity branch now includes the Steam encoded-options repair from
+`5d9637a`. On clean merge commit `f94e23752925af5f59a99e5569a83f42bf971884`,
+source fingerprint
+`f94663a0234a838097eb3afb4a375eed3fe0de3e3d0b1db2dcba3108e2005dde`
+passes all node packages: 3,794 passing test events across 20 packages with
+tests, zero failures, plus the command package without tests. The four actual
+Windows skips are both question-mark recovery cases, the origin symlink
+subcase and the Docker Unix-socket test. Test-command time is 406.047 seconds;
+all-node vet passes in 40.984 seconds. The guard completes in 452.688 seconds,
+with sampled scratch 520,315,047 bytes below the unchanged 512 MiB ceiling,
+cleaned to zero and no module growth.
+
+The same source passes the entire separate-process suite: **21/21**, zero
+failures, cancellations or skips, against one production binary. Build time is
+76.828 seconds, process-suite time 521.297 seconds and total guard time 616.343
+seconds. Source, fixtures and binary remain unchanged; scratch peaks at
+456,233,957 bytes and returns to zero with no module growth. Binary SHA-256:
+`6551c9b490d69ee18ad8b91618c013271b8173bfa46761e336728e8d39b92152`.
+The suite covers peers, failover, restart, notification providers, monitor edits,
+public history, passive push and the Steam/system-service integrations. It does
+not run the separately selected historical upgrade fixtures.
+
+The capacity case in that full suite passes in 87.869 seconds. Its 24 API reads
+have P95 272 ms / maximum 428 ms; outage-to-fast acceptance is 6.414 seconds and
+backlog drain 8.110 seconds. Provider concurrency peaks at 14. It records 348
+acceptances across 314 identities, including 34 repeated acceptances, with no
+fixture errors and successful receipt-converged quietness. These are measured
+local workload results, not a performance SLA or globally exactly-once promise.
+
+Hosted Linux/Alpine/race/native arm64 validation and review of the capacity
+changes remain pending. The Steam PR's checks cover its own head, not these
+additional runtime changes. No user data, external provider or paid measurement
+was used. This remains development evidence, not a tagged release or completion
+of the near-parity shipping goal.
