@@ -178,9 +178,9 @@ Local Windows amd64 evidence on 2026-10-24:
   admitted a valid paired Unicode name. This targeted check covers the added
   admission case; the 156-check browser result retains its earlier scope.
 
-These checkpoints have different source scopes. The Go production files remain
-as tested by the full core run; later proof, fixture and CI changes alter the
-whole-source fingerprint. They do not establish actual PM2 daemon interoperability,
+These historical checkpoints have different source scopes. The Go production
+files were unchanged through those runs; later proof, fixture and CI changes
+alter the whole-source fingerprint. Those local runs do not establish actual PM2 daemon interoperability,
 Linux, Alpine, arm64, race acceptance, hosted checks or release readiness.
 
 Both Linux native-package jobs require the additional actual-PM2 gate against
@@ -196,7 +196,51 @@ A live supervisor-SIGKILL control must leave zero namespace processes.
 The gate checks actual online, restart, stopped and removed states, Pending
 during RPC loss, fresh Pending after a Canary restart, retained incident identity
 and recovery at the same endpoint, and metadata redaction. Namespace prerequisites
-or lifecycle cleanup failures fail the job. No actual-PM2 run has passed yet.
+or lifecycle cleanup failures fail the job.
+
+Both first hosted Linux jobs on PR #8 head `24fc3dd` passed all 22 ordinary
+process proofs, actual PM2 interoperability (1/1), and the supervisor-SIGKILL
+control. The extracted binaries were `34e420c9…` (amd64) and `6f229985…`
+(arm64); all namespace controls left zero processes. Both overall jobs
+nevertheless failed: npm's executable links made the storage guard refuse
+scratch cleanup. This is functional evidence for those exact binaries,
+not a passing package gate. The repair disables npm
+executable links and checks the installed tree without following links. Its
+bounded Windows fixture install passed with all 19 core pins intact and scratch
+cleaned to zero; Linux cleanup still needs a new hosted pass.
+
+The Alpine and Windows proof jobs on the same head passed 21/22 proofs,
+including PM2, but failed the unchanged 45-second all-observer recovery gate
+in the HTTP capacity workload. No PM2 cause is established. Receipt convergence and final quietness
+assertions after that gate did not run. Repeated global incident projection
+is under investigation. A conservative exact-duplicate shortcut passed source
+review and the full Windows core package plus vet on v3 source `cf82596c…`:
+1,068 passing events, zero failures, two expected filename skips, including
+40 new differential controls. The guard completed in 203.984 seconds, sampled
+377,505,836 scratch bytes and cleaned to zero, with source and module cache
+unchanged. An initial outer timeout recorded no pass; a focused run then exposed
+an invalid new fixture's empty observation message. Supplying the required
+message made that fixture admissible without changing its assertions.
+
+On the same source, the proof type-check and unchanged Windows capacity process
+proof passed (1/1): 55.499 seconds for the whole test, 130.391 seconds guarded,
+binary `29890169…`, sampled scratch 510,621,593 bytes cleaned to zero.
+The original 45-second recovery gate and every later obligation and quietness
+assertion passed. The workload remained 64 monitors, two nodes, 128 observing
+slots and two destinations. API reads were P95 147 ms and max 179 ms; 390
+requests were accepted for 304 identities, with 86 repeated accepts before
+quietness and zero fixture errors. Final obligation checks had 432 exact and
+170 alias dispositions, with none unsettled. Source, fixtures, binary and module
+cache were unchanged during the run. This does not establish a Linux speedup
+or acceptance for the repaired source; both native Linux jobs and the complete
+hosted matrix remain required.
+
+The workload, deadlines and original assertions remain unchanged. See the
+[native run](https://github.com/Narehood/Uptime-Canary/actions/runs/40087870630)
+and [container run](https://github.com/Narehood/Uptime-Canary/actions/runs/40087870667).
+The Alpine node, web and race jobs passed on `24fc3dd`; those results retain
+that source scope and do not validate the repair's changed Go source.
+
 The existing 21 ordinary proofs are retained alongside the new PM2 proof (22
 total); the full set, existing Alpine/race checks and native arm64 package tests
 remain hosted gates. Actual Windows PM2 and live foreign-account rejection have

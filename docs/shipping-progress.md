@@ -21,8 +21,20 @@ cancellation capacity and retained-incident assertions, and clarified deployment
 account rules. Actual PM2 6.0.8 interoperability and supervisor-death cleanup
 are required on both native Linux jobs against the extracted package binary.
 Those jobs, all 22 ordinary process proofs, Alpine/race and arm64 acceptance
-remain pending for the new source. Windows actual PM2 is unverified and its
-permission-history prerequisite remains explicit. This is neither a tagged
+remain gates for each new source. On PR #8 head `24fc3dd`, Linux amd64 and arm64 passed
+22/22 ordinary proofs, actual PM2 interoperability and supervisor-death cleanup,
+but both overall jobs failed because npm executable links prevented guarded
+scratch cleanup. The Alpine and Windows proof jobs passed 21/22; their HTTP capacity workloads
+failed the unchanged 45-second all-observer recovery gate. Alpine node, web and
+race jobs passed on that head. No PM2 cause is established.
+The npm-link repair passed a local Windows fixture install; a
+conservative reduction of duplicate incident processing passed the full Windows
+core package (1,068 passing events, zero failures, two expected skips) and vet
+on source `cf82596c…`. The proof type-check and unchanged capacity process proof
+also passed locally on that source, including every retained-obligation and
+quietness assertion. Its changed source still requires fresh hosted acceptance.
+Neither failure is waived. Exact scopes are in [the PM2 record](pm2-monitors.md).
+Windows actual PM2 is unverified and its permission-history prerequisite remains explicit. This is neither a tagged
 release nor completion of the independent near-Uptime-Kuma goal.
 
 ## Full-codebase review after the protocol-17 merge, 2026-10-24
