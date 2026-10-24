@@ -317,52 +317,6 @@ func (n *Node) apiLocked(r *http.Request, a account, b []byte) (int, any, error)
 			return 201, g, err
 		}
 	}
-	if path == "/api/accounts" {
-		if method == "GET" {
-			out := []AccountView{}
-			for _, a := range n.accounts {
-				out = append(out, a.AccountView)
-			}
-			slices.SortFunc(out, func(a, b AccountView) int { return stringsCompare(a.Name, b.Name) })
-			return 200, out, nil
-		}
-		if method == "POST" {
-			if len(n.accounts) >= 64 {
-				return 0, nil, fail(409, "Account capacity exceeded")
-			}
-			var raw struct{ Name, Role, Token string }
-			if json.Unmarshal(b, &raw) != nil {
-				return 0, nil, fail(400, "Invalid account input")
-			}
-			if err := validText(raw.Name, "name", 128); err != nil {
-				return 0, nil, err
-			}
-			if !validRole(raw.Role) {
-				return 0, nil, fail(400, "Invalid role")
-			}
-			if err := tokenValue(raw.Token); err != nil {
-				return 0, nil, err
-			}
-			hash := digest(raw.Token)
-			for _, existing := range n.accounts {
-				if existing.Name == raw.Name || existing.Hash == hash {
-					return 0, nil, fail(409, "Account name or credential already exists")
-				}
-			}
-			if matches(n.clusterHash, raw.Token) {
-				return 0, nil, fail(400, "Management and cluster tokens must differ")
-			}
-			if n.pushCredentialInUse(raw.Token) {
-				return 0, nil, fail(400, "Management and push credentials must differ")
-			}
-			a := account{AccountView: AccountView{ID: newID(), Name: raw.Name, Role: raw.Role}, Hash: hash}
-			if !n.dbPut("accounts", a.ID, a) {
-				return 0, nil, fail(503, "Persistence unavailable")
-			}
-			n.accounts[a.ID] = a
-			return 201, a.AccountView, nil
-		}
-	}
 	parts := strings.Split(strings.TrimPrefix(path, "/api/"), "/")
 	if len(parts) < 2 || len(parts) > 3 || (parts[0] != "monitors" && parts[0] != "groups") {
 		return 0, nil, fail(404, "Not found")

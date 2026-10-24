@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func endpoint(base, fallback, path string) string {
@@ -166,12 +167,15 @@ func parseAcknowledgement(c Config, status int, data []byte) Result {
 		return accepted(c, "")
 	}
 	bad := failure(c.Kind, Unknown, "response")
+	if !utf8.Valid(data) {
+		return bad
+	}
 	switch c.Kind {
 	case Mailgun:
 		var body struct {
 			ID string `json:"id"`
 		}
-		if status != 200 || json.Unmarshal(data, &body) != nil || providerID(body.ID) == "" {
+		if status != 200 || !acknowledgementObject(data, "id") || json.Unmarshal(data, &body) != nil || providerID(body.ID) == "" {
 			return bad
 		}
 		return accepted(c, body.ID)
@@ -179,11 +183,20 @@ func parseAcknowledgement(c Config, status int, data []byte) Result {
 		var body struct {
 			ID string `json:"messageId"`
 		}
-		if status != 201 || json.Unmarshal(data, &body) != nil || providerID(body.ID) == "" {
+		if status != 201 || !acknowledgementObject(data, "messageId") || json.Unmarshal(data, &body) != nil || providerID(body.ID) == "" {
 			return bad
 		}
 		return accepted(c, body.ID)
 	case Mandrill:
+		var entries []json.RawMessage
+		if json.Unmarshal(data, &entries) != nil {
+			return bad
+		}
+		for _, entry := range entries {
+			if !acknowledgementObject(entry, "email", "status", "_id") {
+				return bad
+			}
+		}
 		var body []struct {
 			Email  string `json:"email"`
 			Status string `json:"status"`
@@ -234,6 +247,38 @@ func parseAcknowledgement(c Config, status int, data []byte) Result {
 		return result
 	}
 	return bad
+}
+
+// Only exact, unambiguous authority fields may acknowledge a delivery. Other
+// additive metadata remains allowed; its values do not authorize acceptance.
+func acknowledgementObject(data []byte, authority ...string) bool {
+	d := json.NewDecoder(bytes.NewReader(data))
+	if token, err := d.Token(); err != nil || token != json.Delim('{') {
+		return false
+	}
+	seen := map[string]bool{}
+	for d.More() {
+		token, err := d.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seen[strings.ToLower(key)] {
+			return false
+		}
+		seen[strings.ToLower(key)] = true
+		for _, field := range authority {
+			if strings.EqualFold(key, field) && key != field {
+				return false
+			}
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return false
+		}
+	}
+	if token, err := d.Token(); err != nil || token != json.Delim('}') {
+		return false
+	}
+	_, err := d.Token()
+	return err == io.EOF
 }
 
 func retryAfter(header http.Header, now time.Time) time.Duration {

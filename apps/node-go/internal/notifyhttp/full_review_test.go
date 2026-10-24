@@ -41,7 +41,14 @@ func TestFullReviewConfigStillRejectsOversizedInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got Config
-	if err := json.Unmarshal(append(data, []byte(strings.Repeat(" ", MaxConfigBytes+1))...), &got); err != errConfig {
+	// encoding/json strips whitespace outside a value before UnmarshalJSON.
+	// Preserve the original raw-method boundary and test wrapper admission with
+	// whitespace inside the object, where it remains part of the encoded value.
+	if err := got.UnmarshalJSON(append(data, []byte(strings.Repeat(" ", MaxConfigBytes+1))...)); err != errConfig {
+		t.Fatal("oversized raw input did not return the fixed error")
+	}
+	oversized := append(append(data[:len(data)-1:len(data)-1], []byte(strings.Repeat(" ", MaxConfigBytes+1))...), '}')
+	if err := json.Unmarshal(oversized, &got); err != errConfig {
 		t.Fatal("oversized but syntactically valid JSON did not return the fixed error")
 	}
 	for _, tc := range []struct {

@@ -373,8 +373,18 @@ func parseCA(s string) ([]*x509.Certificate, error) {
 		if !strings.HasPrefix(s, "-----BEGIN CERTIFICATE-----") || len(certs) >= 32 {
 			return nil, errConfig
 		}
-		block, rest := pem.Decode([]byte(s))
-		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+		const begin, end = "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----"
+		boundary := strings.Index(s, end)
+		if boundary < 0 {
+			return nil, errConfig
+		}
+		boundary += len(end)
+		candidate := s[:boundary]
+		if strings.Contains(candidate[len(begin):], "-----BEGIN") {
+			return nil, errConfig
+		}
+		block, rest := pem.Decode([]byte(candidate))
+		if block == nil || len(rest) != 0 || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
 			return nil, errConfig
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
@@ -382,7 +392,7 @@ func parseCA(s string) ([]*x509.Certificate, error) {
 			return nil, errConfig
 		}
 		certs = append(certs, cert)
-		s = string(rest)
+		s = s[boundary:]
 	}
 	return certs, nil
 }

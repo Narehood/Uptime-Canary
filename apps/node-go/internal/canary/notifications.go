@@ -50,7 +50,7 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 		if target.ChannelID != "" || maintenanceHeld || i.MaintenanceStartedAt != nil {
 			releasedAt = n.deliveryHold(m, i, target, groupID != "" || maintenanceHeld)
 		}
-		if groupID != "" {
+		if target.ChannelID == "" && groupID != "" {
 			if i.SuppressedByGroupID == "" || i.SuppressedAt == nil || i.SuppressionReleasedAt != nil && *i.SuppressionReleasedAt >= *i.SuppressedAt {
 				i.SuppressedAt = Ptr(n.now())
 				i.SuppressedByGroupID = groupID
@@ -60,11 +60,11 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 				i.SuppressedComplete = true
 			}
 			n.saveEpisode(i)
-		} else if i.SuppressedAt != nil && (i.SuppressionReleasedAt == nil || *i.SuppressionReleasedAt < *i.SuppressedAt) {
+		} else if target.ChannelID == "" && i.SuppressedAt != nil && (i.SuppressionReleasedAt == nil || *i.SuppressionReleasedAt < *i.SuppressedAt) {
 			i.SuppressionReleasedAt = Ptr(max(n.now(), *i.SuppressedAt))
 			n.saveEpisode(i)
 		}
-		if (i.SuppressedComplete || i.MaintenanceComplete) && down == nil {
+		if (n.targetSuppressionComplete(i, target.ID) || i.MaintenanceComplete) && down == nil {
 			continue
 		}
 		if maintenanceHeld {
@@ -88,7 +88,7 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 			}
 			// Grouped short episodes which finish before delivery do not replay a
 			// stale outage/recovery pair after the dependency's grace period.
-			if i.Closed != nil && (i.SuppressedByGroupID != "" || grace > 0) {
+			if target.ChannelID == "" && i.Closed != nil && (i.SuppressedByGroupID != "" || grace > 0) {
 				i.SuppressedComplete = true
 				n.saveEpisode(i)
 				continue
@@ -286,7 +286,7 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 		group, _, grace := n.suppressionForTarget(m, target)
 		valid = valid && group == ""
 		valid = valid && n.now() >= latest.OpenedAt+grace
-		if (latest.SuppressedComplete || latest.MaintenanceComplete) && !hasReceipt(successes, "down") {
+		if (n.targetSuppressionComplete(latest, target.ID) || latest.MaintenanceComplete) && !hasReceipt(successes, "down") {
 			valid = false
 		}
 		if latest.Closed == nil {
@@ -296,7 +296,7 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 			}
 			evidence = evidence || a.Kind == "down" && n.owedLocalBranchDown(latest, a.DestinationID, observations)
 			valid = valid && evidence
-		} else if a.Kind == "repeat" || latest.SuppressedByGroupID != "" || grace > 0 || !n.hasDeliveryIntent(latest, a.DestinationID) {
+		} else if a.Kind == "repeat" || target.ChannelID == "" && (latest.SuppressedByGroupID != "" || grace > 0) || !n.hasDeliveryIntent(latest, a.DestinationID) {
 			valid = false
 		}
 		if a.Kind == "repeat" && !hasReceipt(successes, "down") {
@@ -352,6 +352,11 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 		if !n.syncing {
 			n.startSyncLocked()
 		}
+		return
+	}
+	// A failed request that was already in flight cannot revive a destination
+	// completed at closure. An actual acceptance above still becomes a receipt.
+	if completedDependencyAttempt(n.attempts[a.ID]) {
 		return
 	}
 	a.Failures++
