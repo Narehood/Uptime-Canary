@@ -12,8 +12,9 @@ test('Steam directory checks use private API fixtures, preserve HA configuration
   const rotatedKey = 'fixture-steam-rotated-' + randomBytes(16).toString('hex');
   const seenKeys = new Set<string>();
   const errors: string[] = [];
-  let status = 429, listed = false;
+  let status = 429, listed = false, directoryRequests = 0;
   const api = createServer((request, response) => {
+    directoryRequests++;
     const url = new URL(request.url!, 'http://127.0.0.1');
     if (request.method !== 'GET' || url.pathname !== '/directory/IGameServersService/GetServerList/v1/' ||
         url.searchParams.get('filter') !== 'addr\\127.0.0.9:27015' || url.searchParams.get('limit') !== '1' ||
@@ -71,6 +72,12 @@ test('Steam directory checks use private API fixtures, preserve HA configuration
   await cluster.wait('both peers retain both conflicting Steam heads', async () =>
     (await Promise.all([a, b].map(node => cluster.api<Monitor[]>(node, `/api/monitors/${monitor.id}/conflicts`))))
       .every(result => result.status === 200 && result.body.length === 2));
+  // Let any pre-disable request finish, then observe more than one full
+  // scheduling interval without authorizing another directory request.
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  const disabledRequests = directoryRequests;
+  await new Promise(resolve => setTimeout(resolve, 2100));
+  assert.equal(directoryRequests, disabledRequests, 'disabled/conflicting monitors sent provider requests');
   const heads = await cluster.api<Monitor[]>(a, `/api/monitors/${monitor.id}/conflicts`);
   assert.deepEqual(heads.body.map(head => head.steam?.packetSize).sort((x, y) => x! - y!), [0, 32]);
   const selected = heads.body.find(head => head.steam?.packetSize === 0)!;

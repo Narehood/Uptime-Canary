@@ -1,20 +1,33 @@
-// Local functional browser proof. Never reads .env or connects to a user's node.
-// Run: node scripts/browser-auth-proof.mjs (full functional proof)
-//      node scripts/browser-auth-proof.mjs --regressions (cross-node probes)
-// Optional: CHROME_PATH, CANARY_GO, BROWSER_AUTH_PROOF_ORIGIN (loopback Vite only).
+// Legacy local functional browser proof. Never reads .env or connects to a user's node.
+// Needs the existing loopback Vite dev server on :5173 and runs only inside the storage guard:
+//   python scripts/bounded_validation.py --timeout 900 -- node scripts/browser-auth-proof.mjs (full functional proof)
+//   python scripts/bounded_validation.py --timeout 900 -- node scripts/browser-auth-proof.mjs --regressions (cross-node probes)
+// Databases, binary, Chrome profile, web build and screenshots stay in the guard's
+// outputs/browser-auth-proof and are deleted; only .canary/browser-auth-proof-current.json is kept.
+// Optional: CHROME_PATH, BROWSER_AUTH_PROOF_ORIGIN (loopback Vite only). The runner strips CANARY_*.
 import { spawn } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
+import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const artifactRoot = join(root, '.canary', 'browser-auth-proof');
-mkdirSync(artifactRoot, { recursive: true });
-export const runDir = mkdtempSync(join(artifactRoot, 'run-'));
-export const report = { startedAt: new Date().toISOString(), runtime: process.version, results: [], layouts: [], errors: [], network: [], cleanup: {}, sourceBefore: {}, sourceAfter: {} };
+export const origin = process.env.BROWSER_AUTH_PROOF_ORIGIN || 'http://localhost:5173';
+assert(['http://localhost:5173', 'http://127.0.0.1:5173'].includes(origin), 'Proof origin must be the local Vite server.');
+// Create nothing unless bounded_validation.py holds its lock, owned build cache and disposable outputs.
+const outputs = join(root, '.canary', 'work', 'current', 'outputs');
+const summaryPath = join(root, '.canary', 'browser-auth-proof-current.json');
+assert(existsSync(join(root, '.canary', 'bounded-validation.lock')), 'Run through python scripts/bounded_validation.py');
+assert(resolve(process.env.GOCACHE || '') === join(root, '.canary', 'cache', 'go-build'), 'GOCACHE must be the guard-owned build cache');
+assert(existsSync(outputs) && !lstatSync(outputs).isSymbolicLink() && lstatSync(outputs).isDirectory(), 'The guard must own disposable outputs');
+export const runDir = join(outputs, 'browser-auth-proof');
+mkdirSync(runDir); // Not recursive: a leftover run directory is refused, never reused.
+const sha256 = value => createHash('sha256').update(value).digest('hex');
+const harness = ['browser-auth-proof.mjs', 'browser-auth-proof-flows.mjs', 'browser-auth-proof-regressions.mjs', 'browser-auth-proof-delayed.mjs'];
+const sourceScope = { directories: ['apps/node-go', 'apps/web/src', 'packages/shared/src'], files: ['go.mod', 'go.sum', 'apps/web/package.json', 'apps/web/vite.config.ts'] };
+export const report = { startedAt: new Date().toISOString(), runtime: process.version, mode: process.argv.includes('--regressions') ? 'regressions' : 'full', harnessSha256: Object.fromEntries(harness.map(f => [f, sha256(readFileSync(join(root, 'scripts', f)))])), results: [], layouts: [], errors: [], network: [], cleanup: {}, sourceBefore: {}, sourceAfter: {} };
 const secrets = new Set();
 export const secret = () => { const s = randomBytes(24).toString('hex'); secrets.add(s); return s; };
 export const rememberSecret = s => { if (s) secrets.add(s); return s; };
@@ -22,12 +35,13 @@ export const redact = s => { let out = String(s); for (const value of secrets) o
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export function assert(ok, message) { if (!ok) throw new Error(message); }
 export function pass(name, detail = {}) { report.results.push({ name, ...detail }); console.log(`PASS ${name}`); save(); }
+// Full report is disposable scratch; the compact summary below is the only retained result.
 export function save() { writeFileSync(join(runDir, 'results.json'), redact(JSON.stringify(report, null, 2))); }
+// Overwrite any older summary now, so an interrupted run never leaves a previous result looking current.
+writeSummary('running');
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^CANARY_/i.test(k)));
 const owned = [];
 let browser;
-export const origin = process.env.BROWSER_AUTH_PROOF_ORIGIN || 'http://localhost:5173';
-assert(['http://localhost:5173', 'http://127.0.0.1:5173'].includes(origin), 'Proof origin must be the local Vite server.');
 export async function port() { const s = createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening'); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
 async function command(exe, args, env = cleanEnv) {
   const p = spawn(exe, args, { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -40,8 +54,8 @@ async function command(exe, args, env = cleanEnv) {
 function sourceHashes() {
   const files = [];
   function walk(dir) { for (const e of readdirSync(join(root, dir), { withFileTypes: true })) { const f = join(dir, e.name); if (e.isDirectory()) walk(f); else files.push(f); } }
-  for (const d of ['apps/node-go', 'apps/web/src', 'packages/shared/src']) walk(d);
-  files.push('go.mod', 'go.sum', 'apps/web/package.json', 'apps/web/vite.config.ts');
+  for (const d of sourceScope.directories) walk(d);
+  files.push(...sourceScope.files);
   return Object.fromEntries(files.filter(f => existsSync(join(root, f))).sort().map(f => [f.replaceAll('\\', '/'), createHash('sha256').update(readFileSync(join(root, f))).digest('hex')]));
 }
 export async function api(node, path, method = 'GET', body, token = node.token) {
@@ -151,22 +165,54 @@ export async function checks() {
   const buildOutput = await command(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build', 'apps/web', '--outDir', join(runDir, 'web-build'), '--emptyOutDir']);
   report.buildOutput = buildOutput.replaceAll(root, '<workspace>').trim(); pass('web production build into private artifact directory');
 }
+// Counts and digests replace the network log, screenshots and full source hash maps (128 KiB cap).
+function fingerprint(hashes) { const n = Object.keys(hashes || {}).length; return n ? { files: n, sha256: sha256(JSON.stringify(hashes)) } : null; }
+function outcome() { return report.failure || report.cleanupFailure ? 'failed' : report.findings?.length ? 'findings-reproduced' : !report.completed ? 'incomplete' : report.changedSourceFiles?.length ? 'source-changed' : 'passed'; }
+function summary(result) {
+  const changed = report.changedSourceFiles || [], blocked = report.network.filter(n => n.blocked);
+  return { kind: 'browser-auth-proof', mode: report.mode, result, exitCode: result === 'running' ? null : process.exitCode ?? 0,
+    scope: 'This run only. Its files were disposable guard outputs; older .canary/browser-auth-proof/run-* evidence is separate and unchanged.',
+    startedAt: report.startedAt, finishedAt: report.finishedAt, runtime: report.runtime, goVersion: report.goVersion, binarySha256: report.binarySha256, harnessSha256: report.harnessSha256,
+    source: { scope: sourceScope, note: 'Legacy proof scope; narrower than the runner v3 fingerprint in .canary/work/current/latest.json.', before: fingerprint(report.sourceBefore), afterBuild: fingerprint(report.sourceAfterBuild), after: fingerprint(report.sourceAfter), changedFiles: changed.length, changed: changed.slice(0, 100), changedProduction: (report.changedProductionSourceFiles || []).slice(0, 100) },
+    failure: report.failure?.slice(0, 6000), cleanupFailure: report.cleanupFailure?.slice(0, 3000), passed: report.results.length, results: report.results.slice(0, 200), findings: report.findings,
+    runtimeExceptions: report.errors.length, errors: report.errors.slice(0, 20).map(e => String(e).slice(0, 600)),
+    network: { responses: report.network.length - blocked.length, blocked: blocked.length, blockedOrigins: [...new Set(blocked.map(n => n.origin))].slice(0, 20), externalRequests: report.externalRequests?.length },
+    layouts: report.layouts.slice(0, 120), storage: report.storage, clipboard: report.clipboard, qr: report.qr, fixtures: report.fixtures,
+    buildOutput: report.buildOutput?.slice(-4000), disposableScreenshots: report.screenshots, cleanup: report.cleanup };
+}
+function writeSummary(result) {
+  if (result !== 'running' && result !== 'passed') process.exitCode = 1;
+  let raw = redact(JSON.stringify(summary(result), null, 2));
+  if (Buffer.byteLength(raw) > 128 * 1024) { process.exitCode = 1; raw = redact(JSON.stringify({ kind: 'browser-auth-proof', mode: report.mode, result: 'failed', exitCode: 1, summaryError: 'Compact summary exceeded 128 KiB; details omitted', proofResult: result, startedAt: report.startedAt, finishedAt: report.finishedAt, passed: report.results.length, failure: report.failure?.slice(0, 4000), cleanup: report.cleanup }, null, 2)); }
+  writeFileSync(summaryPath, raw);
+}
+function runFiles(dir) { const out = []; for (const e of readdirSync(dir, { withFileTypes: true })) { const f = join(dir, e.name); if (e.isDirectory()) out.push(...runFiles(f)); else out.push({ name: relative(runDir, f).replaceAll('\\', '/'), bytes: e.isFile() ? lstatSync(f).size : 0 }); } return out; }
 export async function cleanup(page) {
-  if(page) { try { await page.send('Browser.close'); } catch {} page.ws.close(); }
-  for(const p of [...owned].reverse()) { if(p.exitCode === null && p.signalCode === null) { p.kill(); await Promise.race([once(p, 'exit').catch(()=>{}), sleep(3000)]); } }
-  report.sourceAfter = sourceHashes();
-  report.changedSourceFiles = [...new Set([...Object.keys(report.sourceBefore), ...Object.keys(report.sourceAfter)])].filter(f => report.sourceBefore[f] !== report.sourceAfter[f]);
-  report.changedProductionSourceFiles=report.changedSourceFiles.filter(f=>!f.endsWith('_test.go'));
-  // Only this process's random run directory is eligible for recursive cleanup.
-  const rel = relative(artifactRoot, runDir); assert(rel && !rel.startsWith('..') && !isAbsolute(rel), 'Unsafe cleanup path');
-  for(const name of readdirSync(runDir)) { if(name === 'chrome-profile' || /\.db(?:-|\.|$)|\.exe$|^auth-proof$/.test(name)) { try { rmSync(join(runDir, name), { recursive: true, force: true }); } catch { report.cleanup.retainedPrivateArtifact = true; } } }
-  report.cleanup.ownedProcessesStopped = owned.every(p => p.exitCode !== null || p.signalCode !== null);
-  report.finishedAt = new Date().toISOString(); save(); console.log(`RESULT ${relative(root, runDir).replaceAll('\\', '/')}/results.json`);
+  try {
+    if(page) { try { await page.send('Browser.close'); } catch {} page.ws.close(); }
+    for(const p of [...owned].reverse()) { if(p.exitCode === null && p.signalCode === null) { p.kill(); await Promise.race([once(p, 'exit').catch(()=>{}), sleep(3000)]); } }
+    report.cleanup.ownedProcessesStopped = owned.every(p => p.exitCode !== null || p.signalCode !== null);
+    report.sourceAfter = sourceHashes();
+    report.changedSourceFiles = [...new Set([...Object.keys(report.sourceBefore), ...Object.keys(report.sourceAfter)])].filter(f => report.sourceBefore[f] !== report.sourceAfter[f]);
+    report.changedProductionSourceFiles=report.changedSourceFiles.filter(f=>!f.endsWith('_test.go'));
+  } catch(e) { report.cleanupFailure = redact(e.stack); }
+  report.finishedAt = new Date().toISOString();
+  // Only the guard-owned run directory is removed here; bounded_validation.py removes any remainder.
+  try {
+    assert(relative(outputs, runDir) === 'browser-auth-proof' && !lstatSync(runDir).isSymbolicLink(), 'Unsafe cleanup path');
+    const files = runFiles(runDir);
+    report.screenshots = files.filter(f => f.name.endsWith('.png')).map(f => f.name).slice(0, 60);
+    Object.assign(report.cleanup, { runFiles: files.length, runBytes: files.reduce((n, f) => n + f.bytes, 0) });
+    rmSync(runDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    report.cleanup.runDirectoryRemoved = true;
+  } catch(e) { report.cleanup.runDirectoryRemoved = false; report.cleanup.leftForRunner = redact(e.message).slice(0, 600); }
+  const result = outcome(); writeSummary(result);
+  console.log(`RESULT ${result} ${relative(root, summaryPath).replaceAll('\\', '/')}`);
 }
 
 async function main() {
   let page;
-  try { const fixtures = await initialize(); page = fixtures.page; const { run } = await import(process.argv.includes('--regressions') ? './browser-auth-proof-regressions.mjs' : './browser-auth-proof-flows.mjs'); await run(fixtures); await checks(); if(report.findings?.length) process.exitCode=1; }
+  try { const fixtures = await initialize(); page = fixtures.page; const { run } = await import(report.mode === 'regressions' ? './browser-auth-proof-regressions.mjs' : './browser-auth-proof-flows.mjs'); await run(fixtures); await checks(); report.completed = true; if(report.findings?.length) process.exitCode=1; }
   catch(e) { report.failure = redact(e.stack); save(); console.error(redact(e.stack)); process.exitCode = 1; }
   finally { await cleanup(page); }
 }
