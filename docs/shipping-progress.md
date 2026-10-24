@@ -30,13 +30,23 @@ full reads with targeted inspection; binary artwork and every historical test
 body were not exhaustively reviewed. This is a broad engineering review, not a
 proof that no defect remains.
 
-The repaired source passes 35 focused core review events and 66 leaf review
-events, all workspace typechecks, 56 frontend pure checks and 40 Python tooling
-regressions. The complete Windows native run passes 3,888 Go test events and
-node-wide vet, with four expected platform skips. The production dashboard
-contract passes 150/150 checks, including public observed history. The separate
-real-process suite is being refreshed.
-Hosted gates for these repairs remain separate from merged Steam evidence.
+PR #6's original checkpoint `5029cd9` passes the complete Windows native run:
+3,888 Go test events and node-wide vet, with four expected platform skips. It
+also passes 56 pure checks, 40 Python regressions, the production dashboard's
+150/150 contract checks and all 20 process proofs. All seven hosted jobs pass
+on that exact head. Those results retain their original source scope.
+
+Subsequent review reproduces a peer frontier refinement reviving a completed
+child alert, in memory and after restart. The repair excludes closure vectors
+from the completion fingerprint while keeping resolution-time changes strict
+and fail-open. Privacy and descendant-exit controls are also strengthened.
+Follow-up code `695fbfa`, source fingerprint
+`ce88750b792f3635192d81ef53c570de227202fcdd8565ce0d88f70dd495db86`,
+passes all 940 events in the changed canary package, vet, workspace typechecks,
+56 pure groups and 41 Python regressions. The two expected package skips are
+Windows question-mark filename cases; other Go packages retain their earlier
+scope. Newer process and hosted acceptance is tracked in
+[PR #6](https://github.com/Narehood/Uptime-Canary/pull/6), separately from Steam.
 
 Storage fixes retain one owned cache, bound legacy browser-proof outputs, reap
 ordinary command descendants even after their parent exits, and fail validation
@@ -46,10 +56,18 @@ documented limit. The legacy auth proof still needs an existing loopback Vite
 server; current acceptance uses the standalone guarded dashboard contract.
 Protected historical artifacts and user application data remain untouched.
 
-The saved capacity/recovery candidate `c84bbde` remains unmerged. Its earlier
-3,794 Windows test events and 21/21 process proofs retain their original source
-scope; they do not validate these review repairs. Integrating that work and
-running its hosted Linux/Alpine/race/native gates is the next development step.
+The capacity/recovery work continues in
+[PR #7](https://github.com/Narehood/Uptime-Canary/pull/7), stacked on the review
+repairs. Candidate `fc7090d` passes 953 changed-package events but fails its
+unchanged 45-second recovery-observation gate. The bounded channel-target
+cache at `1510938` passes 59 focused controls and the unchanged capacity process
+proof in 34.016 seconds, including restart, backlog drain, recovery and receipt-
+converged quietness. It records 316 acceptances across 272 identities, with 44
+repeated requests before convergence and no fixture errors. This is a fixed
+workload result, not globally exactly-once delivery or a capacity SLA. Its
+source scope, the original failure and later integration gates are recorded in
+[capacity recovery](capacity-recovery.md) and the PR. The earlier `c84bbde` /
+`f94e237` results (3,794 events and 21 proofs) remain historical only.
 Retained-history costs, remaining monitor/provider/status-page parity, coherent
 upgrade/recovery acceptance and versioned release publication remain required.
 

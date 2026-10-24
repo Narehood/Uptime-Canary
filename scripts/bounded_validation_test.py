@@ -128,6 +128,8 @@ class StorageGuards(unittest.TestCase):
                            '[sys.executable,"-B","-c",' + repr(child_code) + '],'
                            'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)')
             options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
+            # Retain replay support for the pre-job runner used by the original
+            # failing fixture; current commands always use start_command.
             launch = getattr(guard, 'start_command', None)
             parent = (launch([sys.executable, '-B', '-c', parent_code]) if launch else
                       subprocess.Popen([sys.executable, '-B', '-c', parent_code], **options))
@@ -138,6 +140,27 @@ class StorageGuards(unittest.TestCase):
                 self.assertFalse(marker.exists(), 'a descendant survived command cleanup')
             finally:
                 guard.stop_tree(parent)
+
+    def test_stop_closes_pipe_held_by_descendant_after_parent_exits(self):
+        # Keep the original marker regression above. This independent control
+        # confirms EOF instead of inferring process exit from elapsed time.
+        child_code = 'import time; time.sleep(60)'
+        parent_code = ('import subprocess,sys; subprocess.Popen('
+                       '[sys.executable,"-B","-c",' + repr(child_code) + '])')
+        parent = guard.start_command([sys.executable, '-B', '-c', parent_code],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertEqual(parent.wait(timeout=5), 0)
+            guard.stop_tree(parent)
+            output, errors = parent.communicate(timeout=5)
+            self.assertEqual(output, b'')
+            self.assertEqual(errors, b'')
+        finally:
+            guard.stop_tree(parent)
+            if parent.stdout is not None:
+                parent.stdout.close()
+            if parent.stderr is not None:
+                parent.stderr.close()
 
     def test_command_preserves_piped_input_output_and_exit_status(self):
         command = [sys.executable, '-B', '-c',

@@ -77,7 +77,7 @@ export function maskedUrl(url: string): string {
 
 /** Whether an option's name suggests it holds a credential. For options the dashboard has no field list for. */
 export const secretNamed = (key: string): boolean =>
-  /password|secret|token|key|dsn|passphrase|community|body|headers|metadata|basicauth|proxyurl/iu.test(key) && !/^(apiversion|keyword)$/iu.test(key);
+  /password|secret|token|key|dsn|passphrase|community|body|headers|metadata|basicauth|proxyurl|authorization|credential/iu.test(key) && !/^(apiversion|keyword)$/iu.test(key);
 
 /**
  * A copy with all text under a `secretNamed` key, at any depth, replaced by the mask. Other values and the shape stay,
