@@ -688,12 +688,27 @@ func (n *Node) saveEpisode(i Incident) {
 	}
 	updates := n.localIncidentUpdates(i)
 	intents := []NotificationIntent{}
+	unchanged := len(updates) > 0
 	for _, update := range updates {
+		stored, exists := n.incidentSources[update.ID]
+		original, complete, err := hydrateIncident(stored, n.incidentFacts, n.evidenceLinks)
+		// Interrupted evaluation operates on original sources. Their IDs may be
+		// hidden by a merged projection, so compare against the retained source
+		// rather than treating that projection mismatch as a new observation.
+		original.EvidenceRoot = ""
+		candidate := update
+		candidate.EvidenceRoot = ""
+		same := exists && err == nil && complete && equalJSON(original, candidate) &&
+			equalJSON(combineUncertainties(original.uncertainties, nil), combineUncertainties(candidate.uncertainties, nil))
+		unchanged = unchanged && same && !n.needsLocalIncidentDelivery(update)
 		for _, target := range unique(update.DeliveryTargets) {
 			if !n.indexedDeliveryIntent(update, target) {
 				intents = append(intents, deliveryIntent(update.MonitorID, update.ID, target))
 			}
 		}
+	}
+	if unchanged && len(intents) == 0 {
+		return
 	}
 	// This is a complete local projection. Its previous root commits the old
 	// state, so stage the changed arrays as a new source update.

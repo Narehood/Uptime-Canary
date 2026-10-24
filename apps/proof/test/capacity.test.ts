@@ -14,7 +14,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   const cluster = new Cluster({ CANARY_HISTORY_LIMIT: String(historyLimit), CANARY_HISTORY_RETENTION_MS: '60000' });
   const requests: { route: string; monitor: string; kind: string; key: string; accepted: boolean }[] = [];
   const failures: string[] = [];
-  let blocked = true, active = 0, peakActive = 0;
+  let blocked = true, active = 0, peakActive = 0, phase = 'setup';
   const sink = createServer((request, response) => {
     void (async () => {
       let body = '', bytes = 0;
@@ -45,6 +45,10 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   });
   sink.listen(0, '127.0.0.1'); await once(sink, 'listening');
   t.after(async () => {
+    t.diagnostic(JSON.stringify({ phase, requests: requests.length, rejected: requests.filter(request => !request.accepted).length,
+      accepted: Object.fromEntries(['/fast', '/backlog'].flatMap(route => ['down', 'recovery'].map(kind =>
+        [`${route}/${kind}`, requests.filter(request => request.accepted && request.route === route && request.kind === kind).length]))),
+      fixtureErrors: failures.length }));
     await cluster.cleanup();
     const closed = new Promise<void>((resolve, reject) => sink.close(error => error ? reject(error) : resolve()));
     sink.closeAllConnections(); await closed;
@@ -67,6 +71,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
         observation.nodeId === node.id && observation.state === state));
     }));
   await cluster.wait('all 128 observing-node slots are up', () => settled('up'), 45_000);
+  phase = 'outage';
   const outageAt = performance.now(); cluster.targetState = 'down';
   await cluster.wait('all 128 observing-node slots are down', () => settled('down'), 45_000);
   const delivered = (route: string, kind: string) => new Set(requests.filter(request =>
@@ -76,6 +81,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
       request.route === '/backlog' && request.kind === 'down' && !request.accepted).map(request => request.monitor)).size === count, 45_000);
   assert.equal(delivered('/backlog', 'down').size, 0);
   const outageToFastMs = performance.now() - outageAt;
+  phase = 'api-reads';
 
   const apiLatencies: number[] = [];
   for (let round = 0; round < 12; round++) {
@@ -91,6 +97,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   const before = await Promise.all(cluster.nodes.map(async node => ({ node, values: (await attempts(cluster, node))
     .filter(attempt => attempt.kind === 'down' && attempt.failures > 0 && attempt.channelId === channels[1]!.id) })));
   assert.ok(before.some(entry => entry.values.length > 0), 'failed attempts are durable before restart');
+  phase = 'restart';
   await Promise.all(cluster.nodes.map(node => cluster.stop(node)));
   await cluster.startAll();
   for (const { node, values } of before) {
@@ -103,9 +110,15 @@ test('64 monitors retain bounded history and drain a destination backlog across 
     }
   }
   const releaseAt = performance.now(); blocked = false;
+  phase = 'backlog-drain';
+  // Historical fixture 978078a assumed 45 seconds from provider release.
+  // The accepted policy persists a 60-second backoff on every fifth failure
+  // (notifications.go). Release cannot bypass it. Keep the 45-second drain
+  // window after allowing that backoff; do not change the production policy.
   await cluster.wait('all rate-limited destinations drain after restart and release', () =>
-    delivered('/backlog', 'down').size === count, 45_000);
+    delivered('/backlog', 'down').size === count, 60_000 + 45_000);
   const backlogDrainMs = performance.now() - releaseAt;
+  phase = 'history';
   await cluster.wait('local raw histories reach the configured count cap', async () =>
     (await cluster.history(cluster.nodes[0]!, monitors[0]!.id)).length === historyLimit, 20_000);
   for (const node of cluster.nodes) {
@@ -116,6 +129,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
     }
   }
   cluster.targetState = 'up';
+  phase = 'recovery';
   await cluster.wait('all observing-node slots recover', () => settled('up'), 45_000);
   await cluster.wait('all 128 destination recoveries are accepted', () =>
     delivered('/fast', 'recovery').size === count && delivered('/backlog', 'recovery').size === count, 45_000);
@@ -129,9 +143,11 @@ test('64 monitors retain bounded history and drain a destination backlog across 
     assert.equal(new Set(values.map(value => value.key)).size, 1, 'retries and restart preserve delivery identity');
   }
   assert.deepEqual(failures, []);
+  assert.ok(peakActive <= 16, 'two eight-worker node pools bound incident-provider concurrency');
   apiLatencies.sort((a, b) => a - b);
   t.diagnostic(JSON.stringify({ monitors: count, nodes: 2, observingSlots: count * 2, destinationsPerMonitor: 2,
     historyLimit, apiReads: apiLatencies.length, apiP95Ms: Math.round(apiLatencies[Math.ceil(apiLatencies.length * 0.95) - 1]!),
     apiMaxMs: Math.round(apiLatencies.at(-1)!), outageToFastMs: Math.round(outageToFastMs),
     backlogDrainMs: Math.round(backlogDrainMs), accepted: accepted.length, providerPeakConcurrent: peakActive }));
+  phase = 'complete';
 });
