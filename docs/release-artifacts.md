@@ -306,5 +306,30 @@ normal flags and module graph. A local Windows focused core run with both
 compiler/linker flags passed in 105.062 seconds (package 2.705 seconds), with
 415,014,151 sampled scratch bytes and zero remaining scratch. That local run
 also contained unpublished system-service fixtures; it verifies flag viability
-and this host's storage only, not native arm64 completion. A fresh native run
-is still required.
+and this host's storage only, not native arm64 completion. At that historical
+checkpoint, a fresh native run was still required.
+
+### Completed native follow-up
+
+[Workflow 40035803750](https://github.com/Narehood/Uptime-Canary/actions/runs/40035803750)
+passed all three native targets on
+`fef2dd41672373947f1f99c9b7ac167193fdeca6`: Windows amd64, Linux amd64 and
+Linux arm64. Each extracted package passed all 18 process proofs, with zero
+failures or skips. Both Linux packages also passed restricted native Alpine
+CLI help. The reports matched the exact Git-blob inputs (v3 fingerprint
+`8a058f1b672f3cea033740ceac874a118304549611ab7b934443edff990ccca6`);
+they were inspected in memory without retaining binary archives.
+
+On the native `ubuntu-24.04-arm` runner, the complete node-package test command
+with compiler DWARF disabled passed in 260.427 seconds guarded. Sampled scratch
+peaked at 502,817,148 bytes, below the unchanged 512 MiB ceiling, and returned
+to zero. The guard's retained output was overwritten by the subsequent package
+command, so this result does not claim per-test event or skip counts for that
+all-package command. The separate native arm64 package/proof run passed in
+512.399 seconds, with 429,373,837 sampled scratch bytes returned to zero.
+Windows and Linux amd64 package/proof runs passed in 550.187 and 519.947
+seconds respectively. Every package/proof guard reported unchanged source.
+
+These results clear the earlier native storage and checkout blockers for this
+source. They do not publish artifacts, certify another protocol/source commit,
+or complete the tagged-release and broader shipping work described above.
