@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -158,6 +161,49 @@ class StorageGuards(unittest.TestCase):
             self.assertEqual(output.strip(), 'single executable')
         finally:
             guard.stop_tree(process)
+
+    def test_stopping_a_live_command_leaves_an_unrelated_sibling_running(self):
+        command = [sys.executable, '-B', '-c', 'import time; time.sleep(60)']
+        sibling = subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        process = guard.start_command(command)
+        try:
+            guard.stop_tree(process)
+            self.assertIsNotNone(process.poll())
+            self.assertIsNone(sibling.poll(), 'cleanup killed a command it did not own')
+        finally:
+            guard.stop_tree(process)
+            sibling.kill()
+            sibling.wait()
+
+    def test_log_capture_failure_cannot_be_reported_as_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            generated = root / '.canary'
+            generated.mkdir()
+            work, cache = generated / 'work/current', generated / 'cache/go-build'
+            log_path = work / 'latest.log'
+            original_open = Path.open
+
+            def open_fixture(path, *args, **kwargs):
+                if path == log_path:
+                    raise OSError('fixture capture failure')
+                return original_open(path, *args, **kwargs)
+
+            command = ['bounded_validation.py', '--timeout', '10', '--', sys.executable, '-B', '-c', 'pass']
+            paths = str(cache) + '\n' + str(root / 'modules') + '\n'
+            with contextlib.ExitStack() as patches:
+                for name, value in {'ROOT': root, 'GENERATED': generated, 'WORK': work,
+                                    'CACHE': cache, 'LOCK': generated / 'bounded-validation.lock'}.items():
+                    patches.enter_context(patch.object(guard, name, value))
+                patches.enter_context(patch.object(sys, 'argv', command))
+                patches.enter_context(patch.object(guard.subprocess, 'check_output', return_value=paths))
+                patches.enter_context(patch.object(Path, 'open', open_fixture))
+                patches.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                code = guard.main()
+            result = json.loads((work / 'latest.json').read_text())
+            self.assertNotEqual(code, 0, 'uncaptured output was reported as successful validation')
+            self.assertIn('capture', result.get('error', '').lower())
+            self.assertFalse((generated / 'bounded-validation.lock').exists())
 
 
 if __name__ == '__main__':
