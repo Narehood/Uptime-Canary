@@ -1,0 +1,132 @@
+name: Release package validation
+
+on:
+  pull_request:
+    paths:
+      - '.gitattributes'
+      - 'apps/node-go/**'
+      - 'apps/proof/**'
+      - 'packages/shared/**'
+      - 'scripts/*release*'
+      - 'scripts/package*'
+      - 'scripts/bounded_validation*'
+      - 'scripts/validation_*'
+      - 'scripts/verify-jsonquery-runtime.py'
+      - 'scripts/third-party-notices.py'
+      - '.github/workflows/release-package-validation.yml'
+      - 'go.mod'
+      - 'go.sum'
+      - 'package*.json'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.txt'
+      - 'third-party-manifest.json'
+  push:
+    branches: [main]
+    paths-ignore: [README.md, 'docs/**', 'design/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-package:
+    name: native-package (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - {target: linux-amd64, runner: ubuntu-24.04}
+          - {target: linux-arm64, runner: ubuntu-24.04-arm}
+          - {target: windows-amd64, runner: windows-2025}
+    env:
+      GOTOOLCHAIN: local
+      CGO_ENABLED: '0'
+      PACKAGE_TARGET: ${{ matrix.target }}
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.13.0'
+          package-manager-cache: false
+      - name: Bind installed Go without copying the toolchain
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          root = Path.cwd().resolve()
+          if os.environ.get('GITHUB_ACTIONS') != 'true' or root != Path(os.environ['GITHUB_WORKSPACE']).resolve():
+              raise SystemExit('Only a fresh GitHub-hosted checkout is supported')
+          goroot = Path(subprocess.check_output(['go', 'env', 'GOROOT'], text=True).strip()).resolve()
+          link = root / '.canary/tools/go'
+          link.parent.mkdir(parents=True, exist_ok=True)
+          if link.exists() or link.is_symlink():
+              raise SystemExit('An existing toolchain link will not be replaced')
+          if os.name == 'nt':
+              subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(goroot)], check=True)
+          else:
+              link.symlink_to(goroot, target_is_directory=True)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+              output.write('GOCACHE=' + str(root / '.canary/cache/go-build') + '\n')
+              output.write('GOFLAGS=-p=1 -mod=readonly\n')
+      - name: Install locked dependencies on this disposable runner
+        run: go mod download
+      - name: Install existing process-proof dependencies without lifecycle scripts
+        env:
+          npm_config_cache: ${{ runner.temp }}/canary-release-npm-cache
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify storage guard fixtures
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/bounded_validation_test.py
+      - name: Verify archive and provenance fixtures
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B -m unittest discover -s scripts -p '*package*test.py'
+      - name: Exercise all node packages on native arm64
+        if: matrix.target == 'linux-arm64'
+        # Omit compiler DWARF as well as linker symbols: cold native compilation
+        # otherwise duplicates debug data in temporary archives above 512 MiB.
+        run: python scripts/bounded_validation.py --timeout 1200 -- go test -mod=readonly -p=1 -gcflags='all=-dwarf=false' -ldflags='-s -w' -count=1 -timeout=15m ./apps/node-go/...
+      - name: Pull the native Alpine image for the offline help check
+        if: runner.os == 'Linux'
+        run: docker pull alpine:3.24
+      - name: Build, package and exercise the extracted native executable
+        shell: python
+        run: |
+          import os
+          import subprocess
+          import sys
+          target = os.environ['PACKAGE_TARGET']
+          command = [sys.executable, 'scripts/bounded_validation.py', '--timeout', '1200', '--',
+                     sys.executable, '-B', 'scripts/release-package-validation.py',
+                     '--commit', os.environ['SOURCE_COMMIT'], '--version', '0.0.0-dev',
+                     '--target', target, '--require-native', '--full-proofs']
+          if target.startswith('linux-'):
+              command.append('--alpine-help')
+          subprocess.run(command, check=True)
+      - name: Upload reports only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-package-${{ matrix.target }}
+          path: |
+            .canary/release-package-current.json
+            .canary/work/current/latest.json
+            .canary/work/current/latest.log
+          retention-days: 7
+          compression-level: 9
+          if-no-files-found: error
+          include-hidden-files: true

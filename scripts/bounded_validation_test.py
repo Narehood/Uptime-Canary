@@ -14,7 +14,7 @@ class StorageGuards(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             for name in ('form.ts', 'view.tsx', 'styles.css', 'index.html', 'validator.py',
-                         'Dockerfile.node', 'compose.yaml', 'web.conf'):
+                         'Dockerfile.node', 'compose.yaml', 'web.conf', '.gitattributes'):
                 path = base / name
                 path.write_text('before', encoding='utf-8')
                 original = guard.source_digest(base)
@@ -92,6 +92,17 @@ class StorageGuards(unittest.TestCase):
             with patch.object(guard, 'WORK', base):
                 measured = guard.usage(base / 'missing-modules', base / 'missing-cache')
             self.assertEqual(measured['scratchBytes'], 18)
+
+    def test_an_already_selected_owned_cache_is_not_counted_as_external_growth(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / 'owned-cache'
+            cache.mkdir()
+            with patch.object(guard, 'CACHE', cache), patch.object(guard, 'size', return_value=17 * guard.MIB):
+                measured = guard.usage(Path(folder) / 'modules', cache)
+                self.assertEqual(measured['cacheBytes'], 17 * guard.MIB)
+                self.assertEqual(measured['externalBuildCacheBytes'], 0)
+                foreign = guard.usage(Path(folder) / 'modules', Path(folder) / 'foreign-cache')
+                self.assertEqual(foreign['externalBuildCacheBytes'], 17 * guard.MIB)
 
     def test_stop_only_the_started_process(self):
         options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}

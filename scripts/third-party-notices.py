@@ -78,7 +78,13 @@ def main():
     go = ROOT / (".canary/tools/go/bin/go.exe" if os.name == "nt" else ".canary/tools/go/bin/go")
     executable = str(go) if go.is_file() else "go"
     env = dict(os.environ, GOTOOLCHAIN="local", GOFLAGS="-mod=readonly", CGO_ENABLED="0", GOOS="linux", GOARCH="amd64")
-    linked = set(command([executable, "list", "-deps", "-f", "{{with .Module}}{{.Path}}{{end}}", "./apps/node-go/cmd/canary"], env).split())
+    # Archives support Windows as well as Linux. Linux-only discovery omitted
+    # go-isatty and go-strftime, despite both being linked by the Windows node.
+    targets = (("linux", "amd64"), ("linux", "arm64"), ("windows", "amd64"))
+    linked = set()
+    for goos, goarch in targets:
+        linked.update(command([executable, "list", "-deps", "-f", "{{with .Module}}{{.Path}}{{end}}",
+                               "./apps/node-go/cmd/canary"], dict(env, GOOS=goos, GOARCH=goarch)).split())
     modules = list(objects(command([executable, "list", "-m", "-json", "all"], env)))
     sections, manifest = [], []
 
@@ -135,13 +141,14 @@ def main():
         pending.extend(sorted(package.get("dependencies", {})))
     header = ("Uptime-Canary third-party notices\n\n"
               "The project license is in LICENSE. The following texts accompany linked\n"
-              "Linux Go dependencies, embedded assets and dashboard runtime packages\n"
+              "Linux amd64/arm64 and Windows amd64 Go dependencies (CGO disabled),\n"
+              "embedded assets and dashboard runtime packages\n"
               "at the recorded versions.\n"
               "Their original terms and attribution remain applicable. This generated inventory\n"
               "retains distributed notice files; it is not a substitute for reviewing changes\n"
               "to dependencies, container base packages or separately distributed tools.\n\n")
     notice = header + "\n".join(sections)
-    metadata = json.dumps({"target": "linux/amd64, CGO=0; dashboard runtime", "packages": manifest}, indent=2) + "\n"
+    metadata = json.dumps({"target": "linux/amd64, linux/arm64, windows/amd64, CGO=0; dashboard runtime", "packages": manifest}, indent=2) + "\n"
     if args.check:
         if not NOTICE.exists() or not MANIFEST.exists() or NOTICE.read_text(encoding="utf-8") != notice or MANIFEST.read_text(encoding="utf-8") != metadata:
             raise SystemExit("Third-party notices changed; regenerate with scripts/third-party-notices.py")

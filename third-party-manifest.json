@@ -1,5 +1,5 @@
 {
-  "target": "linux/amd64, CGO=0; dashboard runtime",
+  "target": "linux/amd64, linux/arm64, windows/amd64, CGO=0; dashboard runtime",
   "packages": [
     {
       "name": "Go standard library",
@@ -192,12 +192,32 @@
       ]
     },
     {
+      "name": "github.com/mattn/go-isatty",
+      "version": "v0.0.24",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1"
+        }
+      ]
+    },
+    {
       "name": "github.com/microsoft/go-mssqldb",
       "version": "v1.11.2",
       "notices": [
         {
           "file": "LICENSE.txt",
           "sha256": "7d0793489653bfe020de7ea32047bad266f5e2e204ba12025d5300f39555addc"
+        }
+      ]
+    },
+    {
+      "name": "github.com/ncruces/go-strftime",
+      "version": "v1.1.0",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883"
         }
       ]
     },

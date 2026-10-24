@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".canary/alpine-validation"
 OUT.mkdir(parents=True, exist_ok=True)
 ROOT_FILES = (
-    "Dockerfile.node", "Dockerfile.web", ".dockerignore", "compose.yaml",
+    "Dockerfile.node", "Dockerfile.web", ".dockerignore", ".gitattributes", "compose.yaml",
     "go.mod", "go.sum", "package.json", "package-lock.json", "tsconfig.base.json",
     "apps/proof/package.json",
     "LICENSE", "THIRD_PARTY_NOTICES.txt", "third-party-manifest.json",
@@ -18,6 +18,8 @@ ROOT_FILES = (
     "scripts/validation_paths.py",
     "scripts/validation_workspace.py", "deploy/Dockerfile.proof", "deploy/portainer-stack.yml",
     "scripts/public-availability-pure.mjs",
+    "scripts/package-release.py", "scripts/package_release_test.py",
+    "scripts/release-package-validation.py", "scripts/release_package_validation_test.py",
 )
 TREES = ("apps/node-go", "apps/web/src", "apps/proof", "packages/shared/src", "deploy")
 EXTRA = ("apps/web/index.html", "apps/web/package.json", "apps/web/tsconfig.json",

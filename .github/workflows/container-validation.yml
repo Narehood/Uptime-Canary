@@ -32,6 +32,8 @@ jobs:
           python3 -B scripts/verify-jsonquery-runtime.py
           python3 -B scripts/security-check-test.py
           python3 -B scripts/process_proof_validation_test.py
+          python3 -B scripts/package_release_test.py
+          python3 -B scripts/release_package_validation_test.py
       - name: Validate combined and separate deployment configurations
         if: matrix.phase == 'node'
         run: python3 -B scripts/deployment-config-validation.py

@@ -73,7 +73,7 @@ def source_digest(path):
             ('.canary', '.git', 'node_modules', 'dist', '__pycache__'))
         for name in sorted(names):
             source = Path(folder) / name
-            if name.startswith('.env') or not (source.suffix in SOURCE_SUFFIXES or name.startswith('Dockerfile')):
+            if name.startswith('.env') or not (source.suffix in SOURCE_SUFFIXES or name.startswith('Dockerfile') or name == '.gitattributes'):
                 continue
             if source.is_symlink():
                 continue
@@ -129,7 +129,7 @@ def trim_cache():
 def usage(module_path, external_cache):
     return {'projectBytes': size(ROOT), 'scratchBytes': size(WORK / 'tmp') + size(WORK / 'outputs'),
             'cacheBytes': size(CACHE), 'moduleBytes': size(module_path),
-            'externalBuildCacheBytes': size(external_cache)}
+            'externalBuildCacheBytes': 0 if Path(external_cache).resolve() == CACHE.resolve() else size(external_cache)}
 
 
 def breach(current, baseline):
@@ -255,9 +255,9 @@ def main():
         except (StorageError, OSError) as error:
             result['cleanupError'] = str(error)
         result['after'] = usage(module_path, external_cache)
-        result['sourceFingerprintVersion'] = 2
+        result['sourceFingerprintVersion'] = 3
         result['sourceSuffixes'] = SOURCE_SUFFIXES
-        result['sourceNamedFiles'] = 'Dockerfile*; .env* excluded; generated directories skipped'
+        result['sourceNamedFiles'] = 'Dockerfile* and .gitattributes; .env* excluded; generated directories skipped'
         result['sourceAfter'] = source_digest(cwd)
         result['sourceUnchanged'] = result['sourceBefore'] == result['sourceAfter']
         result['seconds'] = round(time.monotonic() - start, 3)

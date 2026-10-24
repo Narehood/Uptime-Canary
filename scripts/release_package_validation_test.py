@@ -1,0 +1,107 @@
+"""Provenance refusals use fixed metadata and a tiny private Git fixture."""
+import importlib.util
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+spec = importlib.util.spec_from_file_location("release_validation", Path(__file__).with_name("release-package-validation.py"))
+validation = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(validation)
+COMMIT = "a" * 40
+INFO = ("fixture: go1.27.3\n\tpath\tuptime-canary/apps/node-go/cmd/canary\n\tmod\tuptime-canary\t(devel)\n"
+        "\tbuild\t-buildmode=exe\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n"
+        "\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=windows\n\tbuild\tvcs=git\n"
+        "\tbuild\tvcs.revision=" + COMMIT + "\n\tbuild\tvcs.modified=false\n")
+
+
+class ReleaseValidationTests(unittest.TestCase):
+    def test_native_execution_cannot_be_claimed_by_a_cross_build_or_unknown_machine(self):
+        self.assertEqual(validation.native_target("Linux", "aarch64"), "linux-arm64")
+        self.assertEqual(validation.native_target("Windows", "AMD64"), "windows-amd64")
+        self.assertTrue(validation.execution_policy("linux-arm64", "linux-arm64", True, True, True))
+        self.assertFalse(validation.execution_policy("linux-arm64", "windows-amd64", False, False, False))
+        for flags in ((True, False, False), (False, True, False), (False, False, True)):
+            with self.subTest(flags=flags), self.assertRaisesRegex(ValueError, "host target"):
+                validation.execution_policy("linux-arm64", "windows-amd64", *flags)
+        with self.assertRaisesRegex(ValueError, "host target"):
+            validation.execution_policy("linux-arm64", validation.native_target("Linux", "unexpected"), True, False, False)
+        with self.assertRaisesRegex(ValueError, "native Linux"):
+            validation.execution_policy("windows-amd64", "windows-amd64", True, False, True)
+    def test_metadata_rejects_wrong_or_missing_source_target_policy_and_duplicate_fields(self):
+        checked = validation.verify_build_info(INFO, "windows-amd64", COMMIT, "go1.27.3")
+        self.assertEqual(checked["vcs.revision"], COMMIT)
+        for version in ("v0.0.0-20261023211050-" + COMMIT[:12], "v1.2.3"):
+            raw = INFO.replace("(devel)", version)
+            self.assertEqual(validation.verify_build_info(raw, "windows-amd64", COMMIT, "go1.27.3")["mainModuleVersion"], version)
+        cases = [INFO.replace("go1.27.3", "go1.26.0"), INFO.replace(COMMIT, "b" * 40),
+                 INFO.replace("vcs.modified=false", "vcs.modified=true"), INFO.replace("GOOS=windows", "GOOS=linux"),
+                 INFO.replace("GOARCH=amd64", "GOARCH=arm64"), INFO.replace("CGO_ENABLED=0", "CGO_ENABLED=1"),
+                 INFO.replace("-trimpath=true", "-trimpath=false"), INFO.replace("canary/apps", "other/apps"),
+                 INFO.replace("\tbuild\tvcs.revision=" + COMMIT + "\n", ""),
+                 INFO + "\tbuild\tvcs.modified=false\n", INFO + "\tpath\tother\n", INFO + "\tbuild\tbroken\n",
+                 INFO.replace("(devel)", "not-a-version")]
+        for raw in cases:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                validation.verify_build_info(raw, "windows-amd64", COMMIT, "go1.27.3")
+
+    def test_platform_notices_cannot_silently_reuse_an_incomplete_or_wrong_version_inventory(self):
+        manifest = {"packages": [{"name": "example.org/module", "version": "v1.2.3"},
+                                 {"name": "Go standard library", "version": "go1.27.3"}]}
+        self.assertEqual(validation.verify_notice_coverage("example.org/module v1.2.3\n", manifest, "go1.27.3"), 1)
+        for raw, toolchain in (("example.org/other v1.2.3", "go1.27.3"), ("example.org/module v2.0.0", "go1.27.3"),
+                               ("example.org/module v1.2.3", "go1.27.4"), ("malformed", "go1.27.3")):
+            with self.subTest(raw=raw, toolchain=toolchain), self.assertRaises(ValueError):
+                validation.verify_notice_coverage(raw, manifest, toolchain)
+
+    def test_clean_commit_binding_rejects_dirty_tracked_untracked_and_wrong_head(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.STDOUT, text=True).strip()
+            git("init", "--quiet")
+            source = root / "fixture.txt"
+            source.write_text("original fixture\n")
+            git("add", "fixture.txt")
+            git("-c", "user.name=Release fixture", "-c", "user.email=release@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Private tiny fixture")
+            commit = git("rev-parse", "HEAD")
+            validation.clean_checkout(commit, root)
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                validation.clean_checkout(COMMIT, root)
+            source.write_text("changed\n")
+            with self.assertRaisesRegex(ValueError, "clean checkout"):
+                validation.clean_checkout(commit, root)
+            source.write_text("original fixture\n")
+            (root / "untracked.go").write_text("package fixture\n")
+            with self.assertRaisesRegex(ValueError, "clean checkout"):
+                validation.clean_checkout(commit, root)
+
+    def test_checkout_preserves_pinned_source_bytes_and_existing_crlf_fixtures(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            repository, checkout = root / "repository", root / "checkout"
+            repository.mkdir()
+            checkout.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=repository, stderr=subprocess.STDOUT)
+            git("init", "--quiet")
+            attributes = validation.ROOT / ".gitattributes"
+            (repository / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.is_file() else b"")
+            fixtures = {
+                "apps/node-go/internal/jsonquery/jsvm/jsonata.js": b"const fixture = true;\n",
+                "apps/node-go/third_party/goja/runtime.go": b"package goja\n// Exact hash fixture.\n",
+                "apps/node-go/internal/canary/independent_test.go": b"package canary\r\n// Retained CRLF fixture.\r\n",
+            }
+            for name, raw in fixtures.items():
+                path = repository / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(raw)
+            git("-c", "core.autocrlf=false", "add", ".")
+            git("-c", "core.autocrlf=true", "checkout-index", "--all", "--force", "--prefix=" + checkout.as_posix() + "/")
+            for name, raw in fixtures.items():
+                self.assertEqual((checkout / name).read_bytes(), raw, name)
+
+
+if __name__ == "__main__":
+    unittest.main()
