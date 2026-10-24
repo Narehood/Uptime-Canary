@@ -204,7 +204,9 @@ async function functionsUnderReview() {
   const maintenance = await load('views/Maintenance.tsx', 'mDraft, buildMaintenance');
   const specs = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/serviceSpecs.tsx')).href, import.meta.url);
   const checks = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/checks.tsx')).href, import.meta.url);
-  return { ...monitor, ...channel, ...config, ...maintenance, ...specs, ...checks };
+  // Protocol 18: the PM2 builder and rules are already exported, so the form/node admission mirror needs no appended export.
+  const pm2 = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/pm2.tsx')).href, import.meta.url);
+  return { ...monitor, ...channel, ...config, ...maintenance, ...specs, ...checks, ...pm2 };
 }
 
 async function review() {
@@ -243,11 +245,13 @@ async function review() {
     return { id: m.id, protocol: key, fieldCount: f.SERVICE_FIELDS[key].length, optionsPreserved: true };
   });
   // Protocol 16 accepted 27 types; protocol 17 explicitly adds the Steam directory monitor.
-  await step('Catalogue matches all 28 implemented check types, including Globalping, system-service and Steam', async () => {
-    assert.equal(f.CHECK_TYPES.length, 28); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 28);
+  // Protocol 17 accepted 28 types; protocol 18 explicitly adds the PM2 process monitor.
+  await step('Catalogue matches all 29 implemented check types, including Globalping, system-service, Steam and PM2', async () => {
+    assert.equal(f.CHECK_TYPES.length, 29); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 29);
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'globalping'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'system-service'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'steam'));
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'pm2'));
     assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
     assert.equal(f.PROVIDERS.length, 11);
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
@@ -292,6 +296,9 @@ async function review() {
     // Go accepts this clean method-named base prefix. Its original form-only
     // refusal blocked metadata saves; keep the real API/form regression here.
     steam: { target: '127.0.0.9:27015', steam: { apiKey: 'review-steam-private-key', apiUrl: state.sink + '/internal/IGameServersService/GetServerList/v1/', allowInsecureApi: true, apiFailureIsDown: true, skipLatency: true, packetSize: 0 } },
+    // Protocol 18: a numeric-looking name stays a literal PM2 name, never an id or PID; odd durations and retries must
+    // survive the form's duration fields. Paused, so no node contacts a PM2 daemon.
+    pm2: { target: '0042', intervalMs: 61500, timeoutMs: 1234, retries: 2, retryIntervalMs: 2500, pm2: { transport: 'unix', home: '/var/lib/canary-review/.pm2', namespace: 'review ns/pm2' } },
   };
   for (const [type, options] of Object.entries(networkOptions)) await step(`API + form: ${type} preserves all non-service options and nullable omission`, async () => {
     if (options.push) secrets.add(options.push.token);
@@ -299,10 +306,15 @@ async function review() {
     const made = await api(A, '/api/monitors', 'POST', base(type, options)); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.draftFrom(m, [A.id]), initial = structuredClone(d); d.name += ' renamed'; const built = f.build(d, m, initial); assert.ok(built.input, JSON.stringify({ ...built.errors, ...built.serviceErrors }));
     const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text);
-    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
+    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','pm2','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
     assert.equal(saved.value.target, m.target);
     if (type === 'push') { assert.equal(saved.value.pushStartedAt, m.pushStartedAt); assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision); }
     if (type === 'steam') assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+    if (type === 'pm2') {
+      assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+      assert.equal(JSON.stringify(saved.value.pm2), JSON.stringify(m.pm2), 'PM2 options byte for byte');
+      for (const key of ['intervalMs', 'timeoutMs']) assert.equal(saved.value[key], m[key], key);
+    }
     networkMonitors[type] = saved.value; return { id: m.id, allOptionsPreserved: true };
   });
   const maintenanceWindows = {};
@@ -356,6 +368,37 @@ async function review() {
     const m = structuredClone(monitors.redis); m.service.futureEnvelope = { enabled: true }; m.service.redis.futureOption = { nullable: null };
     const d = f.draftFrom(m, [A.id]), initial = structuredClone(d); d.service.redis.address = '127.0.0.1:6380'; const built = f.build(d, m, initial);
     assert.ok(built.input); assert.deepEqual(built.input.service.redis.futureOption, m.service.redis.futureOption); assert.deepEqual(built.input.service.futureEnvelope, m.service.futureEnvelope);
+  });
+  // A form stricter than the node blocks renames of stored monitors; a looser one surfaces only as a failed save.
+  // JSON.stringify sends an unpaired surrogate as a lone escape. Go's decoder alone would turn it into U+FFFD, but the
+  // node's PM2 admission (validatePM2MonitorJSON, through validStringEscapes) refuses it with 400, and so does the form.
+  await step('PM2 admission: the form and the node accept exactly the same names, homes and namespaces', async () => {
+    const c = String.fromCodePoint, home = '/var/lib/canary-review/.pm2', results = [], lone = `api${c(0xd800)}b`;
+    const cases = [
+      ['target', '0042'], ['target', 'api worker/1 $~*'], ['target', `${c(0xfeff)}api`], ['target', 'a'.repeat(256)], ['target', c(0xe9).repeat(129)],
+      ['target', ' api'], ['target', `api${c(0xa0)}`], ['target', 'api\tworker'], ['target', `api${c(0x85)}`],
+      ['home', '/'], ['home', '/srv/pm2 home'], ['home', `/${'a'.repeat(97)}`], ['home', `/${'a'.repeat(98)}`], ['home', '~/.pm2'], ['home', '/home/~x/.pm2'],
+      ['home', '/home/$USER/.pm2'], ['home', '/home/x\\y'], ['home', '/home/deploy/.pm2/'], ['home', '/home/../x'], ['home', 'relative/.pm2'], ['home', ' /x'],
+      ['namespace', 'Prod ns/1'], ['namespace', ' prod'], ['namespace', 'n'.repeat(257)],
+      // 2026-10-24 r3 review boundaries: UTF-8 bytes on both sides of the socket limit (1 + 96 + 9 = 106, 1 + 98 + 9 = 108),
+      // a doubled leading slash path.Clean removes, a literal "..." segment it keeps, Unicode White_Space line and
+      // ideographic spaces at the end, a 256-byte namespace, a hidden home the pipe never sends and an unknown connection.
+      ['home', `/${c(0xe9).repeat(48)}`], ['home', `/${c(0xe9).repeat(49)}`], ['home', '//home'], ['home', '/x/...'],
+      ['target', `api${c(0x2028)}`], ['namespace', 'n'.repeat(256)], ['namespace', `prod${c(0x3000)}`],
+      ['transport', 'windows-pipe', { home: '~/hidden' }], ['transport', 'tcp-future'],
+      // 2026-10-24 r6 review: a name with an unpaired surrogate, which both sides refuse.
+      ['target', lone],
+    ];
+    for (const [field, value, extra = {}] of cases) {
+      const errors = {}, built = f.buildPm2(undefined, { ...f.pm2DraftFrom(undefined, 'api'), home, ...extra, [field]: value }, errors);
+      const made = await api(A, '/api/monitors', 'POST', base('pm2', { name: `Review PM2 admission ${results.length + 1}`, target: built.target, pm2: built.value }));
+      const formAccepts = !Object.keys(errors).length, nodeAccepts = made.status === 201;
+      assert.ok(nodeAccepts || made.status === 400, made.text);
+      assert.equal(nodeAccepts, formAccepts, `${field} ${JSON.stringify(value)}: form ${formAccepts ? 'accepts' : `refuses (${Object.values(errors).join(' ')})`}, node answered ${made.status}`);
+      if (value === lone) assert.equal(nodeAccepts, false, 'the node refuses a name with an unpaired surrogate');
+      results.push({ field, accepted: nodeAccepts });
+    }
+    return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length };
   });
   await browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows });
   const manifest = json(join(runDir, 'source-manifest.json'));
@@ -438,6 +481,63 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     networkMonitors.steam = saved.value;
     return { serverValidatedProjection: true, bothDisplayModes: true, actualMultiHeadConflict: false };
   });
+  await step('Browser: PM2 fields keep the literal name and options, refuse a ~ home before saving, and hide the home for the Windows pipe', async () => {
+    const m = networkMonitors.pm2;
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await text('Each selected node asks the PM2 daemon on its own machine');
+    assert.equal(await page.eval(`__field('Process name').value`), m.target);
+    assert.equal(await page.eval(`__field('PM2 home').value`), m.pm2.home);
+    assert.equal(await page.eval(`__field('Namespace').value`), m.pm2.namespace);
+    const puts = () => report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length, before = puts();
+    await fill('PM2 home', '~/.pm2'); await click('Save changes'); await text('Write the full path without ~ or $VARIABLES');
+    assert.equal(puts(), before);
+    const homeShown = () => page.eval(`[...document.querySelectorAll('input')].some(e => __vis(e) && [...e.labels || []].some(l => __norm(l.innerText) === 'PM2 home'))`);
+    await choose('Windows named pipe'); await text('PM2 on Windows uses one fixed local pipe'); assert.equal(await homeShown(), false);
+    await choose('Unix socket'); assert.equal(await page.eval(`__field('PM2 home').value`), '~/.pm2', 'the hidden home is kept in the draft');
+    await fill('PM2 home', m.pm2.home); await fill('Name', 'Review PM2 fields renamed'); await click('Save changes');
+    await heading('Review PM2 fields renamed'); await text('Not measured; shown as a dash');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(JSON.stringify(saved.pm2), JSON.stringify(m.pm2));
+    for (const key of ['intervalMs', 'timeoutMs', 'retries', 'retryIntervalMs']) assert.equal(saved[key], m[key], key);
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    networkMonitors.pm2 = saved;
+    return { literalName: saved.target, optionsPreserved: true, generationPreserved: true, refusedBeforeSave: true, windowsHidesHome: true, noDaemonQuery: saved.enabled === false };
+  });
+  await step('Browser: the PM2 home is masked in the JSON preview until shown, and a masked copy is refused on import', async () => {
+    const m = networkMonitors.pm2, MASK = String.fromCodePoint(0x2022).repeat(3);
+    assert.ok(!JSON.stringify(f.masked(m)).includes(m.pm2.home));
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await disclose('JSON (advanced)'); await text('The PM2 home path is masked too');
+    const preview = async () => JSON.parse(await page.eval(`document.querySelector('[aria-label="Monitor JSON preview"]').textContent`));
+    const masked = await preview();
+    assert.equal(masked.pm2.home, MASK); assert.equal(masked.pm2.namespace, m.pm2.namespace); assert.equal(masked.target, m.target);
+    await fill('Fill the form from JSON', JSON.stringify({ ...masked, name: 'Review PM2 masked import' })); await click('Fill the form'); await text('pm2.home is a masked placeholder');
+    assert.equal(await page.eval(`__field('Name').value`), m.name, 'nothing was filled');
+    await click('Show credentials');
+    const revealed = await preview(); assert.deepEqual(revealed.pm2, m.pm2);
+    await fill('Fill the form from JSON', JSON.stringify({ ...revealed, name: 'Review PM2 imported' })); await click('Fill the form');
+    assert.equal(await page.eval(`__field('Name').value`), 'Review PM2 imported'); assert.equal(await page.eval(`__field('PM2 home').value`), m.pm2.home);
+    await click('Save changes'); await heading('Review PM2 imported');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(JSON.stringify(saved.pm2), JSON.stringify(m.pm2));
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    networkMonitors.pm2 = saved;
+    return { maskedPreviewHome: true, maskedImportRefused: true, revealedImportExact: true };
+  });
+  await step('PM2 conflict projection retains the exact name and options in both display modes', async () => {
+    const m = networkMonitors.pm2;
+    const ctx = { groupMap: new Map(), role: 'admin', channels: { map: new Map() }, tags: { map: new Map() } };
+    let projected;
+    for (const reveal of [false, true]) {
+      projected = Object.assign({}, ...f.monitorRows(ctx, reveal).map(row => row.project(m)));
+      assert.deepEqual(projected.pm2, m.pm2); assert.equal(projected.target, m.target);
+    }
+    const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...projected, revision: m.revision });
+    assert.equal(saved.status, 200, saved.text); assert.equal(JSON.stringify(saved.value.pm2), JSON.stringify(m.pm2));
+    assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+    networkMonitors.pm2 = saved.value;
+    return { serverValidatedProjection: true, bothDisplayModes: true, actualMultiHeadConflict: false };
+  });
   for (const [type, m] of Object.entries(monitors)) await step(`Browser: rename ${type} preserves stored service bytes`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'); const saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved); assert.deepEqual(saved.service, m.service); return { id: m.id, servicePreserved: true };
@@ -463,7 +563,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   for (const [type, m] of Object.entries(networkMonitors)) await step(`Browser: rename ${type} preserves full stored options`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'), saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved);
-    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved[key], m[key], key);
+    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','pm2','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved[key], m[key], key);
     if (type === 'push') assert.equal(saved.pushStartedAt, m.pushStartedAt);
     networkMonitors[type] = saved; return { id: m.id, optionsPreserved: true };
   });
@@ -566,11 +666,15 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   await step('Viewer: API and UI hide monitor/channel/push credentials and disable editing', async () => {
     const token = secret(); secrets.add(token); const made = await api(A, '/api/accounts', 'POST', { name: `review-viewer-${Date.now()}`, role: 'viewer', token }); assert.equal(made.status, 201, made.text);
     const raw = await api(A, '/api/overview', 'GET', undefined, token); for (const value of ['review-password', 'review-hook-key', networkMonitors.push.push.token, networkMonitors.steam.steam.apiKey, 'private-body', 'private-header']) assert.ok(!raw.text.includes(value));
+    // PM2 options are omitted for viewers; the admission step above stored other monitors with the same home.
+    for (const value of [networkMonitors.pm2.pm2.home, networkMonitors.pm2.pm2.namespace, 'canary-review/.pm2']) assert.ok(!raw.text.includes(value), 'viewer received PM2 options');
     const c = await api(A, '/api/notification-channels', 'GET', undefined, token);
     for (const value of ['review-hook-key', 'review-smtp-password', 'review-slack-secret', 'review-telegram-token', '-1001234567890', 'review-topic', 'tk_review-ntfy-token', 'review-gotify-token', 'a'.repeat(30), 'u'.repeat(30)]) assert.ok(!c.text.includes(value), 'viewer received private channel configuration');
     await signIn({ ...A, token }, true); await nav(`#/monitors/${monitors.redis.id}`); await heading(monitors.redis.name); await text('Hidden from viewers');
     await nav(`#/monitors/${networkMonitors.steam.id}`); await heading(networkMonitors.steam.name); await text('Hidden from viewers');
     assert.ok(!(await page.eval('document.body.innerText')).includes(networkMonitors.steam.steam.apiKey));
+    await nav(`#/monitors/${networkMonitors.pm2.id}`); await heading(networkMonitors.pm2.name); await text('Hidden from viewers'); await text(networkMonitors.pm2.target);
+    assert.ok(!(await page.eval('document.body.innerText')).includes(networkMonitors.pm2.pm2.home));
     await nav('#/channels/new'); await text('Viewers can’t change channels');
     await signIn(A, true); return { redactedAtServer: true, formsReadOnly: true };
   });

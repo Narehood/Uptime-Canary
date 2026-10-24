@@ -17,6 +17,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   const cluster = new Cluster({ CANARY_HISTORY_LIMIT: String(historyLimit), CANARY_HISTORY_RETENTION_MS: '60000' });
   const requests: { route: string; monitor: string; source: string; sender: string; kind: string; key: string; accepted: boolean }[] = [];
   const failures: string[] = [];
+  const polls: Record<string, { successes: number; failures: number; lastSuccess?: unknown; lastFailure?: unknown }> = {};
   let blocked = true, active = 0, peakActive = 0, phase = 'setup';
   const sink = createServer((request, response) => {
     void (async () => {
@@ -55,12 +56,12 @@ test('64 monitors retain bounded history and drain a destination backlog across 
       const identity = `${request.route}/${request.key}`;
       keys.set(identity, (keys.get(identity) ?? 0) + 1);
     }
-    t.diagnostic(JSON.stringify({ phase, requests: requests.length, rejected: requests.filter(request => !request.accepted).length,
+    t.diagnostic(JSON.stringify({ phase, at: Date.now(), requests: requests.length, rejected: requests.filter(request => !request.accepted).length,
       acceptedIdentities: keys.size, repeatedAcceptedIdentities: [...keys.values()].filter(value => value > 1).length,
       repeatedAcceptedRequests: [...keys.values()].reduce((sum, value) => sum + value - 1, 0),
       accepted: Object.fromEntries(['/fast', '/backlog'].flatMap(route => ['down', 'recovery'].map(kind =>
         [`${route}/${kind}`, requests.filter(request => request.accepted && request.route === route && request.kind === kind).length]))),
-      fixtureErrors: failures.length }));
+      fixtureErrors: failures.length, polls }));
     await cluster.cleanup();
     const closed = new Promise<void>((resolve, reject) => sink.close(error => error ? reject(error) : resolve()));
     sink.closeAllConnections(); await closed;
@@ -87,12 +88,51 @@ test('64 monitors retain bounded history and drain a destination backlog across 
       cluster.createMonitor(monitorInput(cluster, `Capacity ${offset + index}`, channels.map(channel => channel.id))))));
   }
   const identities = new Set(monitors.map(monitor => monitor.id));
-  const settled = async (state: 'up' | 'down') => (await cluster.overviews()).every(overview =>
-    monitors.every(monitor => {
+  const settled = async (state: 'up' | 'down') => {
+    // Keep the same requests and predicate. Remember each completed response
+    // separately so one timed-out peer cannot erase the other's diagnostic.
+    const overviews = await Promise.all(cluster.nodes.map(async node => {
+      const summary = polls[node.id] ??= { successes: 0, failures: 0 };
+      const started = performance.now();
+      try {
+        const overview = await cluster.overview(node);
+        const at = Date.now();
+        const states: Record<string, number> = {};
+        const unresolved: unknown[] = [];
+        let oldestSampleMs = 0;
+        for (const monitor of monitors) {
+          const view = overview.monitors.find(item => item.monitor.id === monitor.id);
+          for (const observation of view?.observations ?? []) {
+            states[observation.state] = (states[observation.state] ?? 0) + 1;
+            oldestSampleMs = Math.max(oldestSampleMs, at - observation.checkedAt);
+          }
+          if (unresolved.length < 4 && (view?.state !== state || cluster.nodes.some(observer =>
+            !view.observations.some(observation => observation.nodeId === observer.id && observation.state === state)))) {
+            unresolved.push({ monitorId: monitor.id, state: view?.state ?? 'missing',
+              revisionMatches: view?.monitor.revision === monitor.revision, unknownNodes: view?.unknownNodes, configConflict: view?.configConflict,
+              observations: view?.observations.map(observation => ({ nodeId: observation.nodeId,
+                local: observation.nodeId === node.id, state: observation.state, ageMs: at - observation.checkedAt,
+                staleOrPriorRevision: observation.message === 'Observation is stale or belongs to an earlier revision' })) });
+          }
+        }
+        summary.successes++;
+        summary.lastSuccess = { phase, expectedState: state, at, durationMs: Math.round(performance.now() - started),
+          monitors: overview.monitors.length, states, oldestSampleMs, unresolved };
+        return overview;
+      } catch (error) {
+        summary.failures++;
+        summary.lastFailure = { phase, expectedState: state, at: Date.now(),
+          durationMs: Math.round(performance.now() - started),
+          error: cluster.redact(error instanceof Error ? error.message : String(error)).slice(0, 140) };
+        throw error;
+      }
+    }));
+    return overviews.every(overview => monitors.every(monitor => {
       const view = overview.monitors.find(item => item.monitor.id === monitor.id);
       return view?.state === state && cluster.nodes.every(node => view.observations.some(observation =>
         observation.nodeId === node.id && observation.state === state));
     }));
+  };
   await cluster.wait('all 128 observing-node slots are up', () => settled('up'), 45_000);
   phase = 'outage';
   const outageAt = performance.now(); cluster.targetState = 'down';

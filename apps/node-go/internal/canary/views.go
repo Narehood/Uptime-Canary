@@ -8,6 +8,7 @@ func publicMonitor(m Monitor, role string) Monitor {
 		m.Target = globalpingPublicTarget(m)
 		m.Globalping = nil
 		m.Steam = nil
+		m.PM2 = nil
 		m.WebhookURL = ""
 		m.Service = nil
 		if m.Push != nil {

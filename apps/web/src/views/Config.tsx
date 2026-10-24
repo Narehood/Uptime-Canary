@@ -10,6 +10,7 @@ import { useResource } from '../hooks';
 import { messagingRoute } from '../messaging';
 import { candidateOrder, groupPath } from '../model';
 import { notify } from '../notices';
+import { pm2Masked } from '../pm2';
 import { href } from '../router';
 import { steamMasked } from '../steam';
 import { Banner, Card, EmptyState, PageHead, ReadOnly, Rev, Tag, Time } from '../ui/bits';
@@ -60,8 +61,8 @@ export function withOtherFields<T extends object>(rows: Row<T>[], heads: T[], re
   }];
 }
 
-const CHECK_KEYS = ['type', 'target', 'expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'upsideDown'] as const;
-const OPTION_KEYS = ['http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam'] as const;
+const CHECK_KEYS = ['type', 'target', 'expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'upsideDown'] as const;
+const OPTION_KEYS = ['http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2'] as const;
 
 function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
   const groupName = (id?: string): string => id ? groupPath(id, ctx.groupMap) : 'No group';
@@ -78,12 +79,13 @@ function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
             {m.type === 'globalping' && m.globalping ? <span className="muted small"> · {String(m.globalping.mode).toLowerCase()} from <span className="mono">{m.globalping.location}</span></span> : null}
             {m.type === 'system-service' ? <span className="muted small"> · read by each node from its own operating system</span> : null}
             {m.type === 'steam' ? <span className="muted small"> · Steam directory listing{viewer || !m.steam ? '' : `${m.steam.skipLatency ? ', no ICMP latency' : ', then an ICMP echo'}${m.steam.apiFailureIsDown ? ', API failures down' : ''} · API key hidden`}</span> : null}
+            {m.type === 'pm2' ? <span className="muted small"> · read by each node from its own PM2 daemon{viewer || !m.pm2 ? null : <>{m.pm2.transport === 'unix' ? ' over a Unix socket' : m.pm2.transport === 'windows-pipe' ? ' over the Windows named pipe' : ` over “${m.pm2.transport}”`}{m.pm2.namespace ? <>, namespace <span className="mono wrap">{m.pm2.namespace}</span></> : null}</>}</span> : null}
             {m.type === 'http' ? <span className="muted small"> · accepts {acceptedStatusText(m)}</span> : null}
             {m.type === 'manual' ? <span className="muted small"> · status {m.manual?.state ?? 'not set'}{m.manual?.message ? `: ${m.manual.message}` : ''}</span> : null}
             {m.upsideDown ? <span className="muted small"> · inverted</span> : null}
             {options.length && !viewer ? (
               <details className="opts"><summary className="small">{options.join(', ')} options</summary>
-                <pre className="json-pre small">{JSON.stringify(Object.fromEntries(options.map(key => [key, key === 'steam' ? steamMasked(reveal ? m[key] : maskOptions(m[key])) : reveal ? m[key] : maskOptions(m[key])])), null, 2)}</pre>
+                <pre className="json-pre small">{JSON.stringify(Object.fromEntries(options.map(key => [key, key === 'steam' ? steamMasked(reveal ? m[key] : maskOptions(m[key])) : reveal ? m[key] : key === 'pm2' ? pm2Masked(m[key]) : maskOptions(m[key])])), null, 2)}</pre>
               </details>
             ) : null}
           </>

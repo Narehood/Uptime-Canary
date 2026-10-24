@@ -6,6 +6,7 @@ on:
       - '.gitattributes'
       - 'apps/node-go/**'
       - 'apps/proof/**'
+      - 'apps/web/**'
       - 'packages/shared/**'
       - 'scripts/*release*'
       - 'scripts/package*'
@@ -13,6 +14,10 @@ on:
       - 'scripts/validation_*'
       - 'scripts/verify-jsonquery-runtime.py'
       - 'scripts/third-party-notices.py'
+      - 'scripts/pm2-real*'
+      - 'scripts/pm2_real*'
+      - 'scripts/pm2-pure.mjs'
+      - 'scripts/fixtures/pm2-real/**'
       - '.github/workflows/release-package-validation.yml'
       - 'go.mod'
       - 'go.sum'
@@ -95,6 +100,13 @@ jobs:
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/bounded_validation_test.py
       - name: Verify archive and provenance fixtures
         run: python scripts/bounded_validation.py --timeout 60 -- python -B -m unittest discover -s scripts -p '*package*test.py'
+      - name: Verify PM2 namespace refusal controls without privilege changes
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/pm2_real_validation_test.py
+      - name: Verify PM2 editor and configuration contracts
+        run: python scripts/bounded_validation.py --timeout 60 -- node scripts/pm2-pure.mjs
+      - name: Exercise native PM2 workers and process boundaries
+        if: matrix.target != 'linux-arm64'
+        run: python scripts/bounded_validation.py --timeout 300 -- go test -mod=readonly -p=1 -count=1 ./apps/node-go/internal/pm2monitor ./apps/node-go/internal/probeworker/process
       - name: Exercise all node packages on native arm64
         if: matrix.target == 'linux-arm64'
         # Omit compiler DWARF as well as linker symbols: cold native compilation
@@ -115,7 +127,7 @@ jobs:
                      '--commit', os.environ['SOURCE_COMMIT'], '--version', '0.0.0-dev',
                      '--target', target, '--require-native', '--full-proofs']
           if target.startswith('linux-'):
-              command.append('--alpine-help')
+              command.extend(['--alpine-help', '--pm2-interop'])
           subprocess.run(command, check=True)
       - name: Upload reports only
         if: always()
@@ -124,6 +136,7 @@ jobs:
           name: release-package-${{ matrix.target }}
           path: |
             .canary/release-package-current.json
+            .canary/pm2-real-current.json
             .canary/work/current/latest.json
             .canary/work/current/latest.log
           retention-days: 7

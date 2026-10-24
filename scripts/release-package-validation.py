@@ -148,9 +148,12 @@ def main():
     parser.add_argument("--require-native", action="store_true", help="Refuse cross-build-only acceptance")
     parser.add_argument("--full-proofs", action="store_true", help="Run every ordinary process proof on the extracted native executable")
     parser.add_argument("--alpine-help", action="store_true", help="Also execute extracted CLI help in a pre-pulled restricted Alpine container")
+    parser.add_argument("--pm2-interop", action="store_true", help="Require offline actual PM2 interoperability on native hosted Linux")
     args = parser.parse_args()
     native = execution_policy(args.target, native_target(platform.system(), platform.machine()),
                               args.require_native, args.full_proofs, args.alpine_help)
+    if args.pm2_interop and (not native or not args.target.startswith("linux-")):
+        raise ValueError("PM2 interoperability requires native Linux")
     clean_checkout(args.commit)
     args.version = packager.version_value(args.version)
     output = guarded_output("release-package")
@@ -243,6 +246,11 @@ def main():
             if not help_text.startswith("Commands: serve,"):
                 raise ValueError("The extracted executable did not return Alpine CLI help")
             report["alpineHelpPassed"] = True
+        if args.pm2_interop:
+            run("actual-pm2-interop", [sys.executable, "-B", "scripts/pm2-real-validation.py", "--binary", str(extracted)], 360)
+            report["pm2Interop"] = json.loads((ROOT / ".canary/pm2-real-current.json").read_text())
+            if not report["pm2Interop"]["passed"] or report["pm2Interop"]["binarySha256"] != result["binarySha256"]:
+                raise ValueError("Actual PM2 acceptance did not cover the extracted executable")
         if packager.digest_file(extracted)[0] != result["binarySha256"]:
             raise ValueError("Extracted executable changed during validation")
         clean_checkout(args.commit)

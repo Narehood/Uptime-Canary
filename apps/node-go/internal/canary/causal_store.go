@@ -162,6 +162,19 @@ func sourceProjection(sources, pending map[string]Incident, incoming []Incident,
 	return out, remaining, projected, nil
 }
 
+// An exact replay of a complete source adds no incident evidence. Local-only
+// uncertainty inputs are not represented by JSON and must never use this path.
+// Facts/links are checked separately, so newly available proof still projects.
+func incidentSummariesChanged(sources map[string]Incident, incoming []Incident) bool {
+	for _, next := range incoming {
+		previous, exists := sources[next.ID]
+		if !exists || len(next.uncertainties) != 0 || !equalJSON(previous, next) {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *Node) initializeCausalFacts() error {
 	var err error
 	if n.revisionEdges, err = loadAll[RevisionEdge](n.store, "revisionEdges"); err != nil {
@@ -452,7 +465,8 @@ func (n *Node) applySnapshot(s Snapshot) error {
 	// Complete sources may reference incomplete embedded boundaries even when
 	// no standalone incident is pending. New proof must refresh those bindings.
 	proofChanged := len(facts) != len(n.incidentFacts) || len(links) != len(n.evidenceLinks)
-	projected := !n.causalReady || len(s.Incidents) > 0 || proofChanged && (len(pending) > 0 || hasUncertaintyReferences(episodes))
+	projected := !n.causalReady || incidentSummariesChanged(sources, s.Incidents) ||
+		proofChanged && (len(s.Incidents) > 0 || len(pending) > 0 || hasUncertaintyReferences(episodes))
 	if projected {
 		sources, pending, episodes, err = sourceProjection(sources, pending, s.Incidents, facts, links)
 		if err != nil {

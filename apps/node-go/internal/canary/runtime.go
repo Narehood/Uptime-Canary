@@ -270,6 +270,9 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 			if m.Type == "system-service" {
 				return SystemServiceProbe(ctx, m)
 			}
+			if m.Type == "pm2" {
+				return PM2Probe(ctx, m)
+			}
 			if m.Type == "steam" {
 				return SteamProbe(ctx, m)
 			}

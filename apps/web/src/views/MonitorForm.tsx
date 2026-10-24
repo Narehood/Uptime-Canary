@@ -10,6 +10,7 @@ import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shor
 import { GP_FIELD_LABEL, GP_SECTION, buildGlobalping, gpDraftFrom, gpMasked, type GpDraft, type GpField } from '../globalping';
 import { groupPath } from '../model';
 import { notify } from '../notices';
+import { PM2_FIELD_LABEL, buildPm2, pm2DraftFrom, pm2Masked, type Pm2Draft, type Pm2Field } from '../pm2';
 import { href, navigate } from '../router';
 import { SERVICE_FIELDS, SERVICE_PROTOCOL, buildJsonata, buildService, jsonataDraft, maskService, serviceValues, type JsonataDraft, type ProtocolKey, type Values } from '../serviceSpecs';
 import { STEAM_FIELD_LABEL, STEAM_SECTION, buildSteam, steamDraftFrom, steamMasked, type SteamDraft, type SteamField } from '../steam';
@@ -23,6 +24,7 @@ import { Glyph, Icon } from '../ui/icons';
 import { safeColor } from '../ui/tags';
 import { ProviderIcon, providerLabel, recipientCount } from './Channels';
 import { GlobalpingFields } from './GlobalpingFields';
+import { Pm2Fields } from './Pm2Fields';
 import { JsonataInputs, ServiceFields, openServiceSections } from './ServiceFields';
 import { SteamFields } from './SteamFields';
 
@@ -67,6 +69,8 @@ interface Draft {
   gp: GpDraft;
   /** The Steam game server: its address and its `steam` options. */
   steam: SteamDraft;
+  /** The PM2 process: its exact name and its `pm2` options. */
+  pm2: Pm2Draft;
   /** Per service type, so switching types keeps what was typed. */
   service: Partial<Record<MonitorType, Values>>;
   repeatOn: boolean;
@@ -127,6 +131,7 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
     pushToken: monitor?.push?.token ?? '', pushAllowGet: Boolean(monitor?.push?.allowGet),
     gp: gpDraftFrom(monitor?.type === 'globalping' ? monitor.globalping : undefined, monitor?.type === 'globalping' ? monitor.target : ''),
     steam: steamDraftFrom(monitor?.type === 'steam' ? monitor.steam : undefined, monitor?.type === 'steam' ? monitor.target : ''),
+    pm2: pm2DraftFrom(monitor?.type === 'pm2' ? monitor.pm2 : undefined, monitor?.type === 'pm2' ? monitor.target : ''),
     service: monitor && protocol ? { [monitor.type]: serviceValues(protocol, monitor.service?.[protocol]) } : {},
     repeatOn: Boolean(monitor?.repeatAfterMs),
     repeat: toDraft(monitor?.repeatAfterMs || 900_000),
@@ -226,7 +231,7 @@ type Field =
   | 'name' | 'target' | 'interval' | 'timeout' | 'retries' | 'retryInterval' | 'expected' | 'method' | 'headers' | 'body' | 'redirects' | 'auth' | 'proxy'
   | 'keyword' | 'jsonPath' | 'jsonExpected' | 'jsonata' | 'oauth' | 'wsHeaders' | 'wsAuth' | 'wsProxy'
   | 'tlsServerName' | 'tlsCa' | 'tlsCert' | 'tlsKey' | 'tlsMinDays' | 'dnsServer' | 'dnsExpected' | 'pingCount' | 'pingSize' | 'manualMessage'
-  | 'repeat' | 'webhook' | 'channels' | 'tags' | 'nodes' | 'size' | 'pushToken' | GpField | SteamField;
+  | 'repeat' | 'webhook' | 'channels' | 'tags' | 'nodes' | 'size' | 'pushToken' | GpField | SteamField | Pm2Field;
 
 const FIELD_LABEL: Record<Field, string> = {
   name: 'Name', target: 'Target', interval: 'Interval', timeout: 'Timeout', retries: 'Retries', retryInterval: 'Retry interval', expected: 'Accepted status', method: 'Method',
@@ -237,6 +242,7 @@ const FIELD_LABEL: Record<Field, string> = {
   channels: 'Notification channels', tags: 'Tags', nodes: 'Run on', size: 'Size', pushToken: 'Push token',
   ...GP_FIELD_LABEL,
   ...STEAM_FIELD_LABEL,
+  ...PM2_FIELD_LABEL,
 };
 
 /** Which disclosure holds a field, so a failed save opens the sections that need attention. */
@@ -313,8 +319,9 @@ interface Groups {
   push?: MonitorInput['push'];
   globalping?: MonitorInput['globalping'];
   steam?: MonitorInput['steam'];
+  pm2?: MonitorInput['pm2'];
 }
-const GROUP_KEYS = ['expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'ping', 'manual', 'service', 'push', 'globalping', 'steam'] as const;
+const GROUP_KEYS = ['expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'ping', 'manual', 'service', 'push', 'globalping', 'steam', 'pm2'] as const;
 
 /** Builds every option object for the draft's type from the draft alone, starting from the original's objects. */
 function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors, serviceErrors: Record<string, string>): Groups {
@@ -428,6 +435,7 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
   }
   if (type === 'globalping') groups.globalping = buildGlobalping(same ? original?.globalping : undefined, draft.gp, errors).value;
   if (type === 'steam') groups.steam = buildSteam(same ? original?.steam : undefined, draft.steam, errors).value;
+  if (type === 'pm2') groups.pm2 = buildPm2(same ? original?.pm2 : undefined, draft.pm2, errors).value;
   const protocol = protocolOf(type);
   if (protocol) {
     const stored = same ? original?.service?.[protocol] : undefined;
@@ -532,8 +540,9 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   if (Object.keys(errors).length || Object.keys(serviceErrors).length) return { errors, serviceErrors };
 
   const input = (original ? inputOf(original) : {}) as MonitorInput;
-  for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'retries', 'retryIntervalMs', 'notificationIds', 'tags'] as const) delete input[key];
-  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'steam' ? draft.steam.target.trim() : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
+  for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'retries', 'retryIntervalMs', 'notificationIds', 'tags'] as const) delete input[key];
+  // A PM2 process name is compared exactly, so it is sent as typed, never trimmed.
+  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'steam' ? draft.steam.target.trim() : type === 'pm2' ? draft.pm2.target : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
   Object.assign(input, { name, type, target, intervalMs: interval!, timeoutMs: timeout!, nodeIds: [...draft.nodeIds].sort(), enabled: draft.enabled, repeatAfterMs: repeat ?? 0 });
   for (const key of GROUP_KEYS) if (groups[key] !== undefined) (input as unknown as Record<string, unknown>)[key] = groups[key];
   if (retries) input.retries = retries;
@@ -574,6 +583,7 @@ function masked(input: MonitorInput): MonitorInput {
   if (copy.push?.token) copy.push = { ...copy.push, token: '•••' };
   if (copy.globalping) copy.globalping = gpMasked(copy.globalping);
   if (copy.steam) copy.steam = steamMasked(copy.steam);
+  if (copy.pm2) copy.pm2 = pm2Masked(copy.pm2);
   // Service fields the form doesn't know (from a newer node) are sent too, so the preview keeps them, with the text of
   // credential-named ones hidden: unknown siblings of the protocol object, and unknown fields inside a known one.
   const service = copy.service as unknown as Record<string, unknown> | undefined;
@@ -787,7 +797,7 @@ function JsonPanel({ input, onImport, disabled }: { input?: MonitorInput; onImpo
           {shown ? <CopyButton value={shown} label={reveal ? 'Copy, with credentials' : 'Copy'} /> : null}
           <button type="button" className="btn sm" aria-pressed={reveal} onClick={() => setReveal(v => !v)}><Icon name={reveal ? 'eyeOff' : 'eye'} />{reveal ? 'Hide credentials' : 'Show credentials'}</button>
         </div>
-        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them; a node saves {MASK} as the real value, so replace each one before using a masked copy there.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}</small>
+        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them; a node saves {MASK} as the real value, so replace each one before using a masked copy there.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}{input?.pm2?.home ? ' The PM2 home path is masked too until you show credentials.' : ''}</small>
       </div>
       <TextAreaField full mono optional label="Fill the form from JSON" value={text} onChange={setText} rows={4} disabled={disabled} placeholder={'{ "name": "API", "type": "http", "target": "https://…" }'}
         hint="Fills the fields above from a monitor object. Nothing is saved until you save the form. Settings the form doesn’t show are not imported." />
@@ -1155,6 +1165,8 @@ function MonitorFormBody({ id }: { id?: string }) {
               storedKey={initial?.type === 'steam' ? initial.steam.apiKey : ''} timeoutMs={fromDraft(draft.timeout)} intervalMs={fromDraft(draft.interval)} nodeCount={draft.nodeIds.length} />
           ) : null}
 
+          {type === 'pm2' ? <Pm2Fields d={draft.pm2} set={change => setDraft(d => ({ ...d, pm2: { ...d.pm2, ...change } }))} errors={visibleErrors} disabled={saving} stored={initial?.type === 'pm2' ? initial.pm2.transport : undefined} /> : null}
+
           {type === 'push' ? (
             <PushFields token={draft.pushToken} allowGet={draft.pushAllowGet} stored={initial?.type === 'push' ? initial.pushToken : ''} disabled={saving} error={visibleErrors.pushToken}
               onToken={value => set('pushToken', value)} onAllowGet={value => set('pushAllowGet', value)} interval={fromDraft(draft.interval)} />
@@ -1302,6 +1314,8 @@ function MonitorFormBody({ id }: { id?: string }) {
               ? 'Each chosen node checks the service on its own operating system, so choose nodes installed on the machines you want to watch. Out-of-view nodes receive the monitor when they reconnect.'
               : type === 'steam'
               ? 'Each chosen node resolves the host and calls the Steam API itself with the key, so every node counts against the key’s daily limit. All of them ask the same directory: more nodes tell a node’s own DNS or API path apart, not the route to the game server. Out-of-view nodes receive the monitor when they reconnect.'
+              : type === 'pm2'
+              ? 'Each chosen node asks its own PM2 daemon, so choose nodes on the machines that run the process, all reached through the connection and home above. Mixed Linux and Windows machines need separate monitors. Out-of-view nodes receive the monitor when they reconnect.'
               : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
           />
           <div className="fld full">

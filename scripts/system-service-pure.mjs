@@ -23,13 +23,13 @@ const check = (name, fn) => { try { fn(); console.log(`PASS ${name}`); } catch (
 const EARLIER = ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp', 'globalping', 'postgres', 'mysql', 'sqlserver', 'oracledb', 'mongodb', 'redis',
   'docker', 'mqtt', 'rabbitmq', 'kafka-producer', 'grpc', 'sftp', 'ntp', 'snmp', 'radius', 'sip-options', 'push', 'manual'];
 
-// Protocol 17 explicitly adds Steam; retain every earlier catalogue/order assertion.
-check('catalogue: 28 unique types, the 26 earlier ones in their order, plus system-service and Steam', () => {
+// Protocol 18 explicitly adds PM2 after protocol-17 Steam; retain every earlier catalogue/order assertion.
+check('catalogue: 29 unique types, the 26 earlier ones in their order, plus system-service, Steam and protocol-18 PM2', () => {
   const types = checks.CHECK_TYPES.map(entry => entry.type);
-  assert.equal(types.length, 28);
-  assert.equal(new Set(types).size, 28);
+  assert.equal(types.length, 29);
+  assert.equal(new Set(types).size, 29);
   assert.ok(types.includes('steam'));
-  assert.deepEqual(types.filter(type => type !== 'system-service' && type !== 'steam'), EARLIER);
+  assert.deepEqual(types.filter(type => type !== 'system-service' && type !== 'steam' && type !== 'pm2'), EARLIER);
   assert.equal(Object.keys(specs.SERVICE_PROTOCOL).length, 16);
 });
 
@@ -41,7 +41,7 @@ check('catalogue entry: label, target label, examples, its own local category', 
   assert.match(entry.placeholder, /sshd\.service/u);
   assert.match(entry.placeholder, /Spooler/u);
   assert.ok(checks.CATEGORY_LABEL.local);
-  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'local').length, 1);
+  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'local').length, 2);
   assert.equal(checks.typeLabel('system-service'), 'System service');
 });
 

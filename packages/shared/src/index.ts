@@ -1,6 +1,6 @@
 /** Public management API contract. Runtime coordination types remain private to the node. */
 export * from './status.js';
-export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam';
+export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam' | 'pm2';
 export type ObservationState = 'up' | 'down' | 'unknown' | 'pending';
 export type Role = 'admin' | 'editor' | 'viewer';
 
@@ -42,6 +42,14 @@ export interface MonitorInput {
   /** Remote measurement; API trust/credentials and query text are private. */
   globalping?: GlobalpingMonitorOptions;
   steam?: SteamMonitorOptions;
+  pm2?: PM2MonitorOptions;
+}
+
+/** Local connection options are private and omitted from viewer/public projections. */
+export interface PM2MonitorOptions {
+  transport: 'unix' | 'windows-pipe';
+  home?: string;
+  namespace?: string;
 }
 
 export interface SteamMonitorOptions {

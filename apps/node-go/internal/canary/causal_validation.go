@@ -58,6 +58,9 @@ func (v *Version) UnmarshalJSON(b []byte) error {
 	if err := decodeCommittedRecord(b, "edgeId", &out); err != nil {
 		return err
 	}
+	if (out.Monitor.Type == "pm2" || out.Monitor.PM2 != nil) && pm2MonitorVersionJSON(b) != nil {
+		return fail(400, "Invalid PM2 monitor version")
+	}
 	*v = Version(out)
 	return nil
 }

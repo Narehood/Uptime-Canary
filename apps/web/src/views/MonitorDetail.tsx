@@ -37,6 +37,20 @@ function interpretation(view: MonitorView, a: Assessment): ReactNode {
       default: break;
     }
   }
+  // A PM2 check reads each node's own daemon: locations differ by machine, never by network path.
+  if (view.monitor.type === 'pm2') {
+    switch (a.kind) {
+      case 'everywhere': return a.total === 1
+        ? <>Failing on {ids(a.failing)}, the only node assigned. It reads the process list of that machine’s own PM2 daemon.</>
+        : 'Failing on every assigned node. Each node reads its own machine’s PM2 daemon, so on each of them the process is missing or not online.';
+      case 'partial': return <>
+        Failing on {ids(a.failing)}{a.passing.length ? <> but passing on {ids(a.passing)}</> : null}. Each node reads its own PM2 daemon, so the machines differ; this isn’t a network problem.
+        {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
+      </>;
+      case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the node got no definite answer from its PM2 daemon (none running at that connection; a daemon run by another account, or on Windows a pipe whose present owner or permissions don’t fit; no permission; a connection its system doesn’t use, or a system other than Linux and Windows; another PM2 version; an unreadable answer; a state it doesn’t know; busy or failed check workers; or no answer within the timeout). Pending is neither up nor down and never sends a recovery.</>;
+      default: break;
+    }
+  }
   // Every node asks the same Steam directory, so locations differ by DNS answer or API path, not by the route to the server.
   if (view.monitor.type === 'steam') {
     switch (a.kind) {
@@ -346,7 +360,7 @@ function HistoryCard({ view }: { view: MonitorView }) {
                   <h3 className="mini-h">Response time</h3>
                   {measured.length
                     ? <LatencyChart samples={samples} now={overview.now} label={`Response time measured by ${endpoint} over ${samples.length} checks; ${measured.length} with a measured round trip`} />
-                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual and system service checks, Steam checks without a measured echo, and unavailable ICMP replies have no latency.</p>}
+                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual, system service and PM2 checks, Steam checks without a measured echo, and unavailable ICMP replies have no latency.</p>}
                   <div className="legend"><span><i className="sw line" />Response time (measured, successful checks)</span><span><i className="sw band" />Failed checks</span></div>
                 </div>
               )}
@@ -366,7 +380,7 @@ function Facts({ view }: { view: MonitorView }) {
   const group = m.groupId ? groupMap.get(m.groupId) : undefined;
   const dependency = group?.group.outageMonitorId ? monitorMap.get(group.group.outageMonitorId)?.monitor : undefined;
   const facts = checkFacts(m, { viewer, reveal });
-  const hasSecrets = !viewer && Boolean(m.webhookUrl || m.http?.headers || m.http?.body || m.http?.proxyUrl || m.websocket?.headers || m.websocket?.proxyUrl || m.service || m.globalping?.token || m.globalping?.http?.headers || m.globalping?.apiUrl || m.steam?.apiUrl);
+  const hasSecrets = !viewer && Boolean(m.webhookUrl || m.http?.headers || m.http?.body || m.http?.proxyUrl || m.websocket?.headers || m.websocket?.proxyUrl || m.service || m.globalping?.token || m.globalping?.http?.headers || m.globalping?.apiUrl || m.steam?.apiUrl || m.pm2?.home);
   return (
     <>
       <dl className="kv">
