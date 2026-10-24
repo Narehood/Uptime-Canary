@@ -64,7 +64,7 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 			i.SuppressionReleasedAt = Ptr(max(n.now(), *i.SuppressedAt))
 			n.saveEpisode(i)
 		}
-		if (n.targetSuppressionComplete(i, target.ID) || i.MaintenanceComplete) && down == nil {
+		if down == nil && (i.MaintenanceComplete || n.targetSuppressionComplete(i, target.ID)) {
 			continue
 		}
 		if maintenanceHeld {
@@ -286,7 +286,7 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 		group, _, grace := n.suppressionForTarget(m, target)
 		valid = valid && group == ""
 		valid = valid && n.now() >= latest.OpenedAt+grace
-		if (n.targetSuppressionComplete(latest, target.ID) || latest.MaintenanceComplete) && !hasReceipt(successes, "down") {
+		if !hasReceipt(successes, "down") && (latest.MaintenanceComplete || n.targetSuppressionComplete(latest, target.ID)) {
 			valid = false
 		}
 		if latest.Closed == nil {

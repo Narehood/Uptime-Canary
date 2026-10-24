@@ -55,6 +55,50 @@ func combineUncertainties(a, b []incidentUncertainty) []incidentUncertainty {
 // Bind every committed boundary before deriving closure. This handles chains
 // of interrupted branches without depending on map iteration or page order.
 func resolveUncertaintySet(original map[string]Incident, facts map[string]IncidentFact, links map[string]EvidenceLink) (map[string]Incident, error) {
+	type scope struct{ monitor, generation string }
+	groups := map[scope]map[string]Incident{}
+	for id, record := range original {
+		key := scope{record.MonitorID, record.Revision}
+		if groups[key] == nil {
+			groups[key] = map[string]Incident{}
+		}
+		groups[key][id] = record
+	}
+	if len(groups) <= 1 {
+		return resolveUncertaintyScope(original, original, facts, links)
+	}
+	// Peer admission requires every boundary to share its owner's scope. Raw
+	// local records can bypass that admission; retain their global behavior,
+	// including a foreign header nested inside committed boundary evidence.
+	for _, record := range original {
+		for _, u := range record.uncertainties {
+			if u.Header.MonitorID != record.MonitorID || u.Header.Revision != record.Revision {
+				return resolveUncertaintyScope(original, original, facts, links)
+			}
+		}
+	}
+	for _, fact := range facts {
+		if fact.Boundary != nil && (fact.Boundary.MonitorID != fact.MonitorID || fact.Boundary.Revision != fact.Revision) {
+			return resolveUncertaintyScope(original, original, facts, links)
+		}
+	}
+	// Closure and predecessor continuity cannot cross monitor/generation
+	// boundaries. Avoid a global fixed point when unrelated scopes have proof.
+	out := map[string]Incident{}
+	for _, group := range groups {
+		resolved, err := resolveUncertaintyScope(group, original, facts, links)
+		if err != nil {
+			return nil, err
+		}
+		for id, record := range resolved {
+			out[id] = record
+		}
+	}
+	return out, nil
+}
+
+// Keep the global original index for boundary identity-collision checks.
+func resolveUncertaintyScope(original, allOriginal map[string]Incident, facts map[string]IncidentFact, links map[string]EvidenceLink) (map[string]Incident, error) {
 	sources := map[string]*Incident{}
 	queue := []*Incident{}
 	for id, i := range original {
@@ -76,7 +120,7 @@ func resolveUncertaintySet(original map[string]Incident, facts map[string]Incide
 					return nil, err
 				}
 				if complete {
-					if latest, ok := original[full.ID]; ok {
+					if latest, ok := allOriginal[full.ID]; ok {
 						if latest.MonitorID != full.MonitorID || latest.Revision != full.Revision {
 							return nil, fail(400, "Uncertainty boundary scope mismatch")
 						}

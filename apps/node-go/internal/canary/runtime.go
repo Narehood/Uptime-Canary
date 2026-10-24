@@ -36,6 +36,8 @@ type Node struct {
 	heads                                          map[string][]Version
 	groups                                         map[string][]GroupVersion
 	resources                                      map[string][]ResourceVersion
+	channelTargets                                 map[string]channelTargetCache
+	channelTargetBytes                             int
 	revisionEdges                                  map[string]RevisionEdge
 	revisionClaims                                 map[string]RevisionClaim
 	graph                                          *revisionGraph
@@ -675,7 +677,9 @@ func (n *Node) tick() {
 				// A deadline crossed during commit is already due, not irrelevant.
 				n.nextProbe[monitor.ID] = min(n.nextProbe[monitor.ID], pushDeadline)
 			}
-			n.evaluate()
+			// One sample changes one monitor. The scheduler tick still evaluates
+			// every monitor for time, holds and cross-monitor dependencies.
+			n.evaluateMonitor(monitor.ID)
 		})
 	}
 	n.evaluate()
@@ -689,12 +693,27 @@ func (n *Node) saveEpisode(i Incident) {
 	}
 	updates := n.localIncidentUpdates(i)
 	intents := []NotificationIntent{}
+	unchanged := len(updates) > 0
 	for _, update := range updates {
+		stored, exists := n.incidentSources[update.ID]
+		original, complete, err := hydrateIncident(stored, n.incidentFacts, n.evidenceLinks)
+		// Interrupted evaluation operates on original sources. Their IDs may be
+		// hidden by a merged projection, so compare against the retained source
+		// rather than treating that projection mismatch as a new observation.
+		original.EvidenceRoot = ""
+		candidate := update
+		candidate.EvidenceRoot = ""
+		same := exists && err == nil && complete && equalJSON(original, candidate) &&
+			equalJSON(combineUncertainties(original.uncertainties, nil), combineUncertainties(candidate.uncertainties, nil))
+		unchanged = unchanged && same && !n.needsLocalIncidentDelivery(update)
 		for _, target := range unique(update.DeliveryTargets) {
 			if !n.indexedDeliveryIntent(update, target) {
 				intents = append(intents, deliveryIntent(update.MonitorID, update.ID, target))
 			}
 		}
+	}
+	if unchanged && len(intents) == 0 {
+		return
 	}
 	// This is a complete local projection. Its previous root commits the old
 	// state, so stage the changed arrays as a new source update.
@@ -735,96 +754,106 @@ func (n *Node) evaluate() {
 	n.normalizeEpisodes()
 	n.retireSuperseded()
 	for id := range n.heads {
-		m := n.current(id)
-		if m == nil || !m.Enabled {
-			continue
-		}
-		observations := n.fresh(*m)
-		if n.interruptedHistory(*m) {
-			n.evaluateInterrupted(*m, observations)
-			if slices.Contains(m.NodeIDs, n.ID) && len(n.notificationTargets(*m)) > 0 {
-				n.scheduleNotification(*m, observations)
-			}
-			continue
-		}
-		closed := []Incident{}
-		records := []Incident{}
-		for _, i := range n.episodes {
-			if i.MonitorID == id && i.Revision == checkGeneration(*m) {
-				records = append(records, i)
-				if i.Closed != nil {
-					closed = append(closed, i)
-				}
-			}
-		}
-		downs := []Sample{}
-		for _, s := range observations {
-			valid := s.State == "down"
-			for _, i := range closed {
-				valid = valid && sampleAfterClosure(s, i)
-			}
-			if valid {
-				downs = append(downs, s)
-			}
-		}
-		active := activeEpisode(records, downs)
-		if len(downs) > 0 {
-			opening := active == nil
-			if active == nil {
-				episodeID := newID()
-				opened := downs[0].CheckedAt
-				pred := []string{}
-				for _, s := range downs {
-					opened = min(opened, s.CheckedAt)
-				}
-				for _, i := range closed {
-					pred = append(pred, episodeIDs(i)...)
-				}
-				active = &Incident{ID: episodeID, Aliases: []string{episodeID}, MonitorID: id, MonitorName: m.Name, Revision: checkGeneration(*m), OpenedAt: opened, Runs: map[string][]int64{}, Predecessors: unique(pred)}
-			}
-			tracked := n.recordMaintenance(*m, *active, opening)
-			active = &tracked
-			targets := append([]string{}, active.DeliveryTargets...)
-			for _, target := range n.notificationTargets(*m) {
-				targets = append(targets, target.ID)
-			}
-			active.DeliveryTargets = unique(targets)
-			n.saveEpisode(addRuns(*active, downs))
-		} else if active != nil && len(observations) == len(m.NodeIDs) {
-			up := true
-			for _, s := range observations {
-				up = up && s.State == "up"
-			}
-			for node, seqs := range active.Runs {
-				for _, seq := range seqs {
-					found := false
-					for _, s := range observations {
-						if s.NodeID == node && s.Sequence > seq {
-							found = true
-						}
-					}
-					up = up && found
-				}
-			}
-			if up {
-				tracked := n.recordMaintenance(*m, *active, false)
-				active = &tracked
-				active.ResolvedAt = Ptr(n.now())
-				active.Closed = map[string]int64{}
-				for _, s := range observations {
-					active.Closed[s.NodeID] = s.Sequence
-				}
-				if active.SuppressedByGroupID != "" && !hasReceipt(n.forEpisode(*active), "down") {
-					active.SuppressedComplete = true
-				}
-				active.MaintenanceComplete = n.maintenanceCovers(*m, *active, *active.ResolvedAt)
-				n.saveEpisode(*active)
-				n.completeDependencySuppressions(*m, *active)
-			}
-		}
-		if slices.Contains(m.NodeIDs, n.ID) && len(n.notificationTargets(*m)) != 0 {
+		n.evaluateMonitor(id)
+	}
+}
+
+// Called under mu after a sample commit and from the full scheduler sweep.
+// Samples cannot change another monitor's configuration or incident scope;
+// dependency and clock-driven changes retain the full tick evaluation.
+func (n *Node) evaluateMonitor(id string) {
+	if n.stopped || n.fault != nil {
+		return
+	}
+	m := n.current(id)
+	if m == nil || !m.Enabled {
+		return
+	}
+	observations := n.fresh(*m)
+	if n.interruptedHistory(*m) {
+		n.evaluateInterrupted(*m, observations)
+		if slices.Contains(m.NodeIDs, n.ID) && len(n.notificationTargets(*m)) > 0 {
 			n.scheduleNotification(*m, observations)
 		}
+		return
+	}
+	closed := []Incident{}
+	records := []Incident{}
+	for _, i := range n.episodes {
+		if i.MonitorID == id && i.Revision == checkGeneration(*m) {
+			records = append(records, i)
+			if i.Closed != nil {
+				closed = append(closed, i)
+			}
+		}
+	}
+	downs := []Sample{}
+	for _, s := range observations {
+		valid := s.State == "down"
+		for _, i := range closed {
+			valid = valid && sampleAfterClosure(s, i)
+		}
+		if valid {
+			downs = append(downs, s)
+		}
+	}
+	active := activeEpisode(records, downs)
+	if len(downs) > 0 {
+		opening := active == nil
+		if active == nil {
+			episodeID := newID()
+			opened := downs[0].CheckedAt
+			pred := []string{}
+			for _, s := range downs {
+				opened = min(opened, s.CheckedAt)
+			}
+			for _, i := range closed {
+				pred = append(pred, episodeIDs(i)...)
+			}
+			active = &Incident{ID: episodeID, Aliases: []string{episodeID}, MonitorID: id, MonitorName: m.Name, Revision: checkGeneration(*m), OpenedAt: opened, Runs: map[string][]int64{}, Predecessors: unique(pred)}
+		}
+		tracked := n.recordMaintenance(*m, *active, opening)
+		active = &tracked
+		targets := append([]string{}, active.DeliveryTargets...)
+		for _, target := range n.notificationTargets(*m) {
+			targets = append(targets, target.ID)
+		}
+		active.DeliveryTargets = unique(targets)
+		n.saveEpisode(addRuns(*active, downs))
+	} else if active != nil && len(observations) == len(m.NodeIDs) {
+		up := true
+		for _, s := range observations {
+			up = up && s.State == "up"
+		}
+		for node, seqs := range active.Runs {
+			for _, seq := range seqs {
+				found := false
+				for _, s := range observations {
+					if s.NodeID == node && s.Sequence > seq {
+						found = true
+					}
+				}
+				up = up && found
+			}
+		}
+		if up {
+			tracked := n.recordMaintenance(*m, *active, false)
+			active = &tracked
+			active.ResolvedAt = Ptr(n.now())
+			active.Closed = map[string]int64{}
+			for _, s := range observations {
+				active.Closed[s.NodeID] = s.Sequence
+			}
+			if active.SuppressedByGroupID != "" && !hasReceipt(n.forEpisode(*active), "down") {
+				active.SuppressedComplete = true
+			}
+			active.MaintenanceComplete = n.maintenanceCovers(*m, *active, *active.ResolvedAt)
+			n.saveEpisode(*active)
+			n.completeDependencySuppressions(*m, *active)
+		}
+	}
+	if slices.Contains(m.NodeIDs, n.ID) && len(n.notificationTargets(*m)) != 0 {
+		n.scheduleNotification(*m, observations)
 	}
 }
 func hasReceipt(rs []Receipt, kind string) bool {

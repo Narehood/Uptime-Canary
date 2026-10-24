@@ -123,25 +123,46 @@ func combine(a, b Incident) Incident {
 	return out
 }
 func reconcileEpisodes(records []Incident) []Incident {
+	// Every equivalence, frontier and positive-run edge is scoped by monitor
+	// and generation. Unrelated monitors cannot supply closure or continuity.
+	// Folding them together repeatedly compares unrelated pairs and rebuilds
+	// their proof graphs whenever any other monitor acquires a source fact.
+	type scope struct{ monitor, generation string }
+	groups := map[scope][]Incident{}
+	for _, record := range records {
+		key := scope{record.MonitorID, record.Revision}
+		groups[key] = append(groups[key], record)
+	}
+	out := []Incident{}
+	for _, group := range groups {
+		out = append(out, reconcileEpisodeScope(group)...)
+	}
+	slices.SortFunc(out, incidentOrder)
+	return out
+}
+
+func incidentOrder(a, b Incident) int {
+	if (a.Closed == nil) != (b.Closed == nil) {
+		if a.Closed != nil {
+			return -1
+		}
+		return 1
+	}
+	if a.OpenedAt != b.OpenedAt {
+		if a.OpenedAt < b.OpenedAt {
+			return -1
+		}
+		return 1
+	}
+	return stringsCompare(a.ID, b.ID)
+}
+
+func reconcileEpisodeScope(records []Incident) []Incident {
 	out := make([]Incident, len(records))
 	for index, record := range records {
 		out[index] = combine(record, record)
 	}
-	slices.SortFunc(out, func(a, b Incident) int {
-		if (a.Closed == nil) != (b.Closed == nil) {
-			if a.Closed != nil {
-				return -1
-			}
-			return 1
-		}
-		if a.OpenedAt != b.OpenedAt {
-			if a.OpenedAt < b.OpenedAt {
-				return -1
-			}
-			return 1
-		}
-		return stringsCompare(a.ID, b.ID)
-	})
+	slices.SortFunc(out, incidentOrder)
 	// Keep the original witnesses while folding projections. An aggregate
 	// carries every member's uncertainty, but another member need not itself
 	// contain each observer's run when a complete original contains both.

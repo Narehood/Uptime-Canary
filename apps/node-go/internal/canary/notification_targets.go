@@ -62,18 +62,60 @@ func targetsForChannel(c Channel) []notificationTarget {
 	return out
 }
 
+// Cache only current channel payloads, with fixed bounds independent of retained
+// revision history. Delivery adapters treat configurations as immutable.
+const maxChannelTargetEntries = 128
+const maxChannelTargetBytes = 1 << 20
+
+type channelTargetCache struct {
+	Revision, Data string
+	Targets        []notificationTarget
+}
+
+func (n *Node) dropChannelTargets(id string) {
+	if cached, exists := n.channelTargets[id]; exists {
+		n.channelTargetBytes -= len(cached.Data)
+		delete(n.channelTargets, id)
+	}
+}
+
+func (n *Node) currentChannelTargets(r Resource) []notificationTarget {
+	if cached, exists := n.channelTargets[r.ID]; exists && cached.Revision == r.Revision && cached.Data == string(r.Data) {
+		return cached.Targets
+	}
+	n.dropChannelTargets(r.ID)
+	c := channelOf(r, "admin")
+	var targets []notificationTarget
+	if c.Enabled {
+		targets = targetsForChannel(c)
+	}
+	if len(r.Data) > maxChannelTargetBytes {
+		return targets
+	}
+	if len(n.channelTargets) >= maxChannelTargetEntries || n.channelTargetBytes+len(r.Data) > maxChannelTargetBytes {
+		clear(n.channelTargets)
+		n.channelTargetBytes = 0
+	}
+	if n.channelTargets == nil {
+		n.channelTargets = map[string]channelTargetCache{}
+	}
+	n.channelTargets[r.ID] = channelTargetCache{Revision: r.Revision, Data: string(r.Data), Targets: targets}
+	n.channelTargetBytes += len(r.Data)
+	return targets
+}
+
 func (n *Node) notificationTargets(m Monitor) []notificationTarget {
 	out := []notificationTarget{}
 	if m.WebhookURL != "" {
 		out = append(out, notificationTarget{Provider: string(notificationProviderForURL(m.WebhookURL)), URL: m.WebhookURL})
 	}
 	for _, id := range m.NotificationIDs {
-		if h := n.resources[resourceKey(resourceChannel, id)]; len(h) == 1 && !h[0].Resource.Deleted && n.resourceVersionReady(h[0]) {
-			c := channelOf(h[0].Resource, "admin")
-			if c.Enabled {
-				out = append(out, targetsForChannel(c)...)
-			}
+		h := n.resources[resourceKey(resourceChannel, id)]
+		if len(h) != 1 || h[0].Resource.Deleted || !n.resourceVersionReady(h[0]) {
+			n.dropChannelTargets(id)
+			continue
 		}
+		out = append(out, n.currentChannelTargets(h[0].Resource)...)
 	}
 	return out
 }
@@ -249,7 +291,7 @@ func (n *Node) targetSuppressionComplete(i Incident, destination string) bool {
 // Called only at an observed closure, never to infer an old episode's coverage
 // from a dependency that became healthy/delivered at a later time.
 func (n *Node) completeDependencySuppressions(m Monitor, i Incident) {
-	if i.Closed == nil || i.ResolvedAt == nil {
+	if m.GroupID == "" || i.Closed == nil || i.ResolvedAt == nil {
 		return
 	}
 	// An interrupted local source can close a larger reconciled episode. Bind
