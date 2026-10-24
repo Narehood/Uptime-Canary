@@ -9,27 +9,30 @@ import (
 )
 
 type DeliveryAttemptView struct {
-	ID            string `json:"id"`
-	NodeID        string `json:"nodeId"`
-	MonitorID     string `json:"monitorId,omitempty"`
-	IncidentID    string `json:"incidentId,omitempty"`
-	Kind          string `json:"kind"`
-	Slot          int64  `json:"slot,omitempty"`
-	DestinationID string `json:"destinationId,omitempty"`
-	ChannelID     string `json:"channelId,omitempty"`
-	Provider      string `json:"provider"`
-	State         string `json:"state"`
-	Failures      int    `json:"failures"`
-	NextAttemptAt int64  `json:"nextAttemptAt,omitempty"`
-	LastAttemptAt int64  `json:"lastAttemptAt,omitempty"`
-	HTTPStatus    int    `json:"httpStatus,omitempty"`
-	ErrorCode     string `json:"errorCode,omitempty"`
-	ProviderID    string `json:"providerId,omitempty"`
-	Held          bool   `json:"held,omitempty"`
+	ID                   string `json:"id"`
+	NodeID               string `json:"nodeId"`
+	MonitorID            string `json:"monitorId,omitempty"`
+	IncidentID           string `json:"incidentId,omitempty"`
+	SourceIncidentID     string `json:"sourceIncidentId,omitempty"`
+	SatisfiedByReceiptID string `json:"satisfiedByReceiptId,omitempty"`
+	Kind                 string `json:"kind"`
+	Slot                 int64  `json:"slot,omitempty"`
+	DestinationID        string `json:"destinationId,omitempty"`
+	ChannelID            string `json:"channelId,omitempty"`
+	Provider             string `json:"provider"`
+	State                string `json:"state"`
+	Failures             int    `json:"failures"`
+	NextAttemptAt        int64  `json:"nextAttemptAt,omitempty"`
+	LastAttemptAt        int64  `json:"lastAttemptAt,omitempty"`
+	HTTPStatus           int    `json:"httpStatus,omitempty"`
+	ErrorCode            string `json:"errorCode,omitempty"`
+	ProviderID           string `json:"providerId,omitempty"`
+	Held                 bool   `json:"held,omitempty"`
 }
 
 func (n *Node) attemptView(a attempt) DeliveryAttemptView {
 	v := DeliveryAttemptView{ID: a.ID, NodeID: n.ID, MonitorID: a.MonitorID, IncidentID: a.IncidentID, Kind: a.Kind, Slot: a.Slot, DestinationID: a.DestinationID, ChannelID: a.ChannelID, Provider: a.Provider, State: a.State, Failures: a.Failures, NextAttemptAt: a.NextAt, LastAttemptAt: a.LastAt, HTTPStatus: a.HTTPStatus, ErrorCode: a.ErrorCode, ProviderID: a.ProviderID, Held: a.Held}
+	v.SourceIncidentID = a.IncidentID
 	if v.State == "" {
 		v.State = "queued"
 	}
@@ -40,8 +43,9 @@ func (n *Node) attemptView(a attempt) DeliveryAttemptView {
 		if i.MonitorID == a.MonitorID && slices.Contains(episodeIDs(i), a.IncidentID) {
 			v.IncidentID = i.ID
 			for _, r := range receiptsForTarget(n.forEpisode(i), a.DestinationID) {
-				if r.Kind == a.Kind && (a.Kind != "repeat" || r.Slot >= a.Slot) {
+				if r.Kind == a.Kind && (a.Kind != "repeat" || r.Slot >= a.Slot) && v.SatisfiedByReceiptID != a.ID {
 					v.State, v.NextAttemptAt, v.ErrorCode, v.NodeID, v.Held = "accepted", 0, "", r.NodeID, false
+					v.SatisfiedByReceiptID = r.ID
 				}
 			}
 			if v.State != "accepted" && i.RetiredBy != "" {

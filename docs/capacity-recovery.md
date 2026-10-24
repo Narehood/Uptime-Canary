@@ -20,9 +20,14 @@ not a maximum-capacity benchmark or a promise about arbitrary retained history.
 - Both node processes are killed and restarted against their own private
   databases. Persisted failed attempt identities, failure counts and retry
   deadlines must survive. No migration or graceful receipt handoff is used.
-- The second destination is released. Every pending down must drain within the existing maximum 60-second backoff
-  plus a 45-second processing window, followed
-  by a separate accepted recovery for each destination after probes return up.
+- The second destination is released. Every retained down obligation must name
+  a concrete satisfying receipt in its owning node's current delivery view,
+  either its exact key or a sibling satisfying its reconciled episode. That
+  receipt must be accepted by the fixture provider and present on both peers,
+  within the existing maximum 60-second
+  backoff plus a 45-second processing window. Independent sources cannot cover
+  one another merely because they share a monitor. Recoveries follow after
+  probes return up.
 - Each node is configured to retain at most eight raw samples per monitor.
   Histories must stay local and respect that cap while probes keep running.
 - Each monitor/destination must accept down and recovery. Requests for the same
@@ -31,6 +36,19 @@ not a maximum-capacity benchmark or a promise about arbitrary retained history.
   election/sync windows must produce no new accepted sends. Initial proof lag
   and ambiguous sends may produce duplicate provider acceptances, as in the
   existing HA contract; they are reported rather than counted as exactly once.
+  Attempts observed before restart, on later polls or in provider requests stay
+  in a retained ledger. Missing attempts, unexplained cancellations and retries
+  remain unsettled. All retained down/recovery obligations are checked at the
+  final receipt barrier and again after the quiet window; a quiet provider alone
+  cannot hide a deferred retry. A full 1,000-entry delivery page fails the proof
+  because this public endpoint has no pagination cursor.
+
+The read-only delivery response exposes `sourceIncidentId` before public alias
+canonicalization and `satisfiedByReceiptId` from the same locked projection used
+to report acceptance. Exact receipts take precedence. The proof joins this
+concrete witness to receipt IDs and provider requests; a canonical display ID
+or an accepted state alone cannot discharge an obligation. These additive view
+fields change no persistence, scheduling or peer protocol behavior.
 
 The diagnostic reports workload size, API latencies, outage-to-fast-acceptance
 time, backlog drain time, accepted notifications and provider concurrency. The
@@ -44,6 +62,13 @@ Run one command through the shared bounded runner:
 ```text
 python scripts/bounded_validation.py --timeout 480 -- python -B scripts/process-proof-validation.py --test capacity.test.ts
 ```
+
+The existing 240-second whole-test timeout is an additional aggregate acceptance
+gate. It includes setup, API reads, restart, all phase waits and quiet windows.
+Individual phase deadlines are ceilings within that total, not additive time
+allowances: a run can satisfy each phase deadline and still fail the total
+budget. The outer 480-second guard also covers the production build and runner
+cleanup. Neither budget was increased by the retained-obligation review repair.
 
 The existing proof runner builds one disposable production binary and creates
 fresh private SQLite databases under the guard's temporary directory. The

@@ -15,6 +15,7 @@ export interface Channel extends ChannelInput { id: string; revision: string; up
 export interface ChannelView { channel: Channel; configConflict: boolean }
 export interface DeliveryAttempt {
   id: string; nodeId: string; monitorId?: string; incidentId?: string; kind: string;
+  sourceIncidentId?: string; satisfiedByReceiptId?: string;
   destinationId?: string; channelId?: string; provider: string; state: string; failures: number;
   nextAttemptAt?: number; lastAttemptAt?: number; httpStatus?: number; errorCode?: string; providerId?: string;
 }

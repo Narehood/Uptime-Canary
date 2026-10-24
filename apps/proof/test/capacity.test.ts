@@ -5,9 +5,12 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Monitor } from '../../../packages/shared/src/index.js';
 import { Cluster } from '../fixtures/cluster.js';
+import { CapacityObligations } from '../fixtures/capacity.js';
 import { attempts, channelsReplicated, createChannel, monitorInput, webhookInput } from '../fixtures/notifications.js';
 
 // This is a fixed workload and recovery proof, not a maximum-capacity or SLA claim.
+// The 240-second total is an additional acceptance gate across all phases;
+// individual phase budgets are upper bounds, not additive time allowances.
 test('64 monitors retain bounded history and drain a destination backlog across two-node restart', { timeout: 240_000 }, async t => {
   const count = 64;
   const historyLimit = 8;
@@ -67,6 +70,17 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   const channels = await Promise.all(['fast', 'backlog'].map(route =>
     createChannel(cluster, webhookInput(route, `http://127.0.0.1:${address.port}/${route}`))));
   await channelsReplicated(cluster, channels);
+  const obligations = new CapacityObligations(new Map([['/fast', channels[0]!.id], ['/backlog', channels[1]!.id]]));
+  let obligationsSettled = { exact: 0, aliased: 0, pending: [] as { nodeId: string; id: string; state: string }[] };
+  const allObligationsSettled = async (route?: string, kind?: string) => {
+    const snapshots = await Promise.all(cluster.nodes.map(async node => ({ nodeId: node.id,
+      attempts: await attempts(cluster, node), notifications: (await cluster.overview(node)).notifications })));
+    obligationsSettled = obligations.inspect(snapshots, requests, route, kind);
+    if (obligationsSettled.pending.length) {
+      throw Error('Unsettled retained deliveries: ' + JSON.stringify(obligationsSettled.pending.slice(0, 8)));
+    }
+    return true;
+  };
   const monitors: Monitor[] = [];
   for (let offset = 0; offset < count; offset += 4) {
     monitors.push(...await Promise.all(Array.from({ length: 4 }, (_, index) =>
@@ -93,12 +107,13 @@ test('64 monitors retain bounded history and drain a destination backlog across 
     await cluster.wait('both nodes know every accepted receipt identity', async () => {
       const keys = new Set(requests.filter(request => request.accepted && (!route || request.route === route)).map(request => request.key));
       return (await cluster.overviews()).every(overview => keys.size > 0 && [...keys].every(key =>
-        overview.notifications.some(receipt => receipt.id === key)));
+        overview.notifications.some(receipt => receipt.id === key))) && await allObligationsSettled(route);
     }, 45_000);
     const baseline = requests.filter(request => request.accepted && (!route || request.route === route)).length;
     await delay(4_000);
     assert.equal(requests.filter(request => request.accepted && (!route || request.route === route)).length, baseline,
       'accepted receipt exchange stops subsequent sends');
+    await allObligationsSettled(route); // Late retained retries cannot hide behind a quiet provider.
   };
   await cluster.wait('each fast destination accepts while the other destination is rate limited', () =>
     delivered('/fast', 'down').size === count && new Set(requests.filter(request =>
@@ -119,8 +134,12 @@ test('64 monitors retain bounded history and drain a destination backlog across 
     }
   }
   await quietAfterReceiptExchange('/fast');
-  const before = await Promise.all(cluster.nodes.map(async node => ({ node, values: (await attempts(cluster, node))
-    .filter(attempt => attempt.kind === 'down' && attempt.failures > 0 && attempt.channelId === channels[1]!.id) })));
+  const before = await Promise.all(cluster.nodes.map(async node => {
+    const values = await attempts(cluster, node);
+    obligations.remember(node.id, values);
+    return { node, values: values.filter(attempt =>
+      attempt.kind === 'down' && attempt.failures > 0 && attempt.channelId === channels[1]!.id) };
+  }));
   assert.ok(before.some(entry => entry.values.length > 0), 'failed attempts are durable before restart');
   phase = 'restart';
   await Promise.all(cluster.nodes.map(node => cluster.stop(node)));
@@ -140,8 +159,8 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   // The accepted policy persists a 60-second backoff on every fifth failure
   // (notifications.go). Release cannot bypass it. Keep the 45-second drain
   // window after allowing that backoff; do not change the production policy.
-  await cluster.wait('all rate-limited destinations drain after restart and release', () =>
-    delivered('/backlog', 'down').size === count, 60_000 + 45_000);
+  await cluster.wait('all retained rate-limited obligations settle after restart and release', async () =>
+    delivered('/backlog', 'down').size === count && await allObligationsSettled('/backlog', 'down'), 60_000 + 45_000);
   const backlogDrainMs = performance.now() - releaseAt;
   phase = 'history';
   await cluster.wait('local raw histories reach the configured count cap', async () =>
@@ -179,6 +198,8 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   t.diagnostic(JSON.stringify({ monitors: count, nodes: 2, observingSlots: count * 2, destinationsPerMonitor: 2,
     historyLimit, apiReads: apiLatencies.length, apiP95Ms: Math.round(apiLatencies[Math.ceil(apiLatencies.length * 0.95) - 1]!),
     apiMaxMs: Math.round(apiLatencies.at(-1)!), outageToFastMs: Math.round(outageToFastMs),
-    backlogDrainMs: Math.round(backlogDrainMs), accepted: accepted.length, providerPeakConcurrent: peakActive }));
+    backlogDrainMs: Math.round(backlogDrainMs), accepted: accepted.length, providerPeakConcurrent: peakActive,
+    settledExactObligations: obligationsSettled.exact, settledAliasObligations: obligationsSettled.aliased,
+    unsettledObligations: obligationsSettled.pending.length }));
   phase = 'complete';
 });

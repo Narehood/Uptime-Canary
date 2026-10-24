@@ -364,6 +364,10 @@ export interface DeliveryAttemptView {
   nodeId: string;
   monitorId?: string;
   incidentId?: string;
+  /** Original stored source, before the public incident ID is canonicalized. */
+  sourceIncidentId?: string;
+  /** Actual receipt satisfying this source/destination/event in its current episode. */
+  satisfiedByReceiptId?: string;
   kind: 'down' | 'repeat' | 'recovery' | 'test';
   slot?: number;
   destinationId?: string;
