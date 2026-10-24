@@ -88,14 +88,23 @@ export class Session {
 
   /**
    * Verifies the node first; the current connection (if any) stays untouched unless the new one answers.
-   * A replaced password session is signed out on its node, since this tab can never use it again.
+   * A replaced password session is signed out on its node, since this tab can never use it again. So is a new
+   * password session whose connect fails or is cancelled: the caller drops it.
    */
   async connect(api: CanaryApi, signal?: AbortSignal): Promise<Overview> {
-    const [overview, account] = await Promise.all([
-      api.overview(signal),
-      api.me(signal).catch(error => { if (isAbort(error)) throw error; return null; }),
-    ]);
-    signal?.throwIfAborted();
+    let overview: Overview;
+    let account: AccountView | null;
+    try {
+      [overview, account] = await Promise.all([
+        api.overview(signal),
+        // Only a missing route (404) means the node predates accounts; any other failure fails the connect.
+        api.me(signal).catch(error => { if (error instanceof ApiFailure && error.status === 404) return null; throw error; }),
+      ]);
+      signal?.throwIfAborted();
+    } catch (error) {
+      if (api.credential === 'session' && !this.snapshot.connection?.api.sameCredential(api)) void api.logout().catch(() => undefined);
+      throw error;
+    }
     const previous = this.snapshot.connection;
     this.stop();
     clearNotices();

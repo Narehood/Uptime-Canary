@@ -62,14 +62,55 @@ export function andList(items: string[]): string {
 export const shortRev = (revision: string): string => revision.replace(/-/gu, '').slice(0, 6);
 export const shortId = (id: string): string => id.length <= 12 ? id : id.replace(/-/gu, '').slice(0, 8);
 
+/** What previews show in place of a credential. */
+export const MASK = '•••';
+
 /** Shows where a webhook goes without its path or query, which often carry credentials. */
 export function maskedUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    return parsed.pathname === '/' && !parsed.search ? parsed.origin : `${parsed.origin}/•••`;
+    return parsed.pathname === '/' && !parsed.search ? parsed.origin : `${parsed.origin}/${MASK}`;
   } catch {
-    return '•••';
+    return MASK;
   }
+}
+
+/** Whether an option's name suggests it holds a credential. For options the dashboard has no field list for. */
+export const secretNamed = (key: string): boolean =>
+  /password|secret|token|key|dsn|passphrase|community|body|headers|metadata|basicauth|proxyurl/iu.test(key) && !/^(apiversion|keyword)$/iu.test(key);
+
+/**
+ * A copy with all text under a `secretNamed` key, at any depth, replaced by the mask. Other values and the shape stay,
+ * so fields the dashboard doesn't know, such as a newer node's, still preview as sent. `hidden` masks all text.
+ */
+export function maskSecretNamed(value: unknown, hidden = false): unknown {
+  if (typeof value === 'string') return hidden ? MASK : value;
+  if (typeof value !== 'object' || value === null) return value;
+  if (Array.isArray(value)) return value.map(item => maskSecretNamed(item, hidden));
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, maskSecretNamed(inner, hidden || secretNamed(key))]));
+}
+
+/**
+ * The first place in pasted JSON that still holds a placeholder as previews write it (the mask alone, or a URL ending
+ * in `/` and the mask), as a dotted path like `http.basicAuth.password`, or `undefined` if none does. Text that merely
+ * contains the mask, such as a name, is not a placeholder. Iterative, so deeply nested input can't overflow the stack.
+ */
+export function maskedPath(value: unknown): string | undefined {
+  const stack: [unknown, string][] = [[value, '']];
+  while (stack.length) {
+    const [item, path] = stack.pop()!;
+    if (typeof item === 'string') {
+      if (item === MASK || item.endsWith(`/${MASK}`)) return path || '(the whole value)';
+    } else if (typeof item === 'object' && item !== null) {
+      const entries = Object.entries(item);
+      // Pushed last to first, so the first masked value in document order is reported.
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const [key, child] = entries[i];
+        stack.push([child, Array.isArray(item) ? `${path}[${key}]` : path ? `${path}.${key}` : key]);
+      }
+    }
+  }
+  return undefined;
 }
 
 /** A measured round trip. `latencyAvailable: false` marks a compatibility zero that was never measured. */

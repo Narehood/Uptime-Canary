@@ -6,12 +6,12 @@ import {
   statusCodesText, tlsApplies, typeLabel, type CheckCategory, type DnsRecord, type SmtpMode,
 } from '../checks';
 import { useCanary } from '../context';
-import { maskedUrl, plural, shortId, shortRev, span } from '../format';
+import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shortId, shortRev, span } from '../format';
 import { GP_FIELD_LABEL, GP_SECTION, buildGlobalping, gpDraftFrom, gpMasked, type GpDraft, type GpField } from '../globalping';
 import { groupPath } from '../model';
 import { notify } from '../notices';
 import { href, navigate } from '../router';
-import { SERVICE_PROTOCOL, buildJsonata, buildService, jsonataDraft, maskService, serviceValues, type JsonataDraft, type ProtocolKey, type Values } from '../serviceSpecs';
+import { SERVICE_FIELDS, SERVICE_PROTOCOL, buildJsonata, buildService, jsonataDraft, maskService, serviceValues, type JsonataDraft, type ProtocolKey, type Values } from '../serviceSpecs';
 import { STEAM_FIELD_LABEL, STEAM_SECTION, buildSteam, steamDraftFrom, steamMasked, type SteamDraft, type SteamField } from '../steam';
 import { serviceNameProblem, systemdUnit } from '../systemService';
 import { Banner, Card, CopyButton, EmptyState, ErrorText, PageHead, Rev, Time } from '../ui/bits';
@@ -574,10 +574,35 @@ function masked(input: MonitorInput): MonitorInput {
   if (copy.push?.token) copy.push = { ...copy.push, token: '•••' };
   if (copy.globalping) copy.globalping = gpMasked(copy.globalping);
   if (copy.steam) copy.steam = steamMasked(copy.steam);
-  const protocol = protocolOf(copy.type);
-  if (protocol && copy.service?.[protocol]) copy.service = { [protocol]: maskService(protocol, copy.service[protocol]) } as MonitorInput['service'];
+  // Service fields the form doesn't know (from a newer node) are sent too, so the preview keeps them, with the text of
+  // credential-named ones hidden: unknown siblings of the protocol object, and unknown fields inside a known one.
+  const service = copy.service as unknown as Record<string, unknown> | undefined;
+  if (service) {
+    for (const key of Object.keys(service)) {
+      service[key] = Object.hasOwn(SERVICE_FIELDS, key)
+        ? maskUnknown(maskService(key as ProtocolKey, service[key]), SERVICE_FIELDS[key as ProtocolKey].map(field => field.key))
+        : maskSecretNamed(service[key], secretNamed(key));
+    }
+  }
   return copy;
 }
+
+/** Applies `maskSecretNamed` to the fields of `value` that aren't `known` dotted paths, leaving known fields as they are. */
+function maskUnknown(value: unknown, known: readonly string[], path = ''): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => {
+    const at = path ? `${path}.${key}` : key;
+    if (known.includes(at)) return [key, inner];
+    if (known.some(field => field.startsWith(`${at}.`))) return [key, maskUnknown(inner, known, at)];
+    return [key, maskSecretNamed(inner, secretNamed(key))];
+  }));
+}
+
+/**
+ * The preview masking, for scripts/frontend-review-pure.mjs. `masked` keeps its own name unexported because the
+ * contract harness appends `export { draftFrom, build, masked }` to its review copy of this file.
+ */
+export const previewModel = { masked };
 
 // ---------- form pieces
 
@@ -743,6 +768,14 @@ function JsonPanel({ input, onImport, disabled }: { input?: MonitorInput; onImpo
     let parsed: unknown;
     try { parsed = JSON.parse(text); } catch { setMessage('That isn’t valid JSON.'); return; }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) { setMessage('Paste a monitor object, as the CLI and API use.'); return; }
+    // A masked copy would otherwise be saved with the placeholder as the real token, password, header or body.
+    const hidden = maskedPath(parsed);
+    if (hidden) {
+      setMessage(hidden === 'steam.apiKey'
+        ? `Not filled: the Steam API key is never shown, so ${MASK} stands in for it. Remove "apiKey" and enter the key in its field after filling.`
+        : `Not filled: ${hidden} is a masked placeholder (${MASK}). Copy with credentials shown, or replace each ${MASK} with the real value.`);
+      return;
+    }
     setMessage(onImport(parsed as Partial<Monitor>));
   };
   return (
@@ -754,7 +787,7 @@ function JsonPanel({ input, onImport, disabled }: { input?: MonitorInput; onImpo
           {shown ? <CopyButton value={shown} label={reveal ? 'Copy, with credentials' : 'Copy'} /> : null}
           <button type="button" className="btn sm" aria-pressed={reveal} onClick={() => setReveal(v => !v)}><Icon name={reveal ? 'eyeOff' : 'eye'} />{reveal ? 'Hide credentials' : 'Show credentials'}</button>
         </div>
-        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}</small>
+        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them; a node saves {MASK} as the real value, so replace each one before using a masked copy there.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}</small>
       </div>
       <TextAreaField full mono optional label="Fill the form from JSON" value={text} onChange={setText} rows={4} disabled={disabled} placeholder={'{ "name": "API", "type": "http", "target": "https://…" }'}
         hint="Fills the fields above from a monitor object. Nothing is saved until you save the form. Settings the form doesn’t show are not imported." />
@@ -801,9 +834,9 @@ function PushFields({ token, allowGet, stored, onToken, onAllowGet, disabled, er
         hint="For tools that can only fetch a URL. The token is then part of the URL, where proxies and logs can record it. POST with a header is safer." />
       <div className="fld full">
         <span className="flabel">Send heartbeats</span>
-        <pre className="json-pre">{`curl -X POST ${api.baseUrl}/api/push \
-  -H "Authorization: Push ${shown ? token : '<token>'}" \
-  -H "Content-Type: application/json" \
+        <pre className="json-pre">{`curl -X POST ${api.baseUrl}/api/push \\
+  -H "Authorization: Push ${shown ? token : '<token>'}" \\
+  -H "Content-Type: application/json" \\
   -d '{"status":"up","msg":"backup finished","ping":120}'`}{allowGet ? `
 
 # or, without a header:
