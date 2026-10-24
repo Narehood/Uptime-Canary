@@ -220,7 +220,9 @@ func TestFullReviewControlPeerCompletionProvenance(t *testing.T) {
 				maintenanceReviewSample(n, child, "up", 2, nil)
 			}
 			i := fullReviewControlEpisode(t, n, child)
-			i.EvidenceRoot, i.Aliases = "", append(append([]string{}, i.Aliases...), "control-peer-alias")
+			// A short valid alias sorts before every generated UUID. This makes
+			// canonical-ID changes deterministic rather than depending on UUIDs.
+			i.EvidenceRoot, i.Aliases = "", append(append([]string{}, i.Aliases...), "0")
 			i.Closed, i.ResolvedAt = map[string]int64{"a": 2}, Ptr(clock.Load())
 			i.SuppressedComplete, i.SuppressedByGroupID, i.SuppressedAt = true, child.GroupID, Ptr(i.OpenedAt)
 			if mode == "extended-marker" {
@@ -230,7 +232,7 @@ func TestFullReviewControlPeerCompletionProvenance(t *testing.T) {
 			n.samples[child.ID+"/a"] = Sample{Observation: Observation{MonitorID: child.ID, NodeID: "a", State: "up", CheckedAt: clock.Load(), Message: "fixture"}, Sequence: 2, Revision: child.Revision, CheckGeneration: child.CheckGeneration}
 			maintenanceReviewMerge(t, n, Snapshot{Incidents: []Incident{i}})
 			target := n.notificationTargets(child)[0]
-			a := attempt{ID: attemptIdentity(child.ID, "control-peer-alias", "down", 0, target.ID), MonitorID: child.ID, IncidentID: "control-peer-alias", Kind: "down", DestinationID: target.ID, ChannelID: target.ChannelID, TargetRevision: target.Revision, Provider: target.Provider, State: "queued"}
+			a := attempt{ID: attemptIdentity(child.ID, "0", "down", 0, target.ID), MonitorID: child.ID, IncidentID: "0", Kind: "down", DestinationID: target.ID, ChannelID: target.ChannelID, TargetRevision: target.Revision, Provider: target.Provider, State: "queued"}
 			if !n.dbPut("attempts", a.ID, a) {
 				t.Fatal("cannot persist queued sibling alias")
 			}
