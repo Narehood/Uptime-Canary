@@ -15,17 +15,22 @@ the [migration notes](../apps/node-go/internal/jsonquery/RUNTIME_MIGRATION.md)
 record the narrow accepted expectation changes. The earlier failed candidate
 and emulated-platform results remain historical evidence, not current results.
 
-Current implementation includes 26 monitor types, sixteen service engines,
+Current development source includes 27 monitor types, sixteen service engines,
 passive push, manual checks, Globalping, HTTP OAuth2, HTTP/MQTT/SNMP/MongoDB
 JSONata, retries/inversion, maintenance, group hierarchy, tags, local observed
-availability, public status pages and current-state badges. Package READMEs
+availability, public status pages and current-state badges. Protocol 15 adds
+default-off public 24 h observed history and uptime badges, validated at PR #1
+head `e12ba9e` by the complete CI workflow and exact artifact manifests. Protocol
+16 adds local systemd/Windows service monitoring, whose Windows suites and
+143/143 dashboard groups pass; actual Linux/race/CI on that source remains
+pending. See [system-service evidence](system-services.md). Package READMEs
 state the options and protocol differences. Notifications include eleven
 native providers with typed configuration, destination-specific identities,
 durable attempts and peer receipts. Accounts support passwords, MFA, sessions
 and roles. Recovery uses quarantine/activation and separately retained sequence
 state. The license is MIT.
 
-The current Windows node passes all 17 process proofs, the refreshed dashboard
+The protocol-14 Windows checkpoint passes all 17 process proofs, its refreshed dashboard
 contract passes 124/124, and a controlled 13-to-14 upgrade proof preserves
 configuration, accounts, sequence monotonicity and delivery receipts. The
 dashboard harness explicitly accepts the catalogue's 25-to-26 addition, checks
@@ -36,12 +41,12 @@ scopes are in [the protocol-14 checkpoint](protocol14-checkpoint.md) and
 [container validation](container-validation.md). These checks do not declare
 the complete near-parity goal achieved.
 
-Remaining feature gaps include system services, PM2, browser checks, Tailscale,
+Remaining feature gaps include final system-service validation, PM2, browser checks, Tailscale,
 GameDig and Steam; additional options within implemented protocols; more of the
-upstream notification catalogue; and opt-in public historical availability,
-uptime badges, custom domains and status-page styling. Local authenticated
-observed-time history exists; it is not yet public history. Current-state
-badges do not imply an uptime metric. Generic webhooks do not count as native
+upstream notification catalogue; and custom domains, subscriptions and
+status-page styling. Published observed history is explicitly one answering
+node's record, with separate availability and coverage; current-state badges
+still do not imply an uptime metric. Generic webhooks do not count as native
 provider coverage. SMS remains explicitly deferred. Arm64 execution and tagged,
 reproducible release-artifact publication remain separate operational work.
 

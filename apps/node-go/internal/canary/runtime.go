@@ -265,6 +265,9 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 	}
 	if n.probe == nil {
 		n.probe = func(ctx context.Context, m Monitor) ProbeResult {
+			if m.Type == "system-service" {
+				return SystemServiceProbe(ctx, m)
+			}
 			if m.Type == "globalping" {
 				return GlobalpingProbe(ctx, m)
 			}

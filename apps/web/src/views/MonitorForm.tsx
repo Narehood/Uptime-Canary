@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type React
 import type { HTTPMonitorOptions, JSONQueryOptions, Monitor, MonitorInput, MonitorTag, MonitorType, RequestCredentials, TLSMonitorOptions } from '@uptime-canary/shared';
 import { API_BODY_LIMIT, ApiFailure, describeFailure, jsonBytes } from '../api';
 import {
-  CATEGORY_LABEL, CHECK_TYPES, DNS_RECORDS, NETWORK_TYPES, SMTP_MODES, checkChangeWords, checkChanges, checkType, inputOf, isServiceType, rangesText,
+  CATEGORY_LABEL, CHECK_TYPES, DNS_RECORDS, SMTP_MODES, TYPED_TARGET_TYPES, checkChangeWords, checkChanges, checkType, inputOf, isServiceType, rangesText,
   statusCodesText, tlsApplies, typeLabel, type CheckCategory, type DnsRecord, type SmtpMode,
 } from '../checks';
 import { useCanary } from '../context';
@@ -12,6 +12,7 @@ import { groupPath } from '../model';
 import { notify } from '../notices';
 import { href, navigate } from '../router';
 import { SERVICE_PROTOCOL, buildJsonata, buildService, jsonataDraft, maskService, serviceValues, type JsonataDraft, type ProtocolKey, type Values } from '../serviceSpecs';
+import { serviceNameProblem, systemdUnit } from '../systemService';
 import { Banner, Card, CopyButton, EmptyState, ErrorText, PageHead, Rev, Time } from '../ui/bits';
 import {
   CandidateOrder, CheckField, Disclosure, DurationField, ErrorSummary, HeaderEditor, NodePicker, PemField, SecretField, Seg, TextAreaField, TextField, fromDraft, headerRows, toDraft,
@@ -93,7 +94,7 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
   return {
     name: monitor?.name ?? '',
     type: monitor?.type ?? 'http',
-    targets: monitor && NETWORK_TYPES.has(monitor.type) ? { [monitor.type]: monitor.target } : {},
+    targets: monitor && TYPED_TARGET_TYPES.has(monitor.type) ? { [monitor.type]: monitor.target } : {},
     interval: toDraft(monitor?.intervalMs ?? 60_000),
     timeout: toDraft(monitor?.timeoutMs ?? 10_000),
     enabled: monitor?.enabled ?? true,
@@ -472,11 +473,12 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   if (!name) errors.name = 'Enter a name.';
   else if (name.length > 128 || hasControl(name)) errors.name = 'Use at most 128 characters, without control characters.';
   const type = draft.type;
-  const network = NETWORK_TYPES.has(type);
+  const typedTarget = TYPED_TARGET_TYPES.has(type);
   const typed = (draft.targets[type] ?? '').trim();
-  if (network) {
+  if (typedTarget) {
     const targetProblem = type === 'http' ? httpUrlProblem(typed, 'URL')
       : type === 'websocket' ? httpUrlProblem(typed, 'URL', ['ws:', 'wss:'])
+      : type === 'system-service' ? serviceNameProblem(typed)
       : type === 'ping' ? pingProblem(typed)
       : type === 'dns' ? (draft.dnsRecord === 'PTR'
         ? (IPV4.test(typed) || isIPv6(typed) ? undefined : 'For PTR records, enter the IP address to look up.')
@@ -522,7 +524,7 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
 
   const input = (original ? inputOf(original) : {}) as MonitorInput;
   for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'retries', 'retryIntervalMs', 'notificationIds', 'tags'] as const) delete input[key];
-  const target = network ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
+  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
   Object.assign(input, { name, type, target, intervalMs: interval!, timeoutMs: timeout!, nodeIds: [...draft.nodeIds].sort(), enabled: draft.enabled, repeatAfterMs: repeat ?? 0 });
   for (const key of GROUP_KEYS) if (groups[key] !== undefined) (input as unknown as Record<string, unknown>)[key] = groups[key];
   if (retries) input.retries = retries;
@@ -601,7 +603,7 @@ function RequestFields({ d, set, errors, prefix, disabled, websocket, oauth }: {
 const authSummary = (d: RequestDraft): string => `${d.auth === 'oauth2' ? 'OAuth2 client credentials' : d.auth === 'basic' ? 'Basic auth' : d.auth === 'bearer' ? 'Bearer token' : 'No authentication'} · ${d.proxy === 'url' ? 'proxy' : d.proxy === 'env' ? 'environment proxy' : 'direct'}`;
 const sizeText = (text: string): string => { const n = bytes(text); return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KiB`; };
 
-const CATEGORIES: CheckCategory[] = ['web', 'remote', 'data', 'messaging', 'infra', 'manual'];
+const CATEGORIES: CheckCategory[] = ['web', 'remote', 'local', 'data', 'messaging', 'infra', 'manual'];
 
 function TypePicker({ value, onChange, disabled, name, locked }: { value: MonitorType; onChange: (type: MonitorType) => void; disabled: boolean; name: string; locked: boolean }) {
   const [open, setOpen] = useState(!locked);
@@ -797,6 +799,30 @@ function PushFields({ token, allowGet, stored, onToken, onAllowGet, disabled, er
 curl "${api.baseUrl}/api/push/${shown ? token : '<token>'}?status=up&msg=ok"` : ''}</pre>
         <small>Send to any configured node; HTTP success means that node durably recorded it, not that alerts were delivered. <span className="mono">status</span> is up or down; <span className="mono">msg</span> and <span className="mono">ping</span> (milliseconds) are optional.{interval ? ` Without an up heartbeat for ${span(interval)}, the monitor fails like any other check.` : ''}</small>
       </div>
+    </>
+  );
+}
+
+/**
+ * What a system-service check reads and where. The name is its only setting. Each node reads its own OS, so the note
+ * says what an ordinary container lacks rather than suggesting mounts or privileges.
+ */
+function SystemServiceNotes({ name }: { name: string }) {
+  const unit = systemdUnit(name);
+  return (
+    <>
+      {serviceNameProblem(name) ? null : (
+        <p className="full muted small svc-units">
+          Linux nodes ask systemd about <span className="mono wrap">{unit}</span>{unit === name ? '' : ' (.service added)'}; Windows nodes ask the Service Control Manager for <span className="mono wrap">{name}</span>.
+        </p>
+      )}
+      <div className="full svc-note" role="note">
+        <Icon name="nodes" className="inline" />
+        <span>
+          <b>Each selected node checks its own operating system, never another host.</b> It only reads the service’s state, with no credentials: nothing is started, stopped or changed. Running is up; stopped or not installed is down. A node that can’t read a service manager (none present, no permission, an unsupported OS, all its check workers busy, or a manager that doesn’t answer within the timeout) reports pending, which never recovers an outage. A node in an ordinary container, such as the Alpine image, can’t see the host’s systemd or Windows services, so it stays pending. Run the node directly on each machine whose service you want to watch, and choose those nodes under Placement.
+        </span>
+      </div>
+      <p className="full muted small"><Icon name="clock" className="inline" />Latency isn’t measured and shows as a dash. A local query answers quickly, so a timeout of about 5 s is plenty.</p>
     </>
   );
 }
@@ -1046,13 +1072,14 @@ function MonitorFormBody({ id }: { id?: string }) {
           <TypePicker value={type} onChange={value => set('type', value)} disabled={saving} name={`${formId}-type`} locked={Boolean(current)} />
           {current && current.type !== type ? <p className="full fwarn small"><Glyph tone="warn" />Changing the type starts a new check. An open incident closes without a recovery alert.</p> : null}
 
-          {NETWORK_TYPES.has(type) ? (
+          {TYPED_TARGET_TYPES.has(type) ? (
             <TextField
               full mono label={meta.targetLabel!} type={type === 'http' || type === 'websocket' ? 'url' : 'text'} inputMode={type === 'http' || type === 'websocket' ? 'url' : 'text'}
               value={target} onChange={value => setDraft(d => ({ ...d, targets: { ...d.targets, [d.type]: value } }))} error={visibleErrors.target}
               placeholder={type === 'dns' && draft.dnsRecord === 'PTR' ? '192.0.2.10' : meta.placeholder} hint={meta.targetHint} disabled={saving}
             />
           ) : null}
+          {type === 'system-service' ? <SystemServiceNotes name={target.trim()} /> : null}
 
           {protocol && serviceDraft ? (
             <ServiceFields
@@ -1221,7 +1248,9 @@ function MonitorFormBody({ id }: { id?: string }) {
           <NodePicker
             legend="Run on" nodes={nodes} selected={draft.nodeIds} onChange={ids => set('nodeIds', ids)} endpoint={endpoint} now={overview.now}
             error={visibleErrors.nodes} disabled={saving}
-            hint="Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem."
+            hint={type === 'system-service'
+              ? 'Each chosen node checks the service on its own operating system, so choose nodes installed on the machines you want to watch. Out-of-view nodes receive the monitor when they reconnect.'
+              : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
           />
           <div className="fld full">
             <span className="flabel">Notification order if it goes down</span>
@@ -1286,8 +1315,8 @@ function MonitorFormBody({ id }: { id?: string }) {
               <Glyph tone={openIncident ? 'warn' : 'none'} />
               <span>
                 {openIncident
-                  ? <><b>Saving closes the open incident without a recovery alert.</b> You changed the {checkChangeWords(changes).join(', ')}, so this becomes a new check. The incident opened <Time at={openIncident.openedAt} now={overview.now} /> ends as “closed after config change”; a new one opens only if the new check fails.</>
-                  : <>Saving starts a new check generation because you changed the {checkChangeWords(changes).join(', ')}. Name, interval, retry spacing, destinations, tags and group changes don’t.</>}
+                  ? <><b>Saving closes the open incident without a recovery alert.</b> You changed the {checkChangeWords(changes, type).join(', ')}, so this becomes a new check. The incident opened <Time at={openIncident.openedAt} now={overview.now} /> ends as “closed after config change”; a new one opens only if the new check fails.</>
+                  : <>Saving starts a new check generation because you changed the {checkChangeWords(changes, type).join(', ')}. Name, interval, retry spacing, destinations, tags and group changes don’t.</>}
               </span>
             </div>
           ) : null}

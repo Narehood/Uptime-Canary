@@ -169,7 +169,7 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 		m.Target = "manual"
 	case "push":
 		m.Target = "push"
-	case "tcp", "tls", "dns", "websocket", "smtp":
+	case "tcp", "tls", "dns", "websocket", "smtp", "system-service":
 	case "globalping":
 	case "docker", "redis", "postgres", "mysql", "mqtt", "sftp", "mongodb", "sqlserver", "ntp", "grpc", "snmp", "radius", "sip-options", "rabbitmq", "kafka-producer", "oracledb":
 	default:
@@ -242,7 +242,14 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	if m.Type != "ping" && m.Ping != nil {
 		return fail(400, "Ping options do not match monitor type")
 	}
-	if m.Type == "globalping" {
+	if m.Type == "system-service" {
+		if m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
+			return fail(400, "Options do not match system service monitor")
+		}
+		if systemServiceConfig(*m).Validate() != nil {
+			return fail(400, "Invalid internal service name")
+		}
+	} else if m.Type == "globalping" {
 		if m.Globalping == nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil || m.Push != nil {
 			return fail(400, "Options do not match Globalping monitor")
 		}

@@ -57,9 +57,9 @@ done. Original failures and the older checkpoint below remain historical.
 There is no tagged release or release certification at this checkpoint.
 See [container evidence](container-validation.md) for the exact current run.
 
-## Active feature: protocol 15, public observed availability
+## Reviewed feature: protocol 15, public observed availability
 
-[Draft PR #1](https://github.com/Narehood/Uptime-Canary/pull/1) contains explicit
+[PR #1](https://github.com/Narehood/Uptime-Canary/pull/1) contains explicit
 per-service publication of the serving node's last 24 hours of observed
 availability, hourly history and uptime badges. This remains one node's view,
 with separate known-time availability and coverage; it is not merged HA uptime.
@@ -98,17 +98,43 @@ Protocol 15 requires coordinated peer upgrades; main remains protocol 14.
   receipts without opting old pages in. This is native Windows rebuilt-source
   evidence, not original release-artifact or Alpine upgrade evidence. Exact
   source hashes and results are in [the feature contract](public-availability.md).
-  The complete integrated source still needs its own CI result before merge.
+  The integrated `e12ba9e` source subsequently passed all four jobs in
+  [workflow 40020940025](https://github.com/Narehood/Uptime-Canary/actions/runs/40020940025),
+  including node/web/proof/race and the separate Compose projects. All 568
+  entries in each of four artifact manifests match that commit's exact Git
+  blobs (`dc4b4461…`). All three review threads are resolved; this feature is
+  merge-ready, with no whole-project release claim.
+
+## Current branch work: packaging, identity and local services
+
+- [PR #2](https://github.com/Narehood/Uptime-Canary/pull/2) validates actual
+  reproducible native archives, notices, provenance, extraction and process
+  proofs. Windows/Linux amd64 each passed all 18 proofs. Native arm64 hit the
+  unchanged 512 MiB compilation cap; a compiler-debug reduction is pushed for
+  a fresh gate. See [the exact retained failure](release-artifacts.md#native-follow-up-compiler-debug-archives).
+- [PR #3](https://github.com/Narehood/Uptime-Canary/pull/3) adds local binary
+  version/source identity before configuration or database startup. Extracted
+  Windows/Linux amd64 executables report their exact clean commit and pass the
+  same full proofs. These results do not clear the separate arm64 gate.
+- Protocol **16** adds `system-service`, the 27th monitor family, with Opus's
+  structured interface and native read-only Windows SCM / Linux systemd
+  queries. Workers remain bounded; unavailable or stalled managers stay
+  Pending. Final Windows core/worker/leaf suites, all-node vet, 12 pure checks,
+  typecheck/build, one real-process proof and **143/143** browser groups pass.
+  Linux test binaries compile, but actual Linux/Alpine/race/native-arm64 and
+  complete CI on this new source remain open. The [contract and evidence](system-services.md)
+  preserve original failures and operating limits. This is development work,
+  not a release or complete near-parity claim.
 
 ### Release gates still open
 
-1. Complete and validate the integrated protocol-15 feature, including frontend,
-   its new deployment files and the exact source proposed for merge. Local
-   interface and 14-to-15 acceptance have passed; the earlier protocol-14
-   controlled 13-to-14 proof remains a separate historical result.
+1. Integrate the reviewed feature stack without losing its exact-source
+   evidence, and complete the new protocol-16 Linux/Alpine/race/native gates.
+   The earlier controlled 13-to-14 and 14-to-15 upgrade proofs retain their
+   original rebuilt-source and Windows limitations.
 2. Reconcile remaining monitor families and protocol/provider options against
-   the pinned [parity inventory](parity-audit.md). System-service, PM2, browser,
-   Tailscale, GameDig and Steam checks are still absent; native provider coverage
+   the pinned [parity inventory](parity-audit.md). System-service is now under
+   development; PM2, browser, Tailscale, GameDig and Steam checks remain gaps. Native provider coverage
    is eleven, not the full upstream catalogue. Status-page domains, styling and
    subscriptions remain gaps. These are not waived by backend CI passes.
 3. Keep recovery, mixed-peer refusal, identities, retention and backlog behavior

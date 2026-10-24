@@ -1,6 +1,6 @@
 /** Public management API contract. Runtime coordination types remain private to the node. */
 export * from './status.js';
-export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping';
+export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service';
 export type ObservationState = 'up' | 'down' | 'unknown' | 'pending';
 export type Role = 'admin' | 'editor' | 'viewer';
 

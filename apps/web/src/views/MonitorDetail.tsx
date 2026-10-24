@@ -23,6 +23,20 @@ function interpretation(view: MonitorView, a: Assessment): ReactNode {
   const ids = (list: string[]): ReactNode => list.map((id, index) => (
     <span key={id}>{index === 0 ? '' : index === list.length - 1 ? ' and ' : ', '}<span className="mono">{id}</span></span>
   ));
+  // A system service check reads each node's own OS: locations differ by machine, never by network path.
+  if (view.monitor.type === 'system-service') {
+    switch (a.kind) {
+      case 'everywhere': return a.total === 1
+        ? <>Failing on {ids(a.failing)}, the only node assigned. It reads the service on that node’s own operating system.</>
+        : 'Failing on every assigned node. Each node reads the service on its own operating system, so this is the state on each of those machines.';
+      case 'partial': return <>
+        Failing on {ids(a.failing)}{a.passing.length ? <> but passing on {ids(a.passing)}</> : null}. Each node reads its own copy of the service, so the machines differ; this isn’t a network problem.
+        {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
+      </>;
+      case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the node can’t read its own service manager (none present, as in an ordinary container; no permission; an unsupported OS; busy check workers; or no answer within the timeout). Pending is neither up nor down and never sends a recovery.</>;
+      default: break;
+    }
+  }
   switch (a.kind) {
     case 'paused': return 'Paused. No node checks it and no alerts are sent until it’s resumed.';
     case 'conflict': return 'Nodes hold different versions of this monitor. Results show as unknown until someone resolves the conflict.';
@@ -318,7 +332,7 @@ function HistoryCard({ view }: { view: MonitorView }) {
                   <h3 className="mini-h">Response time</h3>
                   {measured.length
                     ? <LatencyChart samples={samples} now={overview.now} label={`Response time measured by ${endpoint} over ${samples.length} checks; ${measured.length} with a measured round trip`} />
-                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual checks and unavailable ICMP replies have no latency.</p>}
+                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual and system service checks, and unavailable ICMP replies, have no latency.</p>}
                   <div className="legend"><span><i className="sw line" />Response time (measured, successful checks)</span><span><i className="sw band" />Failed checks</span></div>
                 </div>
               )}

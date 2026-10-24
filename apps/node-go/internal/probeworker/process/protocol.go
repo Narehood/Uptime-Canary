@@ -167,10 +167,35 @@ func validResult(r Result, timeout time.Duration) bool {
 	return true
 }
 
+// System-service is the sole engine whose manager can explicitly return
+// Pending. Its messages are a closed set, never manager-provided diagnostics.
+// Existing network/query engines retain their two-state result contract.
+func validTypedResult(serviceType string, r Result, timeout time.Duration) bool {
+	if serviceType != "system-service" {
+		return validResult(r, timeout)
+	}
+	if !systemServiceSummary(r) {
+		return false
+	}
+	if r.State == "pending" {
+		r.State = "down" // Reuse the existing scalar/size/time validation only.
+	}
+	return validResult(r, timeout)
+}
+
+func systemServiceSummary(r Result) bool {
+	return r.State == "up" && r.Message == "Service is running" ||
+		r.State == "down" && (r.Message == "Service is not running" || r.Message == "Service is not installed") ||
+		r.State == "pending" && r.Message == "Service status unavailable"
+}
+
 // Never return arbitrary child text, even when it is valid printable UTF-8.
 // Oracle's diagnostics are fixed strings in the pinned service engine. Other
 // engines retain their real state but use fixed summaries at this boundary.
 func safeMessage(t string, r Result) string {
+	if t == "system-service" && systemServiceSummary(r) {
+		return r.Message
+	}
 	if t == "oracledb" {
 		if r.State == "up" && r.Message == "Oracle monitoring query succeeded" {
 			return r.Message
@@ -265,7 +290,7 @@ func (s *streamSink) accept(b []byte) bool {
 		}
 		s.started = true
 	case "result":
-		if !s.started || f.Code != "" || f.Result == nil || !validResult(*f.Result, s.timeout) {
+		if !s.started || f.Code != "" || f.Result == nil || !validTypedResult(s.serviceType, *f.Result, s.timeout) {
 			return false
 		}
 		if f.Result.Message != safeMessage(s.serviceType, *f.Result) {
