@@ -55,6 +55,11 @@ func combineUncertainties(a, b []incidentUncertainty) []incidentUncertainty {
 // Bind every committed boundary before deriving closure. This handles chains
 // of interrupted branches without depending on map iteration or page order.
 func resolveUncertaintySet(original map[string]Incident, facts map[string]IncidentFact, links map[string]EvidenceLink) (map[string]Incident, error) {
+	return resolveUncertaintyScope(original, original, facts, links)
+}
+
+// Keep the global original index for boundary identity-collision checks.
+func resolveUncertaintyScope(original, allOriginal map[string]Incident, facts map[string]IncidentFact, links map[string]EvidenceLink) (map[string]Incident, error) {
 	sources := map[string]*Incident{}
 	queue := []*Incident{}
 	for id, i := range original {
@@ -76,7 +81,7 @@ func resolveUncertaintySet(original map[string]Incident, facts map[string]Incide
 					return nil, err
 				}
 				if complete {
-					if latest, ok := original[full.ID]; ok {
+					if latest, ok := allOriginal[full.ID]; ok {
 						if latest.MonitorID != full.MonitorID || latest.Revision != full.Revision {
 							return nil, fail(400, "Uncertainty boundary scope mismatch")
 						}
