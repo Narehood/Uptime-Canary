@@ -209,7 +209,7 @@ single global source existed before paged catch-up. The failed expectations and
 results above and their Git versions remain historical failures, not passes.
 
 
-## Current local result
+## Historical local result before review integration
 
 On Windows amd64, source
 `7b00d956d776ff7355f80aa400dd4dd8652376f6608c61e322519d1cec7ee744`
@@ -243,7 +243,7 @@ and review of this candidate remain pending. None of these local results
 certifies another branch, a tagged artifact or the complete shipping goal.
 
 
-## Integrated protocol-17 local result
+## Historical protocol-17 local result before review integration
 
 The capacity branch now includes the Steam encoded-options repair from
 `5d9637a`. On clean merge commit `f94e23752925af5f59a99e5569a83f42bf971884`,
@@ -279,3 +279,56 @@ changes remain pending. The Steam PR's checks cover its own head, not these
 additional runtime changes. No user data, external provider or paid measurement
 was used. This remains development evidence, not a tagged release or completion
 of the near-parity shipping goal.
+
+
+## Reviewed integration: recovery failure retained
+
+The integration at `fc7090d` combines the saved capacity work with the reviewed
+PR #6 repairs. On Windows amd64, source fingerprint
+`ce12fe00f2eaa41a35d6613085085b5a2deb2ff88b3c4ceabed27d0e5c31f85f`
+passes the complete changed canary package: 953 passing events, zero failures
+and the two expected question-mark filename skips. Package vet and proof
+TypeScript checking pass. These are changed-package results; the other native
+packages retain their separate PR #6 source scope.
+
+The first combined package run was stopped at 543,318,165 bytes of scratch.
+It did not complete and is not a pass. Compiling one test executable before
+running it separately clears the same package in 229.765 guarded seconds,
+with a 199,568,377-byte scratch peak. Both guards remove their outputs,
+restore the idle budget and show no shared-module growth. No storage limit
+was increased and no cache or source tree was copied.
+
+The unchanged two-node capacity process proof then **fails** after 75.227
+seconds at the existing 45-second all-observers-recover gate. Backlog, restart,
+drain and local history phases were reached. The last overview request aborted;
+both node processes stayed alive and the fixture served 7,593 target requests.
+The recovery-phase diagnostic records 955 notification requests, 746 rejected,
+209 accepted identities and no repeated accepted requests or fixture errors.
+Accepted counts are 124 fast down, 6 fast recovery, 75 backlog down and 4 backlog
+recovery. Later recovery-delivery and converged-quietness assertions are not
+cleared. This is a failed liveness gate, not an overall acceptance or a flaky
+pass. Its workload and deadlines remain unchanged.
+
+That failed run uses binary
+`93596d438563f8d2236b0f9a141997f33c80c9e555dcf1a1674e25083604c145`.
+The guard completes in 163.375 seconds, with source, fixtures and binary
+unchanged, scratch peak 437,670,908 bytes cleaned to zero, and no module growth.
+The original failure remains before subsequent profiling and repairs in Git.
+
+A separate fixed recovery benchmark adds actual restart, backlog release and
+return-to-up phases to the earlier down-only diagnostic. Its CPU profile finds
+repeated notification-target construction at 20.23% cumulative sampled CPU,
+including channel decoding at 15.39%. A bounded current-payload target cache
+removes that decoding from the leading samples while retaining current-head,
+deletion, proof and payload checks. It has at most 128 entries and 1 MiB of
+raw payload strings. Independent review found no material cache safety defect;
+functional controls cover credential/route/provider changes, conflicts,
+withheld proof, deletion, redaction and cache churn.
+
+The asynchronous profiles perform different amounts of work: 75.10 CPU seconds
+in 36.89 seconds before caching, versus 77.03 CPU seconds in 39.77 seconds in
+the next diagnostic. Those totals do not demonstrate an overall speedup. The
+latter profile still attributes 30.34% cumulative CPU to source projection and
+18.49% to uncertainty resolution; these nested costs are not additive. The
+unchanged process workload remains the acceptance gate. No tagged release or
+complete near-parity sign-off follows from the diagnostic.
