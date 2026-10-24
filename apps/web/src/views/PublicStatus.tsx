@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import type { PublicStatusGroup, PublicStatusMonitor, PublicStatusPage, PublicStatusState, StatusPageAnnouncement } from '@uptime-canary/shared';
 import { ApiFailure, fetchPublicStatus, isAbort, normalizeApiUrl } from '../api';
+import { controlPlaneMode, pageOrigin } from '../gateway';
 import { duration } from '../availability';
 import { addressCaveat } from '../badges';
 import { ago, stamp, utc } from '../format';
@@ -147,12 +148,16 @@ interface Shown { page: ShownPage; at: number; from: string; slug: string }
 type Load = { kind: 'loading' } | ({ kind: 'ok' } & Shown) | { kind: 'error'; message: string; notFound: boolean; last?: Shown };
 const answers = (shown: Shown | undefined, base: string, slug: string): shown is Shown => shown !== undefined && shown.from === base && shown.slug === slug;
 
-export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: string; nodes: string[]; theme: ThemeControl; signedIn: boolean }) {
+export function PublicStatusView({ slug, nodes, registration, theme, signedIn }: { slug: string; nodes: string[]; registration?: string; theme: ThemeControl; signedIn: boolean }) {
+  // Control plane: the page is read through this dashboard's own origin from the saved node the link names. Node
+  // addresses in a link are never contacted, and visitors can't name another node.
+  const controlPlane = controlPlaneMode();
   const candidates = useMemo(() => {
     const out: string[] = [];
+    if (controlPlane) { const page = pageOrigin(); return page && registration ? [page] : out; }
     for (const node of nodes.length ? nodes : [lastEndpoint()]) { try { const url = normalizeApiUrl(node); if (!out.includes(url)) out.push(url); } catch { /* ignore malformed */ } }
     return out;
-  }, [nodes]);
+  }, [nodes, controlPlane, registration]);
   // A visitor's node choice belongs to the node list it was made in. A link with a different list starts again at its
   // own first node; polls and refreshes keep the choice because they don't change the list.
   const list = candidates.join('\n');
@@ -170,19 +175,20 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
 
   useEffect(() => { document.title = load.kind === 'ok' ? `${load.page.title} · status` : 'Status'; }, [load]);
   useEffect(() => {
-    if (!base) { setLoad({ kind: 'error', message: 'This link doesn’t name a valid node address.', notFound: false }); return; }
+    if (!base) { setLoad({ kind: 'error', message: controlPlane ? 'This link doesn’t name a node on this dashboard.' : 'This link doesn’t name a valid node address.', notFound: false }); return; }
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const run = async (): Promise<void> => {
       try {
-        const value = await fetchPublicStatus(base, slug, controller.signal);
+        const value = await fetchPublicStatus(base, slug, controller.signal, controlPlane ? registration : undefined);
         // A late answer for a node or page no longer selected never paints over the current selection.
         if (controller.signal.aborted) return;
         setLoad({ kind: 'ok', page: normalize(value), at: Date.now(), from: base, slug });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
         const notFound = error instanceof ApiFailure && error.status === 404;
-        const message = notFound ? 'This node doesn’t publish a status page at this address.'
+        const message = notFound ? (controlPlane ? 'This dashboard doesn’t publish a status page at this address from that node.' : 'This node doesn’t publish a status page at this address.')
+          : controlPlane && error instanceof ApiFailure && [0, 502, 503, 504].includes(error.status) ? 'This dashboard’s server couldn’t read the page from its node right now.'
           : error instanceof ApiFailure && error.status === 0 ? 'This node can’t be reached from your browser right now.'
           : error instanceof Error ? error.message : 'The status page couldn’t be loaded.';
         // "Not found" is the node's answer for an unpublished, renamed or conflicting page: the withdrawn page and its
@@ -295,12 +301,23 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
             <CanaryMark quiet wire="var(--axis)" />
             <h1>{load.kind === 'error' && load.notFound ? 'Status page not found' : 'Status unavailable'}</h1>
             <p>{load.kind === 'error' ? load.message : ''}</p>
-            {load.kind === 'error' && load.notFound ? <p className="muted small">It may be unpublished, renamed, or not yet known to this node. Another node below may already have it.</p> : null}
+            {load.kind === 'error' && load.notFound ? <p className="muted small">{controlPlane ? 'It may be unpublished, renamed, or not yet known to that node.' : 'It may be unpublished, renamed, or not yet known to this node. Another node below may already have it.'}</p> : null}
           </div>
         )}
 
         <footer className="pub-foot">
-          <details className="pub-source">
+          {controlPlane ? (
+            <details className="pub-source">
+              <summary>
+                {shown ? <>Live view through this dashboard, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every 30 s</>
+                  : <>Data source: one node on this dashboard</>}
+              </summary>
+              <div className="pub-source-b">
+                <p className="small">This dashboard’s server reads the page from the node the link names, without signing in. Each node serves its own copy, so another node can briefly differ.</p>
+                <div className="row-wrap"><button type="button" className="btn sm" onClick={() => setNonce(n => n + 1)}><Icon name="refresh" />Refresh</button></div>
+              </div>
+            </details>
+          ) : <details className="pub-source">
             <summary>
               {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every 30 s</>
                 : <>Data source: <span className="mono">{base ?? 'none'}</span></>}
@@ -325,14 +342,16 @@ export function PublicStatusView({ slug, nodes, theme, signedIn }: { slug: strin
                 {otherError ? <small className="ferr"><Glyph tone="down" />{otherError}</small> : null}
               </form>
             </div>
-          </details>
+          </details>}
           {shown && page ? (
             <details className="pub-source" onToggle={event => { const isOpen = (event.currentTarget as HTMLDetailsElement).open; setEmbedOpen(isOpen); if (isOpen) setBadgeNonce(n => n + 1); }}>
               <summary>Embed a status badge</summary>
               {embedOpen ? <div className="pub-source-b pub-embed">
                 <p className="small">A small image for a README or another site, served by <span className="mono">{shown.from}</span> without signing in. A state badge shows the current state only: up, down, pending or unknown, with a maintenance segment during planned work. Services that publish their last 24 hours also have a 24 h observed badge.</p>
                 {addressCaveat(shown.from) ? <p className="small fwarn"><Glyph tone="warn" />{addressCaveat(shown.from)}</p> : null}
-                <BadgeList slug={slug} title={page.title} nodeUrl={shown.from} pageLink={`${location.origin}${location.pathname}${publicHref(slug, [shown.from, ...candidates.filter(candidate => candidate !== shown.from)])}`} nonce={badgeNonce}
+                {controlPlane ? <p className="small fwarn"><Glyph tone="warn" />If a sign-in proxy protects this dashboard, people and sites outside it can’t load these images.</p> : null}
+                <BadgeList slug={slug} title={page.title} nodeUrl={shown.from} registration={controlPlane ? registration : undefined} nonce={badgeNonce}
+                  pageLink={`${location.origin}${location.pathname}${controlPlane ? publicHref(slug, [], registration) : publicHref(slug, [shown.from, ...candidates.filter(candidate => candidate !== shown.from)])}`}
                   groups={page.groups.map(group => ({ id: group.id, name: group.name, monitors: group.monitors.map(monitor => ({ name: monitor.name, observed: monitor.history !== undefined })) }))} />
                 <p className="muted small">If the page’s address or a service’s public name changes, embedded badges stop loading.</p>
               </div> : null}

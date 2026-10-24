@@ -77,8 +77,9 @@ def main():
         summary["checks"].append({"name": name, "passed": True, "evidence": evidence})
         print("PASS " + name, flush=True)
 
-    def request(base, path, body=None, authenticated=True, expected=200):
-        headers = {"Authorization": "Bearer " + token} if authenticated else {}
+    def request(base, path, body=None, authenticated=True, expected=200, credential=None, registration=None):
+        headers = {"Authorization": "Bearer " + (credential or token)} if authenticated else {}
+        if registration: headers["X-Canary-Registered-Node"] = registration
         if body is not None: headers["Content-Type"] = "application/json"
         req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
         try:
@@ -108,12 +109,27 @@ def main():
         ip = cmd("Find isolated container address", "docker", "inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name)
         return f"http://{ip}:{container_port}"
 
+    def dashboard_owner(base, container):
+        status = request(base, "/api/auth/status", authenticated=False)
+        assert status["dashboard"] and status["passwordLogin"]
+        password = "Private fixture dashboard owner password"
+        if status["setupRequired"]:
+            code = cmd("Read owned dashboard fixture setup file", "docker", "exec", container, "cat", "/identity/setup.code")
+            request(base, "/api/dashboard/setup", {"name": "fixture-owner", "password": password, "code": code}, authenticated=False, expected=201)
+        result = request(base, "/api/auth/login", {"name": "fixture-owner", "password": password}, authenticated=False)
+        assert result["token"] and result["user"]["role"] == "admin"
+        return result["token"]
+
+    def dashboard_registered(base, credential, node_id):
+        rows = request(base, "/api/dashboard/nodes", credential=credential)
+        return next((row for row in rows if row["nodeId"] == node_id and row["state"] == "answering"), None)
+
     def validate_web():
         web_image, web = prefix + "-web", prefix + "-web-runtime"
         images.append(web_image)
         containers.append(web)
         cmd("Build repository Dockerfile.web", "docker", "build", "--pull", "--progress=plain", "-f", str(a.context / "Dockerfile.web"), "-t", web_image, str(a.context), timeout=1200)
-        cmd("Run nonroot web on read-only root", "docker", "run", "-d", "--name", web, "--network", network, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,nosuid,size=32m", web_image)
+        cmd("Run nonroot dashboard on read-only root with its image-declared private volumes", "docker", "run", "-d", "--name", web, "--network", network, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,nosuid,size=32m", web_image)
         web_url = port(web, 8080)
         eventually("Web health", lambda: request(web_url, "/healthz", authenticated=False))
         for route in ("/", "/monitors/validation-spa-fallback"):
@@ -122,7 +138,9 @@ def main():
                 assert response.status == 200 and '<div id="root">' in html
                 assert 'src="/assets/' in html
                 assert response.headers.get("X-Content-Type-Options") == "nosniff"
-                assert response.headers.get("Referrer-Policy") == "same-origin"
+                # The dashboard now handles credentials itself; suppress the
+                # entire referrer instead of the previous same-origin policy.
+                assert response.headers.get("Referrer-Policy") == "no-referrer"
                 assert response.headers.get("Cache-Control") == "no-store"
         assets = __import__("re").findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
         assert assets
@@ -130,11 +148,62 @@ def main():
             with urllib.request.urlopen(web_url + asset, timeout=15) as response:
                 assert response.status == 200 and len(response.read()) > 0
                 assert response.headers.get("X-Content-Type-Options") == "nosniff"
-                assert response.headers.get("Referrer-Policy") == "same-origin"
+                assert response.headers.get("Referrer-Policy") == "no-referrer"
                 assert "immutable" in ",".join(response.headers.get_all("Cache-Control", []))
         assert cmd("Check web nonroot", "docker", "exec", web, "id", "-u") != "0"
         eventually("Web Docker HEALTHCHECK", lambda: cmd("Inspect web health", "docker", "inspect", "--format", "{{.State.Health.Status}}", web) == "healthy", timeout=120)
-        passed("Optional static UI build, Docker health, security/cache headers, SPA fallback, JS/CSS assets, nonroot runtime")
+        owner = dashboard_owner(web_url, web)
+        assert request(web_url, "/api/dashboard/nodes", credential=owner) == []
+        assert request(web_url, "/api/overview", credential=owner)["monitors"] == []
+        cmd("Restart standalone dashboard with retained account/key volumes", "docker", "restart", web, timeout=60)
+        eventually("Independent account survives dashboard restart", lambda: request(web_url, "/api/auth/me", credential=owner))
+        request(web_url, "/internal/snapshot", authenticated=False, expected=404)
+        with urllib.request.urlopen(web_url + "/canary-config.js", timeout=5) as response:
+            config = response.read().decode()
+            assert "__CANARY_DASHBOARD_CONTROL_PLANE__ = true" in config
+            assert response.headers.get("Cache-Control") == "no-store"
+        passed("Dashboard account setup without nodes, retained sessions, Docker health, security/cache headers, SPA fallback, JS/CSS assets and nonroot runtime")
+        validate_dashboard(web_image)
+
+    def validate_dashboard(web_image):
+        # The dashboard image's Go executable is also capable of serving a
+        # fixture node. The ordinary node image remains independently covered
+        # by the existing node/proof phases and their unchanged workloads.
+        remote, dashboard = prefix + "-registered-node", prefix + "-fleet-web"
+        containers.extend([remote, dashboard])
+        cmd("Start dashboard before its bundled node exists", "docker", "run", "-d", "--name", dashboard, "--network", network,
+            "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,nosuid,size=32m",
+            "-e", "CANARY_LOCAL_NODE_URL=http://registered-entry:3100", "-e", "CANARY_LOCAL_NODE_TOKEN=" + token, web_image)
+        base = port(dashboard, 8080)
+        eventually("Dashboard healthy without any answering node", lambda: request(base, "/healthz", authenticated=False))
+        owner = dashboard_owner(base, dashboard)
+        assert request(base, "/api/auth/me", credential=owner)["name"] == "fixture-owner"
+        cmd("Start node on Docker-private hostname", "docker", "run", "-d", "--name", remote, "--network", network,
+            "--network-alias", "registered-entry", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+            "-e", "CANARY_NODE_ID=private-fixture", "-e", "CANARY_ADMIN_TOKEN=" + token, "-e", "CANARY_CLUSTER_TOKEN=" + cluster,
+            "-e", "CANARY_HOST=0.0.0.0", "-e", "CANARY_PORT=3100", "-e", "CANARY_DB=/data/node.db", "-e", "CANARY_IDENTITY_DIRECTORY=/identity/node",
+            web_image, "/usr/local/bin/canary", "serve")
+        row = eventually("Bundled node automatically enrolled through server-only hostname", lambda: dashboard_registered(base, owner, "private-fixture"))
+        assert row["local"] and row["url"] == "http://registered-entry:3100"
+        view = request(base, "/api/overview", credential=owner, registration=row["id"])
+        assert view["node"]["id"] == "private-fixture" and view["user"]["name"] == "fixture-owner"
+        request(base, "/api/overview", authenticated=False, expected=401, registration=row["id"])
+        request(base, "/api/accounts", {"name": "fixture-viewer", "role": "viewer", "password": "Private fixture viewer password"}, credential=owner, expected=201)
+        viewer = request(base, "/api/auth/login", {"name": "fixture-viewer", "password": "Private fixture viewer password"}, authenticated=False)["token"]
+        listed = request(base, "/api/dashboard/nodes", credential=viewer)
+        assert listed[0]["id"] == row["id"] and "url" not in listed[0]
+        request(base, "/api/dashboard/verify", {}, credential=viewer, expected=403)
+        request(base, "/api/monitors", {}, credential=viewer, registration=row["id"], expected=403)
+        cmd("Stop only bundled node", "docker", "stop", remote, timeout=60)
+        request(base, "/api/overview", credential=owner, registration=row["id"], expected=502)
+        assert request(base, "/api/auth/me", credential=owner)["role"] == "admin"
+        request(base, "/healthz", authenticated=False)
+        cmd("Restart only bundled node", "docker", "start", remote)
+        eventually("Registered node recovers without browser re-enrollment", lambda: request(base, "/api/overview", credential=owner, registration=row["id"]))
+        cmd("Restart dashboard control plane", "docker", "restart", dashboard, timeout=60)
+        eventually("Central session and encrypted registry survive restart", lambda: request(base, "/api/overview", credential=owner, registration=row["id"]))
+        assert len(request(base, "/api/dashboard/nodes", credential=owner)) == 1
+        passed("Shared dashboard roles, server-private automatic enrollment, independent node/dashboard restarts and unavailable-node login")
 
     def validate_split_stacks(node_image, web_image):
         # No shared project, network, database, credentials or service dependency.
@@ -148,14 +217,20 @@ def main():
         node_env = {**base_env, "CANARY_NODE_IMAGE": node_image, "CANARY_PULL_POLICY": "never",
             "CANARY_NODE_ID": node_project, "CANARY_ADMIN_TOKEN": token,
             "CANARY_CLUSTER_TOKEN": cluster, "CANARY_CORS_ORIGINS": web_url,
-            "CANARY_PORT": str(node_port)}
-        web_env = {**base_env, "CANARY_WEB_IMAGE": web_image, "CANARY_PULL_POLICY": "never", "CANARY_WEB_PORT": str(web_port)}
+            "CANARY_PORT": str(node_port), "CANARY_BIND_ADDRESS": "0.0.0.0"}
+        web_env = {**base_env, "CANARY_WEB_IMAGE": web_image, "CANARY_PULL_POLICY": "never", "CANARY_WEB_PORT": str(web_port),
+            "CANARY_LOCAL_NODE_URL": "http://host.docker.internal:" + str(node_port), "CANARY_LOCAL_NODE_TOKEN": token, "CANARY_CORS_ORIGINS": web_url}
 
         def compose(project, filename):
             return ["docker", "compose", "--ansi", "never", "--env-file", "/dev/null",
                 "--project-name", project, "-f", str(a.context / "deploy" / filename)]
 
         web_compose = compose(web_project, "portainer-dashboard.yml")
+        # Deliberate routed host access between otherwise isolated fixture
+        # projects; this replaces the browser's former direct node connection.
+        override = a.output / "gateway-host-access.yml"
+        override.write_text('services:\n  web:\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n')
+        web_compose += ["-f", str(override)]
         node_compose = compose(node_project, "portainer-node.yml")
 
         def dashboard_ready():
@@ -164,7 +239,7 @@ def main():
                 return response.status == 200
 
         try:
-            cmd("Start dashboard-only stack without node credentials", *web_compose, "up", "-d", timeout=180, env=web_env)
+            cmd("Start independent dashboard stack with optional local enrollment", *web_compose, "up", "-d", timeout=180, env=web_env)
             eventually("Independent dashboard ready before any node", dashboard_ready)
             cmd("Start independent node-only stack", *node_compose, "up", "-d", timeout=180, env=node_env)
             eventually("Independent node ready", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
@@ -178,8 +253,10 @@ def main():
                 assert policy["HostConfig"]["ReadonlyRootfs"]
                 assert "no-new-privileges:true" in policy["HostConfig"]["SecurityOpt"]
             assert set(node_policy["NetworkSettings"]["Networks"]).isdisjoint(web_policy["NetworkSettings"]["Networks"])
-            assert not any(value.startswith("CANARY_") for value in web_policy["Config"]["Env"])
-            assert not any(mount["Type"] in ("volume", "bind") for mount in web_policy["Mounts"])
+            assert "CANARY_LOCAL_NODE_URL=" + web_env["CANARY_LOCAL_NODE_URL"] in web_policy["Config"]["Env"]
+            web_mounts = {mount["Destination"]: mount for mount in web_policy["Mounts"]}
+            assert web_mounts["/data"]["Name"] == web_project + "_canary-dashboard-data"
+            assert web_mounts["/identity"]["Name"] == web_project + "_canary-dashboard-identity"
             mounts = {mount["Destination"]: mount for mount in node_policy["Mounts"]}
             assert mounts["/data"]["Name"] == node_project + "_canary-data"
             assert mounts["/identity"]["Name"] == node_project + "_canary-identity"
@@ -188,6 +265,9 @@ def main():
             with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as response:
                 assert response.status == 200 and response.headers.get("Access-Control-Allow-Origin") == web_url
                 response.read()
+            owner = dashboard_owner(web_url, web)
+            registration = eventually("Independent dashboard registers its server-private node", lambda: dashboard_registered(web_url, owner, node_project))["id"]
+            request(web_url, "/api/overview", credential=owner, registration=registration)
             monitor = request(node_url, "/api/monitors", {"name": "Separate stack fixture", "type": "manual", "target": "manual",
                 "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [node_project], "enabled": True,
                 "manual": {"state": "up", "message": "Private separate-stack fixture"}}, expected=201)
@@ -200,11 +280,14 @@ def main():
             eventually("Dashboard restarted independently", dashboard_ready)
             cmd("Stop only node stack", *node_compose, "stop", "node", timeout=60, env=node_env)
             assert dashboard_ready()
+            request(web_url, "/api/overview", credential=owner, registration=registration, expected=502)
+            request(web_url, "/api/auth/me", credential=owner)
             cmd("Start only node stack", *node_compose, "start", "node", timeout=60, env=node_env)
             eventually("Independent node restored", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
+            eventually("Independent dashboard API restored", lambda: request(web_url, "/api/overview", credential=owner, registration=registration))
             assert any(row in request(node_url, path) for row in history)
             assert any(row["monitor"]["id"] == monitor["id"] for row in request(node_url, "/api/monitors"))
-            passed("Separate dashboard/node Compose projects: isolated networks, no dashboard secrets, CORS, private identity, independent restarts and history persistence")
+            passed("Separate dashboard/node Compose projects: isolated networks, private dashboard credentials/keys, CORS, independent restarts and history persistence")
         finally:
             # Generated fixture projects only; never use the user's stack names.
             for arguments, env in ((node_compose, node_env), (web_compose, web_env)):
@@ -240,12 +323,17 @@ def main():
             with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as response:
                 assert response.status == 200 and response.headers.get("Access-Control-Allow-Origin") == web_url
                 response.read()
+            web = cmd("Locate owned stack dashboard", *compose, "ps", "-q", "web", env=env)
+            owner = dashboard_owner(web_url, web)
+            registration = eventually("Bundle auto-registers its Docker-private node", lambda: dashboard_registered(web_url, owner, prefix))["id"]
+            request(web_url, "/api/overview", credential=owner, registration=registration)
             monitor = request(node_url, "/api/monitors", {"name": "Stack persistence fixture", "type": "manual", "target": "manual",
                 "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [prefix], "enabled": True, "manual": {"state": "up", "message": "Private stack fixture"}}, expected=201)
             path = "/api/monitors/" + monitor["id"] + "/history"
             history = eventually("Stack records private observations", lambda: request(node_url, path))
             cmd("Restart stack node with retained volumes", *compose, "restart", "node", timeout=60, env=env)
             eventually("Restarted stack ready", lambda: request(node_url, "/readyz", authenticated=False)["ready"])
+            eventually("Bundle control plane reconnects after node restart", lambda: request(web_url, "/api/overview", credential=owner, registration=registration))
             assert any(row in request(node_url, path) for row in history)
             assert any(row["monitor"]["id"] == monitor["id"] for row in request(node_url, "/api/monitors"))
             passed("Portainer template actual Compose runtime, private identity volume, CORS and restart persistence")
@@ -388,7 +476,7 @@ def main():
         for container in containers:
             r = subprocess.run(["docker", "logs", container], capture_output=True, text=True, timeout=30)
             (a.output / (container + ".log")).write_text(r.stdout + r.stderr)
-            subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=60)
+            subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True, timeout=60)
         subprocess.run(["docker", "network", "rm", network], capture_output=True, timeout=30)
         subprocess.run(["docker", "volume", "rm", volume], capture_output=True, timeout=30)
         subprocess.run(["docker", "volume", "rm", identity_volume], capture_output=True, timeout=30)

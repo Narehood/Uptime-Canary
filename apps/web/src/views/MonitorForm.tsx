@@ -6,6 +6,7 @@ import {
   statusCodesText, tlsApplies, typeLabel, type CheckCategory, type DnsRecord, type SmtpMode,
 } from '../checks';
 import { useCanary } from '../context';
+import { pushCommands } from '../dashboard';
 import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shortId, shortRev, span } from '../format';
 import { GP_FIELD_LABEL, GP_SECTION, buildGlobalping, gpDraftFrom, gpMasked, type GpDraft, type GpField } from '../globalping';
 import { groupPath } from '../model';
@@ -817,11 +818,14 @@ export function newPushToken(): string {
 function PushFields({ token, allowGet, stored, onToken, onAllowGet, disabled, error, interval }: {
   token: string; allowGet: boolean; stored: string; onToken: (value: string) => void; onAllowGet: (value: boolean) => void; disabled: boolean; error?: string; interval: number | null;
 }) {
-  const { api } = useCanary();
+  const { api, selection } = useCanary();
   const [shown, setShown] = useState(false);
   const id = useId();
   useEffect(() => { if (!token) onToken(newPushToken()); }, [token, onToken]);
   const rotated = Boolean(stored) && token !== stored;
+  // Control plane: senders go through this dashboard to the selected registration; otherwise to the node itself.
+  const registration = api.registeredNode;
+  const label = selection && selection.id === registration ? ` (${selection.label})` : '';
   return (
     <>
       <div className="fld full">
@@ -844,14 +848,12 @@ function PushFields({ token, allowGet, stored, onToken, onAllowGet, disabled, er
         hint="For tools that can only fetch a URL. The token is then part of the URL, where proxies and logs can record it. POST with a header is safer." />
       <div className="fld full">
         <span className="flabel">Send heartbeats</span>
-        <pre className="json-pre">{`curl -X POST ${api.baseUrl}/api/push \\
-  -H "Authorization: Push ${shown ? token : '<token>'}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"status":"up","msg":"backup finished","ping":120}'`}{allowGet ? `
-
-# or, without a header:
-curl "${api.baseUrl}/api/push/${shown ? token : '<token>'}?status=up&msg=ok"` : ''}</pre>
-        <small>Send to any configured node; HTTP success means that node durably recorded it, not that alerts were delivered. <span className="mono">status</span> is up or down; <span className="mono">msg</span> and <span className="mono">ping</span> (milliseconds) are optional.{interval ? ` Without an up heartbeat for ${span(interval)}, the monitor fails like any other check.` : ''}</small>
+        <pre className="json-pre">{pushCommands(api.baseUrl, shown ? token : null, allowGet, registration)}</pre>
+        <small>{registration === null ? 'Send to any configured node; HTTP success means that node durably recorded it, not that alerts were delivered.'
+          : `These go through this dashboard to the selected node${label}; the dashboard’s server forwards the push token, never a sign-in or cookie. HTTP success means that node durably recorded it, not that alerts were delivered.`} <span className="mono">status</span> is up or down; <span className="mono">msg</span> and <span className="mono">ping</span> (milliseconds) are optional.{interval ? ` Without an up heartbeat for ${span(interval)}, the monitor fails like any other check.` : ''}</small>
+        {registration === null ? null : (
+          <small>The sending machine must reach this dashboard’s address. Behind a sign-in proxy it must also pass the proxy’s check, or send the same request without <span className="mono">registration</span> straight to the node’s own API on your private network. Don’t exempt <span className="mono">/api/</span> from the proxy for this.</small>
+        )}
       </div>
     </>
   );

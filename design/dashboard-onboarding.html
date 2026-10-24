@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:,">
+<title>Prototype · Dashboard accounts and nodes · Uptime Canary</title>
+<!--
+  PROTOTYPE ONLY (design/dashboard-onboarding.html). Interactive mock of the accepted
+  dashboard account and node workflow in docs/dashboard-control-plane.md. All state is
+  in this page's memory; it makes no network requests (see the CSP above), stores
+  nothing and holds no real credentials. Tokens follow docs/design.md §6 and
+  apps/web/src/styles.css. Not the shipping app.
+-->
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+:root {
+  color-scheme: light;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+  --page: #f3f2ee; --surface: #fcfcfb; --surface-2: #f1f0ec; --surface-3: #e8e7e1;
+  --text-1: #0b0b0b; --text-2: #52514e; --text-3: #6f6d68;
+  --grid: #e1e0d9; --border: rgba(11, 11, 11, .10); --border-2: rgba(11, 11, 11, .18);
+  --accent: #2a78d6; --accent-text: #1c5cab; --accent-btn: #256abf; --accent-wash: rgba(42, 120, 214, .10);
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --neutral: #898781;
+  --warn-edge: #a86f00; --serious-edge: #b5532c;
+  --good-wash: rgba(12, 163, 12, .11); --warning-wash: rgba(250, 178, 25, .18); --serious-wash: rgba(236, 131, 90, .17);
+  --critical-wash: rgba(208, 59, 59, .10); --neutral-wash: rgba(137, 135, 129, .13);
+  --critical-text: #a32a2a; --hatch-soft: rgba(11, 11, 11, .09);
+  --ink: #151514; --ink-text: #c3c2b7; --ink-text-1: #f0efec; --ink-muted: #a3a198;
+  --canary: #ffd23f; --tip-bg: #1c1c1b; --tip-fg: #f0efec; --tip-2: #c3c2b7;
+  --shadow: 0 1px 2px rgba(11, 11, 11, .06), 0 12px 32px -14px rgba(11, 11, 11, .28);
+}
+:root[data-mode="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220; --surface-3: #2c2c2a;
+  --text-1: #f0efec; --text-2: #c3c2b7; --text-3: #a3a198;
+  --grid: #2c2c2a; --border: rgba(255, 255, 255, .10); --border-2: rgba(255, 255, 255, .18);
+  --accent: #3987e5; --accent-text: #6da7ec; --accent-wash: rgba(57, 135, 229, .14);
+  --warn-edge: #fab219; --serious-edge: #ec835a;
+  --good-wash: rgba(12, 163, 12, .16); --warning-wash: rgba(250, 178, 25, .13); --serious-wash: rgba(236, 131, 90, .15);
+  --critical-wash: rgba(208, 59, 59, .20); --neutral-wash: rgba(137, 135, 129, .16);
+  --critical-text: #f08a8a; --hatch-soft: rgba(255, 255, 255, .08);
+  --ink: #111110; --tip-bg: #2c2c2a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px -14px rgba(0, 0, 0, .8);
+}
+body { margin: 0; background: var(--page); color: var(--text-1); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3 { margin: 0; }
+h1[tabindex="-1"]:focus, main:focus { outline: none; }
+.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.mono { font-family: var(--mono); font-size: .92em; }
+.muted { color: var(--text-3); }
+.sec { color: var(--text-2); }
+.small { font-size: 12.5px; }
+.grow { flex: 1; min-width: 0; }
+.row-wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ic { width: 16px; height: 16px; flex: none; }
+.skip { position: absolute; left: 12px; top: -60px; z-index: 300; background: var(--accent-btn); color: #fff; padding: 8px 12px; border-radius: 8px; }
+.skip:focus { top: 12px; }
+#app { padding: 16px; }
+
+/* status glyphs: shape carries meaning, colour reinforces */
+.g { display: inline-flex; width: 16px; height: 16px; flex: none; vertical-align: -3px; forced-color-adjust: none; }
+.g svg { width: 100%; height: 100%; overflow: visible; }
+.g-up { color: var(--good); } .g-down { color: var(--critical); } .g-warn { color: var(--warning); } .g-serious { color: var(--serious); }
+.g-pending, .g-unknown, .g-none { color: var(--neutral); }
+.edge-warn { stroke: var(--warn-edge); } .edge-serious { stroke: var(--serious-edge); }
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px 3px 5px; font-size: 12.5px; white-space: nowrap; background: var(--neutral-wash); }
+.chip b { font-weight: 650; } .chip > span:not(.g) { color: var(--text-2); }
+.chip.c-up { background: var(--good-wash); } .chip.c-warn { background: var(--warning-wash); } .chip.c-serious { background: var(--serious-wash); }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; border-radius: 6px; padding: 1px 7px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; border: 1px solid var(--border); }
+.tag .ic { width: 12px; height: 12px; }
+.tag.t-accent { background: var(--accent-wash); color: var(--text-1); border-color: transparent; }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-2); background: var(--surface); border-radius: 9px; padding: 6px 12px; font-weight: 600; font-size: 13px; cursor: pointer; min-height: 36px; color: var(--text-1); white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn .ic { width: 15px; height: 15px; }
+.btn.primary { background: var(--accent-btn); border-color: transparent; color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger-solid { background: var(--critical); border-color: transparent; color: #fff; }
+.btn.danger:hover { border-color: var(--critical); }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn.sm { min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+.btn.lg { min-height: 42px; justify-content: center; font-size: 14px; }
+.icon-btn { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; border: 1px solid transparent; background: transparent; cursor: pointer; color: var(--text-2); flex: none; }
+.icon-btn:hover { color: var(--text-1); border-color: var(--border-2); }
+
+/* cards, banners, empty */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; min-width: 0; }
+.card-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-h h2 { font-size: 15px; font-weight: 650; }
+.card-h .hint { font-size: 12.5px; color: var(--text-3); margin: 2px 0 0; }
+.banner { display: flex; gap: 12px; align-items: flex-start; border-radius: 13px; padding: 12px 14px; background: var(--warning-wash); border: 1px solid rgba(250, 178, 25, .55); }
+.banner > .g { width: 20px; height: 20px; margin-top: 1px; }
+.banner .bt { display: block; font-size: 14px; margin-bottom: 2px; outline-offset: 3px; }
+.banner .bb { color: var(--text-2); font-size: 13px; display: block; }
+.banner.b-down { background: var(--critical-wash); border-color: rgba(208, 59, 59, .45); }
+.banner.b-ok { background: var(--good-wash); border-color: rgba(12, 163, 12, .35); }
+.banner.b-info { background: var(--surface); border-color: var(--border); }
+.empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 22px 12px 18px; color: var(--text-2); }
+.empty > svg { width: 64px; height: 64px; }
+.empty b { color: var(--text-1); font-size: 15px; }
+.empty > span { max-width: 56ch; }
+.howto { margin: 6px auto 0; padding: 14px 4px 0 26px; border-top: 1px solid var(--grid); max-width: 700px; display: grid; gap: 8px; font-size: 13px; color: var(--text-2); }
+.howto b { color: var(--text-1); }
+.foot-note { font-size: 12.5px; color: var(--text-3); margin: 0; max-width: 90ch; }
+.modal-note { background: var(--warning-wash); border-radius: 9px; padding: 8px 10px; font-size: 13px; margin: 0; }
+.sample-note { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 12.5px; color: var(--text-2); background: var(--neutral-wash); border-radius: 9px; padding: 7px 10px; }
+
+/* forms */
+.fs { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.fs[disabled] { opacity: .7; }
+.fld { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--text-2); min-width: 0; }
+.fld > label { font-weight: 600; color: var(--text-1); font-size: 13px; }
+.fld input, .fld select { border: 1px solid var(--border-2); background: var(--surface); border-radius: 9px; padding: 0 10px; min-height: 40px; font-size: 13.5px; color: var(--text-1); width: 100%; min-width: 0; }
+.fld input.mono { font-size: 13px; }
+.fld input[readonly] { background: var(--surface-2); color: var(--text-2); }
+.fld input:focus-visible, .fld select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 9px; }
+.fld [aria-invalid="true"] { border-color: var(--critical); box-shadow: inset 0 0 0 1px var(--critical); }
+.fld small { color: var(--text-3); font-size: 12px; }
+.ferr, .fwarn { display: flex; align-items: flex-start; gap: 6px; font-weight: 600; margin: 0; }
+.fld small.ferr { color: var(--critical-text); font-size: 12.5px; }
+.fwarn { color: var(--text-1); font-weight: 550; font-size: 13px; }
+.ferr .g, .fwarn .g { width: 14px; height: 14px; margin-top: 1px; }
+.form-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-top: 1px solid var(--grid); padding-top: 14px; }
+.vsteps { list-style: none; margin: 0; padding: 10px 12px; border-radius: 11px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.vsteps li { display: flex; gap: 8px; align-items: flex-start; }
+.vsteps li .g { margin-top: 1px; }
+.vsteps li.wait { color: var(--text-3); }
+#addStatus { display: flex; flex-direction: column; gap: 10px; }
+#addStatus:empty { display: none; }
+
+/* dialogs and toasts */
+.modal { border: 1px solid var(--border-2); border-radius: 16px; padding: 0; width: min(560px, calc(100vw - 32px)); max-height: 720px; background: var(--surface); color: var(--text-1); box-shadow: var(--shadow); font: 14px/1.45 var(--font); }
+.modal::backdrop { background: rgba(11, 11, 11, .45); }
+.modal-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--grid); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.modal-h h2 { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.modal-b { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.modal-b > p { margin: 0; }
+.modal-b[hidden] { display: none; }
+.modal-foot { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--grid); padding-top: 12px; }
+.toasts { position: fixed; right: 16px; bottom: 16px; z-index: 500; display: flex; flex-direction: column; gap: 8px; max-width: min(440px, calc(100vw - 32px)); }
+.toast { display: flex; gap: 10px; align-items: flex-start; background: var(--tip-bg); color: var(--tip-fg); border-radius: 12px; padding: 10px 8px 10px 12px; box-shadow: var(--shadow); font-size: 13px; border: 1px solid rgba(255, 255, 255, .08); }
+.toast .toast-t { flex: 1; padding-top: 5px; }
+.toast > .g { margin-top: 6px; }
+.toast .icon-btn { color: var(--tip-2); }
+
+/* sign-in screens */
+.connect { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; max-width: 1040px; margin: 32px auto 0; align-items: stretch; }
+.connect-brand { background: var(--ink); color: var(--ink-text); border: 1px solid rgba(255, 255, 255, .06); border-radius: 18px; padding: 32px 28px; display: flex; flex-direction: column; gap: 12px; }
+.connect-mark { width: 84px; height: 84px; }
+.wordmark-lg { margin: 6px 0 0; font-size: 30px; letter-spacing: -.02em; color: var(--ink-text); font-weight: 450; }
+.wordmark-lg b { color: var(--ink-text-1); font-weight: 750; }
+.tagline { margin: 0; font-size: 16px; color: var(--ink-text-1); max-width: 34ch; }
+.connect-facts { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; font-size: 13.5px; }
+.connect-facts li { display: flex; gap: 10px; align-items: flex-start; }
+.connect-facts .ic { width: 18px; height: 18px; color: var(--canary); margin-top: 1px; }
+.connect-facts b { color: var(--ink-text-1); }
+.connect-card { padding: 28px; display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.connect-card > .tag { align-self: flex-start; }
+.connect-card h1 { font-size: 24px; letter-spacing: -.015em; }
+.connect-card > p { margin: 0; }
+.connect-form { display: flex; flex-direction: column; gap: 16px; }
+
+/* signed-in shell */
+.shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 16px; align-items: start; max-width: 1480px; margin: 0 auto; }
+.rail { position: sticky; top: 16px; background: var(--ink); color: var(--ink-text); border-radius: 14px; padding: 14px 10px 12px; display: flex; flex-direction: column; gap: 14px; border: 1px solid rgba(255, 255, 255, .05); }
+.rail :focus-visible { outline-color: #6da7ec; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 4px; }
+.brand svg { width: 38px; height: 38px; flex: none; }
+.wordmark { display: flex; flex-direction: column; line-height: 1.1; }
+.wordmark b { font-size: 16px; letter-spacing: -.01em; color: var(--ink-text-1); font-weight: 700; }
+.wordmark b span { font-weight: 450; color: var(--ink-text); }
+.wordmark small { font: 11px var(--mono); color: var(--ink-muted); margin-top: 2px; }
+.nav { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.nav button, .nav-off { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; color: var(--ink-text); font-weight: 500; min-height: 40px; width: 100%; border: 0; background: none; text-align: left; cursor: pointer; }
+.nav button:hover { background: rgba(255, 255, 255, .06); color: var(--ink-text-1); }
+.nav button[aria-current="page"] { background: rgba(255, 255, 255, .10); color: var(--ink-text-1); }
+.nav button[aria-current="page"]::before { content: ""; position: absolute; left: -10px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--canary); }
+.nav .ic { width: 18px; height: 18px; }
+.nav-off { cursor: default; color: var(--ink-muted); }
+.nav-off small { margin-left: auto; font-size: 10.5px; }
+.badge { margin-left: auto; font-size: 11px; font-weight: 700; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: var(--ink-text-1); text-align: center; line-height: 1.5; }
+.rail-foot { border-top: 1px solid rgba(255, 255, 255, .08); padding: 12px 8px 2px; font-size: 12px; color: var(--ink-muted); }
+.work { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.topbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tb-id { display: inline-flex; align-items: center; gap: 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 5px 12px 5px 6px; min-height: 42px; }
+.tb-id .t1 { display: block; font-weight: 650; font-size: 13.5px; line-height: 1.2; }
+.tb-id .t2 { display: block; font-size: 12px; color: var(--text-3); line-height: 1.2; }
+.ep-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--ink); display: grid; place-items: center; flex: none; }
+.ep-mark svg { width: 22px; height: 22px; }
+.ep-mark.sm { width: 24px; height: 24px; border-radius: 6px; }
+.ep-mark.sm svg { width: 17px; height: 17px; }
+.me { display: inline-flex; align-items: center; gap: 8px; padding: 0 4px; font-size: 12.5px; }
+.me .av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); font-weight: 700; font-size: 12px; }
+.me .who b { display: block; font-size: 13px; line-height: 1.2; }
+.me .who span { color: var(--text-3); }
+main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.vhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.vhead h1 { font-size: 24px; line-height: 1.2; letter-spacing: -.015em; font-weight: 700; }
+.vhead .sub { color: var(--text-2); font-size: 13px; margin: 4px 0 0; }
+.g2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* nodes */
+.path { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 13px; padding: 10px 12px; font-size: 13px; }
+.pn { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.pn .ic { color: var(--text-3); }
+.pa { color: var(--text-3); display: inline-flex; }
+.pnote { flex-basis: 100%; margin: 0; }
+.sumrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ngrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; }
+.ncard { border: 1px solid var(--border); border-radius: 13px; padding: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ncard.out { background-image: repeating-linear-gradient(135deg, var(--hatch-soft) 0 1px, transparent 1px 7px); }
+.ncard.attn { box-shadow: inset 3px 0 0 var(--serious); }
+.nc-h { display: flex; gap: 10px; align-items: flex-start; }
+.nc-h > .g { width: 20px; height: 20px; margin-top: 1px; }
+.nc-h h3 { font-size: 15px; font-weight: 700; letter-spacing: -.005em; overflow-wrap: anywhere; }
+.nc-h .mono { color: var(--text-3); font-size: 12px; overflow-wrap: anywhere; }
+.nc-st { margin: 0; font-size: 13px; color: var(--text-2); }
+.nc-st b { color: var(--text-1); }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 14px; font-size: 12.5px; margin: 0; }
+.kv dt { color: var(--text-3); }
+.kv dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ncard .kv dd { text-align: right; }
+.kv dd .g { width: 13px; height: 13px; vertical-align: -2px; }
+.nc-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--grid); }
+.add-tile { border: 1.5px dashed var(--border-2); border-radius: 13px; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 190px; cursor: pointer; color: var(--text-2); padding: 16px; text-align: center; }
+.add-tile:hover { border-color: var(--accent); color: var(--text-1); background: var(--accent-wash); }
+.add-tile .ic { width: 22px; height: 22px; }
+.add-tile small { color: var(--text-3); max-width: 30ch; }
+
+/* accounts */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; font-size: 12px; color: var(--text-3); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+.tbl td { padding: 9px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; overflow-wrap: anywhere; }
+.tbl td .g { margin-right: 4px; }
+.roles { margin: 14px 0 0; display: grid; gap: 8px; font-size: 12.5px; }
+.roles > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
+.roles dt { font-weight: 650; }
+.roles dd { margin: 0; color: var(--text-2); }
+
+/* prototype strip (not product UI) */
+.proto { background: var(--ink); color: var(--ink-text); border-bottom: 2px dashed var(--canary); padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 12.5px; }
+.proto :focus-visible { outline-color: #6da7ec; }
+.p-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pt { font: 700 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #151514; background: var(--canary); border-radius: 5px; padding: 4px 7px; }
+.psteps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.proto button, .proto select { background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .16); color: var(--ink-text-1); border-radius: 7px; padding: 3px 9px; min-height: 30px; cursor: pointer; font-size: 12.5px; }
+.proto select option { background: #fcfcfb; color: #0b0b0b; }
+.proto button:hover { background: rgba(255, 255, 255, .12); }
+.proto button[aria-current] { background: var(--ink-text-1); color: #151514; border-color: transparent; font-weight: 650; }
+.pmore { flex-basis: 100%; }
+.pmore summary { cursor: pointer; color: var(--ink-text-1); font-weight: 600; width: max-content; padding: 2px 0; }
+.pgrid { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; padding: 8px 0 4px; }
+.pseg { border: 0; margin: 0; padding: 0; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.pseg legend { float: left; margin-right: 6px; color: var(--ink-muted); padding: 0; }
+.pseg label { position: relative; display: inline-flex; }
+.pseg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.pseg span { padding: 3px 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, .16); min-height: 30px; display: inline-flex; align-items: center; }
+.pseg input:checked + span { background: var(--ink-text-1); color: #151514; font-weight: 650; }
+.pseg input:focus-visible + span { outline: 2px solid #6da7ec; outline-offset: 2px; }
+.pseg[disabled] { opacity: .45; }
+.pchk, .psel { display: inline-flex; gap: 6px; align-items: center; }
+.proto p { margin: 0; }
+.proto code { font: 12px var(--mono); color: var(--ink-text-1); background: rgba(255, 255, 255, .08); border-radius: 4px; padding: 0 4px; }
+.pq { margin: 6px 0 4px; padding-left: 18px; max-width: 120ch; display: grid; gap: 3px; }
+.pq b { color: var(--ink-text-1); }
+
+@media (max-width: 880px) {
+  .shell, .connect, .g2 { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; }
+  .nav { flex-direction: row; flex-wrap: wrap; }
+  .nav button { width: auto; }
+  .nav-off, .rail-foot { display: none; }
+  .connect-brand, .connect-card { padding: 20px; }
+  .connect-facts { margin-top: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+@media (forced-colors: active) {
+  .chip, .card, .ncard, .banner, .tag, .path, .toast { border: 1px solid CanvasText; }
+  .pseg input:checked + span, .proto button[aria-current] { outline: 2px solid Highlight; }
+}
+</style>
+</head>
+<body>
+<header class="proto" id="proto" aria-label="Prototype controls"></header>
+<div id="app"></div>
+<dialog class="modal" id="addDlg" aria-labelledby="add-t"></dialog>
+<dialog class="modal" id="rmDlg" aria-labelledby="rm-t"></dialog>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<noscript><p style="padding:16px">This prototype needs JavaScript. It makes no network requests.</p></noscript>
+<script>
+(() => {
+  'use strict';
+  // ---------- helpers ----------
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const now = () => Date.now();
+  const HOST = 'dash.example.test';           // sample page origin of this dashboard
+  const ORIGIN = 'https://' + HOST;
+  const ROLE = { admin: 'Administrator', editor: 'Editor', viewer: 'Viewer' };
+
+  const SH = {
+    up: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.9 8.3l2.1 2.1 4.1-4.4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    down: '<rect x="1.3" y="1.3" width="13.4" height="13.4" rx="3" fill="currentColor"/><path d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>',
+    warn: '<path class="edge-warn" d="M8 1.4l7 12.4H1z" fill="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 5.9v3.8" stroke="#151514" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.9" r="1" fill="#151514"/>',
+    serious: '<path class="edge-serious" d="M8 .9l7.1 7.1L8 15.1.9 8z" fill="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 4.6v4.2" stroke="#151514" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.1" r="1" fill="#151514"/>',
+    unknown: '<circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 1.8"/><path d="M6.3 6.4a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.9.6-.9 1.2v.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r=".9" fill="currentColor"/>',
+    pending: '<circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.7V8l2.3 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+    none: '<path d="M5 8h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  };
+  const G = (t, label) => `<span class="g g-${t}" ${label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"'}><svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">${SH[t]}</svg></span>`;
+
+  const IC = {
+    plus: 'M12 5v14M5 12h14',
+    x: 'M6 6l12 12M18 6L6 18',
+    server: 'M4 4h16v7H4zM4 13h16v7H4zM8 7.5h.01M8 16.5h.01',
+    users: 'M16 20v-1.5A3.5 3.5 0 0 0 12.5 15h-6A3.5 3.5 0 0 0 3 18.5V20M9.5 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM21 20v-1.5a3.5 3.5 0 0 0-2.6-3.4M15.5 4.6a3.5 3.5 0 0 1 0 6.8',
+    lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+    refresh: 'M20 11A8 8 0 0 0 5.3 7M4 3v4h4M4 13a8 8 0 0 0 14.7 4M20 21v-4h-4',
+    trash: 'M4 7h16M10 11v6M14 11v6M5.5 7l1 13h11l1-13M9 7V4h6v3',
+    shield: 'M12 3l7.5 3v5.5c0 4.6-3.2 8.4-7.5 9.5-4.3-1.1-7.5-4.9-7.5-9.5V6z',
+    arrow: 'M5 12h14M13 6l6 6-6 6',
+    grid: 'M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z',
+    pulse: 'M3 12h4l2.5-6 5 12 2.5-6h4',
+    bell: 'M6 17v-6a6 6 0 0 1 12 0v6l1.5 1.5h-15zM10 21h4',
+    out: 'M10 4H5v16h5M14 8l4 4-4 4M18 12H9',
+    browser: 'M3 4.5h18v11H3zM8.5 20h7M12 15.5V20',
+    flask: 'M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3',
+    key: 'M14.5 3.5a6 6 0 0 0-5.6 8.1L3 17.5V21h3.5v-2h2v-2h2l1.9-1.9a6 6 0 1 0 2.1-11.6zM16 8h.01',
+  };
+  const I = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${IC[n]}"/></svg>`;
+
+  const BIRD = 'M31.2 13.4C31.2 9.3 28.2 6 24.4 6C20.6 6 17.6 9.1 17.6 12.9C17.6 14.6 18.1 16 18.9 17.1C13.6 18.4 9.6 22.6 8.4 27.6L4 30.6L10.6 30.6C12.8 31.8 15.6 32.4 18.6 32.4C26.2 32.4 32.2 27.2 32.2 20.4C32.2 17.8 31.9 15.4 31.2 13.4Z';
+  const BODY = `<path d="${BIRD}" fill="#ffd23f"/><path d="M13.6 24C17.4 21.2 23.4 21.4 27 25.2C22.6 27.4 17.2 27.2 13.6 24Z" fill="#e9a800"/><path d="M31 11.2L36.6 13.5L31.1 15.7Z" fill="#f28c28"/><circle cx="26.3" cy="11.6" r="1.6" fill="#151514"/>`;
+  const MARK = (cls, quiet) => `<svg class="${cls || ''}" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path d="${quiet ? 'M1.6 35.5H38.4' : 'M1.6 35.5H23.2L25.8 31.4L28.8 38.2L31.4 35.5H38.4'}" fill="none" stroke="#a3a198" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.6 32.2V35.4M20.4 32V35.4" stroke="#f28c28" stroke-width="1.6" stroke-linecap="round"/>${BODY}</svg>`;
+  const EP = sm => `<span class="ep-mark${sm ? ' sm' : ''}" aria-hidden="true"><svg viewBox="4 2 36 36" focusable="false">${BODY}</svg></span>`;
+
+  const age = t => {
+    const s = Math.max(0, Math.round((now() - t) / 1000));
+    if (s < 2) return 'just now';
+    if (s < 60) return `${s} s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m} min ago`;
+    return `${Math.floor(m / 60)} h ${m % 60} min ago`;
+  };
+  const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const ageEl = (n, f) => `<time data-age="${esc(n.key)}" data-f="${f}" datetime="${new Date(n[f]).toISOString()}">${age(n[f])}</time>`;
+  const initials = name => name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+  // ---------- mock state (this page's memory only; credentials are never kept here) ----------
+  const S = {
+    screen: 'setup', deploy: 'bundled', localState: 'up', initialized: false,
+    accounts: [], me: null, nodes: [], view: 'nodes', next: 'ok', race: false,
+    loginNote: null, sample: false, add: null, rmOpener: null,
+    theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+  };
+  let seq = 0;
+  const timers = new Set(), dlgTimers = new Set();
+  const later = (ms, fn, set = timers) => { const id = setTimeout(() => { set.delete(id); fn(); }, ms); set.add(id); };
+  const clearSet = set => { set.forEach(clearTimeout); set.clear(); };
+
+  const OWNER = () => ({ name: 'Jordan Lee', user: 'jordan', role: 'admin', status: 'active' });
+  const VIEWER = () => ({ name: 'Sam Ortiz', user: 'sam', role: 'viewer', status: 'active' });
+
+  function localNode() {
+    const st = S.localState, t = now();
+    return {
+      key: 'local', local: true, label: 'This deployment’s node', nodeId: 'canary-local', url: 'http://node:3100',
+      state: st, last: st === 'up' ? t : st === 'down' ? t - 260e3 : null, monitors: st === 'starting' ? null : 8, down: 0, peers: [],
+    };
+  }
+  function sampleRemote() {
+    const t = now(), by = 'Jordan Lee', at = t - 5 * 3600e3;
+    return [
+      { key: 'b', label: 'Rack B', nodeId: 'canary-rack-b', url: 'http://100.79.12.4:3100', state: 'up', last: t - 3e3, monitors: 14, down: 1, peers: ['canary-office'], added: { by, at } },
+      { key: 'c', label: 'Office', nodeId: 'canary-office', url: 'https://office.tailnet.example:3100', state: 'down', last: t - 372e3, monitors: 9, down: 0, peers: ['canary-rack-b'], added: { by, at: at + 9e5 } },
+      { key: 'd', label: 'Edge Frankfurt', nodeId: 'canary-fra', url: 'https://fra.edge.example:3100', state: 'refused', last: t - 41 * 60e3, monitors: 5, down: 0, peers: [], added: { by, at: at + 18e5 } },
+      { key: 'e', label: 'Lab', nodeId: 'canary-lab', url: 'http://10.0.8.20:3100', state: 'identity', reported: 'canary-lab-2', last: t - 7500e3, monitors: 3, down: 0, peers: [], added: { by, at: at - 864e5 } },
+    ];
+  }
+
+  // ---------- prototype strip ----------
+  const STEPS = [
+    ['setup', 'First owner'], ['login', 'Sign in'], ['empty', 'Empty dashboard'], ['bundled', 'Bundled local node'],
+    ['add', 'Add node'], ['fleet', 'Node states'], ['viewer', 'Viewer'],
+  ];
+  const NEXT = [
+    ['ok', 'Verified'], ['unreachable', 'Server can’t reach it'], ['refused', 'Credential refused'],
+    ['tls', 'Certificate not trusted'], ['redirect', 'Answers with a redirect'], ['conflict', 'Node ID already registered'],
+  ];
+  const QUESTIONS = [
+    ['Enrollment credential', 'how a node issues it, whether it is single-use or expires, and whether the dashboard swaps it for per-role delegations.'],
+    ['Verify, then add', 'is the two-step confirm right, and what does Cancel or Back clean up on the node if verification already provisioned access?'],
+    ['First-owner claim', 'should setup need a one-time code from the server log, so whoever opens the page first can’t claim it?'],
+    ['Dashboard accounts', 'authenticator codes or account tokens as on nodes? How does an added person set a first password (invite link or one-time password)? Who may remove the last administrator?'],
+    ['Local node', 'can it be relabelled or removed in the UI, or only in the deployment settings?'],
+    ['Removal', 'how revocation is reported when the node can’t be reached or is now a different node.'],
+    ['Status vocabulary', '“Credential refused” and “Different node at this address” reuse the conflict diamond as “needs an administrator”; “Not answering” replaces “offline” (design §6.8).'],
+  ];
+  function protoHTML() {
+    const radios = (ctl, key, opts) => opts.map(([v, l]) => `<label><input type="radio" name="p-${ctl}" value="${v}" data-ctl="${ctl}" data-key="${key}"><span>${l}</span></label>`).join('');
+    return `<div class="p-row"><span class="pt">Prototype</span><p>Sample data only. This page makes no network requests, saves nothing and is not the shipping app.</p></div>
+      <nav aria-label="Prototype steps"><ol class="psteps">${STEPS.map(([id, t], i) => `<li><button type="button" data-act="step" data-k="${id}">${i + 1}. ${t}</button></li>`).join('')}</ol></nav>
+      <details class="pmore"><summary>Scenario controls and open questions</summary>
+        <div class="pgrid">
+          <fieldset class="pseg"><legend>Deployment</legend>${radios('deploy', 'deploy', [['standalone', 'Dashboard only'], ['bundled', 'Dashboard + local node']])}</fieldset>
+          <fieldset class="pseg" id="p-local"><legend>Local node</legend>${radios('local', 'localState', [['up', 'Answering'], ['starting', 'Starting'], ['down', 'Not answering']])}</fieldset>
+          <label class="psel">Next node verification <select data-ctl="next">${NEXT.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+          <label class="pchk"><input type="checkbox" data-ctl="race"> Another browser wins the next first-owner setup</label>
+          <fieldset class="pseg"><legend>Theme</legend>${radios('theme', 'theme', [['light', 'Light'], ['dark', 'Dark']])}</fieldset>
+          <p>Sign-in takes any password for an existing username except <code>wrong</code>. Sample accounts: <code>jordan</code> (administrator), <code>sam</code> (viewer, step 7).</p>
+        </div>
+        <ul class="pq">${QUESTIONS.map(([b, t]) => `<li><b>${b}:</b> ${t}</li>`).join('')}</ul>
+      </details>`;
+  }
+  function currentStep() {
+    if (S.screen !== 'app') return S.screen;
+    if (S.add) return 'add';
+    if (S.me.role === 'viewer') return 'viewer';
+    if (S.nodes.some(n => !n.local)) return 'fleet';
+    return S.deploy === 'bundled' ? 'bundled' : 'empty';
+  }
+  function syncProto() {
+    const cur = currentStep();
+    document.querySelectorAll('#proto [data-act="step"]').forEach(b => b.dataset.k === cur ? b.setAttribute('aria-current', 'step') : b.removeAttribute('aria-current'));
+    document.querySelectorAll('#proto input[type="radio"]').forEach(r => { r.checked = S[r.dataset.key] === r.value; });
+    $('#p-local').disabled = S.deploy !== 'bundled';
+    $('#proto select').value = S.next;
+    $('#proto input[type="checkbox"]').checked = S.race;
+  }
+
+  // ---------- shared form pieces ----------
+  function fld(id, name, label, o = {}) {
+    const hint = o.hint ? `${id}-h` : '';
+    return `<div class="fld"><label for="${id}">${label}</label>
+      <input id="${id}" name="${name}" type="${o.type || 'text'}"${o.ac ? ` autocomplete="${o.ac}"` : ''}${o.ph ? ` placeholder="${esc(o.ph)}"` : ''}${o.val ? ` value="${esc(o.val)}"` : ''}${o.mono ? ' class="mono"' : ''}${o.ro ? ' readonly' : ''}${hint ? ` aria-describedby="${hint}" data-hint="${hint}"` : ''} spellcheck="false" autocapitalize="off">
+      ${o.hint ? `<small id="${hint}">${o.hint}</small>` : ''}</div>`;
+  }
+  const field = (f, n) => f.elements.namedItem(n);
+  function clearErrs(f) {
+    f.querySelectorAll('.ferr').forEach(e => e.remove());
+    f.querySelectorAll('[aria-invalid]').forEach(el => {
+      el.removeAttribute('aria-invalid');
+      if (el.dataset.hint) el.setAttribute('aria-describedby', el.dataset.hint); else el.removeAttribute('aria-describedby');
+    });
+  }
+  function showErrs(f, errs) {
+    errs.forEach(([n, m]) => {
+      const el = field(f, n), e = document.createElement('small');
+      e.className = 'ferr'; e.id = `${el.id}-e`;
+      e.innerHTML = `${G('down')}<span>${esc(m)}</span>`;
+      el.insertAdjacentElement('afterend', e);
+      el.setAttribute('aria-invalid', 'true');
+      el.setAttribute('aria-describedby', [e.id, el.dataset.hint].filter(Boolean).join(' '));
+    });
+    field(f, errs[0][0]).focus();
+  }
+  function busy(f, text) {
+    const b = f.querySelector('[type="submit"]');
+    f.querySelector('fieldset').disabled = true;
+    b.dataset.label = b.innerHTML; b.textContent = text; b.disabled = true;
+  }
+  function unbusy(f) {
+    const b = f.querySelector('[type="submit"]');
+    f.querySelector('fieldset').disabled = false;
+    b.innerHTML = b.dataset.label; b.disabled = false;
+  }
+  function toast(tone, msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = `${G(tone)}<span class="toast-t">${esc(msg)}</span><button type="button" class="icon-btn" aria-label="Dismiss">${I('x')}</button>`;
+    t.querySelector('button').addEventListener('click', () => t.remove());
+    $('#toasts').append(t);
+    setTimeout(() => t.remove(), 8000);
+  }
+
+  // ---------- sign-in screens ----------
+  function brandHTML() {
+    return `<section class="connect-brand" aria-label="About this dashboard">
+      ${MARK('connect-mark')}
+      <p class="wordmark-lg">Uptime <b>Canary</b></p>
+      <p class="tagline">Watch your services from several places. Sign in once, here.</p>
+      <ul class="connect-facts">
+        <li>${I('users')}<span><b>Accounts live on this dashboard,</b> not on a monitoring node. There’s nothing to sign in to on each node.</span></li>
+        <li>${I('server')}<span><b>Nodes come after sign-in.</b> This dashboard’s server reaches them at their private addresses; your browser never does.</span></li>
+        <li>${I('shield')}<span><b>Monitoring doesn’t depend on it.</b> Nodes keep checking and alerting if this dashboard stops.</span></li>
+      </ul>
+    </section>`;
+  }
+  const deployNote = () => S.deploy === 'bundled'
+    ? 'This deployment’s own node is added for you. It doesn’t need to be answering for setup or sign-in.'
+    : 'You’ll add nodes after signing in. None are needed for setup.';
+  function setupHTML() {
+    return `<div class="connect">${brandHTML()}
+      <section class="card connect-card" aria-labelledby="setup-t">
+        <span class="tag t-accent">New dashboard · <span class="mono">${HOST}</span></span>
+        <h1 id="setup-t" tabindex="-1">Create the owner account</h1>
+        <p class="sec">This dashboard has no accounts yet. The first one is its owner and an administrator. After that, only administrators add accounts; there’s no public sign-up.</p>
+        <form class="connect-form" data-form="setup" novalidate>
+          <fieldset class="fs">
+            ${fld('s-name', 'name', 'Your name', { ac: 'name' })}
+            ${fld('s-user', 'user', 'Username', { ac: 'username', hint: 'You’ll sign in to this dashboard with it.' })}
+            ${fld('s-pw', 'pw', 'Password', { type: 'password', ac: 'new-password', hint: '12 to 128 characters.' })}
+            ${fld('s-pw2', 'pw2', 'Confirm password', { type: 'password', ac: 'new-password' })}
+          </fieldset>
+          <button class="btn primary lg" type="submit">Create owner account</button>
+        </form>
+        <p class="modal-note">Until setup is done, anyone who can open this page can claim it. Finish setup right after deploying, or keep the page behind your sign-in proxy until then.</p>
+        <p class="small muted" id="deployNote">${deployNote()}</p>
+      </section></div>`;
+  }
+  function loginHTML() {
+    const note = S.loginNote === 'race'
+      ? `<div class="banner">${G('warn')}<div><b class="bt">This dashboard already has an owner</b><span class="bb">Someone finished setup moments before you, so your account wasn’t created. Sign in with an account an administrator gives you.</span></div></div>`
+      : S.loginNote === 'out'
+        ? `<div class="banner b-info">${G('up')}<div><b class="bt">Signed out of this dashboard</b><span class="bb">A sign-in proxy in front of it may still have its own session.</span></div></div>`
+        : '';
+    return `<div class="connect">${brandHTML()}
+      <section class="card connect-card" aria-labelledby="login-t">
+        <span class="tag"><span class="mono">${HOST}</span></span>
+        <h1 id="login-t" tabindex="-1">Sign in</h1>
+        <p class="sec">Sign in to this dashboard to see and manage the nodes it reads.</p>
+        ${note}<div id="loginErr"></div>
+        <form class="connect-form" data-form="login" novalidate>
+          <fieldset class="fs">
+            ${fld('l-user', 'user', 'Username', { ac: 'username' })}
+            ${fld('l-pw', 'pw', 'Password', { type: 'password', ac: 'current-password' })}
+          </fieldset>
+          <button class="btn primary lg" type="submit">Sign in</button>
+        </form>
+        <p class="small muted">No account? Ask an administrator of this dashboard to add one.</p>
+        <p class="small muted">A sign-in proxy in front of this page, such as NetBird, doesn’t sign you in here. No node address is needed.</p>
+        <p class="small muted" id="deployNote">${deployNote()}</p>
+      </section></div>`;
+  }
+
+  // ---------- signed-in shell ----------
+  function shellHTML() {
+    const me = S.me, admin = me.role === 'admin';
+    const nav = (id, icon, label, extra) => `<li><button type="button" data-act="view" data-k="${id}"${S.view === id ? ' aria-current="page"' : ''}>${I(icon)}<span>${label}</span>${extra || ''}</button></li>`;
+    const off = (icon, label) => `<li><span class="nav-off">${I(icon)}<span>${label}</span><small>not in prototype</small></span></li>`;
+    return `<a class="skip" href="#main">Skip to content</a>
+      <div class="shell">
+        <aside class="rail" aria-label="Dashboard">
+          <div class="brand">${MARK('', true)}<span class="wordmark"><b>Uptime <span>Canary</span></b><small>dashboard</small></span></div>
+          <nav aria-label="Main"><ul class="nav">
+            ${off('grid', 'Overview')}${off('pulse', 'Monitors')}${off('bell', 'Incidents')}
+            ${nav('nodes', 'server', 'Nodes', `<span class="badge">${S.nodes.length}</span>`)}
+            ${admin ? nav('accounts', 'users', 'Accounts') : ''}
+          </ul></nav>
+          <div class="rail-foot">Prototype · sample data</div>
+        </aside>
+        <div class="work">
+          <header class="topbar">
+            <span class="tb-id">${EP()}<span><b class="t1">This dashboard</b><span class="t2 mono">${HOST}</span></span></span>
+            <span class="grow"></span>
+            ${admin ? '' : `<span class="tag">${I('lock')}Read-only</span>`}
+            <span class="me"><span class="av" aria-hidden="true">${esc(initials(me.name))}</span><span class="who"><b>${esc(me.name)}</b><span>${ROLE[me.role]}</span></span></span>
+            <button type="button" class="btn" data-act="signout">${I('out')}Sign out</button>
+          </header>
+          <main id="main" tabindex="-1">${S.view === 'accounts' && admin ? accountsHTML() : nodesHTML()}</main>
+          <p class="foot-note">Prototype of the accepted dashboard account and node workflow (docs/dashboard-control-plane.md). Mock state in this page only.</p>
+        </div>
+      </div>`;
+  }
+
+  // ---------- nodes ----------
+  const eff = n => (n.state === 'checking' ? n.prev : n.state);
+  function status(n) {
+    const since = n.last ? clock(n.last) : '';
+    const id = v => `<span class="mono">${esc(v)}</span>`;
+    switch (n.state) {
+      case 'up': return ['up', 'Answering', 'The dashboard’s server reads it every few seconds.'];
+      case 'checking': return ['pending', 'Checking…', 'The dashboard’s server is contacting it now.'];
+      case 'starting': return ['pending', 'Starting', 'It hasn’t answered the dashboard’s server since this deployment started. Sign-in, accounts and other nodes work meanwhile.'];
+      case 'down': return ['warn', 'Not answering', `The dashboard’s server hasn’t reached it since ${since}. ${n.local ? 'Check this deployment’s node container. ' : ''}A node’s own checks and alerts don’t depend on this dashboard and may still be running.`];
+      case 'refused': return ['serious', 'Credential refused', `It answers, but has refused this dashboard’s credential since ${since}. It may have been revoked on the node. An administrator can paste a new one.`];
+      case 'identity': return ['serious', 'Different node at this address', `This address now answers as ${id(n.reported)}, not ${id(n.nodeId)}. The dashboard stopped reading it so two nodes’ data don’t mix.`];
+    }
+    return ['unknown', 'Unknown', ''];
+  }
+  function card(n) {
+    const admin = S.me.role === 'admin', e = eff(n), [g, t, d] = status(n), k = esc(n.key);
+    const cls = (e === 'down' ? ' out' : '') + (e === 'refused' || e === 'identity' ? ' attn' : '');
+    const fresh = e === 'up';
+    const mon = n.monitors == null ? '<span class="muted">Not read yet</span>'
+      : e === 'identity' ? '<span class="muted">Not read</span>'
+        : `${n.monitors}${n.down ? ` · ${G('down')} ${n.down} down` : ''}${fresh ? '' : ' <span class="muted">· last known</span>'}`;
+    const known = new Set(S.nodes.map(x => x.nodeId));
+    const peers = e === 'identity' ? '<span class="muted">Not read</span>'
+      : n.peers.length ? n.peers.map(p => `<span class="mono">${esc(p)}</span> <span class="muted">${known.has(p) ? '· on this dashboard' : '· not added'}</span>`).join('<br>')
+        : '<span class="muted">None reported</span>';
+    const last = !n.last ? '<span class="muted">Not yet</span>' : fresh ? ageEl(n, 'last') : `${clock(n.last)} · ${ageEl(n, 'last')}`;
+    const added = n.local ? 'By this deployment' : `${esc(n.added.by)} · ${new Date(n.added.at).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+    const acts = [`<button type="button" class="btn sm" data-act="check" data-k="${k}"${n.state === 'checking' ? ' aria-disabled="true"' : ''}>${I('refresh')}${n.state === 'checking' ? 'Checking…' : 'Check now'}</button>`];
+    if (admin && !n.local && e === 'refused') acts.push(`<button type="button" class="btn sm" data-act="rekey" data-k="${k}">${I('key')}Update credential</button>`);
+    if (admin && !n.local) acts.push(`<button type="button" class="btn sm danger" data-act="rm" data-k="${k}">${I('trash')}Remove</button>`);
+    if (n.local) acts.push('<span class="small muted">Set by this deployment’s configuration.</span>');
+    return `<article class="ncard${cls}" aria-labelledby="n-${k}">
+      <div class="nc-h">${G(g, t)}<div class="grow"><h3 id="n-${k}">${esc(n.label)}</h3><span class="mono">${esc(n.nodeId)}</span></div>${n.local ? '<span class="tag t-accent">Added automatically</span>' : ''}</div>
+      <p class="nc-st"><b>${t}${t.endsWith('…') ? '' : '.'}</b> ${d}</p>
+      <dl class="kv">
+        <dt>Address</dt><dd class="mono">${esc(n.url)}</dd>
+        <dt>Last read</dt><dd>${last}</dd>
+        ${n.tried && !fresh ? `<dt>Last tried</dt><dd>${ageEl(n, 'tried')} · no change</dd>` : ''}
+        <dt>Monitors</dt><dd>${mon}</dd>
+        <dt>Peers it reports</dt><dd>${peers}</dd>
+        <dt>Added</dt><dd>${added}</dd>
+      </dl>
+      <div class="nc-acts">${acts.join('')}</div>
+    </article>`;
+  }
+  function nodesHTML() {
+    const admin = S.me.role === 'admin', ns = S.nodes;
+    const c = { up: 0, down: 0, attn: 0, starting: 0 };
+    ns.forEach(n => { const e = eff(n); c[e === 'refused' || e === 'identity' ? 'attn' : e]++; });
+    const chips = [
+      c.up && `<span class="chip c-up">${G('up')}<b>${c.up}</b><span>answering</span></span>`,
+      c.down && `<span class="chip c-warn">${G('warn')}<b>${c.down}</b><span>not answering</span></span>`,
+      c.attn && `<span class="chip c-serious">${G('serious')}<b>${c.attn}</b><span>${c.attn === 1 ? 'needs' : 'need'} an administrator</span></span>`,
+      c.starting && `<span class="chip">${G('pending')}<b>${c.starting}</b><span>starting</span></span>`,
+    ].filter(Boolean).join('');
+    const addBtn = `<button type="button" class="btn primary" data-act="add">${I('plus')}Add node</button>`;
+    const head = `<div class="vhead"><div><h1 tabindex="-1">Nodes</h1><p class="sub">Monitoring nodes this dashboard reads for you. You sign in here, not on each node.</p></div>
+      <div class="row-wrap">${admin ? addBtn : `<span class="tag">${I('lock')}Administrators add and remove nodes</span>`}</div></div>`;
+    const path = `<div class="path" role="note" aria-label="How this dashboard reaches nodes">
+      <span class="pn">${I('browser')}This browser</span><span class="pa" aria-hidden="true">${I('arrow')}</span>
+      <span class="pn">${EP(true)}This dashboard <span class="mono small muted">${HOST}</span></span><span class="pa" aria-hidden="true">${I('arrow')}</span>
+      <span class="pn">${I('server')}Each node’s private address</span>
+      <p class="pnote small muted">Only the dashboard’s server contacts nodes, so LAN, NetBird and Tailscale addresses work as long as the server can reach them. Your browser talks to this dashboard and nothing else.</p></div>`;
+    if (!ns.length) {
+      return `${head}${path}<section class="card" aria-label="No nodes yet"><div class="empty">${MARK('', true)}<b>No nodes yet</b>
+        <span>${admin ? 'This dashboard is ready. Add a monitoring node to see its monitors, incidents and alerts here.' : 'An administrator hasn’t added any nodes yet.'}</span>${admin ? addBtn : ''}</div>
+        ${admin ? `<ol class="howto">
+          <li><b>Run a node</b> where it can check your services. It works on its own; this dashboard is optional.</li>
+          <li><b>Check the route.</b> This dashboard’s server, not your browser, has to reach the node’s address.</li>
+          <li><b>Get an enrollment credential</b> for this dashboard from the node, then choose Add node.</li></ol>` : ''}</section>`;
+    }
+    const tile = admin ? `<button type="button" class="add-tile" data-act="add">${I('plus')}<b>Add node</b><small>Its private address and an enrollment credential</small></button>` : '';
+    return `${head}${path}
+      ${S.sample ? `<p class="sample-note">${I('flask')}Sample nodes: names, addresses, counts and times are invented for this prototype.</p>` : ''}
+      <div class="sumrow">${chips}<span class="small muted">As seen by this dashboard’s server.</span></div>
+      <div class="ngrid">${ns.map(card).join('')}${tile}</div>
+      <p class="foot-note">Monitor counts and peers are each node’s own report. Adding a node here doesn’t change its peers; peer membership stays in each node’s own configuration.</p>`;
+  }
+
+  // ---------- accounts ----------
+  function accountsHTML() {
+    const rows = S.accounts.map(a => `<tr><td>${esc(a.name)}${a === S.me ? ' <span class="tag t-accent">You</span>' : ''}</td><td class="mono">${esc(a.user)}</td><td>${ROLE[a.role]}</td>
+      <td>${a.status === 'invited' ? `${G('pending')}Hasn’t signed in yet` : `${G('up')}Active`}</td></tr>`).join('');
+    return `<div class="vhead"><div><h1 tabindex="-1">Accounts</h1><p class="sub">People who can sign in to this dashboard. These aren’t accounts on your nodes, and the nodes’ own accounts are unchanged.</p></div></div>
+      <div class="g2">
+        <section class="card" aria-labelledby="acc-t"><div class="card-h"><h2 id="acc-t">Accounts</h2></div>
+          <table class="tbl"><caption class="vh">Dashboard accounts</caption><thead><tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>
+        </section>
+        <section class="card" aria-labelledby="new-t"><div class="card-h"><div><h2 id="new-t">Add an account</h2><p class="hint">Only administrators add accounts. There’s no public sign-up.</p></div></div>
+          <form data-form="acct" novalidate class="connect-form">
+            <fieldset class="fs">
+              ${fld('c-name', 'name', 'Name')}
+              ${fld('c-user', 'user', 'Username', { hint: 'Unique on this dashboard.' })}
+              <div class="fld"><label for="c-role">Role</label><select id="c-role" name="role"><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="admin">Administrator</option></select></div>
+            </fieldset>
+            <div class="form-acts"><button class="btn primary" type="submit">${I('plus')}Add account</button></div>
+          </form>
+          <p class="foot-note" style="margin-top:12px">How the new person sets a first password isn’t decided yet (invite link or one-time password). In this prototype they can sign in with any password.</p>
+          <dl class="roles">
+            <div><dt>Viewer</dt><dd>Sees nodes, monitors and incidents. No secrets, no changes.</dd></div>
+            <div><dt>Editor</dt><dd>Also changes monitors, channels and pages on the dashboard’s nodes. Can’t add nodes or accounts.</dd></div>
+            <div><dt>Administrator</dt><dd>Also adds and removes nodes and accounts.</dd></div>
+          </dl>
+        </section>
+      </div>`;
+  }
+
+  // ---------- render ----------
+  function render() {
+    document.documentElement.dataset.mode = S.theme;
+    $('#app').innerHTML = S.screen === 'setup' ? setupHTML() : S.screen === 'login' ? loginHTML() : shellHTML();
+    syncProto();
+  }
+  function go() { render(); const h = $('#app h1'); if (h) h.focus(); }
+  const selOf = el => (el && el.dataset && el.dataset.act ? `[data-act="${el.dataset.act}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}` : '');
+  function keepFocus(fn) {
+    const a = document.activeElement, main = $('#main');
+    const inDialog = a && a.closest && a.closest('dialog');
+    const sel = a && !inDialog ? selOf(a) : '';
+    const inMain = !!(a && main && main.contains(a));
+    fn();
+    if (inDialog) return;
+    const el = sel && document.querySelector(sel);
+    if (el) el.focus(); else if (inMain && $('#main')) $('#main').focus();
+  }
+  function renderMain() {
+    if (S.screen === 'app') keepFocus(render);
+    else { const el = $('#deployNote'); if (el) el.textContent = deployNote(); syncProto(); }
+  }
+  function refocus(sel) {
+    const el = (sel && document.querySelector(sel)) || $('#main h1') || $('#app h1');
+    if (el) el.focus();
+  }
+
+  // ---------- add node / update credential ----------
+  const addDlg = $('#addDlg'), rmDlg = $('#rmDlg');
+  function addHTML(n) {
+    const rk = !!n;
+    return `<div class="modal-h"><h2 id="add-t">${rk ? `Update credential · ${esc(n.label)}` : 'Add node'}</h2><button type="button" class="icon-btn" data-act="dlgclose" aria-label="Close">${I('x')}</button></div>
+      <form class="modal-b" id="addForm" data-form="add" novalidate>
+        <p class="sec">${rk ? 'Paste a new enrollment credential from this node. The dashboard’s server checks it with the node before saving it.' : 'The dashboard’s server contacts the node at this address; your browser doesn’t. A private, NetBird or Tailscale address is fine as long as the server can reach it.'}</p>
+        <fieldset class="fs">
+          ${fld('a-label', 'label', 'Name on this dashboard', { val: rk ? n.label : '', ph: rk ? '' : 'Rack B', ro: rk, hint: rk ? '' : 'Only this dashboard shows it. The node keeps its own ID.' })}
+          ${fld('a-url', 'url', 'Node address', { type: 'url', val: rk ? n.url : '', ph: rk ? '' : 'http://100.79.12.4:3100', mono: true, ro: rk, hint: rk ? '' : 'Scheme, host and port, as the dashboard’s server reaches it. HTTPS certificates are checked and redirects aren’t followed.' })}
+          ${fld('a-cred', 'cred', 'Enrollment credential', { type: 'password', ac: 'off', mono: true, hint: 'Created on the node for this dashboard. It goes to the dashboard’s server, which keeps it encrypted and never shows it to a browser again.' })}
+        </fieldset>
+        <div id="addStatus" aria-live="polite"></div>
+        <div class="modal-foot"><span class="small muted">${I('lock')} Administrators only</span>
+          <span class="row-wrap"><button type="button" class="btn" data-act="dlgclose">Cancel</button><button class="btn primary" type="submit">${rk ? 'Verify and save' : 'Verify node'}</button></span></div>
+      </form>
+      <div class="modal-b" id="addOk" hidden></div>`;
+  }
+  function openAdd(key, opener) {
+    clearSet(dlgTimers);
+    const n = key ? S.nodes.find(x => x.key === key) : null;
+    S.add = { mode: n ? 'rekey' : 'add', key: n ? n.key : null, opener: selOf(opener), busy: false, pending: null };
+    addDlg.innerHTML = addHTML(n);
+    if (!addDlg.open) addDlg.showModal();
+    $(n ? '#a-cred' : '#a-label', addDlg).focus();
+    syncProto();
+  }
+  addDlg.addEventListener('close', () => {
+    if (addDlg.open) return;
+    clearSet(dlgTimers);
+    addDlg.innerHTML = '';                  // drops any typed credential from the page
+    const a = S.add; S.add = null; syncProto();
+    if (a) refocus(a.opener);
+  });
+  function checkUrl(raw) {
+    if (!raw) return { err: 'Enter the node’s address.' };
+    let u;
+    try { u = new URL(raw); } catch (e) { return { err: 'Enter a full address, like http://100.79.12.4:3100.' }; }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { err: 'Use an http:// or https:// address.' };
+    if (u.username || u.password) return { err: 'Leave the user name and password out of the address. The credential has its own field.' };
+    if ((u.pathname && u.pathname !== '/') || u.search || u.hash || /[?#]/.test(raw)) return { err: 'Enter only the scheme, host and port, without a path.' };
+    if (u.origin === ORIGIN) return { err: 'That’s this dashboard’s own address. Enter the node’s address as the dashboard’s server reaches it.' };
+    return { origin: u.origin, host: u.hostname };
+  }
+  // Sample stand-in for the identity a real node would prove; derived from the host only.
+  const sampleId = h => 'canary-' + (/^[\d.]+$/.test(h) ? h.replace(/\./g, '-') : h.replace(/^\[|\]$/g, '').split('.')[0].replace(/[^a-z0-9-]/gi, '-').toLowerCase());
+  const FAIL = {
+    unreachable: c => ['The dashboard’s server couldn’t reach this address', `No answer from <span class="mono">${esc(c.origin)}</span> in time. Your browser wasn’t involved, so it doesn’t matter whether this computer can reach it. Check that the node is running and that the dashboard’s server is on its network.`],
+    tls: () => ['The node’s HTTPS certificate isn’t trusted', 'Certificate checks stay on. Give the node a certificate the dashboard’s server trusts for this address.'],
+    redirect: () => ['The address answered with a redirect', 'The dashboard doesn’t follow redirects, so an address can’t send it somewhere else. Enter the node’s own address, not one in front of it that redirects.'],
+    refused: () => ['The node refused this credential', 'It may be mistyped, expired or already used. Get a new enrollment credential from the node and paste it again.'],
+    conflict: c => c.rk
+      ? ['A different node answers at this address', `It says it is <span class="mono">${esc(c.id)}-2</span>, not <span class="mono">${esc(c.id)}</span>, so the credential wasn’t saved for this entry.`]
+      : ['This node is already on this dashboard at another address', `The node proved it is <span class="mono">${esc(c.id)}</span>, which this dashboard already reads elsewhere. If the node moved, remove the old entry first.`],
+    dup: c => ['This address is already on this dashboard', `<span class="mono">${esc(c.origin)}</span> is listed as “${esc(c.dup.label)}”.`],
+  };
+  function verify(f) {
+    if (!S.add || S.add.busy) return;
+    clearErrs(f);
+    const st = $('#addStatus', addDlg); st.innerHTML = '';
+    const rk = S.add.mode === 'rekey', node = rk ? S.nodes.find(x => x.key === S.add.key) : null;
+    const label = field(f, 'label').value.trim(), cred = field(f, 'cred').value;
+    const errs = [];
+    let origin = node ? node.url : null, host = node ? '' : null;
+    if (!rk) {
+      if (!label) errs.push(['label', 'Name it, for example by where it runs.']);
+      else if (label.length > 60) errs.push(['label', 'Keep it to 60 characters or fewer.']);
+      const u = checkUrl(field(f, 'url').value.trim());
+      if (u.err) errs.push(['url', u.err]); else { origin = u.origin; host = u.host; }
+    }
+    if (!cred) errs.push(['cred', 'Paste the enrollment credential from the node.']);
+    if (errs.length) { showErrs(f, errs); return; }
+    if (rk && !node) { addDlg.close(); return; }
+
+    const dup = !rk && S.nodes.find(n => n.url === origin);
+    const outcome = dup ? 'dup' : S.next;
+    const id = rk ? node.nodeId : sampleId(host);
+    const failAt = { unreachable: 0, tls: 0, redirect: 0, refused: 1, conflict: 2, dup: 2 }[outcome];
+    const steps = [`Contacting <span class="mono">${esc(origin)}</span> from the dashboard’s server`, 'Checking the enrollment credential', 'Reading and verifying the node’s identity'];
+    const fs = f.querySelector('fieldset'), btn = f.querySelector('[type="submit"]');
+    S.add.busy = true; fs.disabled = true; btn.disabled = true; btn.textContent = 'Verifying…';
+    let i = 0;
+    const draw = failed => {
+      st.innerHTML = `<ol class="vsteps" aria-label="Verification">${steps.map((s, j) => {
+        const g = j < i ? 'up' : j === i ? (failed ? 'down' : 'pending') : 'none';
+        return `<li${j > i ? ' class="wait"' : ''}>${G(g)}<span>${s}${j === i && !failed ? '…' : ''}</span></li>`;
+      }).join('')}</ol>`;
+    };
+    const fail = () => {
+      draw(true);
+      const [t, b] = FAIL[outcome]({ origin, id, rk, dup });
+      st.insertAdjacentHTML('beforeend', `<div class="banner b-down">${G('down')}<div><b class="bt">${t}</b><span class="bb">${b} Nothing was saved.</span></div></div>`);
+      S.add.busy = false; fs.disabled = false; btn.disabled = false; btn.textContent = 'Verify again';
+      if (outcome === 'refused') { field(f, 'cred').value = ''; field(f, 'cred').focus(); }
+      else field(f, rk ? 'cred' : 'url').focus();
+    };
+    const success = () => {
+      field(f, 'cred').value = '';          // the page lets go of the credential once the server has it
+      S.add.busy = false; fs.disabled = false; btn.disabled = false; btn.textContent = rk ? 'Verify and save' : 'Verify node';
+      if (rk) {
+        Object.assign(node, { state: 'up', last: now(), tried: null, prev: null });
+        renderMain();
+        addDlg.close();
+        toast('up', `Credential updated for ${node.label}. The dashboard’s server reads it again.`);
+        return;
+      }
+      S.add.pending = { label, origin, id, http: origin.startsWith('http:') };
+      f.hidden = true;
+      const ok = $('#addOk', addDlg);
+      ok.hidden = false;
+      ok.innerHTML = verifiedHTML(S.add.pending);
+      $('#ok-t', addDlg).focus();
+    };
+    const step = () => {
+      if (i === failAt) { fail(); return; }
+      i += 1;
+      if (i < steps.length) { draw(false); later(600, step, dlgTimers); } else success();
+    };
+    draw(false);
+    later(600, step, dlgTimers);
+  }
+  function verifiedHTML(p) {
+    return `<div class="banner b-ok">${G('up')}<div><b class="bt" id="ok-t" tabindex="-1">Verified by the dashboard’s server</b><span class="bb">The node proved it is <span class="mono">${esc(p.id)}</span> with this credential. The credential is on the dashboard’s server now; this page no longer holds it.</span></div></div>
+      <dl class="kv">
+        <dt>Name on this dashboard</dt><dd>${esc(p.label)}</dd>
+        <dt>Node ID</dt><dd class="mono">${esc(p.id)}</dd>
+        <dt>Address</dt><dd class="mono">${esc(p.origin)}</dd>
+        <dt>Monitors</dt><dd>6 <span class="muted">· sample, as reported by the node</span></dd>
+        <dt>Peers it reports</dt><dd><span class="mono">canary-edge-2</span> <span class="muted">· not added</span></dd>
+      </dl>
+      ${p.http ? `<p class="fwarn">${G('warn')}<span>Plain http: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use https, or a network that encrypts it, such as NetBird or Tailscale.</span></p>` : ''}
+      <p class="modal-note">Adding it lets this dashboard read this node and, for editors and administrators, change it. It doesn’t join the node to other nodes’ peers or change its identity, credentials or cluster secret. To see a peer here, add it as its own node.</p>
+      <div class="modal-foot"><button type="button" class="btn" data-act="back">Back</button>
+        <span class="row-wrap"><button type="button" class="btn" data-act="dlgclose">Cancel</button><button type="button" class="btn primary" data-act="commit">${I('plus')}Add “${esc(p.label)}”</button></span></div>`;
+  }
+
+  // ---------- remove ----------
+  function openRemove(k, opener) {
+    const n = S.nodes.find(x => x.key === k);
+    if (!n) return;
+    const e = eff(n);
+    const note = e === 'up'
+      ? 'The dashboard’s server also asks the node to revoke this dashboard’s access.'
+      : e === 'identity'
+        ? `This address now answers as a different node, so the dashboard won’t send it anything. Revoke this dashboard’s access on <span class="mono">${esc(n.nodeId)}</span> wherever it runs now.`
+        : 'The node isn’t accepting the dashboard’s requests right now, so its access can’t be revoked from here. After removing, revoke this dashboard’s access on the node.';
+    rmDlg.innerHTML = `<div class="modal-h"><h2 id="rm-t">Remove “${esc(n.label)}”?</h2><button type="button" class="icon-btn" data-act="dlgclose" aria-label="Close">${I('x')}</button></div>
+      <div class="modal-b"><p>This dashboard stops reading <span class="mono">${esc(n.nodeId)}</span> and deletes the credential it saved for it. The node keeps running, checking and alerting, with its own accounts, data and peers.</p>
+        <p class="modal-note">${note}</p>
+        <div class="modal-foot"><span></span><span class="row-wrap"><button type="button" class="btn" data-act="dlgclose" id="rm-cancel">Cancel</button><button type="button" class="btn danger-solid" data-act="rmgo" data-k="${esc(n.key)}">${I('trash')}Remove node</button></span></div></div>`;
+    S.rmOpener = selOf(opener);
+    rmDlg.showModal();
+    $('#rm-cancel', rmDlg).focus();
+  }
+  rmDlg.addEventListener('close', () => {
+    if (rmDlg.open) return;
+    rmDlg.innerHTML = '';
+    const o = S.rmOpener; S.rmOpener = null;
+    if (o !== null) refocus(o);
+  });
+
+  // ---------- actions ----------
+  const ACT = {
+    step: k => jump(k),
+    view: k => { S.view = k; go(); },
+    signout: () => { S.me = null; S.screen = 'login'; S.loginNote = 'out'; go(); },
+    add: (k, b) => openAdd(null, b),
+    rekey: (k, b) => openAdd(k, b),
+    dlgclose: (k, b) => b.closest('dialog').close(),
+    back: () => {
+      const f = $('#addForm', addDlg), ok = $('#addOk', addDlg);
+      ok.hidden = true; ok.innerHTML = ''; f.hidden = false; S.add.pending = null;
+      $('#addStatus', addDlg).innerHTML = `<div class="banner b-info">${I('key')}<div><b class="bt">Enter the credential again</b><span class="bb">Going back discarded that verification.</span></div></div>`;
+      field(f, 'cred').focus();
+    },
+    commit: () => {
+      const p = S.add && S.add.pending;
+      if (!p) return;
+      S.nodes.push({ key: `n${++seq}`, label: p.label, nodeId: p.id, url: p.origin, state: 'up', last: now(), monitors: 6, down: 0, peers: ['canary-edge-2'], added: { by: S.me.name, at: now() } });
+      renderMain();
+      addDlg.close();
+      toast('up', `${p.label} added. The dashboard’s server reads it from now on.`);
+    },
+    check: k => {
+      const n = S.nodes.find(x => x.key === k);
+      if (!n || n.state === 'checking') return;
+      n.prev = n.state; n.state = 'checking'; renderMain();
+      later(1200, () => {
+        if (!S.nodes.includes(n) || n.state !== 'checking') return;
+        n.state = n.prev; n.prev = null;
+        if (n.state === 'up') n.last = now(); else n.tried = now();
+        renderMain();
+      });
+    },
+    rm: (k, b) => openRemove(k, b),
+    rmgo: k => {
+      const n = S.nodes.find(x => x.key === k);
+      if (!n) return;
+      const revoked = eff(n) === 'up';
+      S.nodes = S.nodes.filter(x => x !== n);
+      S.rmOpener = '';
+      renderMain();
+      rmDlg.close();
+      toast(revoked ? 'up' : 'warn', revoked ? `Removed ${n.label}. Its access on the node was revoked.` : `Removed ${n.label} from this dashboard. Revoke its access on the node when you can.`);
+    },
+  };
+  const FORM = {
+    add: verify,
+    setup: f => {
+      clearErrs(f);
+      const name = field(f, 'name').value.trim(), user = field(f, 'user').value.trim(), pw = field(f, 'pw').value, pw2 = field(f, 'pw2').value;
+      const errs = [];
+      if (!name) errs.push(['name', 'Enter your name.']);
+      if (!user) errs.push(['user', 'Choose a username.']);
+      else if (!/^[A-Za-z0-9._-]{1,64}$/.test(user)) errs.push(['user', 'Use letters, numbers, dots, dashes or underscores.']);
+      if (!pw) errs.push(['pw', 'Choose a password.']);
+      else if ([...pw].length < 12) errs.push(['pw', `Use at least 12 characters (${[...pw].length} so far).`]);
+      else if ([...pw].length > 128) errs.push(['pw', 'Use at most 128 characters.']);
+      else if (/[\0\r\n]/.test(pw)) errs.push(['pw', 'Passwords can’t contain line breaks.']);
+      else if (pw !== pw2) errs.push(['pw2', 'The passwords don’t match.']);
+      if (errs.length) { showErrs(f, errs); return; }
+      busy(f, 'Creating account…');
+      later(700, () => {
+        S.initialized = true;
+        if (S.race) {
+          S.race = false;
+          S.accounts = [{ name: 'Casey Park', user: 'casey', role: 'admin', status: 'active' }];
+          S.screen = 'login'; S.loginNote = 'race'; go();
+          return;
+        }
+        const o = { name, user, role: 'admin', status: 'active' };
+        S.accounts = [o]; S.me = o; S.screen = 'app'; S.view = 'nodes'; go();
+        toast('up', `Owner account “${user}” created. You’re signed in.`);
+      });
+    },
+    login: f => {
+      clearErrs(f);
+      $('#loginErr').innerHTML = '';
+      const user = field(f, 'user').value.trim(), pw = field(f, 'pw').value;
+      const errs = [];
+      if (!user) errs.push(['user', 'Enter your username.']);
+      if (!pw) errs.push(['pw', 'Enter your password.']);
+      if (errs.length) { showErrs(f, errs); return; }
+      busy(f, 'Signing in…');
+      later(600, () => {
+        const a = S.accounts.find(x => x.user.toLowerCase() === user.toLowerCase());
+        if (!a || pw === 'wrong') {
+          unbusy(f);
+          field(f, 'pw').value = '';
+          $('#loginErr').innerHTML = `<div class="banner b-down">${G('down')}<div><b class="bt">That username or password isn’t right</b><span class="bb">Try again, or ask an administrator of this dashboard.</span></div></div>`;
+          field(f, 'pw').focus();
+          return;
+        }
+        if (a.status === 'invited') a.status = 'active';
+        S.me = a; S.screen = 'app'; S.view = 'nodes'; S.loginNote = null; go();
+      });
+    },
+    acct: f => {
+      clearErrs(f);
+      const name = field(f, 'name').value.trim(), user = field(f, 'user').value.trim(), role = field(f, 'role').value;
+      const errs = [];
+      if (!name) errs.push(['name', 'Enter their name.']);
+      if (!user) errs.push(['user', 'Choose a username.']);
+      else if (!/^[A-Za-z0-9._-]{1,64}$/.test(user)) errs.push(['user', 'Use letters, numbers, dots, dashes or underscores.']);
+      else if (S.accounts.some(a => a.user.toLowerCase() === user.toLowerCase())) errs.push(['user', 'That username is already on this dashboard.']);
+      if (errs.length) { showErrs(f, errs); return; }
+      S.accounts.push({ name, user, role, status: 'invited' });
+      render();
+      const n = $('#c-name'); if (n) n.focus();
+      toast('up', `Added ${user} as ${ROLE[role]}. They can sign in to this dashboard; nodes need no account for them.`);
+    },
+  };
+  const CTL = {
+    deploy: v => {
+      S.deploy = v;
+      const has = S.nodes.some(n => n.local);
+      if (v === 'bundled' && !has) S.nodes.unshift(localNode());
+      if (v === 'standalone') S.nodes = S.nodes.filter(n => !n.local);
+      renderMain();
+    },
+    local: v => {
+      S.localState = v;
+      const n = S.nodes.find(x => x.local);
+      if (n) { const fresh = localNode(); Object.assign(n, { state: v, last: fresh.last, monitors: fresh.monitors, tried: null, prev: null }); }
+      renderMain();
+    },
+    next: v => { S.next = v; },
+    race: (v, el) => { S.race = el.checked; },
+    theme: v => { S.theme = v; document.documentElement.dataset.mode = v; },
+  };
+
+  function jump(id) {
+    clearSet(timers); clearSet(dlgTimers);
+    S.add = null; S.rmOpener = null;
+    if (addDlg.open) addDlg.close();
+    if (rmDlg.open) rmDlg.close();
+    $('#toasts').innerHTML = '';
+    const o = OWNER();
+    Object.assign(S, { initialized: true, accounts: [o], me: o, screen: 'app', view: 'nodes', loginNote: null, sample: false });
+    if (id === 'empty') S.deploy = 'standalone';
+    if (id === 'bundled') S.deploy = 'bundled';
+    S.nodes = S.deploy === 'bundled' ? [localNode()] : [];
+    if (id === 'setup') Object.assign(S, { initialized: false, accounts: [], me: null, screen: 'setup' });
+    else if (id === 'login') Object.assign(S, { me: null, screen: 'login' });
+    else if (id === 'fleet' || id === 'viewer') {
+      S.nodes = S.nodes.concat(sampleRemote()); S.sample = true;
+      if (id === 'viewer') { const v = VIEWER(); S.accounts.push(v); S.me = v; }
+    }
+    go();
+    if (id === 'add') openAdd(null, null);
+  }
+
+  // ---------- wiring ----------
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.getAttribute('aria-disabled') === 'true') return;
+    const fn = ACT[b.dataset.act];
+    if (fn) { e.preventDefault(); fn(b.dataset.k, b); }
+  });
+  document.addEventListener('submit', e => {
+    e.preventDefault();                       // nothing is ever submitted anywhere
+    const fn = FORM[e.target.dataset.form];
+    if (fn) fn(e.target);
+  });
+  document.addEventListener('change', e => {
+    const t = e.target, fn = t.dataset && CTL[t.dataset.ctl];
+    if (fn) fn(t.value, t);
+  });
+  // Ages count up honestly; nodes that answer are re-read by the (mock) server every 5 s.
+  let lastPoll = now();
+  setInterval(() => {
+    const t = now();
+    if (t - lastPoll >= 5000) { lastPoll = t; S.nodes.forEach(n => { if (n.state === 'up') n.last = t; }); }
+    document.querySelectorAll('[data-age]').forEach(el => {
+      const n = S.nodes.find(x => x.key === el.dataset.age), v = n && n[el.dataset.f];
+      if (v) { el.textContent = age(v); el.setAttribute('datetime', new Date(v).toISOString()); }
+    });
+  }, 1000);
+
+  $('#proto').innerHTML = protoHTML();
+  jump('setup');
+})();
+</script>
+</body>
+</html>

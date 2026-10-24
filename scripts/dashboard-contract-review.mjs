@@ -11,6 +11,8 @@ import { createServer as netServer } from 'node:net';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createProxyAuthFixture, reviewProxyAuth } from './proxy-auth-browser.mjs';
+import { createDashboardControlPlaneFixture, reviewDashboardControlPlane } from './dashboard-control-plane-browser.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.env.TSX_DISABLE_CACHE = '1';
@@ -24,7 +26,7 @@ const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2));
 const serial = value => JSON.parse(JSON.stringify(value));
 const args = process.argv.slice(2);
-let runDir, state, report, page, ws, requestHook;
+let runDir, state, report, page, ws, requestHook, proxyAuthFixture, dashboardControlPlaneFixture;
 const secrets = new Set();
 const redact = value => { let out = String(value); for (const s of secrets) if (s) out = out.replaceAll(s, '[fixture-secret]'); return out; };
 const save = () => writeFileSync(join(runDir, 'results.json'), redact(JSON.stringify(report, null, 2)));
@@ -72,7 +74,7 @@ async function fixture() {
   const go = process.env.CANARY_GO || join(root, '.canary', 'tools', 'go', 'bin', process.platform === 'win32' ? 'go.exe' : 'go');
   const binary = join(runDir, process.platform === 'win32' ? 'review-node.exe' : 'review-node');
   console.log(`BUILD ${runDir}`);
-  await command(go, ['build', '-trimpath', '-o', binary, './apps/node-go/cmd/canary'], source, { ...cleanEnv, CGO_ENABLED: '0', GOTOOLCHAIN: 'local' });
+  await command(go, ['build', '-p', '1', '-trimpath', '-o', binary, './apps/node-go/cmd/canary'], source, { ...cleanEnv, CGO_ENABLED: '0', GOTOOLCHAIN: 'local' });
   const webRoot = join(source, 'apps', 'web'), dist = join(runDir, 'dist'), vite = join(root, 'node_modules', 'vite', 'bin', 'vite.js');
   const tsc = await command(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '--noEmit', '-p', webRoot], source);
   const webBuild = await command(process.execPath, [vite, 'build', '--outDir', dist, '--emptyOutDir'], webRoot);
@@ -96,8 +98,10 @@ async function fixture() {
     p.on('exit', code => writeFileSync(join(runDir, `${id}.exit.log`), `exit ${code}\n${log}`));
     await until(async () => (await fetch(node.url + '/api/auth/status')).ok, `${id} ready`, 30000);
   }
+  if (args.includes('--proxy-auth')) proxyAuthFixture = await createProxyAuthFixture({ origin, node: nodes[0], peer: nodes[1], servers });
   const contentTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
   const preview = createServer((req, res) => {
+    if (proxyAuthFixture?.handle(req, res)) return;
     try {
       let path = resolve(dist, '.' + decodeURIComponent(new URL(req.url, origin).pathname));
       if (path !== dist && !path.startsWith(dist + sep)) throw Error('Outside private dist');
@@ -112,8 +116,9 @@ async function fixture() {
   });
   preview.listen(Number(new URL(origin).port), '127.0.0.1'); await once(preview, 'listening'); servers.push(preview);
   await until(async () => (await fetch(origin)).ok, 'private dashboard');
+  if (args.includes('--dashboard-control-plane')) dashboardControlPlaneFixture = await createDashboardControlPlaneFixture({ runDir, port, env: cleanEnv, owned, servers, until, secrets });
   const artifacts = files(dist).map(f => ({ path: relative(dist, f).replaceAll('\\', '/'), bytes: readFileSync(f).length, sha256: sha(readFileSync(f)) }));
-  state = { kind: 'dashboard-contract-review', runDir, source, origin, sink: `http://127.0.0.1:${sink.address().port}`, nodes, sourceHash, binaryHash: sha(readFileSync(binary)), artifacts, startedAt: new Date().toISOString(), pid: process.pid };
+  state = { kind: 'dashboard-contract-review', runDir, source, origin, sink: `http://127.0.0.1:${sink.address().port}`, nodes, sourceHash, binaryHash: sha(readFileSync(binary)), artifacts, startedAt: new Date().toISOString(), pid: process.pid, proxyAuthCrossOrigin: proxyAuthFixture?.crossOrigin, dashboardControlPlaneOrigin: dashboardControlPlaneFixture?.origin };
   write(join(runDir, 'state.private.json'), state); console.log(`READY ${runDir}`);
 }
 async function api(node, path, method = 'GET', body, token = node.token) {
@@ -164,6 +169,8 @@ async function launchBrowser() {
   // UI copy and percent fixtures intentionally use en-US; pure checks also cover comma formatting.
   await page.send('Emulation.setLocaleOverride', { locale: 'en-US' });
   const allowed = new Set([state.origin, state.sink, ...state.nodes.map(n => n.url)]);
+  if (state.proxyAuthCrossOrigin) allowed.add(state.proxyAuthCrossOrigin);
+  if (state.dashboardControlPlaneOrigin) allowed.add(state.dashboardControlPlaneOrigin);
   await page.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
   page.on('Fetch.requestPaused', p => {
     if (requestHook?.(p)) return;
@@ -178,10 +185,15 @@ async function launchBrowser() {
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: `if(location.origin === ${J(state.origin)} && !localStorage.getItem('uptime-canary.endpoint')) localStorage.setItem('uptime-canary.endpoint', ${J(state.nodes[0].url)});` });
   await page.send('Page.navigate', { url: state.origin }); await until(() => page.eval('!!document.querySelector("h1")'), 'first paint'); await ready();
 }
-async function signIn(node, switching = false) {
+async function signIn(node, switching = false, beforeSubmit) {
   if (switching) { await page.eval(`document.querySelector('.topbar .tb-btn').click()`); await sleep(100); }
   const scope = switching ? 'dialog[open]' : undefined;
-  await fill('Node API address', node.url, scope); await choose('Account token', scope); await fill('Account token', node.token, scope); await click(switching ? 'Sign in and switch' : 'Sign in', scope);
+  const addressEditable = await page.eval(`[...document.querySelectorAll(${J(scope ? scope + ' input' : 'input')})].some(input => [...input.labels || []].some(label => label.textContent.trim() === 'Node API address'))`);
+  if (addressEditable) await fill('Node API address', node.url, scope);
+  else assert.equal(node.url, state.origin, 'gateway sign-in must use the dashboard origin');
+  await choose('Account token', scope); await fill('Account token', node.token, scope);
+  await beforeSubmit?.();
+  await click(switching ? 'Sign in and switch' : 'Sign in', scope);
   await until(() => page.eval(`document.body.innerText.includes(${J(node.id)}) && !document.querySelector('dialog[open]') && !!document.querySelector('nav.rail')`), 'connected');
   const dismiss = await page.eval(`!![...document.querySelectorAll('button')].find(e => e.textContent === 'Not now')`); if (dismiss) await click('Not now');
 }
@@ -401,6 +413,8 @@ async function review() {
     return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length };
   });
   await browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows });
+  if (proxyAuthFixture) await reviewProxyAuth({ fixture: proxyAuthFixture, state, A, B, page, step, signIn, until, text, ready, report });
+  if (dashboardControlPlaneFixture) await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets });
   const manifest = json(join(runDir, 'source-manifest.json'));
   report.sourceChangedAfterSnapshot = manifest.files.filter(v => !existsSync(join(root, v.path)) || sha(readFileSync(join(root, v.path))) !== v.sha256).map(v => v.path);
   report.finishedAt = new Date().toISOString(); report.summary = { passed: report.checks.filter(v => v.passed).length, failed: report.checks.filter(v => !v.passed).length, exceptions: report.exceptions.length, blocked: report.blocked.length }; save();

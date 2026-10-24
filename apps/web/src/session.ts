@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
-import type { AccountView, Overview } from '@uptime-canary/shared';
-import { ApiFailure, CanaryApi, isAbort } from './api';
+import type { AccountView, Overview, RegisteredNode } from '@uptime-canary/shared';
+import { ApiFailure, CanaryApi, DASHBOARD_PLACE, isAbort } from './api';
+import { controlPlaneMode } from './gateway';
 import { clearNotices, notify } from './notices';
 
 export const POLL_MS = 5_000;
@@ -13,8 +14,17 @@ const MAX_BACKOFF_MS = 30_000;
  */
 export type LinkState = 'live' | 'stale' | 'rejected';
 
+/** Control plane: the saved registration monitoring requests go to. Nonsecret; kept in memory only, never stored. */
+export interface NodeSelection {
+  id: string;
+  label: string;
+  nodeId: string;
+  nodeName: string;
+  local: boolean;
+}
+
 export interface Connection {
-  /** Nonsecret, in-memory identity. Polls and own-token adoption keep it; every successful connect replaces it. */
+  /** Nonsecret, in-memory identity. Polls and own-token adoption keep it; every successful connect or node selection replaces it. */
   identity: number;
   api: CanaryApi;
   overview: Overview;
@@ -25,6 +35,15 @@ export interface Connection {
   link: LinkState;
   failure: ApiFailure | null;
   failingSince: number | null;
+  /** Control plane: the selected node, or null to read only the dashboard. Always null in direct and gateway mode. */
+  selection: NodeSelection | null;
+  /** Control plane: the selected node hasn't answered yet, so `overview` is an empty stand-in, not its data. */
+  awaiting: boolean;
+  /**
+   * Control plane: the dashboard's clock minus the browser's, measured at sign-in, for times the dashboard issues
+   * (session expiry, verification tickets). A selected node's `overview.now` is that node's clock instead. Null elsewhere.
+   */
+  issuerSkew: number | null;
 }
 
 /** Shown on the sign-in screen after the dashboard ends a connection, so the next step is obvious. */
@@ -108,7 +127,11 @@ export class Session {
     const previous = this.snapshot.connection;
     this.stop();
     clearNotices();
-    this.emit({ identity: ++this.nextIdentity, api, overview, account, fetchedAt: Date.now(), link: 'live', failure: null, failingSince: null });
+    const fetchedAt = Date.now();
+    this.emit({
+      identity: ++this.nextIdentity, api, overview, account, fetchedAt, link: 'live', failure: null, failingSince: null,
+      selection: null, awaiting: false, issuerSkew: controlPlaneMode() ? overview.now - fetchedAt : null,
+    });
     this.schedule(POLL_MS);
     if (previous && previous.api.credential === 'session' && !previous.api.sameCredential(api)) void previous.api.logout().catch(() => undefined);
     return overview;
@@ -146,8 +169,38 @@ export class Session {
     if (!connection || !this.isCurrent(expected) || connection.api.credential !== 'token') return;
     // Invalidate any poll made with the replaced token without remounting the one-time token panel.
     this.stop();
-    this.patch({ api: new CanaryApi(connection.api.baseUrl, token) });
+    this.patch({ api: connection.api.withToken(token) });
     this.refresh();
+  }
+
+  /**
+   * Control plane: read another saved registration, or none (`null`), with the same dashboard sign-in. Nothing is
+   * signed out. The connection gets a new identity, so every poll, catalog, form and late answer that belonged to the
+   * previous selection is dropped; the new node's overview is asked for at once, and until it answers the overview is
+   * an empty stand-in marked `awaiting`. Returns whether the selection changed.
+   */
+  select(node: Pick<RegisteredNode, 'id' | 'label' | 'nodeId' | 'nodeName' | 'local'> | null, expected: Connection): boolean {
+    const connection = this.snapshot.connection;
+    if (!controlPlaneMode() || !connection || !this.isCurrent(expected)) return false;
+    if ((connection.selection?.id ?? null) === (node?.id ?? null)) return false;
+    const selection: NodeSelection | null = node ? { id: node.id, label: node.label, nodeId: node.nodeId, nodeName: node.nodeName, local: node.local } : null;
+    this.stop();
+    this.emit({
+      ...connection,
+      identity: ++this.nextIdentity,
+      api: connection.api.withRegisteredNode(selection?.id ?? null),
+      overview: {
+        node: selection ? { id: selection.nodeId || selection.label, name: selection.nodeName || selection.label } : { ...DASHBOARD_PLACE },
+        now: Date.now() + (connection.issuerSkew ?? 0),
+        monitors: [], nodes: [], incidents: [], notifications: [],
+        user: connection.account ? { name: connection.account.name, role: connection.account.role } : connection.overview.user,
+      },
+      fetchedAt: Date.now(),
+      link: 'live', failure: null, failingSince: null,
+      selection, awaiting: true,
+    });
+    void this.poll();
+    return true;
   }
 
   setAccount(account: AccountView, expected: Connection): void {
@@ -203,7 +256,7 @@ export class Session {
       const overview = await connection.api.overview(controller.signal);
       if (generation !== this.generation) return;
       this.failures = 0;
-      this.patch({ overview, fetchedAt: Date.now(), link: 'live', failure: null, failingSince: null });
+      this.patch({ overview, fetchedAt: Date.now(), link: 'live', failure: null, failingSince: null, awaiting: false });
     } catch (error) {
       if (generation !== this.generation || isAbort(error)) return;
       const failure = error instanceof ApiFailure ? error : new ApiFailure(0, 'The overview could not be loaded.');
@@ -241,12 +294,14 @@ export const session = new Session();
 export async function signOut(): Promise<void> {
   const connection = session.getSnapshot().connection;
   if (!connection) return;
-  const endpoint = connection.overview.node.id;
+  // On the control plane the session belongs to the dashboard, whichever node is selected.
+  const controlPlane = controlPlaneMode();
+  const endpoint = controlPlane ? 'this dashboard' : connection.overview.node.id;
   const expiresAt = connection.api.expiresAt;
   const result = await session.signOut();
   if (result === 'superseded' || session.getSnapshot().connection) return;
   clearNotices();
-  if (result === 'ended') notify(`Signed out. ${endpoint} ended this session.`);
+  if (result === 'ended') notify(controlPlane ? 'Signed out. This dashboard ended this session. A sign-in proxy in front of it may keep its own session.' : `Signed out. ${endpoint} ended this session.`);
   else if (result === 'unconfirmed') {
     const until = expiresAt ? ` It expires on its own at ${new Date(expiresAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}.` : '';
     notify(`Signed out of this tab, but ${endpoint} didn’t confirm the session ended.${until}`);

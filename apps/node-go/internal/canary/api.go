@@ -60,6 +60,11 @@ func (n *Node) authenticate(r *http.Request) (account, error) {
 	return account{}, fail(401, "Authentication required")
 }
 func (n *Node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Canary-Node-Id", n.ID)
+	if expected := r.Header.Get("X-Canary-Expected-Node"); expected != "" && expected != n.ID {
+		errorReply(w, fail(409, "Different node at this address"))
+		return
+	}
 	path := r.URL.Path
 	method := r.Method
 	if n.servePush(w, r) {
@@ -166,6 +171,10 @@ func (n *Node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		reply(w, 204, nil)
+		return
+	}
+	if strings.HasPrefix(path, "/api/dashboard-enrollments/") {
+		n.serveDashboardDelegation(w, r)
 		return
 	}
 	if strings.HasPrefix(path, "/api/auth/") || path == "/api/accounts" || strings.HasPrefix(path, "/api/accounts/") {

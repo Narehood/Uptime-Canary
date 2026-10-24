@@ -3,6 +3,7 @@ import type { AccountView, Role } from '@uptime-canary/shared';
 import { ApiFailure, checkToken, describeFailure, passwordProblem } from '../api';
 import { useCanary } from '../context';
 import { shortId } from '../format';
+import { DASHBOARD_ROLES } from '../dashboard';
 import { ROLES } from '../model';
 import { useResource, useSummaryFocus } from '../hooks';
 import { notify } from '../notices';
@@ -36,8 +37,12 @@ function nameProblem(name: string): string | undefined {
 
 interface Issued { name: string; role: Role; token: string; rotated: boolean }
 
+/** On the control plane these are the dashboard's own accounts, whatever node is selected; `accountHome` names it. */
+const rolesFor = (controlPlane: boolean) => controlPlane ? DASHBOARD_ROLES : ROLES;
+
 export function AccountsView() {
-  const { admin, api, endpoint, account: me } = useCanary();
+  const { admin, api, accountHome: endpoint, account: me, controlPlane } = useCanary();
+  const roles = rolesFor(controlPlane);
   const accounts = useResource<AccountView[]>(`${api.baseUrl}|accounts|${admin}`, signal => admin ? api.accounts(signal) : Promise.resolve([]));
   // A one-time token lives only in this view's state and disappears when it unmounts or on sign-out.
   const [issued, setIssued] = useState<Issued | null>(null);
@@ -50,17 +55,21 @@ export function AccountsView() {
   const admins = list.filter(entry => entry.role === 'admin').length;
   return (
     <div className="view">
-      <PageHead title="Accounts" sub={<>Accounts on <span className="mono">{endpoint}</span>. Each node keeps its own accounts, passwords and sessions; they aren’t replicated.</>} />
+      <PageHead title="Accounts" sub={controlPlane
+        ? 'People and tools that can sign in to this dashboard, with one role for every node on it. These aren’t accounts on your monitoring nodes, whose own accounts are unchanged.'
+        : <>Accounts on <span className="mono">{endpoint}</span>. Each node keeps its own accounts, passwords and sessions; they aren’t replicated.</>} />
       {issued ? (
         <section className="card issued" aria-labelledby="issued-h">
-          <div className="card-h"><div><h2 id="issued-h"><Glyph tone="up" /> {issued.rotated ? <>New API token for “{issued.name}”</> : <>Account “{issued.name}” created</>}</h2><div className="hint">This is the only time this token is shown. {endpoint} stores only a hash.</div></div></div>
+          <div className="card-h"><div><h2 id="issued-h"><Glyph tone="up" /> {issued.rotated ? <>New API token for “{issued.name}”</> : <>Account “{issued.name}” created</>}</h2><div className="hint">This is the only time this token is shown. {controlPlane ? 'This dashboard' : endpoint} stores only a hash.</div></div></div>
           <div className="secret wide">
             <input className="mono" readOnly value={issued.token} aria-label={`API token for ${issued.name}`} onFocus={event => event.target.select()} />
             <CopyButton value={issued.token} label="Copy token" className="btn" />
           </div>
           <p className="foot-note">
-            {issued.rotated ? 'The previous token stopped working when the node accepted this one. ' : ''}
-            Give it to whoever runs the scripts or tools for this {issued.role} account. To use the same token on other nodes, create or update the account there with it.
+            {issued.rotated ? `The previous token stopped working when ${controlPlane ? 'this dashboard' : 'the node'} accepted this one. ` : ''}
+            Give it to whoever runs the scripts or tools for this {issued.role} account. {controlPlane
+              ? 'It signs in to this dashboard only, not to a monitoring node.'
+              : 'To use the same token on other nodes, create or update the account there with it.'}
           </p>
           <button type="button" className="btn primary" onClick={() => setIssued(null)}><Icon name="check" />I’ve stored it</button>
         </section>
@@ -89,7 +98,7 @@ export function AccountsView() {
               </div>
             ) : <EmptyState title="No accounts listed" />}
           <dl className="roles">
-            {ROLES.map(entry => <div key={entry.role}><dt>{entry.label}</dt><dd>{entry.can}</dd></div>)}
+            {roles.map(entry => <div key={entry.role}><dt>{entry.label}</dt><dd>{entry.can}</dd></div>)}
           </dl>
         </Card>
         <NewAccount onCreated={(created, token) => { if (token) setIssued({ name: created.name, role: created.role, token, rotated: false }); accounts.reload(); }} />
@@ -122,10 +131,11 @@ function TokenChoice({ mode, onMode, token, onToken, error, disabled, name }: {
   mode: 'generate' | 'provide'; onMode: (mode: 'generate' | 'provide') => void; token: string; onToken: (value: string) => void; error?: string; disabled?: boolean; name: string;
 }) {
   const id = useId();
+  const { controlPlane } = useCanary();
   return (
     <>
-      <label className="check"><input type="radio" name={name} checked={mode === 'generate'} onChange={() => onMode('generate')} disabled={disabled} /><span>Generate a random token<small>Created in this browser and shown once, after the node accepts it.</small></span></label>
-      <label className="check"><input type="radio" name={name} checked={mode === 'provide'} onChange={() => onMode('provide')} disabled={disabled} /><span>Use a token I already have<small>For mirroring the same account on another node.</small></span></label>
+      <label className="check"><input type="radio" name={name} checked={mode === 'generate'} onChange={() => onMode('generate')} disabled={disabled} /><span>Generate a random token<small>Created in this browser and shown once, after {controlPlane ? 'this dashboard' : 'the node'} accepts it.</small></span></label>
+      <label className="check"><input type="radio" name={name} checked={mode === 'provide'} onChange={() => onMode('provide')} disabled={disabled} /><span>Use a token I already have<small>{controlPlane ? 'For a tool that already has its token.' : 'For mirroring the same account on another node.'}</small></span></label>
       {mode === 'provide' ? (
         <div className="fld">
           <label htmlFor={`${id}-token`} className="vh">Existing token</label>
@@ -139,7 +149,8 @@ function TokenChoice({ mode, onMode, token, onToken, error, disabled, name }: {
 }
 
 function NewAccount({ onCreated }: { onCreated: (account: AccountView, token: string | null) => void }) {
-  const { api, endpoint, connection } = useCanary();
+  const { api, accountHome: endpoint, connection, controlPlane } = useCanary();
+  const ROLES = rolesFor(controlPlane);
   const id = useId();
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('viewer');
@@ -185,12 +196,12 @@ function NewAccount({ onCreated }: { onCreated: (account: AccountView, token: st
   };
 
   return (
-    <Card title="Add an account" hint={`Created on ${endpoint} only`}>
+    <Card title="Add an account" hint={controlPlane ? 'Signs in to this dashboard only. There’s no public sign-up.' : `Created on ${endpoint} only`}>
       <form className="form one" onSubmit={event => { void submit(event); }} noValidate aria-busy={saving}>
         <ErrorSummary ref={summaryRef} title="Account not created" errors={failure ? [] : Object.values(visible).filter(Boolean) as string[]}>
           {failure ? <p>{failure}</p> : null}
         </ErrorSummary>
-        <TextField full label="Name" value={name} onChange={setName} error={visible.name} hint="Used to sign in and shown as the signed-in account. Unique on this node, ignoring case." maxLength={128} disabled={saving} autoComplete="off" />
+        <TextField full label="Name" value={name} onChange={setName} error={visible.name} hint={`Used to sign in and shown as the signed-in account. Unique on ${controlPlane ? 'this dashboard' : 'this node'}, ignoring case.`} maxLength={128} disabled={saving} autoComplete="off" />
         <div className="fld full">
           <label htmlFor={`${id}-role`}>Role</label>
           <select id={`${id}-role`} value={role} onChange={event => setRole(event.target.value as Role)} disabled={saving}>
@@ -234,7 +245,9 @@ interface ManageProps {
 
 /** Each section is its own request, so one failure never half-applies another. */
 function ManageAccount({ account, lastAdmin, onClose, onChanged, onIssued, onDeleted }: ManageProps) {
-  const { api, endpoint, account: me, connection } = useCanary();
+  const { api, accountHome: endpoint, account: me, connection, controlPlane } = useCanary();
+  const ROLES = rolesFor(controlPlane);
+  const Home = controlPlane ? 'This dashboard' : endpoint;
   const id = useId();
   const self = me?.id === account.id;
   const [busy, setBusy] = useState<null | 'details' | 'token' | 'password' | 'delete'>(null);
@@ -339,7 +352,7 @@ function ManageAccount({ account, lastAdmin, onClose, onChanged, onIssued, onDel
   return (
     <Modal title={<>Manage {account.name}{self ? <> <Tag tone="accent">you</Tag></> : null}</>} onClose={onClose} busy={disabled} wide>
       <p className="sec">
-        {account.role} on <span className="mono">{endpoint}</span> · <span className="mono muted">{account.id}</span> · <SignInTags account={account} />
+        {account.role} on {controlPlane ? endpoint : <span className="mono">{endpoint}</span>} · <span className="mono muted">{account.id}</span> · <SignInTags account={account} />
       </p>
       {self ? (
         <p className="modal-note">
@@ -358,7 +371,7 @@ function ManageAccount({ account, lastAdmin, onClose, onChanged, onIssued, onDel
           <select id={`${id}-role`} value={role} onChange={event => setRole(event.target.value as Role)} disabled={disabled}>
             {ROLES.map(entry => <option key={entry.role} value={entry.role}>{entry.label}</option>)}
           </select>
-          {lastAdmin && role !== 'admin' ? <small className="fwarn"><Glyph tone="warn" />This is the only admin. {endpoint} keeps at least one, so it will refuse.</small>
+          {lastAdmin && role !== 'admin' ? <small className="fwarn"><Glyph tone="warn" />This is the only admin. {Home} keeps at least one, so it will refuse.</small>
             : self && account.role === 'admin' && role !== 'admin' ? <small className="fwarn"><Glyph tone="warn" />You’ll lose access to account management.</small> : null}
         </div>
         <div className="full row-wrap">
@@ -368,7 +381,7 @@ function ManageAccount({ account, lastAdmin, onClose, onChanged, onIssued, onDel
 
       <form className="msec form one" onSubmit={event => { void saveToken(event); }} noValidate>
         <h3>API token</h3>
-        <p className="muted small">{endpoint} doesn’t report whether this account has a token. Setting one replaces any existing token immediately, and tools using the old one stop working. Tokens can be replaced, not removed.</p>
+        <p className="muted small">{Home} doesn’t report whether this account has a token. Setting one replaces any existing token immediately, and tools using the old one stop working. Tokens can be replaced, not removed.</p>
         {sectionError('token')}
         <fieldset className="fld" disabled={disabled}>
           <legend className="vh">New token</legend>
@@ -400,7 +413,7 @@ function ManageAccount({ account, lastAdmin, onClose, onChanged, onIssued, onDel
           <div className="row-wrap"><button type="button" className="btn danger" onClick={() => setConfirmDelete(true)} disabled={disabled}><Icon name="trash" />Delete {account.name}…</button></div>
         ) : (
           <div className="confirm-row">
-            <p>Delete <b>{account.name}</b> from {endpoint}? Its sessions end and its token stops working{self ? ', including yours in this tab' : ''}. Other nodes keep their own accounts.</p>
+            <p>Delete <b>{account.name}</b> from {endpoint}? Its sessions end and its token stops working{self ? ', including yours in this tab' : ''}. {controlPlane ? 'Accounts on monitoring nodes aren’t affected.' : 'Other nodes keep their own accounts.'}</p>
             <div className="row-wrap">
               <button type="button" className="btn danger-solid" onClick={() => { void remove(); }} disabled={disabled}><Icon name="trash" />{busy === 'delete' ? 'Deleting…' : 'Delete account'}</button>
               <button type="button" className="btn" onClick={() => setConfirmDelete(false)} disabled={disabled}>Cancel</button>

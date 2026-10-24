@@ -16,6 +16,15 @@ func run() int {
 	if handled, code := probeworker.Dispatch(args); handled {
 		return code
 	}
+	if len(args) == 1 && args[0] == "dashboard" {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := canary.RunDashboard(ctx, os.Getenv, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "Uptime-Canary dashboard:", err)
+			return 1
+		}
+		return 0
+	}
 	if len(args) > 0 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		fmt.Println(canary.Usage())
 		return 0

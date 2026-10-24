@@ -20,6 +20,8 @@
   <body>
     <div id="root"></div>
     <noscript><p style="font:14px system-ui;padding:16px">The Uptime Canary dashboard needs JavaScript. Nodes keep monitoring without it; use the CLI to manage them.</p></noscript>
+    <!-- Direct or gateway mode (src/gateway.ts). A plain script, so it runs before the app module; deployments replace it. -->
+    <script src="/canary-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

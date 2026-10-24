@@ -23,8 +23,11 @@ export type Route =
   | { name: 'status-pages' }
   | { name: 'status-page-new' }
   | { name: 'status-page-edit'; id: string }
-  /** Public, credential-free status page. `nodes` are node base addresses chosen by whoever shared the link. */
-  | { name: 'public-status'; slug: string; nodes: string[] }
+  /**
+   * Public, credential-free status page. `nodes` are node base addresses chosen by whoever shared the link. On the
+   * control plane `registration` instead names the saved node the dashboard's server reads it from.
+   */
+  | { name: 'public-status'; slug: string; nodes: string[]; registration?: string }
   | { name: 'nodes' }
   | { name: 'config' }
   | { name: 'accounts' }
@@ -39,8 +42,10 @@ export function parseRoute(hash: string): Route {
   });
   const [section, id, action] = parts;
   if (section === 'status' && id && parts.length === 2) {
-    const nodes = new URLSearchParams(query).getAll('node').filter(Boolean).slice(0, 8);
-    return { name: 'public-status', slug: id, nodes };
+    const params = new URLSearchParams(query);
+    const nodes = params.getAll('node').filter(Boolean).slice(0, 8);
+    const registration = params.get('registration');
+    return registration ? { name: 'public-status', slug: id, nodes, registration } : { name: 'public-status', slug: id, nodes };
   }
   if (query) return { name: 'not-found', path: raw };
   switch (section) {
@@ -85,10 +90,14 @@ export function parseRoute(hash: string): Route {
 
 export const href = (...parts: string[]): string => `#/${parts.map(encodeURIComponent).join('/')}`;
 
-/** Shareable public status link. The node address is public information; no credential ever enters it. */
-export function publicHref(slug: string, nodes: string[]): string {
+/**
+ * Shareable public status link. The node address is public information; no credential ever enters it. A control-plane
+ * link names a saved registration instead, which is a public selector, not a credential.
+ */
+export function publicHref(slug: string, nodes: string[], registration?: string): string {
   const query = new URLSearchParams();
   for (const node of nodes) query.append('node', node);
+  if (registration) query.set('registration', registration);
   const text = query.toString();
   return `#/status/${encodeURIComponent(slug)}${text ? `?${text}` : ''}`;
 }

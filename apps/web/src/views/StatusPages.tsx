@@ -36,11 +36,27 @@ function useStatusPages() {
 }
 
 function PublicLinkBuilder({ slug, enabled }: { slug: string; enabled: boolean }) {
-  const { api, nodes, endpoint } = useCanary();
+  const { api, nodes, endpoint, selection } = useCanary();
   const peers = nodes.filter(node => node.id !== endpoint && node.url);
   const [chosen, setChosen] = useState<string[]>([api.baseUrl]);
   const all = [{ id: endpoint, url: api.baseUrl }, ...peers.map(node => ({ id: node.id, url: node.url! }))];
   const link = publicLink(slug, chosen);
+  if (selection) {
+    // Control plane: visitors read the page through this dashboard, from the node this link names.
+    const viaDashboard = `${location.origin}${location.pathname}${publicHref(slug, [], selection.id)}`;
+    return (
+      <div className="linkbuilder">
+        <p className="small">Visitors open this dashboard’s address, and its server reads the page from {selection.label} (<span className="mono">{endpoint}</span>) without signing in. Nothing in the link is a credential.</p>
+        <code className="link-out">{viaDashboard}</code>
+        <div className="row-wrap">
+          <CopyButton value={viaDashboard} label="Copy public link" />
+          <a className="btn sm" href={publicHref(slug, [], selection.id)}><Icon name="external" />Open</a>
+        </div>
+        {!enabled ? <p className="small fwarn"><Glyph tone="warn" />Not published: the node answers “not found” until you publish it.</p> : null}
+        <p className="muted small">If a sign-in proxy protects this dashboard, visitors must get through it first. The public route never shows private IDs, targets or node diagnostics.</p>
+      </div>
+    );
+  }
   return (
     <div className="linkbuilder">
       <p className="small">Visitors’ browsers read the page straight from a node’s public address, without signing in. Choose which nodes the link offers; the first is tried first and visitors can switch.</p>
@@ -69,7 +85,7 @@ function PublicLinkBuilder({ slug, enabled }: { slug: string; enabled: boolean }
 
 /** Badge addresses for the SAVED page, on one node the user picks. Drafts and conflicts get no links. */
 function BadgeShare({ page, pendingChange }: { page: StatusPage; pendingChange?: boolean }) {
-  const { api, nodes, endpoint } = useCanary();
+  const { api, nodes, endpoint, selection } = useCanary();
   const formId = useId();
   const choices = [{ id: endpoint, url: api.baseUrl }, ...nodes.filter(node => node.id !== endpoint && node.url).map(node => ({ id: node.id, url: node.url! }))];
   const [picked, setNodeUrl] = useState(api.baseUrl);
@@ -98,7 +114,10 @@ function BadgeShare({ page, pendingChange }: { page: StatusPage; pendingChange?:
         </select>
       </label>
       {caveat ? <p className="small fwarn"><Glyph tone="warn" />{caveat}</p> : null}
-      <BadgeList slug={page.slug} title={page.title} groups={savedBadgeGroups(page)} nodeUrl={nodeUrl} pageLink={publicLink(page.slug, [nodeUrl])} nonce={nonce} />
+      {selection
+        ? <BadgeList slug={page.slug} title={page.title} groups={savedBadgeGroups(page)} nodeUrl={api.baseUrl} registration={selection.id} nonce={nonce}
+            pageLink={`${location.origin}${location.pathname}${publicHref(page.slug, [], selection.id)}`} />
+        : <BadgeList slug={page.slug} title={page.title} groups={savedBadgeGroups(page)} nodeUrl={nodeUrl} pageLink={publicLink(page.slug, [nodeUrl])} nonce={nonce} />}
       <p className="muted small">A badge address contains the page address, the section’s public ID and the service’s public name. Changing any of them, or unpublishing, makes existing embeds show a broken image because the node answers “not found”. Renaming a section keeps its ID, so its badges keep working. An image shows one node’s view; it doesn’t switch nodes like the page does.</p>
       {pendingChange ? <p className="small fwarn"><Glyph tone="warn" />Unsaved changes alter or remove some of these addresses. Embeds of the current addresses stop working when you save.</p> : null}
     </section>

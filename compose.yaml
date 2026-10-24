@@ -36,9 +36,18 @@ services:
       context: .
       dockerfile: Dockerfile.web
     restart: unless-stopped
+    environment:
+      CANARY_LOCAL_NODE_URL: ${CANARY_LOCAL_NODE_URL:-http://node:3100}
+      CANARY_LOCAL_NODE_TOKEN: ${CANARY_ADMIN_TOKEN:?Run npm run init first}
+      CANARY_DASHBOARD_ORIGINS: ${CANARY_CORS_ORIGINS:-http://localhost:18347,http://127.0.0.1:18347}
+    volumes:
+      - canary-dashboard-data:/data
+      - canary-dashboard-identity:/identity
     ports:
       - "${CANARY_WEB_BIND_ADDRESS:-127.0.0.1}:${CANARY_WEB_PORT:-18347}:8080"
 
 volumes:
   canary-data:
   canary-identity:
+  canary-dashboard-data:
+  canary-dashboard-identity:

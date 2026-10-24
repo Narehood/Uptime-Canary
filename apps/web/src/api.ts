@@ -4,12 +4,29 @@ import type {
   LocalAvailabilityHistory, LocalHistoryStatistics, NotificationChannel, NotificationChannelInput, NotificationChannelView,
   DeliveryAttemptView, Maintenance, MaintenanceInput, MaintenanceView,
   StatusPage, StatusPageInput, StatusPageView, PublicStatusPage, Tag, TagInput, TagView,
+  DashboardOwnerInput, NodeVerification, NodeVerificationInput, RegisteredNode,
 } from '@uptime-canary/shared';
 import { readAvailability } from './availability';
+import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
+/** Enrollment, retry and removal write to the node through the dashboard's server, so they get longer. */
+const NODE_CHANGE_TIMEOUT_MS = 30_000;
 const ERROR_BODY_LIMIT = 4_096;
+
+/**
+ * Control plane: names the saved registration a monitoring request is for. The dashboard's server resolves it to the
+ * stored address and the signed-in role's credential; the browser never sends a node address or a node credential.
+ */
+export const REGISTERED_NODE_HEADER = 'X-Canary-Registered-Node';
+const REGISTRATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
+/** A registration ID the dashboard issued; anything else could never select a node, so it never leaves the page. */
+export function checkRegistration(id: string): string {
+  if (!REGISTRATION_ID.test(id)) throw new Error('That isn’t a node registration on this dashboard.');
+  return id;
+}
 /** The node's management API rejects monitor and group request bodies above 256 KiB with 413. */
 export const API_BODY_LIMIT = 262_144;
 
@@ -84,6 +101,68 @@ export function normalizeOverview(value: unknown): Overview {
   return overview;
 }
 
+/** Stands in for a node in the dashboard's own overview, which reports no node: nothing is read from one. */
+export const DASHBOARD_PLACE = { id: 'dashboard', name: 'This dashboard' } as const;
+
+/**
+ * Control plane, no node selected: the dashboard's own overview, used for its clock and the signed-in account's role
+ * while no node needs to answer. It carries no monitoring data; any lists in it are ignored rather than shown as a node's.
+ */
+export function normalizeDashboardOverview(value: unknown): Overview {
+  if (!isRecord(value) || typeof value.now !== 'number' || !isRecord(value.user) || !isRole(value.user.role)) {
+    throw new ApiFailure(200, 'This address answered, but not like an Uptime Canary dashboard.');
+  }
+  return {
+    node: { ...DASHBOARD_PLACE }, now: value.now, monitors: [], nodes: [], incidents: [], notifications: [],
+    user: { name: typeof value.user.name === 'string' ? value.user.name : 'account', role: value.user.role },
+  };
+}
+
+const NODE_STATES: readonly RegisteredNode['state'][] = ['starting', 'answering', 'not-answering', 'credential-refused', 'different-node', 'enrolling', 'removing'];
+const cleanText = (text: string, limit: number): string => text.replace(/[\x00-\x1f\x7f]+/gu, ' ').trim().slice(0, limit);
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+/** One registry entry. Unknown fields are dropped; the dashboard never sends node credentials, and none are kept. */
+export function normalizeRegisteredNode(value: unknown): RegisteredNode {
+  if (!isRecord(value) || typeof value.id !== 'string' || !REGISTRATION_ID.test(value.id) || typeof value.label !== 'string'
+      || typeof value.state !== 'string' || !(NODE_STATES as readonly string[]).includes(value.state)) {
+    throw new ApiFailure(200, 'This dashboard sent a node entry this page could not read.');
+  }
+  const nodeId = typeof value.nodeId === 'string' ? cleanText(value.nodeId, 128) : '';
+  const node: RegisteredNode = {
+    id: value.id,
+    label: cleanText(value.label, 128) || nodeId || 'Unnamed node',
+    nodeId,
+    nodeName: typeof value.nodeName === 'string' && value.nodeName.trim() ? cleanText(value.nodeName, 128) : nodeId,
+    local: value.local === true,
+    state: value.state as RegisteredNode['state'],
+  };
+  if (typeof value.url === 'string' && value.url) node.url = cleanText(value.url, 512);
+  if (finite(value.lastReadAt) && value.lastReadAt > 0) node.lastReadAt = value.lastReadAt;
+  if (finite(value.monitorCount) && value.monitorCount >= 0) node.monitorCount = Math.floor(value.monitorCount);
+  if (typeof value.error === 'string' && cleanText(value.error, 240)) node.error = cleanText(value.error, 240);
+  return node;
+}
+
+/** What the dashboard's server found at an address. The ticket is an opaque, short-lived handle kept only in memory. */
+export function normalizeVerification(value: unknown): NodeVerification {
+  if (!isRecord(value) || typeof value.ticket !== 'string' || !/^[\x21-\x7e]{1,256}$/u.test(value.ticket) || !finite(value.expiresAt)
+      || !isRecord(value.node) || typeof value.node.id !== 'string' || !value.node.id || typeof value.url !== 'string') {
+    throw new ApiFailure(200, 'This dashboard sent a verification this page could not read.');
+  }
+  const url = cleanText(value.url, 512);
+  const id = cleanText(value.node.id, 128);
+  return {
+    ticket: value.ticket,
+    expiresAt: value.expiresAt,
+    node: { id, name: typeof value.node.name === 'string' && value.node.name.trim() ? cleanText(value.node.name, 128) : id },
+    label: typeof value.label === 'string' ? cleanText(value.label, 128) : '',
+    url,
+    // Either the server's word or the address itself: plain HTTP is never reported as encrypted.
+    plainHttp: value.plainHttp === true || url.startsWith('http:'),
+  };
+}
+
 function normalizeGroups(value: unknown): GroupView[] {
   return list<Record<string, unknown>>(value).filter(view => isRecord(view) && isRecord(view.group)).map(view => ({
     ...view,
@@ -141,12 +220,96 @@ const STATUS_MESSAGES: Record<number, string> = {
   503: 'The node can’t handle requests right now.',
 };
 
-interface RequestOptions { method?: string; body?: unknown; token?: string; signal?: AbortSignal; timeoutMs?: number }
+/**
+ * Control plane, the dashboard's own routes (sign-in, accounts, the node list): these answers come from the dashboard,
+ * not from a node.
+ */
+const DASHBOARD_STATUS_MESSAGES: Record<number, string> = {
+  400: 'This dashboard rejected these values.',
+  401: 'This dashboard did not accept the sign-in.',
+  403: 'Your dashboard account doesn’t have permission for this action.',
+  404: 'This dashboard doesn’t have that item, or it was just removed.',
+  409: 'This changed on the dashboard in the meantime. Reload and try again.',
+  413: 'The request is larger than this dashboard accepts.',
+  429: 'This dashboard is limiting attempts right now. Wait a moment and try again.',
+  502: 'The dashboard’s server couldn’t get a usable answer from the node.',
+  503: 'This dashboard can’t handle requests right now.',
+  504: 'The dashboard’s server couldn’t get an answer from the node in time.',
+};
+/**
+ * Control plane, a registered node's routes. The dashboard answers 404 for an unknown registration and 502 when the
+ * node refuses the dashboard's credential (never 401, which would mean this dashboard sign-in ended).
+ */
+const REGISTERED_NODE_MESSAGES: Record<number, string> = {
+  401: 'This dashboard did not accept the sign-in.',
+  502: 'The dashboard’s server couldn’t get a usable answer from this node.',
+  504: 'The dashboard’s server couldn’t get an answer from this node in time.',
+};
 
-/** Every request: explicit bearer (never cookies), no redirects, no referrer, no cache, bounded time. */
-async function request<T>(baseUrl: string, path: string, { method = 'GET', body, token, signal, timeoutMs = REQUEST_TIMEOUT_MS }: RequestOptions = {}): Promise<T> {
-  const timeout = AbortSignal.timeout(timeoutMs);
+interface RequestOptions { method?: string; body?: unknown; token?: string; signal?: AbortSignal; timeoutMs?: number; registeredNode?: string }
+
+/**
+ * A node at the dashboard's own origin may sit behind the same sign-in proxy, which lets requests through with its
+ * own session cookie. When that session ends, the proxy redirects (refused here) or answers with its login page.
+ * Neither can be told apart from other failures, so the message names it as one possibility.
+ */
+const PROXY_HINT = 'If a sign-in proxy protects this address, its session may have ended: reload the page to sign in to the proxy again.';
+const atPageOrigin = (baseUrl: string): boolean => globalThis.location?.origin === baseUrl;
+
+/** Behind a gateway these come from the dashboard's server when its node doesn't answer, so they don't blame the node's API. */
+const GATEWAY_STATUS_MESSAGES: Record<number, string> = {
+  502: 'The dashboard’s server couldn’t get an answer from its node.',
+  504: 'The dashboard’s server couldn’t get an answer from its node in time.',
+};
+
+/**
+ * A gateway dashboard reaches its node only through its own server, so it refuses any other origin before a request
+ * leaves the browser: a peer's address, a typed or linked node address, or an old remembered one. The address is
+ * never re-aimed at the page's origin, which could make it mean a different node.
+ */
+export class OriginRefused extends Error {
+  constructor(public readonly origin: string) {
+    super(refusal(origin));
+    this.name = 'OriginRefused';
+  }
+}
+
+function refusal(origin: string): string {
+  const page = pageOrigin();
+  const nodes = controlPlaneMode() ? 'its nodes' : 'its node';
+  return page
+    ? `This dashboard reaches ${nodes} only through its own server at ${page}, so it doesn’t contact ${origin}.`
+    : `This dashboard reaches ${nodes} only through its own server, and this page has no web address to reach it at.`;
+}
+
+/** The dashboard's own origin, or a refusal when the page has none. */
+function dashboardOrigin(): string {
+  const page = pageOrigin();
+  if (!page) throw new OriginRefused('this page');
+  return page;
+}
+
+function refuseForeignOrigin(url: string): void {
+  let origin: string | null = null;
+  try { origin = new URL(url).origin; } catch { /* not an address: refused below */ }
+  if (origin === null || origin !== pageOrigin()) throw new OriginRefused(origin ?? url);
+}
+
+/**
+ * Every request: explicit bearer, no redirects, no referrer, no cache, bounded time. Cookies go only to the page's
+ * own origin (a sign-in proxy's session); the node ignores them and still requires its own credential. Browsers send
+ * none to a node on any other origin. In gateway mode nothing goes to any other origin at all. On the control plane a
+ * monitoring request may also name a saved registration; the credential is still the dashboard sign-in's.
+ */
+async function request<T>(baseUrl: string, path: string, { method = 'GET', body, token, signal, timeoutMs = REQUEST_TIMEOUT_MS, registeredNode }: RequestOptions = {}): Promise<T> {
+  const gateway = gatewayMode();
+  const controlPlane = controlPlaneMode();
+  if (gateway) refuseForeignOrigin(`${baseUrl}${path}`);
+  if (registeredNode !== undefined && !controlPlane) throw new Error('Only a dashboard with a node registry can select a registered node.');
+  const throughNode = registeredNode !== undefined;
   const headers: Record<string, string> = {};
+  if (registeredNode !== undefined) headers[REGISTERED_NODE_HEADER] = checkRegistration(registeredNode);
+  const timeout = AbortSignal.timeout(timeoutMs);
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response: Response;
@@ -157,25 +320,36 @@ async function request<T>(baseUrl: string, path: string, { method = 'GET', body,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       redirect: 'error',
       cache: 'no-store',
-      credentials: 'omit',
+      credentials: 'same-origin',
       referrerPolicy: 'no-referrer',
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
   } catch {
     if (signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
-    if (timeout.aborted) throw new ApiFailure(0, `The node did not answer within ${Math.round(timeoutMs / 1000)} seconds.`);
+    const seconds = Math.round(timeoutMs / 1000);
+    if (timeout.aborted) {
+      throw new ApiFailure(0, !controlPlane ? `The node did not answer within ${seconds} seconds.`
+        : throughNode ? `This node’s answer did not arrive through the dashboard’s server within ${seconds} seconds.`
+        : `This dashboard’s server did not answer within ${seconds} seconds.`);
+    }
+    if (gateway) throw new ApiFailure(0, `Cannot reach this dashboard’s server. Check that it’s running. ${PROXY_HINT}`);
+    if (atPageOrigin(baseUrl)) throw new ApiFailure(0, `Cannot reach this node. Check that it’s running. ${PROXY_HINT}`);
     throw new ApiFailure(0, 'Cannot reach this node. Check the address, that the node is running, and that it allows this dashboard’s origin.');
   }
   if (!response.ok) {
     const detail = await errorDetail(response);
-    throw new ApiFailure(response.status, STATUS_MESSAGES[response.status] ?? `The node returned HTTP ${response.status}.`, detail);
+    const message = (controlPlane ? (throughNode ? REGISTERED_NODE_MESSAGES : DASHBOARD_STATUS_MESSAGES)[response.status] : undefined)
+      ?? (gateway ? GATEWAY_STATUS_MESSAGES[response.status] : undefined) ?? STATUS_MESSAGES[response.status];
+    const fallback = controlPlane && !throughNode ? `This dashboard returned HTTP ${response.status}.` : `The node returned HTTP ${response.status}.`;
+    throw new ApiFailure(response.status, message ?? fallback, detail);
   }
   if (response.status === 204) return undefined as T;
   try {
     return await response.json() as T;
   } catch {
     if (signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
-    throw new ApiFailure(response.status, 'The node sent a response this dashboard could not read.');
+    const unreadable = controlPlane && !throughNode ? 'This dashboard’s server sent a response this page could not read.' : 'The node sent a response this dashboard could not read.';
+    throw new ApiFailure(response.status, atPageOrigin(baseUrl) ? `${unreadable} ${PROXY_HINT}` : unreadable);
   }
 }
 
@@ -217,6 +391,38 @@ export async function passwordSignIn(baseUrl: string, input: PasswordLoginInput,
   return { kind: 'signed-in', api: new CanaryApi(base, value.token, { credential: 'session', expiresAt: value.expiresAt }), user: normalizeAccount(value.user) };
 }
 
+/** Control plane: the dashboard's own sign-in status. `dashboard` is true only when its server owns the accounts. */
+export interface DashboardAuthStatus extends AuthenticationStatus { dashboard: boolean }
+
+/**
+ * Public: whether this dashboard still needs its first owner, and which sign-ins it offers. Asked of the dashboard
+ * itself, which answers without any node. Unlike a node's status, a failure is reported, never read as token-only.
+ */
+export async function fetchDashboardStatus(signal?: AbortSignal): Promise<DashboardAuthStatus> {
+  const value = await request<unknown>(dashboardOrigin(), '/api/auth/status', { signal });
+  if (!isRecord(value)) throw new ApiFailure(200, 'This address answered, but not like an Uptime Canary dashboard.');
+  return {
+    dashboard: value.dashboard === true,
+    setupRequired: value.setupRequired === true,
+    passwordLogin: value.passwordLogin === true,
+    passwordConfigured: value.passwordConfigured === true,
+    tokenLogin: value.tokenLogin === true,
+    mfaSupported: value.mfaSupported === true,
+  };
+}
+
+/**
+ * Public, once: creates the dashboard's first owner (an administrator). The setup code comes from the operator's
+ * private server setup file or log and proves who runs the server. No session is issued: sign in afterwards.
+ */
+export async function createDashboardOwner(input: DashboardOwnerInput, signal?: AbortSignal): Promise<AccountView> {
+  const body: DashboardOwnerInput = { name: input.name.trim(), password: input.password, code: input.code.trim() };
+  return normalizeAccount(await request<unknown>(dashboardOrigin(), '/api/dashboard/setup', { method: 'POST', body, signal }));
+}
+
+/** `removing`: the dashboard stopped reading it, but the node's revocation isn't confirmed yet (202). */
+export type NodeRemoval = { removed: true } | { removed: false; node: RegisteredNode | null };
+
 export type Credential = 'token' | 'session';
 
 /** Byte size of a JSON request body, as the node measures it. */
@@ -229,12 +435,19 @@ export const jsonBytes = (value: unknown): number => new TextEncoder().encode(JS
 export class CanaryApi {
   readonly baseUrl: string;
   readonly credential: Credential;
-  /** Absolute expiry of a password session (node clock, epoch ms). Account tokens don't expire. */
+  /** Absolute expiry of a password session (issuer's clock, epoch ms). Account tokens don't expire. */
   readonly expiresAt: number | null;
-  constructor(baseUrl: string, private readonly token: string, options: { credential?: Credential; expiresAt?: number } = {}) {
+  /**
+   * Control plane only: the saved registration monitoring requests are for, or null for none. Sign-in, account and
+   * node-list requests never carry it, so they always reach the dashboard's own accounts.
+   */
+  readonly registeredNode: string | null;
+  constructor(baseUrl: string, private readonly token: string, options: { credential?: Credential; expiresAt?: number; registeredNode?: string } = {}) {
     this.baseUrl = normalizeApiUrl(baseUrl);
     this.credential = options.credential ?? 'token';
     this.expiresAt = options.expiresAt ?? null;
+    if (options.registeredNode !== undefined && !controlPlaneMode()) throw new Error('Only a dashboard with a node registry can select a registered node.');
+    this.registeredNode = options.registeredNode === undefined ? null : checkRegistration(options.registeredNode);
   }
 
   /** Same account token for another node, without exposing the token to callers. Sessions are node-local. */
@@ -243,15 +456,38 @@ export class CanaryApi {
     return new CanaryApi(baseUrl, this.token);
   }
 
-  /** Whether `other` carries the same credential (used to avoid signing out a session that's still in use). */
+  /**
+   * Control plane: the same dashboard credential (session or token, with its expiry), aimed at another saved
+   * registration, or at none. Nothing is signed out or in: the dashboard sign-in is unchanged.
+   */
+  withRegisteredNode(id: string | null): CanaryApi {
+    return new CanaryApi(this.baseUrl, this.token, {
+      credential: this.credential,
+      ...(this.expiresAt === null ? {} : { expiresAt: this.expiresAt }),
+      ...(id === null ? {} : { registeredNode: id }),
+    });
+  }
+
+  /** After this account's own token was replaced: the new token, keeping any node selection. */
+  withToken(token: string): CanaryApi {
+    return new CanaryApi(this.baseUrl, token, this.registeredNode === null ? {} : { registeredNode: this.registeredNode });
+  }
+
+  /** Whether `other` carries the same credential (used to avoid signing out a session that's still in use). A node selection doesn't count. */
   sameCredential(other: CanaryApi): boolean { return other.token === this.token && other.baseUrl === this.baseUrl; }
 
+  /** Monitoring routes: to the selected registration when there is one. */
   private call<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+    return request<T>(this.baseUrl, path, { method, body, token: this.token, signal, timeoutMs, ...(this.registeredNode === null ? {} : { registeredNode: this.registeredNode }) });
+  }
+  /** Identity, account and node-list routes: always the issuer of this credential, whatever node is selected. */
+  private own<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
     return request<T>(this.baseUrl, path, { method, body, token: this.token, signal, timeoutMs });
   }
 
   async overview(signal?: AbortSignal): Promise<Overview> {
-    return normalizeOverview(await this.call<unknown>('/api/overview', 'GET', undefined, signal));
+    const value = await this.call<unknown>('/api/overview', 'GET', undefined, signal);
+    return controlPlaneMode() && this.registeredNode === null ? normalizeDashboardOverview(value) : normalizeOverview(value);
   }
   monitors(signal?: AbortSignal): Promise<MonitorView[]> { return this.call('/api/monitors', 'GET', undefined, signal); }
   createMonitor(input: MonitorInput): Promise<Monitor> { return this.call('/api/monitors', 'POST', input); }
@@ -350,40 +586,40 @@ export class CanaryApi {
   }
 
   // ----- this account (every role). Bodies carry only the fields each route documents; unused ones are omitted.
-  async me(signal?: AbortSignal): Promise<AccountView> { return normalizeAccount(await this.call<unknown>('/api/auth/me', 'GET', undefined, signal)); }
+  async me(signal?: AbortSignal): Promise<AccountView> { return normalizeAccount(await this.own<unknown>('/api/auth/me', 'GET', undefined, signal)); }
   /** First setup (authorized by an account token) sends only `password`; later changes add the current password and a code if 2FA is on. */
   async setPassword(password: string, currentPassword?: string, code?: string): Promise<AccountView> {
     const body: { password: string; currentPassword?: string; code?: string } = { password };
     if (currentPassword) body.currentPassword = currentPassword;
     if (code) body.code = cleanCode(code);
-    return normalizeAccount(await this.call<unknown>('/api/auth/password', 'POST', body));
+    return normalizeAccount(await this.own<unknown>('/api/auth/password', 'POST', body));
   }
   async startAuthenticator(currentPassword: string): Promise<AuthenticatorEnrollment> {
-    const value = await this.call<unknown>('/api/auth/totp/setup', 'POST', { currentPassword });
+    const value = await this.own<unknown>('/api/auth/totp/setup', 'POST', { currentPassword });
     if (!isRecord(value) || typeof value.secret !== 'string' || typeof value.uri !== 'string' || typeof value.expiresAt !== 'number') {
       throw new ApiFailure(200, 'The node sent an enrollment this dashboard could not read.');
     }
     return { secret: value.secret, uri: value.uri, expiresAt: value.expiresAt };
   }
   async confirmAuthenticator(currentPassword: string, code: string): Promise<AccountView> {
-    return normalizeAccount(await this.call<unknown>('/api/auth/totp/confirm', 'POST', { currentPassword, code: cleanCode(code) }));
+    return normalizeAccount(await this.own<unknown>('/api/auth/totp/confirm', 'POST', { currentPassword, code: cleanCode(code) }));
   }
   async disableAuthenticator(currentPassword: string, code: string): Promise<AccountView> {
-    return normalizeAccount(await this.call<unknown>('/api/auth/totp/disable', 'POST', { currentPassword, code: cleanCode(code) }));
+    return normalizeAccount(await this.own<unknown>('/api/auth/totp/disable', 'POST', { currentPassword, code: cleanCode(code) }));
   }
   /** Ends this password session on the node. Short timeout: signing out must not hang the tab. */
-  logout(): Promise<void> { return this.call('/api/auth/logout', 'POST', undefined, undefined, SIGN_OUT_TIMEOUT_MS); }
-  logoutAll(): Promise<void> { return this.call('/api/auth/logout-all', 'POST'); }
+  logout(): Promise<void> { return this.own('/api/auth/logout', 'POST', undefined, undefined, SIGN_OUT_TIMEOUT_MS); }
+  logoutAll(): Promise<void> { return this.own('/api/auth/logout-all', 'POST'); }
 
-  // ----- accounts on this node (admins)
+  // ----- accounts on this node (admins); on the control plane, this dashboard's accounts
   async accounts(signal?: AbortSignal): Promise<AccountView[]> {
-    return list<unknown>(await this.call<unknown>('/api/accounts', 'GET', undefined, signal)).map(normalizeAccount);
+    return list<unknown>(await this.own<unknown>('/api/accounts', 'GET', undefined, signal)).map(normalizeAccount);
   }
   async createAccount(input: AccountInput): Promise<AccountView> {
     const body: AccountInput = { name: input.name, role: input.role };
     if (input.password) body.password = input.password;
     if (input.token) body.token = input.token;
-    return normalizeAccount(await this.call<unknown>('/api/accounts', 'POST', body));
+    return normalizeAccount(await this.own<unknown>('/api/accounts', 'POST', body));
   }
   /** Sends only the fields that change. The node revokes the account's password sessions. */
   async updateAccount(id: string, changes: { name?: string; role?: Role; token?: string }): Promise<AccountView> {
@@ -391,14 +627,55 @@ export class CanaryApi {
     if (changes.name !== undefined) body.name = changes.name;
     if (changes.role !== undefined) body.role = changes.role;
     if (changes.token !== undefined) body.token = changes.token;
-    return normalizeAccount(await this.call<unknown>(`/api/accounts/${encodeURIComponent(id)}`, 'PUT', body));
+    return normalizeAccount(await this.own<unknown>(`/api/accounts/${encodeURIComponent(id)}`, 'PUT', body));
   }
   async resetAccountPassword(id: string, password: string, resetMfa: boolean): Promise<AccountView> {
     const body: { password: string; resetMfa?: boolean } = { password };
     if (resetMfa) body.resetMfa = true;
-    return normalizeAccount(await this.call<unknown>(`/api/accounts/${encodeURIComponent(id)}/password`, 'POST', body));
+    return normalizeAccount(await this.own<unknown>(`/api/accounts/${encodeURIComponent(id)}/password`, 'POST', body));
   }
-  deleteAccount(id: string): Promise<void> { return this.call(`/api/accounts/${encodeURIComponent(id)}`, 'DELETE'); }
+  deleteAccount(id: string): Promise<void> { return this.own(`/api/accounts/${encodeURIComponent(id)}`, 'DELETE'); }
+
+  // ----- control plane: the dashboard's shared node registry. Any role reads and rechecks; administrators enroll,
+  // retry and remove. Node credentials go to the dashboard's server in `verifyNode` only and never come back.
+  async registeredNodes(signal?: AbortSignal): Promise<RegisteredNode[]> {
+    const value = await this.own<unknown>('/api/dashboard/nodes', 'GET', undefined, signal);
+    if (value !== null && !Array.isArray(value)) throw new ApiFailure(200, 'This dashboard sent a node list this page could not read.');
+    return list<unknown>(value).map(normalizeRegisteredNode);
+  }
+  /** Read-only: the dashboard's server contacts the address and proves the node's identity. Nothing changes on the node. */
+  async verifyNode(input: NodeVerificationInput, signal?: AbortSignal): Promise<NodeVerification> {
+    const body: NodeVerificationInput = { label: input.label.trim(), url: normalizeApiUrl(input.url), token: input.token };
+    return normalizeVerification(await this.own<unknown>('/api/dashboard/verify', 'POST', body, signal));
+  }
+  /** Drops an unused verification. Expiry drops it too, so a failure here leaves nothing behind for long. */
+  discardVerification(ticket: string): Promise<void> {
+    return this.own(`/api/dashboard/verify/${encodeURIComponent(ticket)}`, 'DELETE', undefined, undefined, SIGN_OUT_TIMEOUT_MS);
+  }
+  async enrollNode(ticket: string, signal?: AbortSignal): Promise<RegisteredNode> {
+    return normalizeRegisteredNode(await this.own<unknown>('/api/dashboard/nodes', 'POST', { ticket }, signal, NODE_CHANGE_TIMEOUT_MS));
+  }
+  async checkNode(id: string, signal?: AbortSignal): Promise<RegisteredNode> {
+    return normalizeRegisteredNode(await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}/check`, 'POST', undefined, signal));
+  }
+  /** Null when the retried removal finished and the entry is gone (204). */
+  async retryNode(id: string, signal?: AbortSignal): Promise<RegisteredNode | null> {
+    const value = await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}/retry`, 'POST', undefined, signal, NODE_CHANGE_TIMEOUT_MS);
+    return value === undefined ? null : normalizeRegisteredNode(value);
+  }
+  /** 204: removed and the node confirmed revocation. 202: no longer read, revocation pending (shown as `removing`). */
+  async removeNode(id: string, signal?: AbortSignal): Promise<NodeRemoval> {
+    let value: unknown;
+    try {
+      value = await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}`, 'DELETE', undefined, signal, NODE_CHANGE_TIMEOUT_MS);
+    } catch (error) {
+      // An accepted removal without a readable entry is still accepted; the list shows its state.
+      if (error instanceof ApiFailure && error.status === 202) return { removed: false, node: null };
+      throw error;
+    }
+    if (value === undefined) return { removed: true };
+    try { return { removed: false, node: normalizeRegisteredNode(value) }; } catch { return { removed: false, node: null }; }
+  }
 }
 
 /**
@@ -408,7 +685,9 @@ export class CanaryApi {
 export function describeFailure(error: unknown, options: { preferDetail?: boolean } = {}): string {
   if (error instanceof ApiFailure) {
     if (options.preferDetail && error.detail) {
-      if (error.status === 401 && /^authentication required$/iu.test(error.detail)) return 'Your sign-in is no longer valid on this node. Sign in again.';
+      if (error.status === 401 && /^authentication required$/iu.test(error.detail)) {
+        return controlPlaneMode() ? 'Your sign-in to this dashboard is no longer valid. Sign in again.' : 'Your sign-in is no longer valid on this node. Sign in again.';
+      }
       return sentence(error.detail);
     }
     return error.detail && error.status !== 401 ? `${error.message} ${sentence(error.detail)}` : error.message;
@@ -424,8 +703,13 @@ function sentence(text: string): string {
 
 export const isAbort = (error: unknown): boolean => error instanceof DOMException && error.name === 'AbortError';
 
-/** Public publication data is fetched without a management/session bearer. */
-export function fetchPublicStatus(baseUrl: string, slug: string, signal?: AbortSignal): Promise<PublicStatusPage> {
+/**
+ * Public publication data is fetched without a management/session bearer (and, like every request, cookies only at the page's own origin).
+ * On the control plane `registration` names the saved node the dashboard's server reads the page from; it is a
+ * public selector, never a credential, and the server adds no management credential for public routes.
+ */
+export function fetchPublicStatus(baseUrl: string, slug: string, signal?: AbortSignal, registration?: string): Promise<PublicStatusPage> {
   if (slug.length < 1 || slug.length > 64 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(slug)) throw new Error('Invalid status page address.');
-  return request(normalizeApiUrl(baseUrl), `/public/status/${encodeURIComponent(slug)}`, { signal });
+  const query = registration === undefined ? '' : `?${new URLSearchParams({ registration: checkRegistration(registration) })}`;
+  return request(normalizeApiUrl(baseUrl), `/public/status/${encodeURIComponent(slug)}${query}`, { signal });
 }
