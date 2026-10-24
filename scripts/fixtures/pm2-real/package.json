@@ -1,0 +1,9 @@
+{
+  "name": "@uptime-canary/pm2-interoperability-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Disposable development-only PM2 interoperability fixture; never a product dependency",
+  "dependencies": {
+    "pm2": "6.0.8"
+  }
+}

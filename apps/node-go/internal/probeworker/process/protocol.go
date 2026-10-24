@@ -167,14 +167,14 @@ func validResult(r Result, timeout time.Duration) bool {
 	return true
 }
 
-// System-service is the sole engine whose manager can explicitly return
-// Pending. Its messages are a closed set, never manager-provided diagnostics.
+// Local manager engines can explicitly return Pending. Their messages are
+// closed sets, never manager-provided diagnostics.
 // Existing network/query engines retain their two-state result contract.
 func validTypedResult(serviceType string, r Result, timeout time.Duration) bool {
-	if serviceType != "system-service" {
+	if serviceType != "system-service" && serviceType != "pm2" {
 		return validResult(r, timeout)
 	}
-	if !systemServiceSummary(r) {
+	if serviceType == "system-service" && !systemServiceSummary(r) || serviceType == "pm2" && !pm2Summary(r) {
 		return false
 	}
 	if r.State == "pending" {
@@ -189,10 +189,19 @@ func systemServiceSummary(r Result) bool {
 		r.State == "pending" && r.Message == "Service status unavailable"
 }
 
+func pm2Summary(r Result) bool {
+	return r.LatencyMs == 0 && (r.State == "up" && r.Message == "PM2 process is online" ||
+		r.State == "down" && (r.Message == "PM2 process is not online" || r.Message == "PM2 process was not found") ||
+		r.State == "pending" && r.Message == "PM2 status unavailable")
+}
+
 // Never return arbitrary child text, even when it is valid printable UTF-8.
 // Oracle's diagnostics are fixed strings in the pinned service engine. Other
 // engines retain their real state but use fixed summaries at this boundary.
 func safeMessage(t string, r Result) string {
+	if t == "pm2" && pm2Summary(r) {
+		return r.Message
+	}
 	if t == "system-service" && systemServiceSummary(r) {
 		return r.Message
 	}

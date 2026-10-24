@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 	"uptime-canary/apps/node-go/internal/globalping"
+	"uptime-canary/apps/node-go/internal/pm2monitor"
 	"uptime-canary/apps/node-go/internal/steam"
 )
 
@@ -141,6 +142,9 @@ func placement(ids []string, known map[string]bool) error {
 	return nil
 }
 func validateMonitor(m *MonitorInput, known map[string]bool) error {
+	if m.Type != "pm2" && m.PM2 != nil {
+		return fail(400, "PM2 options do not match monitor type")
+	}
 	if m.Type != "steam" && m.Steam != nil {
 		return fail(400, "Steam options do not match monitor type")
 	}
@@ -174,7 +178,7 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	case "push":
 		m.Target = "push"
 	case "tcp", "tls", "dns", "websocket", "smtp", "system-service":
-	case "globalping", "steam":
+	case "globalping", "steam", "pm2":
 	case "docker", "redis", "postgres", "mysql", "mqtt", "sftp", "mongodb", "sqlserver", "ntp", "grpc", "snmp", "radius", "sip-options", "rabbitmq", "kafka-producer", "oracledb":
 	default:
 		return fail(400, "Invalid monitor type")
@@ -246,7 +250,14 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	if m.Type != "ping" && m.Ping != nil {
 		return fail(400, "Ping options do not match monitor type")
 	}
-	if m.Type == "steam" {
+	if m.Type == "pm2" {
+		if m.PM2 == nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
+			return fail(400, "Options do not match PM2 monitor")
+		}
+		if pm2monitor.Validate(pm2Config(*m)) != nil {
+			return fail(400, "Invalid PM2 configuration")
+		}
+	} else if m.Type == "steam" {
 		if m.Steam == nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
 			return fail(400, "Options do not match Steam monitor")
 		}
@@ -375,11 +386,14 @@ func parseMonitor(b []byte, known map[string]bool) (MonitorInput, error) {
 	if err = required(o, "name", "type", "target", "intervalMs", "timeoutMs", "nodeIds", "enabled"); err != nil {
 		return m, err
 	}
-	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam"); err != nil {
+	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam", "pm2"); err != nil {
 		return m, err
 	}
 	if json.Unmarshal(b, &m) != nil {
 		return m, fail(400, "Invalid monitor input")
+	}
+	if (m.Type == "pm2" || m.PM2 != nil) && validatePM2MonitorJSON(b) != nil {
+		return m, fail(400, "Invalid PM2 monitor input")
 	}
 	if m.NotificationIDs != nil && (!validIDs(m.NotificationIDs, 16) || len(unique(m.NotificationIDs)) != len(m.NotificationIDs)) {
 		return m, fail(400, "notificationIds must contain at most 16 unique channel IDs")

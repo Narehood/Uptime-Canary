@@ -7,6 +7,7 @@ import (
 	"time"
 	"uptime-canary/apps/node-go/internal/checks"
 	"uptime-canary/apps/node-go/internal/heartbeat"
+	"uptime-canary/apps/node-go/internal/pm2monitor"
 	"uptime-canary/apps/node-go/internal/rollup"
 	"uptime-canary/apps/node-go/internal/services"
 	"uptime-canary/apps/node-go/internal/steam"
@@ -40,9 +41,11 @@ type MonitorInput struct {
 	Push                *PushMonitorOptions       `json:"push,omitempty"`
 	Globalping          *GlobalpingMonitorOptions `json:"globalping,omitempty"`
 	Steam               *SteamMonitorOptions      `json:"steam,omitempty"`
+	PM2                 *PM2MonitorOptions        `json:"pm2,omitempty"`
 }
 
 type SteamMonitorOptions = steam.Options
+type PM2MonitorOptions = pm2monitor.Options
 
 type PushMonitorOptions struct {
 	Token    string `json:"token"`

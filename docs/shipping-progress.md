@@ -1,5 +1,30 @@
 # Shipping progress
 
+## PM2 work resumed after the review and capacity merges, 2026-10-24
+
+PR #6 merged as `d4cc56d`; PR #7 merged as `020bc4b` after exact-head
+`56892c1` passed all eight checks. The remaining monitoring work resumed on
+`feature/pm2-monitor`. Its typed PM2 adapter uses independent Go RPC inside the
+existing disposable worker and raises the peer protocol to 18. It does not
+start a daemon or add Node/PM2 to the product runtime.
+
+Local Windows checkpoints now include the full core package (1,028 passing
+events, zero failures, two expected filename skips), changed-package vet,
+three type checks and 86 pure groups, the dashboard build and 156/156 browser
+contract checks, and the new PM2 production process proof at 1/1. Each retains
+its exact source scope in [the PM2 record](pm2-monitors.md). The Windows
+production proof exercises an unsupported Unix connection and Pending; positive
+private-pipe worker cases use a dedicated synthetic endpoint.
+
+Independent follow-up review repaired PM2 version metadata aliases, strengthened
+cancellation capacity and retained-incident assertions, and clarified deployment
+account rules. Actual PM2 6.0.8 interoperability and supervisor-death cleanup
+are required on both native Linux jobs against the extracted package binary.
+Those jobs, all 22 ordinary process proofs, Alpine/race and arm64 acceptance
+remain pending for the new source. Windows actual PM2 is unverified and its
+permission-history prerequisite remains explicit. This is neither a tagged
+release nor completion of the independent near-Uptime-Kuma goal.
+
 ## Full-codebase review after the protocol-17 merge, 2026-10-24
 
 Steam PR #5 merged at `64142f9baefb4774bbd43655396214edcdce1983`.

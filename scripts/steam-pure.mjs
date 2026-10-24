@@ -26,18 +26,19 @@ const KEY = 'ABCDEF0123456789ABCDEF0123456789';
 const EARLIER = ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp', 'globalping', 'system-service', 'postgres', 'mysql', 'sqlserver', 'oracledb', 'mongodb', 'redis',
   'docker', 'mqtt', 'rabbitmq', 'kafka-producer', 'grpc', 'sftp', 'ntp', 'snmp', 'radius', 'sip-options', 'push', 'manual'];
 
-check('catalogue: 28 unique types, the 27 earlier ones in their order, plus steam in its own game category', () => {
+// Protocol 18 adds PM2; the earlier-type order and all Steam rules stay intact.
+check('catalogue: 29 unique types, the 27 earlier ones in their order, plus Steam and protocol-18 PM2', () => {
   const types = checks.CHECK_TYPES.map(entry => entry.type);
-  assert.equal(types.length, 28);
-  assert.equal(new Set(types).size, 28);
-  assert.deepEqual(types.filter(type => type !== 'steam'), EARLIER);
+  assert.equal(types.length, 29);
+  assert.equal(new Set(types).size, 29);
+  assert.deepEqual(types.filter(type => type !== 'steam' && type !== 'pm2'), EARLIER);
   assert.equal(Object.keys(specs.SERVICE_PROTOCOL).length, 16);
   const entry = checks.checkType('steam');
   assert.equal(entry.label, 'Steam game server');
   assert.equal(entry.category, 'game');
   assert.equal(checks.CATEGORY_LABEL.game, 'Game servers');
   assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'game').length, 1);
-  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'local').length, 1);
+  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'local').length, 2);
   assert.equal(entry.targetLabel, undefined, 'the Steam form owns its address field');
 });
 
