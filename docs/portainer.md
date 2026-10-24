@@ -99,10 +99,17 @@ existing nonroot users. Container logs rotate at 10 MiB × 3 per service.
 The dashboard's default host port is `18347`; `CANARY_WEB_PORT` can override it.
 Existing explicit port settings are preserved. When changing ports, update
 `CANARY_CORS_ORIGINS` on each node to the exact origin you open in your browser,
-then redeploy/restart that node. Existing stack variables and `.env` files are
-not rewritten automatically. Keep `CANARY_WEB_PORT=8080` if you intentionally
+then redeploy the affected stack(s) to recreate their containers. Redeploy the
+combined stack once; with separate stacks, redeploy the node for CORS changes
+and the dashboard for host-port changes. Existing stack variables and `.env`
+files are not rewritten automatically. Keep `CANARY_WEB_PORT=8080` if you intentionally
 want the earlier host mapping. The listener and health check inside the
 dashboard container still use port `8080`.
+
+A plain container restart keeps the previous environment and port bindings.
+Use Portainer's stack redeploy, or `docker compose up -d` with the same Compose
+file, project name and environment values used for that deployment. See
+[Docker's restart documentation](https://docs.docker.com/reference/cli/docker/compose/restart/).
 
 ## Deploy separate dashboard and node stacks
 
