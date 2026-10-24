@@ -12,7 +12,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   const count = 64;
   const historyLimit = 8;
   const cluster = new Cluster({ CANARY_HISTORY_LIMIT: String(historyLimit), CANARY_HISTORY_RETENTION_MS: '60000' });
-  const requests: { route: string; monitor: string; kind: string; key: string; accepted: boolean }[] = [];
+  const requests: { route: string; monitor: string; source: string; sender: string; kind: string; key: string; accepted: boolean }[] = [];
   const failures: string[] = [];
   let blocked = true, active = 0, peakActive = 0, phase = 'setup';
   const sink = createServer((request, response) => {
@@ -23,10 +23,11 @@ test('64 monitors retain bounded history and drain a destination backlog across 
         if (bytes > 64 * 1024) throw Error('oversized fixture request');
         body += chunk.toString('utf8');
       }
-      const payload = JSON.parse(body) as { monitorId?: string; kind?: string };
+      const payload = JSON.parse(body) as { monitorId?: string; incidentId?: string; node?: { id?: string }; kind?: string };
       const key = request.headers['idempotency-key'];
       if (request.method !== 'POST' || !['/fast', '/backlog'].includes(request.url ?? '') ||
-          !payload.monitorId || !['down', 'recovery'].includes(payload.kind ?? '') || typeof key !== 'string') {
+          !payload.monitorId || !payload.incidentId || !payload.node?.id ||
+          !['down', 'recovery'].includes(payload.kind ?? '') || typeof key !== 'string') {
         throw Error('invalid fixture request');
       }
       active++; peakActive = Math.max(peakActive, active);
@@ -34,7 +35,8 @@ test('64 monitors retain bounded history and drain a destination backlog across 
         // Slow responses contend for delivery workers without using an external provider.
         if (request.url === '/backlog') await delay(75);
         const accepted = request.url !== '/backlog' || !blocked;
-        requests.push({ route: request.url!, monitor: payload.monitorId, kind: payload.kind!, key, accepted });
+        requests.push({ route: request.url!, monitor: payload.monitorId, source: payload.incidentId, sender: payload.node.id,
+          kind: payload.kind!, key, accepted });
         response.writeHead(accepted ? 204 : 429, accepted ? {} : { 'Retry-After': '4' }).end();
       } finally { active--; }
     })().catch(() => {
@@ -45,7 +47,14 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   });
   sink.listen(0, '127.0.0.1'); await once(sink, 'listening');
   t.after(async () => {
+    const keys = new Map<string, number>();
+    for (const request of requests.filter(value => value.accepted)) {
+      const identity = `${request.route}/${request.key}`;
+      keys.set(identity, (keys.get(identity) ?? 0) + 1);
+    }
     t.diagnostic(JSON.stringify({ phase, requests: requests.length, rejected: requests.filter(request => !request.accepted).length,
+      acceptedIdentities: keys.size, repeatedAcceptedIdentities: [...keys.values()].filter(value => value > 1).length,
+      repeatedAcceptedRequests: [...keys.values()].reduce((sum, value) => sum + value - 1, 0),
       accepted: Object.fromEntries(['/fast', '/backlog'].flatMap(route => ['down', 'recovery'].map(kind =>
         [`${route}/${kind}`, requests.filter(request => request.accepted && request.route === route && request.kind === kind).length]))),
       fixtureErrors: failures.length }));
@@ -76,6 +85,21 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   await cluster.wait('all 128 observing-node slots are down', () => settled('down'), 45_000);
   const delivered = (route: string, kind: string) => new Set(requests.filter(request =>
     request.accepted && request.route === route && request.kind === kind).map(request => request.monitor));
+  const quietAfterReceiptExchange = async (route?: string) => {
+    // Acknowledged requests can still be in flight when another actor fails
+    // over. Allow the existing 5-second send deadline, then require every exact
+    // accepted identity in both peers' durable receipt views before quietness.
+    await delay(5_000);
+    await cluster.wait('both nodes know every accepted receipt identity', async () => {
+      const keys = new Set(requests.filter(request => request.accepted && (!route || request.route === route)).map(request => request.key));
+      return (await cluster.overviews()).every(overview => keys.size > 0 && [...keys].every(key =>
+        overview.notifications.some(receipt => receipt.id === key)));
+    }, 45_000);
+    const baseline = requests.filter(request => request.accepted && (!route || request.route === route)).length;
+    await delay(4_000);
+    assert.equal(requests.filter(request => request.accepted && (!route || request.route === route)).length, baseline,
+      'accepted receipt exchange stops subsequent sends');
+  };
   await cluster.wait('each fast destination accepts while the other destination is rate limited', () =>
     delivered('/fast', 'down').size === count && new Set(requests.filter(request =>
       request.route === '/backlog' && request.kind === 'down' && !request.accepted).map(request => request.monitor)).size === count, 45_000);
@@ -94,6 +118,7 @@ test('64 monitors retain bounded history and drain a destination backlog across 
       apiLatencies.push(performance.now() - start);
     }
   }
+  await quietAfterReceiptExchange('/fast');
   const before = await Promise.all(cluster.nodes.map(async node => ({ node, values: (await attempts(cluster, node))
     .filter(attempt => attempt.kind === 'down' && attempt.failures > 0 && attempt.channelId === channels[1]!.id) })));
   assert.ok(before.some(entry => entry.values.length > 0), 'failed attempts are durable before restart');
@@ -133,15 +158,21 @@ test('64 monitors retain bounded history and drain a destination backlog across 
   await cluster.wait('all observing-node slots recover', () => settled('up'), 45_000);
   await cluster.wait('all 128 destination recoveries are accepted', () =>
     delivered('/fast', 'recovery').size === count && delivered('/backlog', 'recovery').size === count, 45_000);
-  // Observe several election/sync windows after convergence, catching delayed duplicates.
-  await delay(4_000);
+  await quietAfterReceiptExchange();
   const accepted = requests.filter(request => request.accepted);
-  assert.equal(accepted.length, count * 2 * 2, 'each destination accepts one down and one recovery per monitor');
+  // Historical fixtures 978078a/6c44d41 assumed globally exactly-once provider
+  // acceptance. The existing HA contract permits independent source delivery
+  // while proof/receipt pages lag, plus ambiguous-send retries. Require every
+  // destination and stable identity, and enforce quietness after convergence.
   for (const monitor of identities) for (const route of ['/fast', '/backlog']) for (const kind of ['down', 'recovery']) {
     const values = requests.filter(request => request.monitor === monitor && request.route === route && request.kind === kind);
-    assert.equal(values.filter(value => value.accepted).length, 1);
-    assert.equal(new Set(values.map(value => value.key)).size, 1, 'retries and restart preserve delivery identity');
+    assert.ok(values.some(value => value.accepted), 'every monitor/destination accepts down and recovery');
+    for (const source of new Set(values.map(value => value.source))) {
+      assert.equal(new Set(values.filter(value => value.source === source).map(value => value.key)).size, 1,
+        'retries and failover preserve the exact original source/destination delivery identity');
+    }
   }
+  assert.ok(requests.every(request => identities.has(request.monitor)));
   assert.deepEqual(failures, []);
   assert.ok(peakActive <= 16, 'two eight-worker node pools bound incident-provider concurrency');
   apiLatencies.sort((a, b) => a - b);

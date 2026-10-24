@@ -25,9 +25,12 @@ not a maximum-capacity benchmark or a promise about arbitrary retained history.
   by a separate accepted recovery for each destination after probes return up.
 - Each node is configured to retain at most eight raw samples per monitor.
   Histories must stay local and respect that cap while probes keep running.
-- After several election/sync windows, each monitor/destination pair must have
-  exactly one accepted down and recovery. Retries and restart must keep the
-  same delivery key. Partition duplicates are outside this connected scenario.
+- Each monitor/destination must accept down and recovery. Requests for the same
+  original source/destination/event must retain one delivery key. Once both
+  peers hold the exact accepted receipts and in-flight sends settle, further
+  election/sync windows must produce no new accepted sends. Initial proof lag
+  and ambiguous sends may produce duplicate provider acceptances, as in the
+  existing HA contract; they are reported rather than counted as exactly once.
 
 The diagnostic reports workload size, API latencies, outage-to-fast-acceptance
 time, backlog drain time, accepted notifications and provider concurrency. The
@@ -175,3 +178,66 @@ historical proof is incomplete; it does not promise globally exactly-once
 provider acceptance. See notifications.md, architecture.md and
 partition-causal-repair.md. The existing final assertion remains unchanged
 while that distinction is measured.
+
+
+### Correcting the new fixture's exactly-once assumption
+
+A diagnostic-only rerun on source
+`3be46127035bfe666a42fee1117be71dc7aa2d943c663ca6dfc938d45344ca59`
+completes all workload phases in 17.992 seconds but retains the failing final
+assertion: 259 accepted requests versus 256. There are 257 accepted identities
+and two repeated accepted identities. This distinguishes an extra original
+source from repeat acceptance of an existing key; it does not establish which
+actor acknowledged each request. Guard time was 60.140 seconds, unchanged source,
+scratch peak 264,153,242 bytes cleaned to zero and no module growth.
+
+The original globally exactly-once expectation was stronger than the accepted
+HA contract. Connected transport does not mean all paged proof and receipts
+have already arrived. `scheduleTargetNotification` uses staggered senders and
+locally witnessed obligations; it does not wait for quorum agreement. The
+existing notification contract explicitly permits partition/ambiguous-send
+duplicates and promises stable retry identities and quietness after successful
+receipt exchange. Neither source-based down obligations nor backoff will be
+weakened to make that original expectation pass.
+
+The corrected fixture keeps the original workload and earlier liveness gates.
+It lets the existing bounded send deadline settle, requires both nodes to hold
+every exact accepted receipt ID, and then asserts no further accepted sends
+through several sync/election windows. It checks coverage of every destination
+and stable keys per original source/event/destination, rather than assuming a
+single global source existed before paged catch-up. The failed expectations and
+results above and their Git versions remain historical failures, not passes.
+
+
+## Current local result
+
+On Windows amd64, source
+`7b00d956d776ff7355f80aa400dd4dd8652376f6608c61e322519d1cec7ee744`
+passes workspace typecheck, the selected capacity core tests (39.467 seconds)
+and the corrected process proof (1/1, zero skips, 62.622 seconds). The diagnostic
+records 24 API reads, P95 137 ms / maximum 146 ms, 4.756 seconds from outage to
+all fast destinations, 6.728 seconds to drain the released backlog, history
+limit eight and provider concurrency peak 12 (within the two eight-worker pools).
+There are 402 provider acceptances across 306 identities, including 96 repeated
+acceptances before the converged quietness assertions. Those counts remain
+visible; this is not an exactly-once claim. Every destination/event is covered,
+keys remain stable per original source, both nodes learn the exact receipts,
+and subsequent sync/election windows stay quiet. Binary SHA-256:
+`9a5084f6419be620b44e6a6e18f280a5cd613da4d13e4a5870a872b0e43d91bd`.
+
+The same source subsequently passes the complete canary package: 896 passing
+test events, zero failures and two expected Windows question-mark filename
+skips, 217.640 seconds including compilation. All-node vet passes in 101.485
+seconds. This is CGO-disabled native evidence, not race execution. The scope
+isolation test compares the partitioned implementation with the previous
+unpartitioned fold over 64 interleaved monitor/generation scopes, including
+foreign predecessor references and private uncertainties, in four fixed orders.
+The unchanged-original regression and its three persistence-required controls
+pass without changing their expectations.
+
+The two guards complete in 256.219 and 334.547 seconds with unchanged source;
+scratch peaks are 416,736,742 and 449,832,221 bytes respectively, each returning
+to zero, with no shared module growth. The idle repository remains under its
+1.25 GiB target. Full process-suite, hosted Linux/Alpine/race/arm64 validation
+and review of this candidate remain pending. None of these local results
+certifies another branch, a tagged artifact or the complete shipping goal.

@@ -16,6 +16,9 @@ import (
 // Run explicitly with -benchtime=1x. This profiles real scheduling, peer HTTP
 // and notification traffic; ordinary tests do not run a timed benchmark.
 func BenchmarkCapacityLiveRuntime(b *testing.B) {
+	if b.N != 1 {
+		b.Fatal("use -benchtime=1x for this fixed, disposable workload")
+	}
 	for range b.N {
 		var down atomic.Bool
 		var accepted atomic.Int64
