@@ -227,3 +227,48 @@ its JavaScript bundle is 780,698 bytes, SHA-256
 `7b892dbfe83e28729140439b95af3f935e7587410e115eef4ca89ff4d223dd17`.
 This continued the documented CDP fallback rather than claiming a new native
 preview pass. No hosted protocol-17 result or release approval is claimed.
+
+
+### Encoded-options persistence review
+
+[PR #5 review finding 4365511967](https://github.com/Narehood/Uptime-Canary/pull/5#discussion_r4365511967)
+identified a mismatch between decoded field bounds and the 140 KiB raw-options
+decoder cap. Go JSON encoding escapes U+2028/U+2029 and certain ASCII bytes.
+For example, 32,768 literal U+2028 characters are 98,304 decoded bytes (valid
+blank CA text), but become 196,608 escape bytes before the JSON envelope.
+
+The regression run on source
+`0b990b5394f7d0c6e4e1dca4e05b7c0b756da3f327bd2dc27f6bdac15bfa38e7`
+reproduced both leaf round-trip failures and an authenticated API creation that
+returned 201 but whose self-encoded response could not be decoded by the Go
+monitor decoder. That pre-repair integration run stopped at the response error;
+it did not execute the later peer/restart assertions. Guard time was 105.281
+seconds with unchanged source, scratch returned to zero and no module growth.
+The desired-behavior regressions are preserved in commit `c7e8c33` before the
+production fix.
+
+The fix raises only the encoded options-object ceiling to 1 MiB, enough for the
+worst-case Go encoding of the admitted fields. The decoded CA limit remains
+128 KiB, API URL 2 KiB and key 256 bytes. Unknown/case/duplicate/null/type checks,
+parent request/wire budgets, generation semantics and frontend are unchanged.
+The negative size fixture uses whitespace inside a valid object: Go's JSON
+wrapper strips padding outside a value before invoking its custom decoder.
+An initial negative fixture incorrectly used outside padding and failed; its
+failure on `d164e22f...` remains recorded as a fixture issue, not a repaired
+product pass. The two expansion cases and API/peer/restart case already passed
+in that run.
+
+Final source
+`03bbf3e97d59126eb0e8e45a1f07a8e4eb96e8bc504cd1e21c67559818b7d4d5`
+passes all 19 focused Steam test events, zero failures/skips, in 73.688 seconds
+including compilation. The integration test verifies exact options and revision
+through the API, a real loopback peer-page exchange, and reopening both private
+SQLite databases. Maximum escaped whitespace and encoded/decoded size refusals
+also pass. Vet on the Steam and canary packages passes in 101.484 seconds.
+Guard time is 184.938 seconds, source unchanged, scratch peak 437,302,798 bytes
+cleaned to zero, and shared module growth zero. No real Steam request occurs.
+
+The initial PR head `0a61456` reported all seven hosted jobs green before this
+review repair. Those results do not cover the repair. Hosted checks must run
+again on the updated head; no new Alpine/race/arm64 or whole-release claim is
+made by these Windows checks.

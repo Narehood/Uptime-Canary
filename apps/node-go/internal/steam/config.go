@@ -49,7 +49,10 @@ var errConfig = errors.New("invalid Steam configuration")
 // UnmarshalJSON preserves the same exact-key/non-null contract for API and
 // peer input. The leaf's Options is also the root's monitor-options type.
 func (o *Options) UnmarshalJSON(raw []byte) error {
-	if len(raw) > 140<<10 {
+	// Go's encoder can expand a decoded byte to six JSON bytes. In
+	// particular, admitted whitespace-only CA text must survive persistence.
+	// The decoded 128 KiB CA / 2 KiB URL / 256-byte key limits remain in prepare.
+	if len(raw) > 1<<20 {
 		return errConfig
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
