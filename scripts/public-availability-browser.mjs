@@ -31,10 +31,10 @@ export async function reviewPublishedAvailability(h) {
   };
   const fixtureResponse = async (value, action) => {
     let intercepted = 0;
-    h.setHook(p => {
+    h.setHook(async p => {
       if (p.request.url !== A.url + path) return false;
       intercepted++;
-      void page.send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200,
+      await page.send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
         body: Buffer.from(JSON.stringify(value)).toString('base64') });
       return true;

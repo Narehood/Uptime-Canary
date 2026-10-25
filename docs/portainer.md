@@ -6,6 +6,7 @@ Portainer or with Docker Compose directly:
 | File | Services | Use |
 | --- | --- | --- |
 | [deploy/portainer-node.yml](../deploy/portainer-node.yml) | One Go node | Deploy once per monitoring host, with a unique node ID and its own two volumes. |
+| [deploy/portainer-node-outbound.yml](../deploy/portainer-node-outbound.yml) | Node-initiated connection | Guided onboarding candidate: no inbound host port; needs matching connector images, an invitation and a dedicated trusted HTTPS dashboard endpoint. |
 | [deploy/portainer-dashboard.yml](../deploy/portainer-dashboard.yml) | Dashboard account server | Create its owner, then add private nodes to its shared list. It retains its own account database and encrypted node credentials. |
 | [deploy/portainer-stack.yml](../deploy/portainer-stack.yml) | One node and dashboard together | Existing all-in-one deployment. |
 
@@ -14,6 +15,16 @@ They do not require one another or a shared Docker network. These templates
 are not Swarm service definitions. The root [compose.yaml](../compose.yaml)
 remains the build-from-checkout option, with the dashboard behind its `web`
 profile.
+
+For nodes behind NAT or a VPN without a return route, see [guided node onboarding](node-onboarding.md).
+The dashboard stack's optional `CANARY_DASHBOARD_CONNECTION_URL` enables a
+separate connection-only listener. `CANARY_CONNECT_BIND_ADDRESS` and
+`CANARY_CONNECT_PORT` publish that listener (default loopback port 18348 to
+container 8081); the browser dashboard remains on 18347 to container 8080.
+Keep the browser service behind its sign-in proxy and route the separate node
+HTTPS origin to the connection listener without interactive SSO. This candidate
+requires images built from matching source; stack variables do not add the
+feature to an older image. The linked guide records its acceptance limits.
 
 The project is development software, not a validated release. The templates
 pull development images from GitHub Container Registry (GHCR), following the
@@ -133,7 +144,7 @@ check the proved node ID before confirming Add. Confirmation journals encrypted
 credentials before atomically creating three role accounts on the node. An
 interrupted enrollment/removal remains visible and retryable; removal is only
 confirmed after the node acknowledges revocation. Selecting another node needs
-no additional sign-in. In the protocol-19 candidate, administrators can rename
+no additional sign-in. Administrators can rename
 an entry, move it after proving the same node and all three saved roles, or
 rotate and recover its delegated access in place. A bundled node's address
 remains managed by deployment settings. These actions require a matching

@@ -187,7 +187,8 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 		return err
 	}
 	defer accounts.Close()
-	d, err := NewDashboard(DashboardOptions{Accounts: accounts, Key: key, CORSOrigins: origins, LocalNodeURL: env("CANARY_LOCAL_NODE_URL"), LocalNodeToken: env("CANARY_LOCAL_NODE_TOKEN")})
+	connectionURL := env("CANARY_DASHBOARD_CONNECTION_URL")
+	d, err := NewDashboard(DashboardOptions{Accounts: accounts, Key: key, CORSOrigins: origins, LocalNodeURL: env("CANARY_LOCAL_NODE_URL"), LocalNodeToken: env("CANARY_LOCAL_NODE_TOKEN"), ConnectionURL: connectionURL, ConnectionEnabled: connectionURL != "", NodeImageTag: value("CANARY_DASHBOARD_NODE_IMAGE_TAG", "latest")})
 	if err != nil {
 		return err
 	}
@@ -206,6 +207,21 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 	}
 	defer listener.Close()
 	server := &http.Server{Handler: DashboardHandler(d, os.DirFS(assets)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 * 1024}
+	listeners := []net.Listener{listener}
+	servers := []*http.Server{server}
+	if connectionURL != "" {
+		connectionPort, parseErr := strconv.Atoi(value("CANARY_DASHBOARD_CONNECTION_PORT", "8081"))
+		if parseErr != nil || connectionPort < 1 || connectionPort > 65535 {
+			return errors.New("Invalid dashboard node connection port")
+		}
+		connectionListener, listenErr := net.Listen("tcp", net.JoinHostPort(value("CANARY_DASHBOARD_CONNECTION_HOST", "127.0.0.1"), strconv.Itoa(connectionPort)))
+		if listenErr != nil {
+			return errors.New("Dashboard node connection listener failed to start")
+		}
+		defer connectionListener.Close()
+		listeners = append(listeners, connectionListener)
+		servers = append(servers, &http.Server{Handler: d.ConnectionHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024})
+	}
 	background, cancel := context.WithCancel(ctx)
 	done := d.Start(background)
 	defer func() { cancel(); <-done }()
@@ -213,22 +229,41 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 		fmt.Fprintf(log, "Dashboard first-owner setup code: %s\nThis code stops working after the first owner is created. Keep /identity separate from database backups.\n", setup)
 	}
 	fmt.Fprintln(log, "Uptime-Canary dashboard ready; monitoring nodes remain independent")
-	errCh := make(chan error, 1)
-	go func() { errCh <- server.Serve(listener) }()
+	return serveDashboardListeners(ctx, servers, listeners)
+}
+
+// Every successfully opened listener is owned by this call. Failure of either
+// service cancels both; shutdown never strands the other serving goroutine.
+func serveDashboardListeners(ctx context.Context, servers []*http.Server, listeners []net.Listener) error {
+	background, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errCh := make(chan error, len(servers))
+	for i, server := range servers {
+		server.BaseContext = func(net.Listener) context.Context { return background }
+		go func(server *http.Server, listener net.Listener) { errCh <- server.Serve(listener) }(server, listeners[i])
+	}
+	var result error
+	remaining := len(servers)
 	select {
 	case <-ctx.Done():
-		shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		defer stop()
-		err := server.Shutdown(shutdown)
-		if err != nil {
-			_ = server.Close()
-		}
-		<-errCh
-		return err
 	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+		remaining--
+		if !errors.Is(err, http.ErrServerClosed) {
+			result = errors.New("Dashboard HTTP server stopped")
 		}
-		return errors.New("Dashboard HTTP server stopped")
 	}
+	cancel()
+	shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	for _, server := range servers {
+		if err := server.Shutdown(shutdown); err != nil {
+			_ = server.Close()
+			result = errors.New("Dashboard HTTP shutdown did not finish cleanly")
+		}
+	}
+	for remaining > 0 {
+		<-errCh
+		remaining--
+	}
+	return result
 }

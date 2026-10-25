@@ -1,0 +1,50 @@
+# A node that initiates its dashboard connection; no inbound host port.
+# First pair requires administrator confirmation and retained /identity state.
+# Pull the node image from GHCR. See docs/portainer.md for pinning and overrides.
+services:
+  node:
+    image: ${CANARY_NODE_IMAGE:-ghcr.io/narehood/uptime-canary-node:${CANARY_IMAGE_TAG:-latest}}
+    pull_policy: ${CANARY_PULL_POLICY:-missing}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=64m
+    environment:
+      CANARY_NODE_ID: ${CANARY_NODE_ID:?Set a unique persistent node ID}
+      CANARY_NODE_NAME: ${CANARY_NODE_NAME:-Uptime Canary}
+      CANARY_ADMIN_TOKEN: ${CANARY_ADMIN_TOKEN:?Set a unique random admin token}
+      CANARY_CLUSTER_TOKEN: ${CANARY_CLUSTER_TOKEN:?Set a separate random cluster token}
+      CANARY_PEERS: ${CANARY_PEERS:-[]}
+      CANARY_CORS_ORIGINS: ${CANARY_CORS_ORIGINS:-}
+      CANARY_DASHBOARD_URL: ${CANARY_DASHBOARD_URL:?Set the dedicated HTTPS node connection origin}
+      CANARY_DASHBOARD_ENROLL_TOKEN: ${CANARY_DASHBOARD_ENROLL_TOKEN:-}
+      CANARY_HOST: 0.0.0.0
+      CANARY_PORT: "3100"
+      CANARY_DB: /data/canary.db
+      CANARY_IDENTITY_DIRECTORY: /identity
+      CANARY_HISTORY_LIMIT: ${CANARY_HISTORY_LIMIT:-1000}
+      CANARY_HISTORY_RETENTION_MS: ${CANARY_HISTORY_RETENTION_MS:-604800000}
+      CANARY_SYNC_INTERVAL_MS: ${CANARY_SYNC_INTERVAL_MS:-1000}
+      CANARY_NOTIFICATION_DELAY_MS: ${CANARY_NOTIFICATION_DELAY_MS:-1500}
+      CANARY_PEER_TIMEOUT_MS: ${CANARY_PEER_TIMEOUT_MS:-2000}
+    volumes:
+      - canary-data:/data
+      - canary-identity:/identity
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Keep the stack/project name stable. Each node needs its own two volumes.
+# Preserve these volumes across upgrades and database restores.
+volumes:
+  canary-data:
+  canary-identity:

@@ -1,0 +1,732 @@
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import type { NodeInvitation, NodeInvitationCreated, NodeOnboardingCapabilities, RegisteredNode } from '@uptime-canary/shared';
+import { ApiFailure, describeFailure, isAbort } from '../api';
+import { useCanary } from '../context';
+import { connectionWaitingHint, invitationFailure, invitationGone, invitationInfo, labelProblem, pairingProblem, REINVITE_DEPLOYED, type ChangeFailure } from '../dashboard';
+import { elapsed } from '../format';
+import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
+import { notify } from '../notices';
+import { directTarget, imageReference, nodeIdProblem, PLATFORMS, secretsFor, setupGuide, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
+import { CheckField, ErrorSummary, TextField } from '../ui/forms';
+import { Glyph, Icon } from '../ui/icons';
+
+/*
+ * Add node wizard, beside the existing direct form (Registry.tsx), which stays the default. Two choices: a node that's
+ * already running or a new one, and whether this dashboard's server reaches the node or the node reaches this dashboard.
+ *
+ * A new node's administrator and cluster tokens are made in this browser and live only in the Add node dialog's state;
+ * an invitation's one-time token lives only in this wizard's state. Neither is put in an address, a notice, an error, the
+ * console or browser storage, and both go when the dialog closes. Previews mask them; Show, Copy and Download are the
+ * deliberate ways to see or take them. Only the administrator token is ever sent, to this dashboard's server, when a new
+ * direct node is verified. Once used for one node ID, the two tokens are never shown for another (onboarding.ts
+ * secretsFor). The node-connection address comes from the dashboard's server, never from this page's own.
+ */
+
+export type AddPlan = { fresh: boolean; link: 'direct' | 'outbound' };
+export interface Taken { nodes: readonly RegisteredNode[]; invitations: readonly NodeInvitation[] }
+
+/** Administrators: what the wizard may offer, read from the dashboard's server when Add node opens. */
+export function useOnboarding(): Resource<NodeOnboardingCapabilities> {
+  const { api, connection } = useCanary();
+  return useResource(`${connection.identity}|onboarding`, signal => api.onboarding(signal));
+}
+
+/** Administrators: this dashboard's invitations; refreshed while a list shows them. */
+export function useInvitations(refreshMs?: number): Resource<NodeInvitation[]> {
+  const { api, connection } = useCanary();
+  return useResource(`${connection.identity}|invitations|${refreshMs ?? 0}`, signal => api.invitations(signal), refreshMs);
+}
+
+/** Why the node can't connect to this dashboard from here, or null when it can. */
+function outboundReason(onboarding: Resource<NodeOnboardingCapabilities>): string | null {
+  const capabilities = onboarding.data;
+  if (capabilities) return capabilities.outboundEnabled ? null : 'Not set up here: this dashboard’s deployment has no node-connection address.';
+  return onboarding.error ? 'This dashboard’s server didn’t say whether nodes can connect to it.' : 'Checking whether nodes can connect to this dashboard…';
+}
+
+export function AddNodeChooser({ plan, onPlan, onboarding }: { plan: AddPlan; onPlan: (plan: AddPlan) => void; onboarding: Resource<NodeOnboardingCapabilities> }) {
+  const id = useId();
+  const reason = outboundReason(onboarding);
+  return (
+    <div className="add-choose">
+      <fieldset className="fld full types-f">
+        <legend>Node</legend>
+        <div className="types two">
+          <label>
+            <input type="radio" name={`${id}-node`} checked={!plan.fresh} onChange={() => onPlan({ ...plan, fresh: false })} />
+            <span><b><Icon name="nodes" />A node that’s already running</b><small>It keeps its ID, data, accounts and tokens.</small></span>
+          </label>
+          <label>
+            <input type="radio" name={`${id}-node`} checked={plan.fresh} onChange={() => onPlan({ ...plan, fresh: true })} />
+            <span><b><Icon name="plus" />Deploy a new node</b><small>Docker, Portainer or a Linux VM, with credentials made in this browser.</small></span>
+          </label>
+        </div>
+      </fieldset>
+      <fieldset className="fld full types-f">
+        <legend>Connection</legend>
+        <div className="types two">
+          <label>
+            <input type="radio" name={`${id}-link`} checked={plan.link === 'direct'} onChange={() => onPlan({ ...plan, link: 'direct' })} />
+            <span><b><Icon name="send" />This dashboard reaches the node</b><small>Its server connects to the node’s private address, so it needs a route to the node.</small></span>
+          </label>
+          <label>
+            <input type="radio" name={`${id}-link`} checked={plan.link === 'outbound'} disabled={reason !== null && plan.link !== 'outbound'} onChange={() => onPlan({ ...plan, link: 'outbound' })} />
+            <span><b><Icon name="plug" />The node reaches this dashboard</b><small>{reason ?? 'The node connects out over HTTPS and needs no inbound port: for nodes this dashboard can’t reach, such as behind a client VPN.'}</small></span>
+          </label>
+        </div>
+      </fieldset>
+      {onboarding.error && !onboarding.data && (plan.fresh || plan.link === 'outbound') ? (
+        <Banner tone="down" title="This dashboard’s node setup couldn’t be read" actions={<button type="button" className="btn sm" onClick={onboarding.reload}><Icon name="refresh" />Try again</button>}>
+          {describeFailure(onboarding.error)} Adding a running node that this dashboard reaches still works.
+        </Banner>
+      ) : null}
+    </div>
+  );
+}
+
+/** The published image and its platforms, as the dashboard's server reports them. */
+function ImageLine({ capabilities }: { capabilities: NodeOnboardingCapabilities }) {
+  const platforms = capabilities.containerPlatforms;
+  return (
+    <p className="small muted">
+      Image <span className="mono">{imageReference(capabilities.imageTag)}</span>
+      {platforms.length ? <>, published for {platforms.join(', ')}. The published image doesn’t cover other kinds of hosts.</> : '. This dashboard didn’t report which platforms it’s published for.'}
+    </p>
+  );
+}
+
+// ----- deployment text: platform tabs and numbered blocks
+
+/** Saves text as a file through a temporary in-memory link; nothing is stored by this page. */
+export function saveText(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.rel = 'noopener';
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Long enough for the browser to start the download, then the in-memory copy goes.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function GuideStep({ n, block, real, onHandled }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void }) {
+  const [shown, setShown] = useState(false);
+  const name = block.file ?? block.title;
+  if (block.kind === 'note') {
+    return (
+      <li className="gstep note">
+        <span className="gnum" aria-hidden="true">{n}</span>
+        <div className="gbody"><b>{block.title}</b><p>{block.text}</p></div>
+      </li>
+    );
+  }
+  return (
+    <li className={`gstep${block.secret ? ' secret' : ''}`}>
+      <span className="gnum" aria-hidden="true">{n}</span>
+      <div className="gbody">
+        <div className="gstep-h">
+          <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
+          <span className="row-wrap">
+            {block.secret ? (
+              <button type="button" className="btn sm" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} private values in ${name}`}
+                onClick={() => { if (!shown) onHandled(); setShown(!shown); }}>
+                <Icon name={shown ? 'eyeOff' : 'eye'} />{shown ? 'Hide' : 'Show'}
+              </button>
+            ) : null}
+            <CopyButton value={real.text} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />
+            {block.file ? (
+              <button type="button" className="btn sm" aria-label={`Download ${block.file}`} onClick={() => { saveText(block.file!, real.text); if (block.secret) onHandled(); }}>
+                <Icon name="download" />Download
+              </button>
+            ) : null}
+          </span>
+        </div>
+        <pre className="json-pre gpre">{block.secret && !shown ? block.text : real.text}</pre>
+        {block.secret ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy and Download include them. Keep the file private and delete stray copies.</small> : null}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The platform tabs and their steps. The preview is built with every private value masked; Copy and Download use the
+ * real text. Changing tabs hides everything again.
+ */
+export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
+  setup: Omit<NodeSetup, 'platform'>; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void;
+}) {
+  const id = useId();
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+  let shown: GuideBlock[] = [];
+  let real: GuideBlock[] = [];
+  let problem: string | null = null;
+  try {
+    shown = setupGuide({ ...setup, platform }, false);
+    real = setupGuide({ ...setup, platform }, true);
+  } catch (error) {
+    problem = error instanceof Error ? error.message : 'These settings can’t be written safely.';
+  }
+  const move = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    const last = PLATFORMS.length - 1;
+    const next = event.key === 'ArrowRight' ? (index === last ? 0 : index + 1) : event.key === 'ArrowLeft' ? (index === 0 ? last : index - 1)
+      : event.key === 'Home' ? 0 : event.key === 'End' ? last : null;
+    if (next === null) return;
+    event.preventDefault();
+    onPlatform(PLATFORMS[next].value);
+    tabs.current[next]?.focus();
+  };
+  return (
+    <div className="guide">
+      <div className="gtabs" role="tablist" aria-label="Where the node runs">
+        {PLATFORMS.map((entry, index) => (
+          <button key={entry.value} ref={element => { tabs.current[index] = element; }} type="button" role="tab" id={`${id}-t-${entry.value}`}
+            aria-selected={entry.value === platform} aria-controls={`${id}-p`} tabIndex={entry.value === platform ? 0 : -1}
+            onClick={() => onPlatform(entry.value)} onKeyDown={event => move(event, index)}>
+            {entry.label}
+          </button>
+        ))}
+      </div>
+      <div className="gpanel" role="tabpanel" id={`${id}-p`} aria-labelledby={`${id}-t-${platform}`}>
+        {problem ? <Banner tone="down" title="These settings can’t be written">{problem}</Banner> : (
+          <ol className="gsteps">
+            {/* Keyed by node ID too: values shown for one ID are hidden again once the steps are for another. */}
+            {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} />)}
+          </ol>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
+
+export interface NewNodeDraft { label: string; nodeId: string; address: string; platform: Platform }
+
+/** Says that the tokens shown are this node ID's own, after a pair was used for another ID in the same dialog. */
+function TokensNote({ nodeId, earlier }: { nodeId: string; earlier?: string | null }) {
+  if (!earlier || earlier === nodeId) return null;
+  return (
+    <p className="small muted"><Icon name="key" className="inline" />Tokens belong to one node: the ones below are for <span className="mono">{nodeId}</span>. Those shown, copied, saved or sent for <span className="mono">{earlier}</span> stay with that ID.</p>
+  );
+}
+
+/** A new node without tokens gets no steps at all: a running node's steps would leave it with no administrator. */
+const NO_TOKENS = 'No steps without the new node’s own administrator and cluster tokens, and this page has none for it. Try again above, or add a node that’s already running instead.';
+
+export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, taken, onNext, onUse, onCancel }: {
+  draft: NewNodeDraft; onDraft: (draft: NewNodeDraft) => void; secrets: NodeSecrets | null; earlier?: string | null; onboarding: Resource<NodeOnboardingCapabilities>; taken: Taken;
+  onNext: (target: DirectTarget) => void; onUse: (nodeId: string) => void; onCancel: () => void;
+}) {
+  const [show, setShow] = useState(false);
+  const [summaryRef, failed] = useSummaryFocus();
+  const capabilities = onboarding.data;
+  // Only a pair that may serve this node ID; one already used for another ID is never shown for this one.
+  const pair = secretsFor(secrets, draft.nodeId);
+  const target = draft.address.trim() ? directTarget(draft.address) : 'Enter the address the dashboard’s server will use.';
+  const errors = { label: labelProblem(draft.label), nodeId: nodeIdProblem(draft.nodeId, taken), address: typeof target === 'string' ? target : undefined };
+  const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
+  const ready = typeof target !== 'string' && !errors.label && !errors.nodeId;
+  const set = (change: Partial<NewNodeDraft>): void => onDraft({ ...draft, ...change });
+
+  const next = (event: FormEvent): void => {
+    event.preventDefault();
+    setShow(true);
+    if (typeof target === 'string' || !ready || !capabilities || !pair) { failed(); return; }
+    onNext(target);
+  };
+
+  if (!capabilities) {
+    return onboarding.error ? null : <Spinner label="Reading this dashboard’s image tag…" />;
+  }
+  return (
+    <form className="connect-form" onSubmit={next} noValidate>
+      <p className="sec">The new node gets its own administrator and cluster tokens, made in this browser. This page keeps them until the dialog closes. It sends only the administrator token, to this dashboard’s server, when you verify the node.</p>
+      <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />
+      <TextField label="Name on this dashboard" value={draft.label} onChange={label => set({ label })} error={live(draft.label, errors.label)} maxLength={128} autoFocus
+        hint="Every account on this dashboard sees it. It also becomes the node’s own name." />
+      <TextField label="Node ID" mono value={draft.nodeId} onChange={nodeId => set({ nodeId })} error={live(draft.nodeId, errors.nodeId)} maxLength={128} placeholder="canary-office"
+        hint="New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID." />
+      <TextField label="Address the dashboard’s server will use" type="url" inputMode="url" mono value={draft.address} onChange={address => set({ address })} error={live(draft.address, errors.address)}
+        placeholder="http://100.79.12.4:3100" hint="The host’s IP on a network the dashboard’s server reaches, such as its LAN or NetBird address, and the port to publish." />
+      {typeof target !== 'string' && ready && pair ? (
+        <>
+          <ImageLine capabilities={capabilities} />
+          {target.allInterfaces
+            ? <p className="small fwarn"><Glyph tone="warn" />A host name can’t be published on one address, so the commands publish port {target.port} on every address of the host. Limit who reaches it with the host’s firewall.</p>
+            : <p className="small muted">The commands publish port {target.port} on {target.listen} only, so it must be an address of this host itself. If the dashboard’s server reaches the host through NAT or a port forward, put the host’s own address, which the forward points to, in the publish line (CANARY_HOST on a VM). If the address belongs to a VPN that starts after Docker, Docker can’t publish on it at boot; then publish on 0.0.0.0 and limit it with the firewall.</p>}
+          <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use an address on a network that encrypts it, such as NetBird or Tailscale.</p>
+          <TokensNote nodeId={draft.nodeId} earlier={earlier} />
+          <SetupGuide setup={{ nodeId: draft.nodeId, name: draft.label, imageTag: capabilities.imageTag, secrets: pair, direct: target }} platform={draft.platform}
+            onPlatform={platform => set({ platform })} onHandled={() => onUse(draft.nodeId)} />
+          {draft.platform === 'vm' && capabilities.nativeDownloadAvailable ? <p className="small muted">This dashboard reports native downloads, but gives this page no address for them, so the steps above build the node instead.</p> : null}
+        </>
+      ) : typeof target !== 'string' && ready
+        ? <p className="small fwarn" role="alert"><Glyph tone="warn" />{NO_TOKENS}</p>
+        : <p className="small muted">The commands appear here once these fields are filled in.</p>}
+      <div className="modal-foot">
+        <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+        <span className="row-wrap">
+          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="btn primary"><Icon name="chevRight" />Next: verify the node</button>
+        </span>
+      </div>
+    </form>
+  );
+}
+
+// ----- a node that reaches this dashboard: invitation, settings, first-pair confirmation
+
+const withoutToken = ({ id, label, nodeId, connectionUrl, expiresAt, state, registrationId, node }: NodeInvitationCreated): NodeInvitation =>
+  ({ id, label, nodeId, connectionUrl, expiresAt, state, ...(registrationId ? { registrationId } : {}), ...(node ? { node } : {}) });
+
+/** What the connected node proved: its ID, name, version and the fingerprint of its connection credential. */
+export function PairingFacts({ invitation }: { invitation: NodeInvitation }) {
+  const node = invitation.node;
+  if (!node) return null;
+  return (
+    <dl className="kv pairing-kv">
+      <dt>Node ID</dt><dd><span className="mono">{node.id}</span>{node.id === invitation.nodeId ? <span className="muted"> · the ID this invitation expects</span> : null}</dd>
+      {node.name !== node.id ? <><dt>Its name</dt><dd>{node.name}</dd></> : null}
+      <dt>Version</dt><dd>{node.version || <span className="muted">Not reported</span>}{node.sourceCommit ? <span className="mono muted"> · {node.sourceCommit.slice(0, 12)}</span> : null}</dd>
+      <dt>Fingerprint</dt><dd className="mono fp">{node.fingerprint}</dd>
+    </dl>
+  );
+}
+
+function addedNotice(node: RegisteredNode): string {
+  return node.state === 'enrolling'
+    ? `${node.label} is listed, but setting up this dashboard’s access on it hasn’t finished. It shows as “Enrollment unfinished”, with Retry.`
+    : `${node.label} added. The dashboard’s server reads it over the node’s own connection.`;
+}
+
+/** The label of the explicit check that Add waits for. */
+const FINGERPRINT_CHECK = 'This fingerprint matches the one in the node’s log';
+
+/**
+ * The confirmation card's text and buttons, shared by the wizard and the Review dialog. Add stays off until the
+ * administrator ticks that the fingerprint matches the node's own log, so a node is never added on its ID alone. Callers
+ * key the card by invitation and fingerprint, so a different fingerprint starts unticked.
+ */
+function PairingCard({ invitation, busy, onConfirm, onReject }: { invitation: NodeInvitation; busy: boolean; onConfirm: () => void; onReject: () => void }) {
+  const problem = pairingProblem(invitation);
+  const [compared, setCompared] = useState(false);
+  return (
+    <section className="pairing" aria-label="Confirm the first connection">
+      <h3><Glyph tone="warn" />Is this your node?</h3>
+      {problem ? <Banner tone="down" title="Don’t add this node">{problem}</Banner> : <PairingFacts invitation={invitation} />}
+      <p className="small muted">The node prints the same fingerprint in its log when it connects. Compare them before you add it. Until you do, the dashboard reads nothing from the node and sets up no access there. It shows no source address, because it can’t prove one.</p>
+      {problem ? null : <CheckField label={FINGERPRINT_CHECK} hint="Its log line starts with “Node connection fingerprint”." checked={compared} onChange={setCompared} disabled={busy} />}
+      <div className="row-wrap">
+        {problem ? null : <button type="button" className="btn primary" onClick={onConfirm} disabled={busy || !compared}><Icon name="check" />{busy ? 'Adding…' : `Add “${invitation.label}”`}</button>}
+        <button type="button" className="btn danger" onClick={onReject} disabled={busy}><Icon name="close" />Not my node: cancel invitation</button>
+      </div>
+    </section>
+  );
+}
+
+/** Polls one invitation's status while it can still change. `nonce` asks again at once. */
+function useInvitationStatus(id: string | null, stop: boolean, nonce: number): { status: NodeInvitation | null; failure: unknown } {
+  const { api } = useCanary();
+  const [status, setStatus] = useState<NodeInvitation | null>(null);
+  const [failure, setFailure] = useState<unknown>(null);
+  useEffect(() => {
+    if (!id || stop) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    const poll = async (): Promise<void> => {
+      try {
+        const next = await api.invitation(id, controller.signal);
+        if (controller.signal.aborted) return;
+        failures = 0;
+        setStatus(next);
+        setFailure(null);
+        if (next.state === 'expired' || next.state === 'confirmed') return;
+        timer = setTimeout(() => { void poll(); }, next.state === 'connected' ? 5000 : 2000);
+      } catch (error) {
+        if (controller.signal.aborted || isAbort(error)) return;
+        if (error instanceof ApiFailure && error.status === 404) { setFailure(error); return; }
+        failures++;
+        if (failures >= 2) setFailure(error);
+        timer = setTimeout(() => { void poll(); }, Math.min(30_000, 2000 * 2 ** failures));
+      }
+    };
+    void poll();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+  }, [api, id, stop, nonce]);
+  return { status, failure };
+}
+
+export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
+  fresh: boolean; onboarding: Resource<NodeOnboardingCapabilities>; secrets: NodeSecrets | null; earlier?: string | null; onUse: (nodeId: string) => void; taken: Taken; platform: Platform;
+  onPlatform: (platform: Platform) => void; onClose: () => void; onRequestClose: () => void; onLock: (locked: boolean) => void; onBusy: (busy: boolean) => void;
+  guard: RefObject<(() => boolean) | null>; onTakenChanged: () => void;
+}) {
+  const { api, registry, connection, stillCurrent } = useCanary();
+  const capabilities = onboarding.data;
+  const [label, setLabel] = useState('');
+  const [nodeId, setNodeId] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState<null | 'create' | 'cancel' | 'confirm'>(null);
+  const [failure, setFailure] = useState<ChangeFailure | null>(null);
+  const [invitation, setInvitation] = useState<NodeInvitation | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [handled, setHandled] = useState(false);
+  const [asking, setAsking] = useState<null | 'close' | 'cancel'>(null);
+  const [added, setAdded] = useState<RegisteredNode | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const [summaryRef, failed] = useSummaryFocus();
+  const attempt = useRef<AbortController | null>(null);
+  const okRef = useRef<HTMLElement>(null);
+  const now = useNow(1000) + (connection.issuerSkew ?? 0);
+  const polled = useInvitationStatus(invitation?.id ?? null, added !== null, nonce);
+  const current = polled.status && polled.status.id === invitation?.id ? polled.status : invitation;
+
+  useEffect(() => () => { attempt.current?.abort(); guard.current = null; }, [guard]);
+  // While a create waits, the dashboard's server may already have saved the invitation, whose token only its answer
+  // carries. Closing, Escape or the other choices would unmount this and drop that answer, so they're all off until it
+  // comes back; Stop is the one way out, and it says the invitation may exist.
+  useEffect(() => { onLock(invitation !== null || busy === 'create'); }, [invitation, busy, onLock]);
+  useEffect(() => { onBusy(busy !== null); }, [busy, onBusy]);
+  useEffect(() => { if (added) okRef.current?.focus(); }, [added]);
+  // Closing with an invitation whose token wasn't shown, copied or saved asks first: the token can't be shown again.
+  guard.current = () => {
+    if (busy !== null) return false;
+    const settled = current?.state === 'confirmed' || current?.state === 'expired' || invitationGone(polled.failure);
+    if (!invitation || !token || handled || added || settled) return true;
+    setAsking('close');
+    return false;
+  };
+
+  const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken) };
+  const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
+
+  const create = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy) return;
+    setShow(true); setFailure(null);
+    if (errors.label || errors.nodeId) { failed(); return; }
+    // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
+    if (fresh && !secrets) { failed(); return; }
+    const controller = new AbortController();
+    attempt.current = controller;
+    setBusy('create');
+    try {
+      const result = await api.createInvitation({ label, nodeId }, controller.signal);
+      if (!stillCurrent()) return;
+      setInvitation(withoutToken(result));
+      setToken(result.token);
+      setHandled(false); setShow(false);
+      // From here the new node's tokens belong to this invitation's node ID (a pair used for another ID is replaced).
+      if (fresh) onUse(result.nodeId);
+      onTakenChanged();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      onTakenChanged();
+      setFailure(isAbort(error)
+        ? { title: 'Stopped', text: 'The dashboard’s server may have made the invitation anyway. If it’s listed under “Waiting to connect”, its token can’t be shown again: cancel it there and make another.', unknown: true, reload: true }
+        : invitationFailure(error, 'create'));
+      failed();
+    } finally {
+      if (attempt.current === controller) attempt.current = null;
+      setBusy(null);
+    }
+  };
+
+  const cancel = async (): Promise<void> => {
+    if (!invitation || busy) return;
+    setBusy('cancel'); setFailure(null);
+    try {
+      await api.cancelInvitation(invitation.id);
+      if (!stillCurrent()) return;
+      setToken(null);
+      onTakenChanged();
+      notify(`Cancelled the invitation for ${invitation.label}. This dashboard set up no access on that node. ${REINVITE_DEPLOYED}`);
+      onClose();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const next = invitationFailure(error, 'cancel');
+      if (next.reload) { onTakenChanged(); registry.reload(); setNonce(n => n + 1); }
+      setFailure(next); setAsking(null);
+    } finally {
+      if (stillCurrent()) setBusy(null);
+    }
+  };
+
+  const confirm = async (): Promise<void> => {
+    if (!invitation || busy) return;
+    setBusy('confirm'); setFailure(null);
+    try {
+      const node = await api.confirmInvitation(invitation.id);
+      if (!stillCurrent()) return;
+      setToken(null);
+      setAdded(node);
+      registry.reload(); onTakenChanged();
+      notify(addedNotice(node));
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const next = invitationFailure(error, 'confirm');
+      if (next.reload) { registry.reload(); onTakenChanged(); setNonce(n => n + 1); }
+      setFailure(next);
+    } finally {
+      if (stillCurrent()) setBusy(null);
+    }
+  };
+
+  if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
+    return capabilities || onboarding.error
+      ? <Banner tone="info" title="Nodes can’t connect to this dashboard yet">{outboundReason(onboarding)} Its operator sets the node-connection address in the dashboard’s deployment.</Banner>
+      : <Spinner label="Checking whether nodes can connect to this dashboard…" />;
+  }
+
+  const failureBox = failure ? <div className="errsum" role="alert" ref={summaryRef} tabIndex={-1}><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null;
+
+  if (added) {
+    return (
+      <>
+        <div className="banner b-ok" role="status">
+          <Glyph tone="up" />
+          <div>
+            <b className="bt" tabIndex={-1} ref={okRef}>{added.state === 'enrolling' ? `${added.label} is listed` : `${added.label} added`}</b>
+            <div className="bb">{added.state === 'enrolling'
+              ? 'Setting up this dashboard’s access on it hasn’t finished. It shows as “Enrollment unfinished”, and the dashboard’s server keeps trying while the node is connected.'
+              : 'The dashboard’s server reads it over the node’s own connection, with access of its own for each dashboard role.'}</div>
+          </div>
+        </div>
+        <p className="modal-note">Now remove CANARY_DASHBOARD_ENROLL_TOKEN from the node’s settings: it works only once. The node keeps its connection credential in its identity {platform === 'vm' ? 'directory' : 'volume'}, so keep that.</p>
+        <div className="modal-foot"><span /><button type="button" className="btn primary" onClick={onClose}>Done</button></div>
+      </>
+    );
+  }
+
+  if (!invitation || !current) {
+    return (
+      <form className="connect-form" onSubmit={event => { void create(event); }} noValidate aria-busy={busy === 'create'}>
+        <p className="sec">{fresh ? 'The new node' : 'The node'} opens an HTTPS connection to this dashboard’s node-connection address and keeps it open; this dashboard never dials it. No inbound port or firewall opening is needed on the node.</p>
+        <dl className="kv"><dt>Node-connection address</dt><dd className="mono">{capabilities.connectionUrl}</dd></dl>
+        <p className="small muted">Set by this dashboard’s deployment. The node must reach it over HTTPS and trust its certificate; nothing here turns certificate checks off.</p>
+        {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
+        <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
+          hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
+        <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
+          hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            {busy === 'create'
+              ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
+              : <button type="button" className="btn" onClick={onRequestClose}>Cancel</button>}
+            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && !secrets)}><Icon name="key" />{busy === 'create' ? 'Creating…' : 'Create invitation'}</button>
+          </span>
+        </div>
+      </form>
+    );
+  }
+
+  const info = invitationInfo(current, now);
+  const left = current.expiresAt - now;
+  const gone = invitationGone(polled.failure);
+  // A new node's steps only with its own tokens; never a running node's steps in their place.
+  const pair = fresh ? secretsFor(secrets, current.nodeId) : null;
+  let status: ReactNode;
+  if (gone) status = <Banner tone="warn" title="This invitation is no longer on this dashboard">It may have been cancelled meanwhile. Nothing was added.</Banner>;
+  else if (current.state === 'waiting') {
+    status = (
+      <div className="wiz-status">
+        <Spinner label={`Waiting for ${current.nodeId} to connect…`} />
+        <span className="small muted">{info.text} Pairing only adds it to this dashboard; it doesn’t change what the node monitors.</span>
+        <span className="small muted">{connectionWaitingHint(imageReference(capabilities.imageTag), current.connectionUrl)}</span>
+      </div>
+    );
+  } else if (current.state === 'connected') status = <PairingCard key={`${current.id}|${current.node?.fingerprint ?? ''}`} invitation={current} busy={busy !== null} onConfirm={() => { void confirm(); }} onReject={() => setAsking('cancel')} />;
+  else if (current.state === 'expired') status = <Banner tone="warn" title="This invitation expired">Nothing was added. Cancel it, then make another one. {REINVITE_DEPLOYED}</Banner>;
+  else status = <Banner tone="info" title="Already added">Another administrator confirmed this node; it’s on the node list.</Banner>;
+
+  return (
+    <>
+      <div className="banner b-ok" role="status">
+        <Glyph tone="up" />
+        <div>
+          <b className="bt">Invitation ready for <span className="mono">{current.nodeId}</span></b>
+          <div className="bb">{token ? 'Its one-time token is in the private settings below, and this is the only time it’s shown.' : 'Its token was shown when it was made.'} It works once{left > 0 ? `, and ends in ${elapsed(left)}` : ''}.</div>
+        </div>
+      </div>
+      <dl className="kv">
+        <dt>Name on this dashboard</dt><dd>{current.label}</dd>
+        <dt>Node-connection address</dt><dd className="mono">{current.connectionUrl}</dd>
+      </dl>
+      {token && current.state !== 'confirmed' ? (fresh && !pair
+        ? <Banner tone="down" title="No settings without the new node’s tokens">{NO_TOKENS} This invitation’s token stays here until the dialog closes; cancel the invitation if you won’t use it.</Banner>
+        : (
+          <>
+            <ImageLine capabilities={capabilities} />
+            {fresh ? <TokensNote nodeId={current.nodeId} earlier={earlier} /> : null}
+            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: pair, outbound: { connectionUrl: current.connectionUrl, token } }}
+              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); if (fresh) onUse(current.nodeId); }} />
+          </>
+        )) : null}
+      <div aria-live="polite">{status}</div>
+      {polled.failure && !gone ? (
+        <p className="small fwarn" role="alert"><Glyph tone="warn" />Can’t read the invitation’s status: {describeFailure(polled.failure)} <button type="button" className="linkbtn" onClick={() => setNonce(n => n + 1)}>Try now</button></p>
+      ) : null}
+      {asking === 'close' ? (
+        <Banner tone="warn" title="Close without saving the invitation?" actions={<>
+          <button type="button" className="btn sm" onClick={onClose}>Close anyway</button>
+          <button type="button" className="btn sm" onClick={() => setAsking(null)}>Keep it open</button>
+        </>}>
+          Its token is shown only in this dialog. The invitation stays under “Waiting to connect” until it expires; cancel it there and make another if you need its settings.
+        </Banner>
+      ) : null}
+      {asking === 'cancel' ? (
+        <Banner tone="warn" title="Cancel this invitation?" actions={<>
+          <button type="button" className="btn sm danger-solid" onClick={() => { void cancel(); }} disabled={busy !== null}>{busy === 'cancel' ? 'Cancelling…' : 'Cancel invitation'}</button>
+          <button type="button" className="btn sm" onClick={() => setAsking(null)} disabled={busy !== null}>Keep it</button>
+        </>}>
+          The node can’t use it afterwards. This dashboard set up no access on the node, so nothing there needs undoing.
+        </Banner>
+      ) : null}
+      {failureBox}
+      <div className="modal-foot">
+        <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+        <span className="row-wrap">
+          {current.state !== 'confirmed' && !gone && asking !== 'cancel' ? <button type="button" className="btn danger" onClick={() => setAsking('cancel')} disabled={busy !== null}>Cancel invitation</button> : null}
+          <button type="button" className="btn" onClick={onRequestClose} disabled={busy !== null}>Close</button>
+        </span>
+      </div>
+    </>
+  );
+}
+
+// ----- the Nodes page: invitations waiting for their node (administrators only)
+
+/** Shown only while an administrator has invitations that aren't confirmed yet. Renders nothing while loading. */
+export function PendingNodesCard() {
+  const invitations = useInvitations(10_000);
+  const { connection } = useCanary();
+  const now = useNow(5000) + (connection.issuerSkew ?? 0);
+  const [reviewing, setReviewing] = useState<NodeInvitation | null>(null);
+  const [cancelling, setCancelling] = useState<NodeInvitation | null>(null);
+  if (invitations.error && !invitations.data) {
+    // A dashboard without node connections answers 404: there's nothing to show.
+    if (invitations.error instanceof ApiFailure && invitations.error.status === 404) return null;
+    return <p className="small muted" role="status">Invitations waiting to connect couldn’t be loaded. {describeFailure(invitations.error)}</p>;
+  }
+  const open = (invitations.data ?? []).filter(invitation => invitation.state !== 'confirmed');
+  if (!open.length) return null;
+  return (
+    <Card title="Waiting to connect" hint="Invitations for nodes that connect to this dashboard themselves. Only administrators see them. A node joins the list once an administrator confirms its first connection.">
+      <div className="peer-pick invites">
+        <ul>
+          {open.map(invitation => {
+            const info = invitationInfo(invitation, now);
+            return (
+              <li key={invitation.id}>
+                <Glyph tone={info.tone} label={info.label} />
+                <span className="grow">
+                  <b>{invitation.label}</b> <span className="mono muted">{invitation.nodeId}</span>
+                  <span className="sub">{info.label}. {info.text}</span>
+                </span>
+                <span className="row-wrap">
+                  {invitation.state === 'connected' ? <button type="button" className="btn sm primary" onClick={() => setReviewing(invitation)} aria-label={`Review ${invitation.label}`}><Icon name="eye" />Review</button> : null}
+                  <button type="button" className="btn sm" onClick={() => setCancelling(invitation)} aria-label={`Cancel invitation for ${invitation.label}`}>Cancel</button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      {reviewing ? <PairingDialog key={reviewing.id} invitation={reviewing} onClose={() => setReviewing(null)} onChanged={invitations.reload} /> : null}
+      {cancelling ? <CancelInvitationDialog key={cancelling.id} invitation={cancelling} onClose={() => setCancelling(null)} onChanged={invitations.reload} /> : null}
+    </Card>
+  );
+}
+
+/** Review a connected node from the list: the same facts and choices as the wizard's last step. */
+export function PairingDialog({ invitation: opened, onClose, onChanged }: { invitation: NodeInvitation; onClose: () => void; onChanged: () => void }) {
+  const { api, registry, stillCurrent } = useCanary();
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ChangeFailure | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const polled = useInvitationStatus(opened.id, false, nonce);
+  const current = polled.status ?? opened;
+  // Once the server says the invitation is gone, its last status (or the list's) no longer offers anything to add.
+  const gone = invitationGone(polled.failure);
+
+  const confirm = async (): Promise<void> => {
+    if (busy || gone) return;
+    setBusy(true); setFailure(null);
+    try {
+      const node = await api.confirmInvitation(current.id);
+      if (!stillCurrent()) return;
+      registry.reload(); onChanged();
+      notify(`${addedNotice(node)} Remove CANARY_DASHBOARD_ENROLL_TOKEN from its settings now; it works only once.`);
+      onClose();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const next = invitationFailure(error, 'confirm');
+      if (next.reload) { registry.reload(); onChanged(); setNonce(n => n + 1); }
+      setFailure(next);
+    } finally {
+      if (stillCurrent()) setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={<>Add “{current.label}”?</>} onClose={onClose} busy={busy} wide>
+      {gone
+        ? <Banner tone="warn" title="This invitation is no longer on this dashboard">It may have been cancelled meanwhile. Nothing was added.</Banner>
+        : current.state === 'connected'
+          ? (rejecting ? <CancelInvitationBody invitation={current} onClose={onClose} onBack={() => setRejecting(false)} onChanged={onChanged} />
+            : <PairingCard key={`${current.id}|${current.node?.fingerprint ?? ''}`} invitation={current} busy={busy} onConfirm={() => { void confirm(); }} onReject={() => setRejecting(true)} />)
+          : <Banner tone="info" title={invitationInfo(current, Date.now()).label}>This invitation isn’t waiting for a confirmation any more. The list shows what the dashboard’s server has now.</Banner>}
+      {failure ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null}
+      {rejecting && !gone ? null : <div className="modal-foot"><span /><button type="button" className="btn" onClick={onClose} disabled={busy}>Close</button></div>}
+    </Modal>
+  );
+}
+
+function CancelInvitationBody({ invitation, onClose, onBack, onChanged }: { invitation: NodeInvitation; onClose: () => void; onBack?: () => void; onChanged: () => void }) {
+  const { api, registry, stillCurrent } = useCanary();
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ChangeFailure | null>(null);
+  const cancel = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true); setFailure(null);
+    try {
+      await api.cancelInvitation(invitation.id);
+      if (!stillCurrent()) return;
+      onChanged();
+      notify(`Cancelled the invitation for ${invitation.label}. This dashboard set up no access on that node. ${REINVITE_DEPLOYED}`);
+      onClose();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const next = invitationFailure(error, 'cancel');
+      if (next.reload) { onChanged(); registry.reload(); }
+      setFailure(next);
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <p>The node <span className="mono">{invitation.nodeId}</span> can’t use this invitation afterwards. This dashboard set up no access on the node, so nothing there needs undoing, and nothing leaves the node list.</p>
+      {failure ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null}
+      <div className="row-wrap modal-acts">
+        <button type="button" className="btn danger-solid" onClick={() => { void cancel(); }} disabled={busy}>{busy ? 'Cancelling…' : 'Cancel invitation'}</button>
+        <button type="button" className="btn" onClick={onBack ?? onClose} disabled={busy}>Keep it</button>
+      </div>
+    </>
+  );
+}
+
+export function CancelInvitationDialog({ invitation, onClose, onChanged }: { invitation: NodeInvitation; onClose: () => void; onChanged: () => void }) {
+  return (
+    <Modal title={<>Cancel the invitation for “{invitation.label}”?</>} onClose={onClose}>
+      <CancelInvitationBody invitation={invitation} onClose={onClose} onChanged={onChanged} />
+    </Modal>
+  );
+}

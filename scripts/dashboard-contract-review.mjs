@@ -13,6 +13,7 @@ import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createProxyAuthFixture, reviewProxyAuth } from './proxy-auth-browser.mjs';
 import { createDashboardControlPlaneFixture, reviewDashboardControlPlane } from './dashboard-control-plane-browser.mjs';
+import { finishInterception, interceptionTracker } from './cdp-interception.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.env.TSX_DISABLE_CACHE = '1';
@@ -26,7 +27,7 @@ const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2));
 const serial = value => JSON.parse(JSON.stringify(value));
 const args = process.argv.slice(2);
-let runDir, state, report, page, ws, requestHook, proxyAuthFixture, dashboardControlPlaneFixture;
+let runDir, state, report, page, ws, requestHook, proxyAuthFixture, dashboardControlPlaneFixture, stopInterceptions;
 const secrets = new Set();
 const redact = value => { let out = String(value); for (const s of secrets) if (s) out = out.replaceAll(s, '[fixture-secret]'); return out; };
 const save = () => writeFileSync(join(runDir, 'results.json'), redact(JSON.stringify(report, null, 2)));
@@ -135,6 +136,7 @@ class Cdp {
   seq = 0; pending = new Map(); listeners = new Map();
   constructor(socket) { this.socket = socket; socket.addEventListener('message', e => { const m = JSON.parse(e.data); if (m.id) { const p = this.pending.get(m.id); if (p) { this.pending.delete(m.id); m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result); } } else for (const fn of this.listeners.get(m.method) ?? []) fn(m.params); }); }
   on(name, fn) { this.listeners.set(name, [...this.listeners.get(name) ?? [], fn]); }
+  off(name, fn) { this.listeners.set(name, (this.listeners.get(name) ?? []).filter(listener => listener !== fn)); }
   send(method, params = {}) { return new Promise((resolve, reject) => { const id = ++this.seq, timer = setTimeout(() => { this.pending.delete(id); reject(Error(`CDP timeout: ${method}`)); }, 15000); this.pending.set(id, { resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); reject(e); } }); this.socket.send(JSON.stringify({ id, method, params })); }); }
   async eval(expression) { const r = await this.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text); return r.result?.value; }
 }
@@ -174,12 +176,31 @@ async function launchBrowser() {
   if (state.proxyAuthCrossOrigin) allowed.add(state.proxyAuthCrossOrigin);
   if (state.dashboardControlPlaneOrigin) allowed.add(state.dashboardControlPlaneOrigin);
   await page.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
-  page.on('Fetch.requestPaused', p => {
-    if (requestHook?.(p)) return;
+  const failed = error => { report.exceptions.push(redact(`CDP interception failed: ${error.message}`)); };
+  const interceptions = interceptionTracker(failed);
+  const paused = p => interceptions.run(async () => {
+    if (await requestHook?.(p)) return;
     let ok = false; try { const u = new URL(p.request.url); ok = allowed.has(u.origin) || u.protocol === 'data:'; } catch {}
-    if (ok) void page.send('Fetch.continueRequest', { requestId: p.requestId });
-    else { report.blocked.push(p.request.url); void page.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'BlockedByClient' }); }
+    const outcome = {
+      canceled() { report.canceledInterceptions = (report.canceledInterceptions ?? 0) + 1; },
+      failed,
+    };
+    if (ok) await finishInterception(page, 'Fetch.continueRequest', { requestId: p.requestId }, outcome);
+    else { report.blocked.push(p.request.url); await finishInterception(page, 'Fetch.failRequest', { requestId: p.requestId, errorReason: 'BlockedByClient' }, outcome); }
   });
+  page.on('Fetch.requestPaused', paused);
+  let stopping;
+  stopInterceptions = () => stopping ??= (async () => {
+    const settled = interceptions.stop(); // Synchronously stop admitting callbacks.
+    page.off('Fetch.requestPaused', paused);
+    try {
+      // Keep all traffic blocked after removing the interception allowlist,
+      // including background refreshes while old commands are settling.
+      await page.send('Network.setBlockedURLs', { urls: ['*'] });
+      await page.send('Fetch.disable');
+    } catch (error) { failed(error); }
+    await settled;
+  })();
   page.on('Runtime.exceptionThrown', p => { report.exceptions.push(redact(p.exceptionDetails?.exception?.description || p.exceptionDetails?.text)); });
   page.on('Network.requestWillBeSent', p => {
     const h = p.request.headers; report.requests.push({ url: p.request.url, method: p.request.method, authorization: Object.keys(h).some(k => k.toLowerCase() === 'authorization'), cookie: Object.keys(h).some(k => k.toLowerCase() === 'cookie') });
@@ -640,6 +661,7 @@ async function review() {
   await browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows });
   if (proxyAuthFixture) await reviewProxyAuth({ fixture: proxyAuthFixture, state, A, B, page, step, signIn, until, text, ready, report });
   if (dashboardControlPlaneFixture) await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets });
+  await stopInterceptions?.();
   const manifest = json(join(runDir, 'source-manifest.json'));
   report.sourceChangedAfterSnapshot = manifest.files.filter(v => !existsSync(join(root, v.path)) || sha(readFileSync(join(root, v.path))) !== v.sha256).map(v => v.path);
   report.finishedAt = new Date().toISOString(); report.summary = { passed: report.checks.filter(v => v.passed).length, failed: report.checks.filter(v => !v.passed).length, exceptions: report.exceptions.length, blocked: report.blocked.length }; save();
@@ -1357,6 +1379,7 @@ try {
   else exitCode = await review();
 } catch (error) { console.error(redact(error.stack)); }
 finally {
+  await stopInterceptions?.();
   if (state && args[0] !== '--run') { write(join(runDir, 'state.private.json'), { ...state, nodes: state.nodes.map(n => ({ ...n, token: '[removed]' })) }); }
   if (report) {
     const { requests, ...compact } = report;

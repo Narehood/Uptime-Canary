@@ -21,6 +21,7 @@ var digits = regexp.MustCompile(`^\d+$`)
 func OptionsFromEnvironment(get func(string) string) (Options, error) {
 	o := Options{NodeID: get("CANARY_NODE_ID"), NodeName: get("CANARY_NODE_NAME"), Host: get("CANARY_HOST"), DBPath: get("CANARY_DB"), AdminToken: get("CANARY_ADMIN_TOKEN"), ClusterToken: get("CANARY_CLUSTER_TOKEN")}
 	o.IdentityDirectory = get("CANARY_IDENTITY_DIRECTORY")
+	o.DashboardURL, o.DashboardEnrollToken = get("CANARY_DASHBOARD_URL"), get("CANARY_DASHBOARD_ENROLL_TOKEN")
 	for _, setting := range []struct {
 		name     string
 		min, max int64

@@ -6,7 +6,7 @@ COPY apps ./apps
 COPY deploy ./deploy
 COPY Dockerfile.web ./Dockerfile.web
 COPY services/game-query/server.mjs ./services/game-query/server.mjs
-COPY scripts/public-availability-pure.mjs scripts/proxy-auth-pure.mjs scripts/node-login-copy-pure.mjs scripts/dashboard-gateway-pure.mjs scripts/dashboard-control-plane-pure.mjs scripts/push-commands-pure.mjs scripts/frontend-review-pure.mjs scripts/editor-preservation-pure.mjs scripts/monitor-clone-pure.mjs scripts/tailscale-pure.mjs scripts/browser-pure.mjs scripts/gamedig-pure.mjs scripts/steam-pure.mjs scripts/system-service-pure.mjs scripts/pm2-pure.mjs scripts/network-options-pure.mjs scripts/status-presentation-pure.mjs scripts/channel-defaults-pure.mjs scripts/registry-maintenance-pure.mjs ./scripts/
+COPY scripts/public-availability-pure.mjs scripts/proxy-auth-pure.mjs scripts/node-login-copy-pure.mjs scripts/dashboard-gateway-pure.mjs scripts/dashboard-control-plane-pure.mjs scripts/push-commands-pure.mjs scripts/frontend-review-pure.mjs scripts/editor-preservation-pure.mjs scripts/monitor-clone-pure.mjs scripts/tailscale-pure.mjs scripts/browser-pure.mjs scripts/gamedig-pure.mjs scripts/steam-pure.mjs scripts/system-service-pure.mjs scripts/pm2-pure.mjs scripts/network-options-pure.mjs scripts/status-presentation-pure.mjs scripts/channel-defaults-pure.mjs scripts/registry-maintenance-pure.mjs scripts/node-onboarding-pure.mjs scripts/cdp-interception.mjs scripts/cdp-interception-test.mjs ./scripts/
 RUN npm ci --ignore-scripts --no-audit --no-fund \
     && node node_modules/typescript/bin/tsc --noEmit -p packages/shared \
     && node node_modules/typescript/bin/tsc --noEmit -p apps/web \
@@ -29,6 +29,8 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
     && TSX_DISABLE_CACHE=1 node scripts/status-presentation-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/channel-defaults-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/registry-maintenance-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/node-onboarding-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/cdp-interception-test.mjs \
     && npm run build --workspace @uptime-canary/web
 
 FROM golang:1.27.3-alpine AS server
@@ -48,9 +50,9 @@ WORKDIR /app
 COPY LICENSE THIRD_PARTY_NOTICES.txt /usr/share/licenses/uptime-canary/
 COPY --from=server /out/canary /usr/local/bin/canary
 COPY --from=build /app/apps/web/dist /app/web
-ENV CANARY_DASHBOARD_DATA=/data CANARY_DASHBOARD_IDENTITY=/identity CANARY_DASHBOARD_ASSETS=/app/web CANARY_DASHBOARD_HOST=0.0.0.0 CANARY_DASHBOARD_PORT=8080
+ENV CANARY_DASHBOARD_DATA=/data CANARY_DASHBOARD_IDENTITY=/identity CANARY_DASHBOARD_ASSETS=/app/web CANARY_DASHBOARD_HOST=0.0.0.0 CANARY_DASHBOARD_PORT=8080 CANARY_DASHBOARD_CONNECTION_HOST=0.0.0.0 CANARY_DASHBOARD_CONNECTION_PORT=8081
 USER canary
 VOLUME ["/data", "/identity"]
 CMD ["/usr/local/bin/canary", "dashboard"]
-EXPOSE 8080
+EXPOSE 8080 8081
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD wget -q -O /dev/null http://127.0.0.1:8080/readyz || exit 1

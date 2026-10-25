@@ -35,6 +35,8 @@ ROOT_FILES = (
     "scripts/status-presentation-pure.mjs",
     "scripts/channel-defaults-pure.mjs",
     "scripts/registry-maintenance-pure.mjs",
+    "scripts/node-onboarding-pure.mjs",
+    "scripts/cdp-interception.mjs", "scripts/cdp-interception-test.mjs",
     "scripts/package-release.py", "scripts/package_release_test.py",
     "scripts/release-package-validation.py", "scripts/release_package_validation_test.py",
 )

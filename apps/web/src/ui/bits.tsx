@@ -105,33 +105,56 @@ export function Banner({ tone = 'warn', title, children, actions, role = 'status
   );
 }
 
-export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLabel }: { value: string; label?: string; className?: string; ariaLabel?: string }) {
-  const [copied, setCopied] = useState(false);
+/**
+ * Copies `value`. Without a clipboard (a plain-HTTP page) or when the browser refuses, it says so instead of doing
+ * nothing; the page never promises to clear the clipboard afterwards. `onCopied` runs only after a successful copy.
+ */
+export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLabel, onCopied }: { value: string; label?: string; className?: string; ariaLabel?: string; onCopied?: () => void }) {
+  const [copied, setCopied] = useState<null | 'done' | 'failed'>(null);
   useEffect(() => {
     if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2000);
+    const timer = setTimeout(() => setCopied(null), copied === 'failed' ? 6000 : 2000);
     return () => clearTimeout(timer);
   }, [copied]);
+  const copy = (): void => {
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    if (!clipboard?.writeText) { setCopied('failed'); return; }
+    clipboard.writeText(value).then(() => { setCopied('done'); onCopied?.(); }, () => setCopied('failed'));
+  };
+  const what = ariaLabel?.replace(/^Copy /u, '');
   return (
-    <button type="button" className={className} aria-label={ariaLabel ? (copied ? `Copied: ${ariaLabel.replace(/^Copy /u, '')}` : ariaLabel) : undefined} onClick={() => { void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => undefined); }}>
-      <Icon name={copied ? 'check' : 'copy'} />
-      <span aria-live="polite">{copied ? 'Copied' : label}</span>
+    <button type="button" className={`${className}${copied === 'failed' ? ' copy-failed' : ''}`} aria-label={ariaLabel ? (copied === 'done' ? `Copied: ${what}` : copied === 'failed' ? `Couldn’t copy: ${what}` : ariaLabel) : undefined} onClick={copy}>
+      <Icon name={copied === 'done' ? 'check' : copied === 'failed' ? 'info' : 'copy'} />
+      <span aria-live="polite">{copied === 'done' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : label}</span>
     </button>
   );
 }
 
 /** Native modal dialog: focus trap, Escape and focus return come from the platform. */
-export function Modal({ title, onClose, children, wide, busy }: { title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; busy?: boolean }) {
+export function Modal({ title, onClose, children, wide, busy, xwide }: { title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; busy?: boolean; xwide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const headingId = useId();
   const close = useRef(onClose);
   close.current = onClose;
+  const holding = useRef(busy);
+  holding.current = busy;
   useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.showModal();
+    // The browser may close a modal dialog by itself: a close request (Escape) ignores a prevented cancel event when the
+    // page has had no user activation since the last one (HTML close watchers). This page decides when a dialog
+    // closes, so one closed that way opens again; unless it's busy, that counts as a close request, which the page may
+    // still refuse (a confirmation, a busy step). Removed before this dialog closes itself on unmount.
+    const reopen = (): void => {
+      if (dialog.open || !dialog.isConnected) return;
+      dialog.showModal();
+      if (!holding.current) close.current();
+    };
+    dialog.addEventListener('close', reopen);
     return () => {
+      dialog.removeEventListener('close', reopen);
       if (dialog.open) dialog.close();
       // React may detach the dialog before the platform restores focus, so return it to the opener explicitly.
       if (opener?.isConnected) opener.focus({ preventScroll: true });
@@ -140,7 +163,7 @@ export function Modal({ title, onClose, children, wide, busy }: { title: ReactNo
   return (
     <dialog
       ref={ref}
-      className={`modal${wide ? ' wide' : ''}`}
+      className={`modal${wide ? ' wide' : ''}${xwide ? ' xwide' : ''}`}
       aria-labelledby={headingId}
       onCancel={event => { event.preventDefault(); if (!busy) close.current(); }}
     >

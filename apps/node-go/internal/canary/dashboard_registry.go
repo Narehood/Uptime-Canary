@@ -17,19 +17,22 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uptime-canary/apps/node-go/internal/nodeconnection"
 )
 
 type RegisteredNode struct {
-	ID           string `json:"id"`
-	Label        string `json:"label"`
-	NodeID       string `json:"nodeId"`
-	NodeName     string `json:"nodeName"`
-	URL          string `json:"url,omitempty"`
-	Local        bool   `json:"local"`
-	State        string `json:"state"`
-	LastReadAt   int64  `json:"lastReadAt,omitempty"`
-	MonitorCount *int   `json:"monitorCount,omitempty"`
-	Error        string `json:"error,omitempty"`
+	ID              string `json:"id"`
+	Label           string `json:"label"`
+	NodeID          string `json:"nodeId"`
+	NodeName        string `json:"nodeName"`
+	URL             string `json:"url,omitempty"`
+	Local           bool   `json:"local"`
+	State           string `json:"state"`
+	LastReadAt      int64  `json:"lastReadAt,omitempty"`
+	MonitorCount    *int   `json:"monitorCount,omitempty"`
+	Error           string `json:"error,omitempty"`
+	Connection      string `json:"connection,omitempty"`
+	LastConnectedAt int64  `json:"lastConnectedAt,omitempty"`
 }
 
 type registeredNodeRecord struct {
@@ -37,7 +40,9 @@ type registeredNodeRecord struct {
 	// Authenticated against ID, URL and proved node identity; never public JSON.
 	Credentials string `json:"credentials"`
 	// Distinguish an undiscovered placeholder from a real node named pending.
-	Unproved bool `json:"unproved,omitempty"`
+	Unproved            bool   `json:"unproved,omitempty"`
+	ConnectionHash      string `json:"connectionHash,omitempty"`
+	InvitationExpiresAt int64  `json:"invitationExpiresAt,omitempty"`
 }
 
 type dashboardNodeSecrets struct {
@@ -66,27 +71,38 @@ type nodeVerification struct {
 type DashboardOptions struct {
 	Accounts *DashboardAccounts
 	// Retain outside database backups. A missing/wrong key is a startup error.
-	Key            []byte
-	CORSOrigins    []string
-	LocalNodeURL   string
-	LocalNodeToken string
+	Key               []byte
+	CORSOrigins       []string
+	LocalNodeURL      string
+	LocalNodeToken    string
+	ConnectionURL     string
+	ConnectionEnabled bool
+	NodeImageTag      string
 }
 
 type Dashboard struct {
-	accounts     *DashboardAccounts
-	mu           sync.Mutex
-	registry     map[string]registeredNodeRecord
-	tickets      map[string]nodeVerification
-	busy         map[string]bool
-	box          cipher.AEAD
-	client       *http.Client
-	transport    *http.Transport
-	networkSlots chan struct{}
-	origins      []string
-	localURL     string
-	localToken   string
-	start        sync.Once
-	done         chan struct{}
+	accounts              *DashboardAccounts
+	mu                    sync.Mutex
+	registry              map[string]registeredNodeRecord
+	tickets               map[string]nodeVerification
+	busy                  map[string]bool
+	box                   cipher.AEAD
+	client                *http.Client
+	transport             *http.Transport
+	networkSlots          chan struct{}
+	origins               []string
+	localURL              string
+	localToken            string
+	start                 sync.Once
+	done                  chan struct{}
+	connections           *nodeconnection.Hub
+	invitations           map[string]nodeInvitationRecord
+	connectionURL         string
+	connectionEnabled     bool
+	nodeImageTag          string
+	connectionSlots       chan struct{}
+	connectionResultSlots chan struct{}
+	nodeCallSlots         map[string]chan struct{}
 }
 
 func NewDashboard(o DashboardOptions) (*Dashboard, error) {
@@ -107,6 +123,18 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 	d := &Dashboard{accounts: o.Accounts, registry: map[string]registeredNodeRecord{}, tickets: map[string]nodeVerification{}, busy: map[string]bool{}, box: box,
 		transport: transport, client: &http.Client{Transport: transport, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		networkSlots: make(chan struct{}, 8), origins: slices.Clone(o.CORSOrigins), done: make(chan struct{})}
+	d.connections, d.invitations = nodeconnection.NewHub(), make(map[string]nodeInvitationRecord)
+	d.connectionSlots, d.connectionResultSlots = make(chan struct{}, 96), make(chan struct{}, 8)
+	d.connectionEnabled, d.nodeImageTag = o.ConnectionEnabled, o.NodeImageTag
+	if d.nodeImageTag == "" {
+		d.nodeImageTag = "latest"
+	}
+	if o.ConnectionURL != "" {
+		d.connectionURL, err = dashboardConnectionOrigin(o.ConnectionURL)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if o.LocalNodeURL != "" {
 		d.localURL, err = dashboardNodeURL(o.LocalNodeURL)
 		if err != nil || tokenValue(o.LocalNodeToken) != nil {
@@ -139,11 +167,17 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 		if row.Unproved && (!row.Local || row.NodeID != "pending" || (row.State != "enrolling" && row.State != "removing")) {
 			return nil, errors.New("Invalid unproved local registration")
 		}
-		canonical, e := dashboardNodeURL(row.URL)
-		if e != nil || canonical != row.URL {
-			return nil, errors.New("Invalid saved dashboard node address")
+		if row.Connection == "outbound" {
+			if row.URL != "" || row.Local || row.Unproved || !nodeconnection.Identifier(row.ConnectionHash, 64) || row.InvitationExpiresAt < 1 {
+				return nil, errors.New("Invalid saved outbound node connection")
+			}
+		} else {
+			canonical, e := dashboardNodeURL(row.URL)
+			if e != nil || canonical != row.URL || row.Connection != "" && row.Connection != "direct" || row.ConnectionHash != "" {
+				return nil, errors.New("Invalid saved dashboard node address")
+			}
 		}
-		if _, e = d.openSecrets(row); e != nil {
+		if _, e := d.openSecrets(row); e != nil {
 			return nil, errors.New("Cannot decrypt saved node credentials; restore the matching dashboard key")
 		}
 		if !dashboardOperationPending(row.State) {
@@ -152,10 +186,18 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 		}
 		d.registry[id] = row
 	}
+	if err = d.loadInvitations(); err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
-func (d *Dashboard) Close() { d.transport.CloseIdleConnections() }
+func (d *Dashboard) Close() {
+	if d.connections != nil {
+		d.connections.Close()
+	}
+	d.transport.CloseIdleConnections()
+}
 
 func dashboardNodeURL(raw string) (string, error) {
 	if len(raw) > 512 || strings.TrimSpace(raw) != raw {
@@ -177,6 +219,9 @@ func dashboardNodeURL(raw string) (string, error) {
 }
 
 func registryAAD(row registeredNodeRecord) []byte {
+	if row.Connection == "outbound" {
+		return []byte("canary-dashboard-outbound-v1\x00" + row.ID + "\x00" + row.NodeID + "\x00" + row.ConnectionHash)
+	}
 	return []byte("canary-dashboard-v1\x00" + row.ID + "\x00" + row.NodeID + "\x00" + row.URL)
 }
 
@@ -245,6 +290,9 @@ func (d *Dashboard) commitRegistry(row registeredNodeRecord, r *http.Request, ac
 
 func (d *Dashboard) publicNode(row registeredNodeRecord, role string) RegisteredNode {
 	v := row.RegisteredNode
+	if v.Connection == "outbound" {
+		v.LastConnectedAt = d.connections.LastSeen(row.ID)
+	}
 	// Local means managed by the current deployment, rather than an immutable
 	// reason to hide removal after that deployment was disabled or moved.
 	v.Local = row.Local && d.localURL != "" && row.URL == d.localURL
@@ -263,6 +311,8 @@ func (d *Dashboard) deleteRegistry(id string) error {
 	n.mu.Unlock()
 	if err == nil {
 		delete(d.registry, id)
+		delete(d.nodeCallSlots, id)
+		d.connections.Disconnect(id)
 	}
 	return err
 }
@@ -276,11 +326,19 @@ func (d *Dashboard) nodeRequest(ctx context.Context, row registeredNodeRecord, t
 }
 
 func (d *Dashboard) nodeCall(ctx context.Context, row registeredNodeRecord, authorization, method, path string, body []byte) (*http.Response, []byte, error) {
+	if row.Connection == "outbound" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, nodeconnection.CallTimeout)
+		defer cancel()
+	}
 	select {
 	case d.networkSlots <- struct{}{}:
 		defer func() { <-d.networkSlots }()
 	case <-ctx.Done():
 		return nil, nil, fail(504, "The dashboard node request timed out")
+	}
+	if row.Connection == "outbound" {
+		return d.outboundNodeCall(ctx, row, authorization, method, path, body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, row.URL+path, bytes.NewReader(body))
 	if err != nil {

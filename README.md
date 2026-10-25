@@ -36,7 +36,7 @@ Uptime-Canary runs as a small group of independent, headless Go nodes. Each node
 | Public status and badges | Typed presentation, safe Markdown, announcement RSS, current-state badges and optional 24 h observed history | Explicit publication; no credentials or private monitor names |
 | Local history | Sample history, observed-state durations, known-time availability, coverage and latency statistics | One node's observations; gaps stay unknown; not an SLA |
 | Accounts | Passwords, TOTP, revocable sessions and admin/editor/viewer roles | Node accounts remain local; dashboard accounts share one registered-node list |
-| Dashboard registry | Automatic bundled node, verified enrollment, rename/address changes, role-credential rotation and recovery | Connections originate at the dashboard server; no dashboard HA |
+| Dashboard registry | Automatic bundled node, verified enrollment, rename/address changes, role-credential rotation and recovery | Connections originate at the dashboard server (node-initiated connections are a [candidate](#add-nodes-from-the-dashboard)); no dashboard HA |
 | Operations | CLI, Prometheus metrics, live SQLite backup, quarantined restore preparation and explicit activation | Retained identity is required; follow the [backup contract](docs/backups.md) |
 
 ## How it works
@@ -254,6 +254,7 @@ over Docker or your private network. Browsers need only the dashboard address.
 | **Portainer bundle** | Repository `https://github.com/Narehood/Uptime-Canary`, reference `refs/heads/main`, Compose path `deploy/portainer-stack.yml` | Pulls GHCR images. Combined and separate templates passed actual Compose runtime checks. [Setup guide](https://github.com/Narehood/Uptime-Canary/wiki/Setup-and-Testing) |
 | **Compose, published bundle** | `docker compose --env-file .env -f deploy/portainer-stack.yml up -d` | UI on host `:18347`; local node API on `:3100`. Same template as Portainer |
 | **Separate hosts** | `deploy/portainer-dashboard.yml` once; `deploy/portainer-node.yml` per node | Give the dashboard server a private route to each node. [Separate stacks](docs/portainer.md#deploy-separate-dashboard-and-node-stacks) |
+| **Node that connects out** (candidate) | `deploy/portainer-node-outbound.yml` per node, with the dashboard's connection origin set | No inbound node port; needs matching images that contain it. [Add nodes](#add-nodes-from-the-dashboard) |
 | **Source build, Docker** | `docker compose --profile web up --build -d` | Builds the selected services locally; underlying images passed CI. The root Compose file and its optional GameDig profile still need their own runtime acceptance |
 | **Local development** | `npm run dev`, then optionally `npm run dev:web` | Node API `:3100`, direct-mode Vite dashboard `:5173` |
 
@@ -277,7 +278,8 @@ over Docker or your private network. Browsers need only the dashboard address.
 4. Select the automatically registered local node. To add another node, an
    administrator verifies its private origin and administrator credential,
    checks the returned node ID, then confirms enrollment. Registration does
-   not configure HA peering; use `CANARY_PEERS` separately.
+   not configure HA peering; use `CANARY_PEERS` separately. Guided new-node
+   and node-initiated setups are a [candidate](#add-nodes-from-the-dashboard).
 
 The dashboard keeps three encrypted role credentials for each node, never
 sends them to the browser, and uses the credential matching the signed-in
@@ -288,6 +290,82 @@ tokens and sessions. **Recover access** finishes a saved, unconfirmed rotation
 without generating another bundle or recreating deleted role accounts.
 The bundled node's address is deployment-managed. Details and fixed limits
 are in the [dashboard contract](docs/dashboard-control-plane.md).
+
+### Add nodes from the dashboard
+
+**Status:** source candidate on `feature/node-onboarding`, not accepted. Its
+local Windows amd64 evidence is below. Hosted Linux amd64 and arm64, Alpine,
+race and all 24 process proofs haven't run on it, no images containing it are
+published, and no Compose, Portainer, VM, NetBird or Tailscale deployment has
+been tested. It stays unaccepted until those gates pass, matching images are
+published and a real deployment works; merging needs the repository owner's
+approval.
+
+**Local evidence (Windows amd64, exact sources).** On v3 source
+`e163a607106c074e196c798350f9f70bbf5a7a363e2720dc7ad8df186dbb2a03` the
+production build and dashboard browser suite passed **210/210** with no page
+exceptions or blocked requests (285.172 s guarded): a real TLS pairing,
+explicit fingerprint approval, no node authority before confirmation, no
+browser call to a private node, Stop and Escape while an invitation is being
+created, one stable token pair per node ID, and 728 and 390 px widths. The
+production-process onboarding proof passed 1/1 on the same source (binary
+`9c9c9c55…`): TLS pairing, restarts, monitoring with down and recovery alerts
+while the dashboard was stopped, reconnection from retained identity without an
+invitation, and revocation. The first browser run, on the earlier frozen source
+`bbbf468c…`, passed 209/210: one assertion counted the dialog's legitimate GET
+of the invitation list as enrollment. Only that assertion changed (it now
+requires the GET and still refuses verification and every invitation change);
+production code didn't. On `bbbf468c…` the three workspace type checks and 288
+pure and control groups (27 onboarding) passed; the static rerun on `e163…` is
+recorded in the [onboarding guide](docs/node-onboarding.md#validation-status).
+Core (1,149 passed, 2 expected skips), identity (87, 1 platform skip) and
+transport (7) tests and vet passed with no failures on 553 unchanged Go,
+runtime and module inputs (`78d1a558…`), which the current Go inputs still
+match; that run doesn't cover the whole `e163…` source. All guarded scratch
+returned to zero. Docker Compose isn't installed on that machine.
+
+**Add node** keeps the direct form (the dashboard server verifies a running
+node, then you add it) and can guide a new node: the browser makes its tokens,
+one pair per node ID, and shows masked Docker run, Compose, Portainer or Linux
+VM steps that pull the image first (VMs build matching source; there is no
+native download). Keep copied or downloaded settings private.
+
+When nodes can reach the dashboard but not the reverse, as on a one-way VPN to
+`172.16.99.101`, choose **The node reaches this dashboard**:
+
+1. Set `CANARY_DASHBOARD_CONNECTION_URL` to a separate trusted HTTPS origin
+   without interactive sign-in. Your TLS proxy forwards it to the connection
+   listener: container port `8081`, published on
+   `CANARY_CONNECT_BIND_ADDRESS:CANARY_CONNECT_PORT` (`127.0.0.1:18348`). The
+   browser address (`18347` to `8080`) stays behind your sign-in proxy; never
+   route an external `/api` to a node.
+2. Create the invitation: it lasts 15 minutes and its token is shown once. If
+   it ends unconfirmed after the node is deployed, invite that node again as a
+   running node with the same ID and replace only the token.
+3. Start the node with `CANARY_DASHBOARD_URL` and `CANARY_DASHBOARD_ENROLL_TOKEN`;
+   `deploy/portainer-node-outbound.yml` publishes no node port. A running node
+   can connect out too, keeping its ID, tokens and volumes, if its
+   `CANARY_ADMIN_TOKEN` is still a current administrator token there;
+   otherwise it refuses to start until both settings are removed again.
+4. Compare the fingerprint in the node's log, tick the check and confirm. Then
+   remove the token; keep `CANARY_DASHBOARD_URL` and `/identity`.
+
+Role reads and edits, Check now, Rotate, Recover and Remove then use that
+connection. Removing a disconnected node stays pending until it reconnects and
+revokes access, and unknown writes aren't replayed. Nodes monitor and alert
+without the dashboard; registering doesn't peer them. The connection protocol
+is 1; the peer protocol is unchanged.
+
+New-node names (containers, volumes, projects, stacks, units) are
+`canary-<readable ID>-<code>`, the code coming from the exact, case-sensitive
+ID. Nodes deployed from earlier steps (`canary-<ID>`) keep their names; the
+wizard never renames, moves or deletes them.
+
+PR builds publish no images. Use node and dashboard images built from source
+that includes this feature, and check the tag in
+[GitHub Packages](https://github.com/Narehood/Uptime-Canary/packages) first;
+images from `34442cc` lack it. Linux amd64 only. Proxy requirements and
+failures: [guided node onboarding](docs/node-onboarding.md).
 
 ### Reverse proxies and VPNs
 
@@ -305,6 +383,8 @@ API target fixed their NetBird setup. Synthetic cookie-proxy checks do not
 establish every NetBird/Tailscale configuration. Follow the
 [VPN guide](https://github.com/Narehood/Uptime-Canary/wiki/VPN-and-Reverse-Proxy-Setup)
 or use the [agent-assisted guide and starting prompt](https://github.com/Narehood/Uptime-Canary/wiki/Agent-Assisted-Setup).
+If nodes reach the dashboard but it can't reach them, see
+[Add nodes from the dashboard](#add-nodes-from-the-dashboard).
 
 ### Published images
 
@@ -373,6 +453,11 @@ identity reservations back with a database snapshot. Use the
 | `CANARY_DASHBOARD_ORIGINS` | from `CANARY_CORS_ORIGINS`, else `http://localhost:18347,http://127.0.0.1:18347` | Dashboard server only: exact browser origins it accepts, comma-separated, without paths |
 | `CANARY_DASHBOARD_DATA`, `CANARY_DASHBOARD_IDENTITY` | `/data`, `/identity` | Dashboard server only: separate clean absolute directories for its account database and for its key and setup material (its own `canary-dashboard-data` and `canary-dashboard-identity` volumes) |
 | `CANARY_DASHBOARD_ASSETS`, `CANARY_DASHBOARD_HOST` / `CANARY_DASHBOARD_PORT` | `/app/web`, `0.0.0.0` / `8080` | Dashboard server only: the built dashboard files and its listener inside the container; the image sets these |
+| `CANARY_DASHBOARD_CONNECTION_URL` | empty (off) | Dashboard server only, [onboarding candidate](#add-nodes-from-the-dashboard): the separate trusted HTTPS origin, without interactive sign-in, that nodes connecting out use. Empty turns off the connection listener and outbound invitations |
+| `CANARY_CONNECT_BIND_ADDRESS`, `CANARY_CONNECT_PORT` | `127.0.0.1`, `18348` | Compose and Portainer host mapping of the dashboard's connection listener (container port 8081), for your TLS proxy |
+| `CANARY_DASHBOARD_CONNECTION_HOST` / `CANARY_DASHBOARD_CONNECTION_PORT` | `127.0.0.1` / `8081`; the image sets `0.0.0.0` | Dashboard server only: the connection listener's actual bind address and port, such as for a native process |
+| `CANARY_DASHBOARD_URL` | unset | Node only, connecting out: the dashboard's connection origin. Keep it after pairing |
+| `CANARY_DASHBOARD_ENROLL_TOKEN` | unset | Node only, connecting out: the one-time invitation token. Remove it after pairing; the node keeps its connection identity in its identity directory |
 | `CANARY_GAME_QUERY_TOKEN` | unset; required when the optional service runs | Optional GameDig query service only: the bearer the service requires and each GameDig monitor stores as its query service token. Unset, `compose.yaml` passes it empty and the `game-query` profile's service refuses to start; the standalone `deploy/portainer-game-query.yml` stack requires a value to deploy. Generate a separate high-entropy value; never reuse an admin, cluster, dashboard or push credential |
 | `CANARY_IMAGE_TAG` | `latest` | Tag of the [published images](#published-images) in the `deploy/` templates, such as `sha-<full commit>`; not used for an image with a full override |
 | `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | `ghcr.io/narehood/uptime-canary-node` and `…-web` at `CANARY_IMAGE_TAG` | Full image reference (tag or digest) for the `deploy/` templates |
@@ -504,6 +589,10 @@ The [parity inventory](docs/parity-audit.md) tracks detailed option differences.
 - Published container images currently support Linux amd64 only. Native
   arm64 executables are validated, but arm64 images, version tags and a
   deliberate tagged release remain future work.
+- Guided node onboarding and node-initiated connections passed local Windows
+  checks only; they still need hosted Linux, arm64, Alpine, race and full
+  process-proof gates, matching published images and a real deployment check
+  ([status](#add-nodes-from-the-dashboard)).
 - The root source-build Compose configuration and optional GameDig stack
   need their own actual runtime acceptance; successful image builds do not
   prove those deployment files were exercised.
@@ -531,7 +620,7 @@ These are current contracts, not features labelled as pending implementation.
 - [Architecture and requirements](docs/architecture.md), [management API](docs/api.md), [authentication](docs/authentication.md)
 - [Real browser](docs/browser-monitors.md), [Tailscale](docs/tailscale-monitors.md), [GameDig](docs/game-server-monitors.md), [PM2](docs/pm2-monitors.md), [Steam](docs/steam-monitors.md) and [system service](docs/system-services.md) checks; [coordinated upgrades](docs/upgrades.md)
 - [Notifications](docs/notifications.md), [maintenance](docs/maintenance.md), [status pages](docs/status-pages.md), [badges](docs/badges.md), [tags](docs/tags.md), [push monitors](docs/push-monitors.md), [Globalping](apps/node-go/internal/globalping/README.md), [group hierarchy](docs/group-hierarchy.md), [observed-time history](docs/availability-history.md), [observability](docs/observability.md), [backups](docs/backups.md)
-- [Go runtime](apps/node-go/README.md), [runtime coordination](apps/node-go/RUNTIME.md), [dashboard design](docs/design.md), [dashboard accounts and node enrollment](docs/dashboard-control-plane.md), [Portainer and separate stacks](docs/portainer.md)
+- [Go runtime](apps/node-go/README.md), [runtime coordination](apps/node-go/RUNTIME.md), [dashboard design](docs/design.md), [dashboard accounts and node enrollment](docs/dashboard-control-plane.md), [guided node onboarding](docs/node-onboarding.md), [Portainer and separate stacks](docs/portainer.md)
 
 ```text
 apps/node-go     headless Go runtime, CLI and the dashboard server (canary dashboard)
