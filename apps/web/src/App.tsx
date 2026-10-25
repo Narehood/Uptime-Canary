@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NotificationChannelView, RegisteredNode, TagView } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure } from './api';
-import { CanaryContext, type Canary, type Catalog, type SwitchRequest } from './context';
-import { registrySummary } from './dashboard';
+import { CanaryContext, useCanary, type Canary, type Catalog, type SwitchRequest } from './context';
+import { nodeStateInfo, pendingOperation, registrySummary, selectedOperation } from './dashboard';
 import { ago, andList, elapsed, plural, shortClock } from './format';
 import { controlPlaneMode, gatewayMode } from './gateway';
 import { useNow, useResource } from './hooks';
@@ -177,6 +177,17 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const channels = useCatalog<NotificationChannelView>(`${connection.identity}|${api.baseUrl}|channels`, signal => nodeScope ? api.channels(signal) : Promise.resolve([]), view => view.channel.id);
   const tags = useCatalog<TagView>(`${connection.identity}|${api.baseUrl}|tags`, signal => nodeScope ? api.tags(signal) : Promise.resolve([]), view => view.tag.id);
   const registry = useCatalog<RegisteredNode>(`${connection.identity}|${api.baseUrl}|registry`, signal => controlPlane ? api.registeredNodes(signal) : Promise.resolve([]), node => node.id, 15_000);
+  // The selected registration as the list shows it now. A rename or an address move keeps the registration and its
+  // node, so the selection follows it without dropping anything. When an operation on it finishes, it is read again at
+  // once rather than after the poll's back-off.
+  const selectedRow = selection ? registry.map.get(selection.id) : undefined;
+  const selectedPending = selectedRow ? pendingOperation(selectedRow.state) : false;
+  const wasPending = useRef(selectedPending);
+  useEffect(() => { if (selectedRow) session.refreshSelection(selectedRow, connection); }, [selectedRow, connection]);
+  useEffect(() => {
+    if (wasPending.current && !selectedPending) session.refresh();
+    wasPending.current = selectedPending;
+  }, [selectedPending]);
 
   const ctx = useMemo<Canary>(() => {
     // Gateway mode: the browser has no route to the addresses nodes use to reach each other, so peers carry none here.
@@ -439,6 +450,7 @@ function LinkBanner({ connection, onReconnect, onChoose }: { connection: Connect
  */
 function ControlPlaneLinkBanner({ connection, since, now, onReconnect, onChoose }: { connection: Connection; since: string; now: number; onReconnect: () => void; onChoose: () => void }) {
   const { selection, failure, awaiting } = connection;
+  const { registry } = useCanary();
   if (connection.link === 'rejected') {
     const passwordSession = connection.api.credential === 'session';
     return (
@@ -461,6 +473,22 @@ function ControlPlaneLinkBanner({ connection, since, now, onReconnect, onChoose 
     );
   }
   const leave = <button type="button" className="btn sm" onClick={() => session.select(null, connection)}><Icon name="nodes" />All nodes</button>;
+  // While an operation changes the node's access, the dashboard's server refuses to read it (409): not an outage.
+  const operation = selectedOperation(registry.map.get(selection.id), failure);
+  if (operation) {
+    const info = operation === 'unknown' ? null : nodeStateInfo(operation);
+    return (
+      <Banner tone="info" title={<>{selection.label}: {info ? info.label : 'a change to its access isn’t finished'}</>} actions={<>
+        {retry}<a className="btn sm" href={href('nodes')}><Icon name="nodes" />Nodes</a>
+      </>}>
+        {info ? `${info.text} ` : 'The dashboard’s server doesn’t read it until an administrator’s change to its access finishes. '}
+        {awaiting
+          ? 'Nothing from it is shown yet. '
+          : `Showing the last data the dashboard’s server read from it, ${ago(connection.fetchedAt, now)}; nothing below is current. `}
+        Your sign-in and the other nodes aren’t affected.
+      </Banner>
+    );
+  }
   if (failure?.status === 404) {
     return (
       <Banner tone="warn" title={<>{selection.label} is no longer on this dashboard</>} actions={<>
@@ -490,6 +518,7 @@ function View({ route }: { route: Route }) {
     case 'monitor-new': return <MonitorFormView />;
     case 'monitor': return <MonitorDetailView key={route.id} id={route.id} />;
     case 'monitor-edit': return <MonitorFormView key={route.id} id={route.id} />;
+    case 'monitor-clone': return <MonitorFormView key={`clone-${route.id}`} cloneOf={route.id} />;
     case 'tags': return <TagsView />;
     case 'groups': return <GroupsView />;
     case 'group-new': return <GroupFormView />;

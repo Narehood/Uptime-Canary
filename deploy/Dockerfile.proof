@@ -12,6 +12,9 @@ COPY packages/shared/package.json ./packages/shared/package.json
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY apps/proof ./apps/proof
 COPY packages/shared ./packages/shared
+COPY services/game-query ./services/game-query
+COPY apps/node-go/internal/gamedigmonitor/catalogue.json apps/node-go/internal/gamedigmonitor/upstream.json ./apps/node-go/internal/gamedigmonitor/
+RUN npm ci --prefix services/game-query --ignore-scripts --omit=optional --no-audit --no-fund --no-bin-links --workspaces=false
 COPY --from=canary /usr/local/bin/canary /usr/local/bin/canary
 ENV CANARY_BIN=/usr/local/bin/canary TSX_DISABLE_CACHE=1
 USER 65534:65534

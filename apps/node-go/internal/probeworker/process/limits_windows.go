@@ -15,7 +15,13 @@ import (
 
 type windowsGuard struct{ job windows.Handle }
 
-func prepareProcess(cmd *exec.Cmd) (processGuard, error) {
+func prepareProcess(cmd *exec.Cmd) (processGuard, error) { return prepareWindowsProcess(cmd, false) }
+
+func prepareTypedProcess(cmd *exec.Cmd, engine string) (processGuard, error) {
+	return prepareWindowsProcess(cmd, engine == "tailscale-ping")
+}
+
+func prepareWindowsProcess(cmd *exec.Cmd, client bool) (processGuard, error) {
 	job, err := windows.CreateJobObject(nil, nil) // unnamed; handle not inherited
 	if err != nil {
 		return nil, err
@@ -28,6 +34,13 @@ func prepareProcess(cmd *exec.Cmd) (processGuard, error) {
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_PROCESS_MEMORY | windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
 	info.BasicLimitInformation.ActiveProcessLimit = 1
 	info.ProcessMemoryLimit = hardMemoryBytes
+	if client {
+		// One worker plus its one fixed Tailscale ping client. Keep the original
+		// per-process ceiling and add the same ceiling for their combined job.
+		info.BasicLimitInformation.ActiveProcessLimit = 2
+		info.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_JOB_MEMORY
+		info.JobMemoryLimit = hardMemoryBytes
+	}
 	if _, err = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 		g.close()
 		return nil, err

@@ -133,7 +133,11 @@ check the proved node ID before confirming Add. Confirmation journals encrypted
 credentials before atomically creating three role accounts on the node. An
 interrupted enrollment/removal remains visible and retryable; removal is only
 confirmed after the node acknowledges revocation. Selecting another node needs
-no additional sign-in. In-place credential/address editing is not implemented.
+no additional sign-in. In the protocol-19 candidate, administrators can rename
+an entry, move it after proving the same node and all three saved roles, or
+rotate and recover its delegated access in place. A bundled node's address
+remains managed by deployment settings. These actions require a matching
+dashboard/node version; see [registry maintenance](dashboard-control-plane.md).
 
 The browser reaches only the dashboard server. The server generates its runtime
 configuration and writes an HTML marker so a blocked config script cannot make
@@ -257,13 +261,42 @@ volumes to two live nodes. Dashboard accounts, sessions and encrypted role
 credentials live under `/data`; its encryption key, setup code and identity
 material live under `/identity`. Protect that identity volume separately from
 database backups. Startup refuses a database without its matching key instead
-of generating a replacement. No credential rotation UI is implemented.
+of generating a replacement. The dashboard encryption key has no rotation
+workflow. Updating a registered node's three delegated role credentials is a
+separate protocol-19 operation; it keeps that encryption identity and the
+registration ID. See [registry maintenance](dashboard-control-plane.md).
 
 Node database restore remains its explicit quarantine/activation workflow;
 replacing a database is not a safe way to clone a node. Do not restore an old
 identity directory with an old database or delete it to bypass a startup lock.
 Update/redeploy without removing volumes. Pin matching source tags or digests
 for controlled upgrades, and upgrade cluster peers together on protocol changes.
+
+## Optional monitor services
+
+GameDig uses a separate query-service image. Check the repository's published
+package tags before using `deploy/portainer-game-query.yml`; a template or
+workflow declaration alone does not publish an image. Use node and dashboard
+images that support this profile, and generate a separate
+`CANARY_GAME_QUERY_TOKEN`. Keep its API private. Its default loopback binding
+cannot be reached from another container's loopback address: provision a shared
+private Docker network or an explicitly reachable private interface. The
+service performs the game query from its own network, even when several Go
+nodes independently schedule requests to it. See [the complete service setup
+and limits](game-server-monitors.md).
+
+Real-browser checks need a separate trusted Chromium service; neither the node
+nor dashboard image contains a browser. Each assigned node must reach the
+debugging service, which in turn must reach the monitored page. Do not expose
+its debugging endpoint publicly or use someone's everyday browser profile.
+See [browser deployment](browser-monitors.md).
+
+Tailscale ping and system-service checks depend on their node's local host
+deployment. The normal Alpine node image does not install Tailscale or inherit
+the host daemon, service manager or PM2 socket. Access and account prerequisites
+must be provisioned explicitly; a container does not gain them merely by being
+on the same machine. See [Tailscale](tailscale-monitors.md),
+[system services](system-services.md) and [PM2](pm2-monitors.md).
 
 ## Scope and references
 

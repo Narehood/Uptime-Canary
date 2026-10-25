@@ -89,6 +89,18 @@ func dnsFixtureResponse(query []byte, truncate bool) []byte {
 		appendRR(owner, 2, dnsWireName("ns.fixture.invalid"))
 	case 12:
 		appendRR(owner, 12, dnsWireName("ptr.fixture.invalid"))
+	case 33:
+		appendRR(owner, 33, append([]byte{0, 10, 0, 20, 1, 187}, dnsWireName("service.fixture.invalid")...))
+	case 6:
+		data := append(dnsWireName("ns.fixture.invalid"), dnsWireName("hostmaster.fixture.invalid")...)
+		for _, value := range []uint32{42, 3600, 600, 86400, 60} {
+			var number [4]byte
+			binary.BigEndian.PutUint32(number[:], value)
+			data = append(data, number[:]...)
+		}
+		appendRR(owner, 6, data)
+	case 257:
+		appendRR(owner, 257, append([]byte{0, 5}, []byte("issueletsencrypt.org")...))
 	}
 	binary.BigEndian.PutUint16(out[6:8], count)
 	return out
@@ -168,6 +180,9 @@ func TestDNSAllSupportedRecordsWithCustomResolver(t *testing.T) {
 		{"TXT", "fixture.invalid.", "fixture-text"},
 		{"NS", "fixture.invalid.", "NS.fixture.invalid."},
 		{"PTR", "192.0.2.7", "PTR.fixture.invalid."},
+		{"SRV", "_https._tcp.fixture.invalid.", "10 20 443 SERVICE.fixture.invalid."},
+		{"SOA", "fixture.invalid.", "NS.fixture.invalid. HOSTMASTER.fixture.invalid. 42 3600 600 86400 60"},
+		{"CAA", "fixture.invalid.", `0 ISSUE "letsencrypt.org"`},
 	} {
 		t.Run(tc.record, func(t *testing.T) {
 			c := Config{Type: DNS, Target: tc.target, Timeout: time.Second, DNS: &DNSConfig{RecordType: tc.record, Server: server, Expected: []string{tc.expected}}}

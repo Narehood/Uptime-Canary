@@ -45,7 +45,7 @@ func dashboardManagedAccountID(id string) bool {
 // These accounts are local authorization, never replicated configuration.
 func (n *Node) serveDashboardDelegation(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/dashboard-enrollments/")
-	if len(id) != 32 || strings.Trim(id, "0123456789abcdef") != "" || (r.Method != "POST" && r.Method != "DELETE") {
+	if len(id) != 32 || strings.Trim(id, "0123456789abcdef") != "" || (r.Method != "POST" && r.Method != "DELETE" && r.Method != "PATCH") {
 		errorReply(w, fail(404, "Not found"))
 		return
 	}
@@ -93,7 +93,7 @@ func (n *Node) serveDashboardDelegation(w http.ResponseWriter, r *http.Request) 
 		errorReply(w, fail(400, "Invalid dashboard role credentials"))
 		return
 	}
-	if r.Method == "POST" {
+	if r.Method == "POST" || r.Method == "PATCH" {
 		seen := map[string]bool{}
 		for _, role := range dashboardRoles {
 			token := tokens.token(role)
@@ -129,23 +129,40 @@ func (n *Node) serveDashboardDelegation(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		if exists {
-			if existing.Role != role || !matches(existing.Hash, tokens.token(role)) || existing.PasswordEnabled {
+			if existing.Role != role || existing.PasswordEnabled || r.Method != "PATCH" && !matches(existing.Hash, tokens.token(role)) {
 				errorReply(w, fail(409, "Dashboard delegation differs from its saved credentials"))
 				return
 			}
-			continue
+			if matches(existing.Hash, tokens.token(role)) {
+				continue
+			}
+		} else if r.Method == "PATCH" {
+			errorReply(w, fail(409, "Dashboard delegation no longer exists"))
+			return
 		}
 		if n.pushCredentialInUse(tokens.token(role)) {
 			errorReply(w, fail(400, "Management and push credentials must differ"))
 			return
 		}
-		for _, a := range n.accounts {
+		for accountID, a := range n.accounts {
+			if r.Method == "PATCH" && accountID == key {
+				continue
+			}
 			if strings.EqualFold(a.Name, key) || a.Hash != "" && matches(a.Hash, tokens.token(role)) {
 				errorReply(w, fail(409, "Credential already exists"))
 				return
 			}
 		}
-		updates[key] = account{AccountView: AccountView{ID: key, Name: key, Role: role}, Hash: digest(tokens.token(role)), AuthVersion: 1}
+		if r.Method == "PATCH" {
+			if existing.AuthVersion >= uint64(maxSafe) {
+				errorReply(w, fail(409, "Account authorization version exhausted"))
+				return
+			}
+			existing.Hash, existing.AuthVersion = digest(tokens.token(role)), existing.AuthVersion+1
+			updates[key] = existing
+		} else {
+			updates[key] = account{AccountView: AccountView{ID: key, Name: key, Role: role}, Hash: digest(tokens.token(role)), AuthVersion: 1}
+		}
 	}
 	if r.Method == "POST" && len(n.accounts)+len(updates) > 64 {
 		errorReply(w, fail(409, "Account capacity exceeded"))
@@ -186,6 +203,13 @@ func (n *Node) serveDashboardDelegation(w http.ResponseWriter, r *http.Request) 
 			if err := put(e, "accounts", key, a); err != nil {
 				return err
 			}
+			if r.Method == "PATCH" {
+				for _, session := range n.accountSessionKeysLocked(key) {
+					if err := remove(e, "sessions", session); err != nil {
+						return err
+					}
+				}
+			}
 		}
 		for key := range deleted {
 			if err := remove(e, "accounts", key); err != nil {
@@ -204,6 +228,13 @@ func (n *Node) serveDashboardDelegation(w http.ResponseWriter, r *http.Request) 
 	}
 	for key, a := range updates {
 		n.accounts[key] = a
+		if r.Method == "PATCH" {
+			for session, saved := range n.sessions {
+				if saved.AccountID == key {
+					delete(n.sessions, session)
+				}
+			}
+		}
 	}
 	for key := range deleted {
 		delete(n.accounts, key)
@@ -217,5 +248,9 @@ func (n *Node) serveDashboardDelegation(w http.ResponseWriter, r *http.Request) 
 		reply(w, 204, nil)
 		return
 	}
-	reply(w, 201, map[string]string{"nodeId": n.ID})
+	status := 201
+	if r.Method == "PATCH" {
+		status = 200
+	}
+	reply(w, status, map[string]string{"nodeId": n.ID})
 }

@@ -1,21 +1,30 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import type { HTTPMonitorOptions, JSONQueryOptions, Monitor, MonitorInput, MonitorTag, MonitorType, RequestCredentials, TLSMonitorOptions } from '@uptime-canary/shared';
+import type {
+  HTTPMonitorOptions, JSONQueryOptions, Monitor, MonitorInput, MonitorTag, MonitorType, MonitorView, NotificationChannelView, RequestCredentials, TLSMonitorOptions,
+} from '@uptime-canary/shared';
 import { API_BODY_LIMIT, ApiFailure, describeFailure, jsonBytes } from '../api';
+import { BROWSER_FIELD_LABEL, browserDraftFrom, browserMasked, buildBrowser, type BrowserDraft, type BrowserField } from '../browser';
 import {
-  CATEGORY_LABEL, CHECK_TYPES, DNS_RECORDS, SMTP_MODES, TYPED_TARGET_TYPES, checkChangeWords, checkChanges, checkType, inputOf, isServiceType, rangesText,
+  CATEGORY_LABEL, CHECK_TYPES, DNS_RECORDS, SMTP_MODES, TYPED_TARGET_TYPES, checkChangeWords, checkChanges, checkType, cloneInput, inputOf, isServiceType, rangesText,
   statusCodesText, tlsApplies, typeLabel, type CheckCategory, type DnsRecord, type SmtpMode,
 } from '../checks';
 import { useCanary } from '../context';
 import { pushCommands } from '../dashboard';
 import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shortId, shortRev, span } from '../format';
+import { GAMEDIG_FIELD_LABEL, buildGameDig, gamedigDraftFrom, gamedigMasked, type GameDigDraft, type GameDigField } from '../gamedig';
 import { GP_FIELD_LABEL, GP_SECTION, buildGlobalping, gpDraftFrom, gpMasked, type GpDraft, type GpField } from '../globalping';
 import { groupPath } from '../model';
+import {
+  DNS_EXPECTED_BYTES, DNS_EXPECTED_MAX, DNS_EXPECTED_TOTAL, DNS_RECORD_SHAPE, descriptionProblem, dnsNeedsServer, extendedRecordProblem, isExtendedRecord, parseSubprotocols,
+  subprotocolProblem, subprotocolsText,
+} from '../networkOptions';
 import { notify } from '../notices';
 import { PM2_FIELD_LABEL, buildPm2, pm2DraftFrom, pm2Masked, type Pm2Draft, type Pm2Field } from '../pm2';
 import { href, navigate } from '../router';
 import { SERVICE_FIELDS, SERVICE_PROTOCOL, buildJsonata, buildService, jsonataDraft, maskService, serviceValues, type JsonataDraft, type ProtocolKey, type Values } from '../serviceSpecs';
 import { STEAM_FIELD_LABEL, STEAM_SECTION, buildSteam, steamDraftFrom, steamMasked, type SteamDraft, type SteamField } from '../steam';
 import { serviceNameProblem, systemdUnit } from '../systemService';
+import { tailscaleTargetProblem } from '../tailscale';
 import { Banner, Card, CopyButton, EmptyState, ErrorText, PageHead, Rev, Time } from '../ui/bits';
 import {
   CandidateOrder, CheckField, Disclosure, DurationField, ErrorSummary, HeaderEditor, NodePicker, PemField, SecretField, Seg, TextAreaField, TextField, fromDraft, headerRows, toDraft,
@@ -23,11 +32,14 @@ import {
 } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
 import { safeColor } from '../ui/tags';
+import { BrowserFields } from './BrowserFields';
 import { ProviderIcon, providerLabel, recipientCount } from './Channels';
+import { GameDigFields } from './GameDigFields';
 import { GlobalpingFields } from './GlobalpingFields';
 import { Pm2Fields } from './Pm2Fields';
 import { JsonataInputs, ServiceFields, openServiceSections } from './ServiceFields';
 import { SteamFields } from './SteamFields';
+import { TailscaleNotes } from './TailscaleNotes';
 
 type Auth = 'none' | 'basic' | 'bearer' | 'oauth2';
 type Proxy = 'none' | 'url' | 'env';
@@ -39,6 +51,8 @@ interface TagDraft { key: number; tagId: string; value: string; isPublic: boolea
 
 interface Draft {
   name: string;
+  /** Private metadata, as typed: never part of the check, never published or sent in notifications. */
+  description: string;
   type: MonitorType;
   /** One target per type, so trying another type doesn't lose what was typed. */
   targets: Record<string, string>;
@@ -57,6 +71,12 @@ interface Draft {
   redirects: string;
   http: RequestDraft;
   ws: RequestDraft;
+  /** WebSocket OAuth2 client credentials (protocol 19), separate from the HTTP check's. */
+  wsOauth: OAuthDraft;
+  /** WebSocket subprotocols to offer, as typed (commas or spaces), and whether the server must choose one. */
+  wsProtocols: string; wsRequire: boolean;
+  /** TCP only (protocol 19): complete a verified TLS handshake after connecting. */
+  tcpTls: boolean;
   keywordOn: boolean; keyword: string; keywordRegex: boolean; keywordNegate: boolean;
   jsonOn: boolean; jsonPath: string; jsonMode: 'equals' | 'exists'; jsonExpected: string; jsonNegate: boolean;
   oauth: OAuthDraft;
@@ -72,12 +92,23 @@ interface Draft {
   steam: SteamDraft;
   /** The PM2 process: its exact name and its `pm2` options. */
   pm2: Pm2Draft;
+  /** The real-browser `browser` options. The page address is a typed target. */
+  browser: BrowserDraft;
+  /** The GameDig game server: its address and its `gamedig` options. */
+  gamedig: GameDigDraft;
   /** Per service type, so switching types keeps what was typed. */
   service: Partial<Record<MonitorType, Values>>;
   repeatOn: boolean;
   repeat: DurationDraft;
   webhookUrl: string;
   channelIds: string[];
+  /**
+   * Where `channelIds` came from. 'chosen': stored, copied, imported or picked, and sent as is (a new monitor sends even an
+   * empty list, so the node adds no defaults). 'defaults': a new monitor's preselection of this node's enabled default
+   * channels, sent as is too. 'node': a new monitor while the channel list isn't known; an empty list is then omitted and
+   * the node chooses its default channels itself.
+   */
+  channelsMode: 'chosen' | 'defaults' | 'node';
   tags: TagDraft[];
   groupId: string;
   nodeIds: string[];
@@ -102,6 +133,7 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
   const protocol = monitor ? protocolOf(monitor.type) : undefined;
   return {
     name: monitor?.name ?? '',
+    description: typeof monitor?.description === 'string' ? monitor.description : '',
     type: monitor?.type ?? 'http',
     targets: monitor && TYPED_TARGET_TYPES.has(monitor.type) ? { [monitor.type]: monitor.target } : {},
     interval: toDraft(monitor?.intervalMs ?? 60_000),
@@ -118,6 +150,9 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
     redirects: h?.maxRedirects === undefined ? '' : String(h.maxRedirects),
     http: requestDraft(h),
     ws: requestDraft(monitor?.websocket),
+    wsOauth: oauthDraft(monitor?.websocket?.oauth2),
+    wsProtocols: subprotocolsText(monitor?.websocket?.subprotocols), wsRequire: Boolean(monitor?.websocket?.requireSubprotocol),
+    tcpTls: monitor?.type === 'tcp' && Boolean(monitor.tls),
     keywordOn: Boolean(h?.keyword), keyword: h?.keyword?.value ?? '', keywordRegex: Boolean(h?.keyword?.regex), keywordNegate: Boolean(h?.keyword?.negate),
     oauth: oauthDraft(h?.oauth2),
     jsonataOn: Boolean(h?.jsonata), jsonata: jsonataDraft(h?.jsonata),
@@ -133,11 +168,14 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
     gp: gpDraftFrom(monitor?.type === 'globalping' ? monitor.globalping : undefined, monitor?.type === 'globalping' ? monitor.target : ''),
     steam: steamDraftFrom(monitor?.type === 'steam' ? monitor.steam : undefined, monitor?.type === 'steam' ? monitor.target : ''),
     pm2: pm2DraftFrom(monitor?.type === 'pm2' ? monitor.pm2 : undefined, monitor?.type === 'pm2' ? monitor.target : ''),
+    browser: browserDraftFrom(monitor?.type === 'real-browser' ? monitor.browser : undefined),
+    gamedig: gamedigDraftFrom(monitor?.type === 'gamedig' ? monitor.gamedig : undefined, monitor?.type === 'gamedig' ? monitor.target : ''),
     service: monitor && protocol ? { [monitor.type]: serviceValues(protocol, monitor.service?.[protocol]) } : {},
     repeatOn: Boolean(monitor?.repeatAfterMs),
     repeat: toDraft(monitor?.repeatAfterMs || 900_000),
     webhookUrl: monitor?.webhookUrl ?? '',
     channelIds: [...(monitor?.notificationIds ?? [])],
+    channelsMode: monitor ? 'chosen' : 'node',
     tags: (monitor?.tags ?? []).map(tag => ({ key: ++tagKey, tagId: tag.tagId, value: tag.value ?? '', isPublic: Boolean(tag.public) })),
     groupId: monitor?.groupId ?? '',
     nodeIds: monitor ? [...monitor.nodeIds] : defaultNodes,
@@ -230,26 +268,29 @@ function jsonValueProblem(text: string): string | undefined {
 
 type Field =
   | 'name' | 'target' | 'interval' | 'timeout' | 'retries' | 'retryInterval' | 'expected' | 'method' | 'headers' | 'body' | 'redirects' | 'auth' | 'proxy'
-  | 'keyword' | 'jsonPath' | 'jsonExpected' | 'jsonata' | 'oauth' | 'wsHeaders' | 'wsAuth' | 'wsProxy'
+  | 'keyword' | 'jsonPath' | 'jsonExpected' | 'jsonata' | 'oauth' | 'wsHeaders' | 'wsAuth' | 'wsProxy' | 'wsOauth' | 'wsProtocols' | 'description'
   | 'tlsServerName' | 'tlsCa' | 'tlsCert' | 'tlsKey' | 'tlsMinDays' | 'dnsServer' | 'dnsExpected' | 'pingCount' | 'pingSize' | 'manualMessage'
-  | 'repeat' | 'webhook' | 'channels' | 'tags' | 'nodes' | 'size' | 'pushToken' | GpField | SteamField | Pm2Field;
+  | 'repeat' | 'webhook' | 'channels' | 'tags' | 'nodes' | 'size' | 'pushToken' | GpField | SteamField | Pm2Field | BrowserField | GameDigField;
 
 const FIELD_LABEL: Record<Field, string> = {
   name: 'Name', target: 'Target', interval: 'Interval', timeout: 'Timeout', retries: 'Retries', retryInterval: 'Retry interval', expected: 'Accepted status', method: 'Method',
   headers: 'Headers', body: 'Request body', redirects: 'Redirects', auth: 'Authentication', proxy: 'Proxy', keyword: 'Keyword', jsonPath: 'JSON path',
-  jsonExpected: 'Expected JSON value', jsonata: 'JSONata condition', oauth: 'OAuth2', wsHeaders: 'Headers', wsAuth: 'Authentication', wsProxy: 'Proxy', tlsServerName: 'TLS server name',
+  jsonExpected: 'Expected JSON value', jsonata: 'JSONata condition', oauth: 'OAuth2', wsHeaders: 'Headers', wsAuth: 'Authentication', wsProxy: 'Proxy', wsOauth: 'OAuth2',
+  wsProtocols: 'Subprotocols', description: 'Description', tlsServerName: 'TLS server name',
   tlsCa: 'Trusted CA certificates', tlsCert: 'Client certificate', tlsKey: 'Client key', tlsMinDays: 'Minimum validity', dnsServer: 'Resolver',
   dnsExpected: 'Expected records', pingCount: 'Packets', pingSize: 'Payload size', manualMessage: 'Status message', repeat: 'Repeat', webhook: 'Webhook URL',
   channels: 'Notification channels', tags: 'Tags', nodes: 'Run on', size: 'Size', pushToken: 'Push token',
   ...GP_FIELD_LABEL,
   ...STEAM_FIELD_LABEL,
   ...PM2_FIELD_LABEL,
+  ...BROWSER_FIELD_LABEL,
+  ...GAMEDIG_FIELD_LABEL,
 };
 
 /** Which disclosure holds a field, so a failed save opens the sections that need attention. */
 const SECTION_OF: Partial<Record<Field, string>> = {
   headers: 'request', body: 'request', redirects: 'request', auth: 'access', proxy: 'access', keyword: 'response', jsonPath: 'response', jsonata: 'response', oauth: 'access', jsonExpected: 'response',
-  wsHeaders: 'ws', wsAuth: 'ws', wsProxy: 'ws', tlsServerName: 'tls', tlsCa: 'tls', tlsCert: 'tls', tlsKey: 'tls', tlsMinDays: 'tls', webhook: 'legacy',
+  wsHeaders: 'ws', wsAuth: 'ws', wsProxy: 'ws', wsOauth: 'ws', tlsServerName: 'tls', tlsCa: 'tls', tlsCert: 'tls', tlsKey: 'tls', tlsMinDays: 'tls', webhook: 'legacy',
   ...GP_SECTION,
   ...STEAM_SECTION,
 };
@@ -321,8 +362,10 @@ interface Groups {
   globalping?: MonitorInput['globalping'];
   steam?: MonitorInput['steam'];
   pm2?: MonitorInput['pm2'];
+  browser?: MonitorInput['browser'];
+  gamedig?: MonitorInput['gamedig'];
 }
-const GROUP_KEYS = ['expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'ping', 'manual', 'service', 'push', 'globalping', 'steam', 'pm2'] as const;
+const GROUP_KEYS = ['expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'ping', 'manual', 'service', 'push', 'globalping', 'steam', 'pm2', 'browser', 'gamedig'] as const;
 
 /** Builds every option object for the draft's type from the draft alone, starting from the original's objects. */
 function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors, serviceErrors: Record<string, string>): Groups {
@@ -353,7 +396,7 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
       h.maxRedirects = n;
     }
     applyRequest(h, draft.http, errors, { headers: 'headers', auth: 'auth', proxy: 'proxy' }, false);
-    if (draft.http.auth === 'oauth2') h.oauth2 = applyOAuth(h.oauth2, draft.oauth, target, errors);
+    if (draft.http.auth === 'oauth2') h.oauth2 = applyOAuth(h.oauth2, draft.oauth, target, errors, 'oauth');
     else delete h.oauth2;
     if (draft.jsonataOn) {
       const built = buildJsonata(h.jsonata, draft.jsonata);
@@ -380,7 +423,17 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
     groups.http = emptyToUndefined(h);
   }
   if (type === 'websocket') {
-    groups.websocket = emptyToUndefined(applyRequest(clone(same ? original?.websocket : undefined) ?? {}, draft.ws, errors, { headers: 'wsHeaders', auth: 'wsAuth', proxy: 'wsProxy' }, true));
+    const w: NonNullable<MonitorInput['websocket']> = clone(same ? original?.websocket : undefined) ?? {};
+    applyRequest(w, draft.ws, errors, { headers: 'wsHeaders', auth: 'wsAuth', proxy: 'wsProxy' }, true);
+    // OAuth2 (protocol 19) is one more authentication choice, exclusive with the others, as for HTTP.
+    if (draft.ws.auth === 'oauth2') w.oauth2 = applyOAuth(w.oauth2, draft.wsOauth, target, errors, 'wsOauth');
+    else delete w.oauth2;
+    const protocols = parseSubprotocols(draft.wsProtocols);
+    const protocolProblem = subprotocolProblem(protocols, draft.wsRequire);
+    if (protocolProblem) errors.wsProtocols = protocolProblem;
+    if (protocols.length) w.subprotocols = protocols; else delete w.subprotocols;
+    if (draft.wsRequire) w.requireSubprotocol = true; else delete w.requireSubprotocol;
+    groups.websocket = emptyToUndefined(w);
   }
   if (type === 'dns') {
     const d: NonNullable<MonitorInput['dns']> = clone(same ? original?.dns : undefined) ?? {};
@@ -389,11 +442,24 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
       const problem = hostPortProblem(draft.dnsServer, true);
       if (problem) errors.dnsServer = problem;
       d.server = draft.dnsServer.trim();
-    } else delete d.server;
+    } else {
+      delete d.server;
+      if (dnsNeedsServer(draft.dnsRecord)) errors.dnsServer = `${draft.dnsRecord} checks ask one resolver directly, so enter its IP address and port, like 1.1.1.1:53.`;
+    }
     const expected = draft.dnsExpected.split('\n').map(line => line.trim()).filter(Boolean);
-    if (expected.length > 128) errors.dnsExpected = 'List at most 128 records.';
-    const bad = expected.find(value => draft.dnsRecord === 'A' ? !IPV4.test(value) : draft.dnsRecord === 'AAAA' ? !isIPv6(value) : draft.dnsRecord === 'MX' ? !/^\d{1,5}\s+\S+$/u.test(value) : false);
-    if (bad) errors.dnsExpected = `“${bad}” doesn’t look like ${draft.dnsRecord === 'MX' ? 'an MX record (priority and host, like 10 mail.example.com)' : `an ${draft.dnsRecord} address`}.`;
+    if (expected.length > DNS_EXPECTED_MAX) errors.dnsExpected = 'List at most 128 records.';
+    const record = draft.dnsRecord;
+    if (isExtendedRecord(record)) {
+      // The node's own canonical rules for SRV, SOA and CAA, with its per-record and total byte limits.
+      const oversized = expected.find(value => bytes(value) > DNS_EXPECTED_BYTES);
+      const problem = expected.map(value => extendedRecordProblem(record, value)).find(Boolean);
+      if (oversized) errors.dnsExpected = 'Each expected record is at most 8,192 bytes.';
+      else if (expected.reduce((n, value) => n + bytes(value), 0) > DNS_EXPECTED_TOTAL) errors.dnsExpected = 'Expected records are at most 64 KiB together.';
+      else if (problem) errors.dnsExpected = problem;
+    } else {
+      const bad = expected.find(value => record === 'A' ? !IPV4.test(value) : record === 'AAAA' ? !isIPv6(value) : record === 'MX' ? !/^\d{1,5}\s+\S+$/u.test(value) : false);
+      if (bad) errors.dnsExpected = `“${bad}” doesn’t look like ${record === 'MX' ? 'an MX record (priority and host, like 10 mail.example.com)' : `an ${record} address`}.`;
+    }
     if (expected.length) d.expected = expected; else delete d.expected;
     groups.dns = d;
   }
@@ -437,6 +503,8 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
   if (type === 'globalping') groups.globalping = buildGlobalping(same ? original?.globalping : undefined, draft.gp, errors).value;
   if (type === 'steam') groups.steam = buildSteam(same ? original?.steam : undefined, draft.steam, errors).value;
   if (type === 'pm2') groups.pm2 = buildPm2(same ? original?.pm2 : undefined, draft.pm2, errors).value;
+  if (type === 'real-browser') groups.browser = buildBrowser(same ? original?.browser : undefined, draft.browser, fromDraft(draft.timeout), errors).value;
+  if (type === 'gamedig') groups.gamedig = buildGameDig(same ? original?.gamedig : undefined, draft.gamedig, errors).value;
   const protocol = protocolOf(type);
   if (protocol) {
     const stored = same ? original?.service?.[protocol] : undefined;
@@ -448,7 +516,7 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
     outer[protocol] = built.value;
     groups.service = outer as MonitorInput['service'];
   }
-  if (tlsApplies(type, target, draft.smtpMode)) {
+  if (tlsApplies(type, target, draft.smtpMode, draft.tcpTls)) {
     const t: TLSMonitorOptions = clone(same ? original?.tls : undefined) ?? {};
     const name = draft.tlsServerName.trim();
     if (name && !IPV4.test(name) && !isIPv6(name) && !dnsName(name)) errors.tlsServerName = 'Use a host name or IP address.';
@@ -474,7 +542,9 @@ function buildGroups(draft: Draft, original: Monitor | undefined, errors: Errors
       if (days > 0) t.minValidityDays = days; else delete t.minValidityDays;
     } else delete t.minValidityDays;
     if (draft.tlsIgnore) t.ignoreVerification = true; else delete t.ignoreVerification;
-    groups.tls = emptyToUndefined(t);
+    // On a TCP check the TLS object itself turns the handshake on, so even an empty one is sent: `"tls": {}` is TLS with
+    // the defaults, and no object is a plain connection.
+    groups.tls = type === 'tcp' ? t : emptyToUndefined(t);
   }
   return groups;
 }
@@ -490,13 +560,18 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   const name = draft.name.trim();
   if (!name) errors.name = 'Enter a name.';
   else if (name.length > 128 || hasControl(name)) errors.name = 'Use at most 128 characters, without control characters.';
+  const descriptionError = descriptionProblem(draft.description);
+  if (descriptionError) errors.description = descriptionError;
   const type = draft.type;
   const typedTarget = TYPED_TARGET_TYPES.has(type);
   const typed = (draft.targets[type] ?? '').trim();
   if (typedTarget) {
     const targetProblem = type === 'http' ? httpUrlProblem(typed, 'URL')
+      // The node reads a browser monitor's whole body strictly: an unpaired surrogate anywhere in it is refused.
+      : type === 'real-browser' ? (/\p{Cs}/u.test(typed) ? 'The address holds a broken character (an unpaired surrogate). Type it again instead of pasting it.' : httpUrlProblem(typed, 'page URL'))
       : type === 'websocket' ? httpUrlProblem(typed, 'URL', ['ws:', 'wss:'])
       : type === 'system-service' ? serviceNameProblem(typed)
+      : type === 'tailscale-ping' ? tailscaleTargetProblem(typed)
       : type === 'ping' ? pingProblem(typed)
       : type === 'dns' ? (draft.dnsRecord === 'PTR'
         ? (IPV4.test(typed) || isIPv6(typed) ? undefined : 'For PTR records, enter the IP address to look up.')
@@ -541,15 +616,26 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   if (Object.keys(errors).length || Object.keys(serviceErrors).length) return { errors, serviceErrors };
 
   const input = (original ? inputOf(original) : {}) as MonitorInput;
-  for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'retries', 'retryIntervalMs', 'notificationIds', 'tags'] as const) delete input[key];
+  for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'browser', 'gamedig', 'retries', 'retryIntervalMs', 'notificationIds', 'tags', 'description'] as const) delete input[key];
+  // The description is metadata: sent exactly as typed (an unchanged one byte for byte), omitted when empty as Go encodes it.
+  if (draft.description) input.description = draft.description;
   // A PM2 process name is compared exactly, so it is sent as typed, never trimmed.
-  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'steam' ? draft.steam.target.trim() : type === 'pm2' ? draft.pm2.target : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
-  Object.assign(input, { name, type, target, intervalMs: interval!, timeoutMs: timeout!, nodeIds: [...draft.nodeIds].sort(), enabled: draft.enabled, repeatAfterMs: repeat ?? 0 });
+  const target = typedTarget ? typed : type === 'globalping' ? draft.gp.targets[draft.gp.mode].trim() : type === 'steam' ? draft.steam.target.trim() : type === 'pm2' ? draft.pm2.target : type === 'gamedig' ? draft.gamedig.target.trim()
+    : type === 'manual' ? 'manual' : type === 'push' ? 'push' : original?.type === type ? original.target : typeLabel(type);
+  // Repeat while down: the node reads a missing value like 0 (off), but stores and returns the two apart. A monitor stored
+  // without one (made through the API, and a copy of it) sends none while repeats stay off, so an edit or a copy keeps the
+  // stored shape. Every other case sends the value: 0 when off, as a new monitor does.
+  const repeatAfterMs = original && !draft.repeatOn && typeof original.repeatAfterMs !== 'number' ? undefined : repeat ?? 0;
+  Object.assign(input, { name, type, target, intervalMs: interval!, timeoutMs: timeout!, nodeIds: [...draft.nodeIds].sort(), enabled: draft.enabled, ...(repeatAfterMs === undefined ? {} : { repeatAfterMs }) });
   for (const key of GROUP_KEYS) if (groups[key] !== undefined) (input as unknown as Record<string, unknown>)[key] = groups[key];
   if (retries) input.retries = retries;
   if (draft.retryOn && retryInterval !== null) input.retryIntervalMs = retryInterval;
   if (webhook) input.webhookUrl = webhook;
-  if (draft.channelIds.length) input.notificationIds = [...draft.channelIds];
+  // A create sends its channel list even when empty, so the node adds no default channels the form didn't show (and a
+  // copy keeps the source's empty list). Only a new monitor whose channel list isn't known yet leaves the choice to the
+  // node. An edit is unchanged: the node fills defaults only for creates.
+  const creating = !original?.id;
+  if (draft.channelIds.length || (creating && draft.channelsMode !== 'node')) input.notificationIds = [...draft.channelIds];
   if (draft.tags.length) {
     input.tags = draft.tags.map(tag => {
       const out: MonitorTag = { tagId: tag.tagId };
@@ -579,12 +665,15 @@ function masked(input: MonitorInput): MonitorInput {
   hideRequest(copy.websocket);
   if (copy.http?.body) copy.http.body = '•••';
   if (copy.http?.oauth2) copy.http.oauth2 = { ...copy.http.oauth2, clientSecret: copy.http.oauth2.clientSecret ? '•••' : '' };
+  if (copy.websocket?.oauth2) copy.websocket.oauth2 = { ...copy.websocket.oauth2, clientSecret: copy.websocket.oauth2.clientSecret ? '•••' : '' };
   if (copy.tls?.clientKeyPem) copy.tls.clientKeyPem = '•••';
   if (copy.webhookUrl) copy.webhookUrl = maskedUrl(copy.webhookUrl);
   if (copy.push?.token) copy.push = { ...copy.push, token: '•••' };
   if (copy.globalping) copy.globalping = gpMasked(copy.globalping);
   if (copy.steam) copy.steam = steamMasked(copy.steam);
   if (copy.pm2) copy.pm2 = pm2Masked(copy.pm2);
+  if (copy.browser) copy.browser = browserMasked(copy.browser);
+  if (copy.gamedig) copy.gamedig = gamedigMasked(copy.gamedig);
   // Service fields the form doesn't know (from a newer node) are sent too, so the preview keeps them, with the text of
   // credential-named ones hidden: unknown siblings of the protocol object, and unknown fields inside a known one.
   const service = copy.service as unknown as Record<string, unknown> | undefined;
@@ -614,6 +703,21 @@ function maskUnknown(value: unknown, known: readonly string[], path = ''): unkno
  * contract harness appends `export { draftFrom, build, masked }` to its review copy of this file.
  */
 export const previewModel = { masked };
+
+/**
+ * The node refuses a monitor whose push token another live monitor already has (409, groups.go validateReferences), so
+ * a token that's new in this form (generated, filled in from JSON, or copied by a clone) is checked against this node's
+ * monitors before saving. The token the edited monitor is stored with isn't checked here; the node decides that case.
+ */
+function pushTokenRule(built: Built, draft: Draft, base: MonitorInput | undefined, selfId: string | undefined, monitors: readonly MonitorView[]): Built {
+  if (draft.type !== 'push' || !draft.pushToken || draft.pushToken === base?.push?.token) return built;
+  const other = monitors.find(view => view.monitor.id !== selfId && view.monitor.push?.token === draft.pushToken);
+  if (!other) return built;
+  return { errors: { ...built.errors, pushToken: `“${other.monitor.name}” already uses this push token, and the node refuses a second monitor with the same one. Generate another.` }, serviceErrors: built.serviceErrors };
+}
+
+/** The form model for a copy, for scripts/monitor-clone-pure.mjs (the harness appends its own exports). */
+export const cloneModel = { draftFrom, build, pushTokenRule };
 
 // ---------- form pieces
 
@@ -685,12 +789,24 @@ function TypePicker({ value, onChange, disabled, name, locked }: { value: Monito
   );
 }
 
-function ChannelPicker({ selected, onChange, disabled, error }: { selected: string[]; onChange: (ids: string[]) => void; disabled: boolean; error?: string }) {
+/**
+ * This node's default channels for a new monitor, as the node picks them when a create omits `notificationIds`: enabled
+ * channels marked default, sorted by ID, at most 16. A default with a configuration conflict isn't picked (the node
+ * would refuse the create until it's resolved or the list is chosen explicitly); disabled defaults are never picked.
+ */
+export function defaultChannels(list: readonly NotificationChannelView[] | null | undefined): { ids: string[]; conflicted: string[]; tooMany: boolean } {
+  const marked = (list ?? []).filter(view => view.channel.isDefault === true && view.channel.enabled && !view.channel.deleted);
+  const ids = marked.filter(view => !view.configConflict).map(view => view.channel.id).sort();
+  return { ids: ids.slice(0, 16), conflicted: marked.filter(view => view.configConflict).map(view => view.channel.name), tooMany: ids.length > 16 };
+}
+
+function ChannelPicker({ selected, onChange, disabled, error, mode }: { selected: string[]; onChange: (ids: string[]) => void; disabled: boolean; error?: string; mode: Draft['channelsMode'] }) {
   const { channels, endpoint } = useCanary();
   const id = useId();
   const list = [...(channels.list ?? [])].sort((a, b) => a.channel.name.localeCompare(b.channel.name));
   const missing = selected.filter(channelId => !channels.map.has(channelId));
   const toggle = (channelId: string, on: boolean): void => onChange(on ? [...selected, channelId] : selected.filter(other => other !== channelId));
+  const defaults = defaultChannels(channels.list);
   if (channels.unsupported) return null;
   return (
     <fieldset className="fld full chanpick-f" disabled={disabled} aria-describedby={`${id}-h${error ? ` ${id}-e` : ''}`} aria-invalid={error ? true : undefined}>
@@ -705,7 +821,7 @@ function ChannelPicker({ selected, onChange, disabled, error }: { selected: stri
                 <ProviderIcon kind={c.config.kind} />
                 <span>
                   <b>{c.name}</b>
-                  <span className="nm-sub">{providerLabel(c.config.kind)}{recipientCount(c) ? ` · ${plural(recipientCount(c), 'recipient')}` : ''}{c.enabled ? '' : ' · disabled'}{view.configConflict ? ' · conflict' : ''}</span>
+                  <span className="nm-sub">{providerLabel(c.config.kind)}{recipientCount(c) ? ` · ${plural(recipientCount(c), 'recipient')}` : ''}{c.isDefault ? ' · default for new monitors' : ''}{c.enabled ? '' : ' · disabled'}{view.configConflict ? ' · conflict' : ''}</span>
                 </span>
               </label>
             );
@@ -720,6 +836,10 @@ function ChannelPicker({ selected, onChange, disabled, error }: { selected: stri
         </div>
       ) : <p className="muted small">{channels.list ? <>No channels yet. <a href={href('channels', 'new')}>Add a channel</a> for Discord, email or webhooks.</> : channels.error ? `Channels couldn’t be loaded: ${describeFailure(channels.error)}` : 'Loading channels…'}</p>}
       <small id={`${id}-h`}>Each email recipient is a separate destination with its own retries and outcome. Channels can be shared by many monitors. <a href={href('notifications')}>Manage channels</a></small>
+      {mode === 'defaults' && selected.length ? <small>Preselected: this node’s enabled default channels. Clear any you don’t want; the monitor is created with exactly the channels checked here.</small> : null}
+      {mode === 'node' && !channels.list ? <small>Until the channel list loads, a monitor created without a channel gets this node’s enabled default channels, if it has any.</small> : null}
+      {mode !== 'chosen' && defaults.conflicted.length ? <small className="fwarn"><Glyph tone="warn" />Default {defaults.conflicted.length === 1 ? 'channel' : 'channels'} {defaults.conflicted.join(', ')} {defaults.conflicted.length === 1 ? 'has' : 'have'} a configuration conflict, so {defaults.conflicted.length === 1 ? 'it isn’t' : 'they aren’t'} preselected. Resolve it in Configuration, or check it here once resolved.</small> : null}
+      {mode !== 'chosen' && defaults.tooMany ? <small className="fwarn"><Glyph tone="warn" />More than 16 default channels are enabled; only the first 16 by ID are preselected.</small> : null}
       <ErrorText id={`${id}-e`}>{error}</ErrorText>
     </fieldset>
   );
@@ -798,7 +918,7 @@ function JsonPanel({ input, onImport, disabled }: { input?: MonitorInput; onImpo
           {shown ? <CopyButton value={shown} label={reveal ? 'Copy, with credentials' : 'Copy'} /> : null}
           <button type="button" className="btn sm" aria-pressed={reveal} onClick={() => setReveal(v => !v)}><Icon name={reveal ? 'eyeOff' : 'eye'} />{reveal ? 'Hide credentials' : 'Show credentials'}</button>
         </div>
-        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them; a node saves {MASK} as the real value, so replace each one before using a masked copy there.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}{input?.pm2?.home ? ' The PM2 home path is masked too until you show credentials.' : ''}</small>
+        <small>The same body the CLI’s <span className="mono">add</span> and <span className="mono">update</span> commands accept. Credentials are masked unless you show them; a node saves {MASK} as the real value, so replace each one before using a masked copy there.{input?.steam ? ' The Steam API key always stays masked here; it is visible only in its own field.' : ''}{input?.pm2?.home ? ' The PM2 home path is masked too until you show credentials.' : ''}{input?.browser ? ' The whole browser endpoint and its bearer token are masked too until you show credentials.' : ''}{input?.gamedig ? ' The whole game query service address, its token and the game token are masked too until you show credentials.' : ''}</small>
       </div>
       <TextAreaField full mono optional label="Fill the form from JSON" value={text} onChange={setText} rows={4} disabled={disabled} placeholder={'{ "name": "API", "type": "http", "target": "https://…" }'}
         hint="Fills the fields above from a monitor object. Nothing is saved until you save the form. Settings the form doesn’t show are not imported." />
@@ -894,9 +1014,18 @@ const oauthDraft = (o: OAuth2Options | undefined): OAuthDraft => ({
 
 /**
  * Applies the OAuth2 draft on top of the stored object, so unknown keys survive. The token endpoint and client ID are
- * required; the client secret key is always sent, even when empty, which the node accepts.
+ * required; the client secret key is always sent, even when empty, which the node accepts. `field` is where problems go:
+ * the HTTP check's OAuth2 or (protocol 19) the WebSocket check's, whose monitored URL must be wss:// unless plain HTTP is
+ * allowed.
  */
-function applyOAuth(stored: OAuth2Options | undefined, d: OAuthDraft, target: string, errors: Errors): OAuth2Options {
+function applyOAuth(stored: OAuth2Options | undefined, d: OAuthDraft, target: string, errors: Errors, field: 'oauth' | 'wsOauth'): OAuth2Options {
+  const local: Errors = {};
+  const o = applyOAuthTo(stored, d, target, local);
+  if (local.oauth) errors[field] = field === 'wsOauth' ? local.oauth.replace('both the token endpoint and the monitored URL', 'the token endpoint, and wss:// for the monitored URL,') : local.oauth;
+  return o;
+}
+
+function applyOAuthTo(stored: OAuth2Options | undefined, d: OAuthDraft, target: string, errors: Errors): OAuth2Options {
   const o = (stored ? structuredClone(stored) : {}) as OAuth2Options;
   o.tokenUrl = d.tokenUrl.trim();
   o.clientId = d.clientId;
@@ -913,7 +1042,7 @@ function applyOAuth(stored: OAuth2Options | undefined, d: OAuthDraft, target: st
     try { url = new URL(o.tokenUrl); } catch { /* reported below */ }
     if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password || url.hash) errors.oauth = 'Enter the token endpoint as a complete https:// address without credentials or #fragment.';
   }
-  if (!errors.oauth && !d.insecure && ((o.tokenUrl && !/^https:\/\//iu.test(o.tokenUrl)) || /^http:\/\//iu.test(target.trim()))) {
+  if (!errors.oauth && !d.insecure && ((o.tokenUrl && !/^https:\/\//iu.test(o.tokenUrl)) || /^(?:http|ws):\/\//iu.test(target.trim()))) {
     errors.oauth = 'OAuth2 needs https:// for both the token endpoint and the monitored URL, unless you allow plain HTTP below.';
   }
   if (!errors.oauth && (bytes(o.clientId) > 4096 || bytes(o.clientSecret) > 8192)) errors.oauth = 'The client ID or secret is too long.';
@@ -922,12 +1051,14 @@ function applyOAuth(stored: OAuth2Options | undefined, d: OAuthDraft, target: st
   return o;
 }
 
-function OAuthFields({ d, set, stored, error, disabled }: { d: OAuthDraft; set: (change: Partial<OAuthDraft>) => void; stored: OAuthDraft | undefined; error?: string; disabled: boolean }) {
+function OAuthFields({ d, set, stored, error, disabled, websocket }: { d: OAuthDraft; set: (change: Partial<OAuthDraft>) => void; stored: OAuthDraft | undefined; error?: string; disabled: boolean; websocket?: boolean }) {
   const id = useId();
   return (
     <>
       <TextField full mono label="Token endpoint" value={d.tokenUrl} onChange={tokenUrl => set({ tokenUrl })} placeholder="https://auth.example.com/oauth2/token" disabled={disabled}
-        hint="Required. The client-credentials grant runs on every check; the access token is sent as Bearer and never stored." />
+        hint={websocket
+          ? 'Required. The client-credentials grant runs on every check, through the same proxy setting as the upgrade; the access token is sent as Bearer with the upgrade request and never stored.'
+          : 'Required. The client-credentials grant runs on every check; the access token is sent as Bearer and never stored.'} />
       <TextField mono label="Client ID" value={d.clientId} onChange={clientId => set({ clientId })} disabled={disabled} autoComplete="off" hint="Required." />
       <SecretField label="Client secret" value={d.clientSecret} onChange={clientSecret => set({ clientSecret })} disabled={disabled} storedSet={Boolean(stored?.clientSecret)}
         hint="Can be empty if the issuer allows it. Hidden from viewers." />
@@ -941,7 +1072,9 @@ function OAuthFields({ d, set, stored, error, disabled }: { d: OAuthDraft; set: 
       <PemField label="Token endpoint CA certificates" kind="certificate" value={d.ca} onChange={ca => set({ ca })} disabled={disabled}
         hint="Trust only for the token request, separate from the monitored URL’s TLS settings." />
       <CheckField label="Allow plain HTTP" checked={d.insecure} onChange={insecure => set({ insecure })} disabled={disabled} danger
-        hint="Needed if the token endpoint or the monitored URL uses http://. The client secret and token then travel unencrypted." />
+        hint={websocket
+          ? 'Needed if the token endpoint uses http:// or the monitored URL uses ws://. The client secret and token then travel unencrypted.'
+          : 'Needed if the token endpoint or the monitored URL uses http://. The client secret and token then travel unencrypted.'} />
       {error ? <div className="full"><ErrorText id={`${id}-e`}>{error}</ErrorText></div> : null}
     </>
   );
@@ -953,19 +1086,35 @@ function OAuthFields({ d, set, stored, error, disabled }: { d: OAuthDraft; set: 
  * The edit form mounts only once the stored item is known, so its draft, initial values and base revision come from
  * that item. A route opened before the overview caught up shows "not found" and then mounts fresh, never a blank draft.
  */
-export function MonitorFormView({ id }: { id?: string }) {
-  const { monitorMap } = useCanary();
+export function MonitorFormView({ id, cloneOf }: { id?: string; cloneOf?: string }) {
+  const { monitorMap, editable } = useCanary();
   const existing = id ? monitorMap.get(id) : undefined;
-  return <MonitorFormBody key={existing ? `edit-${existing.monitor.id}` : id ? 'missing' : 'new'} id={id} />;
+  const source = cloneOf ? monitorMap.get(cloneOf) : undefined;
+  // A copy is taken once, when its form mounts. It's taken again only if the source, the role or the source's conflict
+  // state changes, never because the source is edited meanwhile.
+  const key = existing ? `edit-${existing.monitor.id}` : id ? 'missing'
+    : source ? `clone-${source.monitor.id}-${editable ? 'rw' : 'ro'}-${source.configConflict ? 'conflict' : 'one'}` : cloneOf ? 'clone-missing' : 'new';
+  return <MonitorFormBody key={key} id={id} cloneOf={cloneOf} />;
 }
 
-function MonitorFormBody({ id }: { id?: string }) {
-  const { overview, monitorMap, nodes, nodeMap, endpoint, editable, api, refresh, groups, groupMap, stillCurrent } = useCanary();
+/**
+ * `id` edits that monitor. `cloneOf` creates a new monitor that starts from a copy of that one: nothing is created until
+ * the form is saved, the source isn't changed, and the copy lives only in this component's state, never in the URL
+ * (which names the source alone), browser storage or the console.
+ */
+function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
+  const { overview, monitorMap, nodes, nodeMap, endpoint, editable, api, refresh, groups, groupMap, stillCurrent, channels } = useCanary();
   const existing = id ? monitorMap.get(id) : undefined;
+  const source = cloneOf ? monitorMap.get(cloneOf) : undefined;
   const defaultNodes = nodes.filter(node => node.state !== 'unlisted').map(node => node.id);
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(existing?.monitor, defaultNodes));
-  const [initial, setInitial] = useState<Draft | undefined>(() => existing ? draftFrom(existing.monitor, defaultNodes) : undefined);
-  const [baseMonitor, setBaseMonitor] = useState<Monitor | undefined>(existing?.monitor);
+  // Only editors copy: a viewer's monitor has its private settings removed. A monitor whose nodes hold different
+  // versions isn't copied, because one version would be picked silently; nor is a type this dashboard doesn't know.
+  const [copy] = useState<MonitorInput | undefined>(() => editable && source && !source.configConflict && checkType(source.monitor.type) ? cloneInput(source.monitor, newPushToken) : undefined);
+  // The copy is the base of a create, never of an update, so it never needs an ID or revision.
+  const start = existing?.monitor ?? (copy as Monitor | undefined);
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(start, defaultNodes));
+  const [initial, setInitial] = useState<Draft | undefined>(() => start ? draftFrom(start, defaultNodes) : undefined);
+  const [baseMonitor, setBaseMonitor] = useState<Monitor | undefined>(start);
   const [version, setVersion] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -991,24 +1140,48 @@ function MonitorFormBody({ id }: { id?: string }) {
   });
   const summaryRef = useRef<HTMLDivElement>(null);
   const formId = useId();
-  const result = useMemo(() => build(draft, baseMonitor, initial), [draft, baseMonitor, initial]);
+  const selfId = existing?.monitor.id;
+  const result = useMemo(() => pushTokenRule(build(draft, baseMonitor, initial), draft, baseMonitor, selfId, overview.monitors), [draft, baseMonitor, initial, selfId, overview.monitors]);
 
   // Move focus to the summary after a failed submit so keyboard and screen reader users hear what to fix.
   useEffect(() => { if (attempts) summaryRef.current?.focus(); }, [attempts, failure]);
+  // A new monitor (never an edit or a copy) starts with this node's enabled default channels once the list is known, and
+  // follows the list while nobody has picked channels. A pick, a JSON fill or a cleared list is the user's choice and stays.
+  const defaultKey = channels.list ? defaultChannels(channels.list).ids.join(' ') : null;
+  useEffect(() => {
+    if (defaultKey === null) return;
+    setDraft(d => d.channelsMode === 'chosen' ? d : { ...d, channelIds: defaultKey ? defaultKey.split(' ') : [], channelsMode: 'defaults' });
+  }, [defaultKey]);
 
   if (!editable) {
-    return <div className="view"><PageHead title={id ? 'Edit monitor' : 'New monitor'} /><Card><EmptyState title="Viewers can’t change monitors">Ask an editor or admin, or sign in with an editor account.</EmptyState></Card></div>;
+    return <div className="view"><PageHead title={id ? 'Edit monitor' : cloneOf ? 'Copy monitor' : 'New monitor'} /><Card><EmptyState title="Viewers can’t change monitors">Ask an editor or admin, or sign in with an editor account.</EmptyState></Card></div>;
   }
   if (id && !existing) {
     return <div className="view"><PageHead title="Edit monitor" /><Card><EmptyState title="Monitor not found">{endpoint} doesn’t know this monitor. It may have been deleted.</EmptyState></Card></div>;
   }
-  if (existing && !checkType(existing.monitor.type)) {
+  if (cloneOf && !source) {
+    return <div className="view"><PageHead crumbs={<a href={href('monitors')}>Monitors</a>} title="Copy monitor" /><Card><EmptyState title="Monitor not found">{endpoint} doesn’t know the monitor to copy. It may have been deleted.</EmptyState></Card></div>;
+  }
+  const known = existing ?? source;
+  if (known && !checkType(known.monitor.type)) {
     return (
       <div className="view">
-        <PageHead crumbs={<><a href={href('monitors')}>Monitors</a><Icon name="chevRight" /><a href={href('monitors', existing.monitor.id)}>{existing.monitor.name}</a></>} title="Edit monitor" />
+        <PageHead crumbs={<><a href={href('monitors')}>Monitors</a><Icon name="chevRight" /><a href={href('monitors', known.monitor.id)}>{known.monitor.name}</a></>} title={existing ? 'Edit monitor' : 'Copy monitor'} />
         <Card>
-          <EmptyState title={`This dashboard doesn’t know the “${existing.monitor.type}” check type`} action={<a className="btn" href={href('monitors', existing.monitor.id)}><Icon name="chevLeft" />Back to the monitor</a>}>
-            The node is newer than this dashboard. Edit it with the CLI or API so none of its settings are lost.
+          <EmptyState title={`This dashboard doesn’t know the “${known.monitor.type}” check type`} action={<a className="btn" href={href('monitors', known.monitor.id)}><Icon name="chevLeft" />Back to the monitor</a>}>
+            The node is newer than this dashboard. {existing ? 'Edit' : 'Copy'} it with the CLI or API so none of its settings are lost.
+          </EmptyState>
+        </Card>
+      </div>
+    );
+  }
+  if (source && !copy) {
+    return (
+      <div className="view">
+        <PageHead crumbs={<><a href={href('monitors')}>Monitors</a><Icon name="chevRight" /><a href={href('monitors', source.monitor.id)}>{source.monitor.name}</a></>} title="Copy monitor" />
+        <Card>
+          <EmptyState title="Resolve the conflict before copying" action={<a className="btn" href={href('config')}><Icon name="merge" />Resolve in Configuration</a>}>
+            Nodes hold different versions of this monitor, so there’s no single version to copy.
           </EmptyState>
         </Card>
       </div>
@@ -1029,8 +1202,11 @@ function MonitorFormBody({ id }: { id?: string }) {
   const meta = checkType(type)!;
   const protocol = protocolOf(type);
   const serviceDraft = protocol ? draft.service[type] ?? serviceValues(protocol, undefined) : undefined;
-  const serviceStored = protocol && initial?.type === type ? initial.service[type] ?? {} : {};
-  const tlsOn = tlsApplies(type, target, draft.smtpMode);
+  // The stored values, for "Saving removes the stored value" and rotation notes. A copy has none: nothing is stored yet,
+  // and clearing a copied value never touches the source.
+  const stored = copy ? undefined : initial;
+  const serviceStored = protocol && stored?.type === type ? stored.service[type] ?? {} : {};
+  const tlsOn = tlsApplies(type, target, draft.smtpMode, draft.tcpTls);
   const toggle = (section: string): void => setOpen(state => ({ ...state, [section]: !state[section] }));
   const openIncident = current ? overview.incidents.find(incident => incident.monitorId === current.id && incident.resolvedAt === null) : undefined;
   const changes = current && input && baseMonitor ? checkChanges(inputOf(baseMonitor), input) : [];
@@ -1057,7 +1233,7 @@ function MonitorFormBody({ id }: { id?: string }) {
       } else {
         const created = await api.createMonitor(input);
         if (!stillCurrent()) return;
-        notify(`Created “${created.name}” on ${endpoint} (revision ${shortRev(created.revision)}). Assigned peers receive it when they next sync.`);
+        notify(`Created “${created.name}” on ${endpoint}${copy && source ? ` from a copy of “${source.monitor.name}”` : ''} (revision ${shortRev(created.revision)}). Assigned peers receive it when they next sync.`);
         refresh();
         navigate(href('monitors', created.id));
       }
@@ -1083,7 +1259,10 @@ function MonitorFormBody({ id }: { id?: string }) {
 
   const importJson = (value: Partial<Monitor>): string | null => {
     if (typeof value.type !== 'string' || !checkType(value.type)) return 'The JSON needs a known "type", such as "http".';
-    const next = draftFrom({ ...(current ?? {}), ...value, nodeIds: Array.isArray(value.nodeIds) ? value.nodeIds : draft.nodeIds } as Monitor, defaultNodes);
+    // A copy fills over its own settings, as an edit fills over the stored ones; a pasted push token is still checked.
+    const filled = draftFrom({ ...(current ?? copy ?? {}), ...value, nodeIds: Array.isArray(value.nodeIds) ? value.nodeIds : draft.nodeIds } as Monitor, defaultNodes);
+    // On a new monitor, JSON without a channel list keeps the form's current channels (and their defaults) as they are.
+    const next = !current && !copy && !Array.isArray(value.notificationIds) ? { ...filled, channelIds: draft.channelIds, channelsMode: draft.channelsMode } : filled;
     setDraft(next);
     setVersion(v => v + 1);
     setShowErrors(true);
@@ -1103,10 +1282,12 @@ function MonitorFormBody({ id }: { id?: string }) {
   return (
     <div className="view">
       <PageHead
-        crumbs={<><a href={href('monitors')}>Monitors</a>{current ? <><Icon name="chevRight" /><a href={href('monitors', current.id)}>{current.name}</a></> : null}</>}
-        title={current ? 'Edit monitor' : 'New monitor'}
+        crumbs={<><a href={href('monitors')}>Monitors</a>{current ? <><Icon name="chevRight" /><a href={href('monitors', current.id)}>{current.name}</a></> : copy && source ? <><Icon name="chevRight" /><a href={href('monitors', source.monitor.id)}>{source.monitor.name}</a></> : null}</>}
+        title={current ? 'Edit monitor' : copy ? 'Copy monitor' : 'New monitor'}
         sub={current
           ? <>Editing revision <Rev revision={baseMonitor?.revision ?? current.revision} />{changedElsewhere ? null : <>, saved <Time at={current.updatedAt} now={overview.now} /></>}. Saving writes a new revision on <span className="mono">{endpoint}</span>.</>
+          : copy && source
+          ? <>Creates a new monitor with its own stable ID on <span className="mono">{endpoint}</span>, starting from a copy of “{source.monitor.name}”. Nothing is created until you select Create monitor, and “{source.monitor.name}” stays as it is.</>
           : <>Creates a monitor with a new stable ID on <span className="mono">{endpoint}</span>, which shares it with the nodes you choose.</>}
       />
       {conflicted ? (
@@ -1123,20 +1304,42 @@ function MonitorFormBody({ id }: { id?: string }) {
           <ErrorSummary ref={summaryRef} title={failure ? (failure.stale ? 'Not saved: the monitor changed or has a conflict' : 'Not saved') : 'Check these fields'} errors={failure ? [] : errorList}>
             {failure ? <p>{failure.message}{failure.stale && current ? <> <button type="button" className="linkbtn" onClick={loadLatest}>Load the latest version</button> and apply your change again.</> : null}</p> : null}
           </ErrorSummary>
+          {copy ? (
+            <div className="full svc-note copy-note" role="note">
+              <Icon name="lock" className="inline" />
+              <span>
+                <b>Private connection settings are copied too.</b> Passwords, tokens, API keys, headers, request bodies, certificates and keys, game query service addresses, and proxy, webhook and browser service addresses come along with every other setting, including ones this form doesn’t show. They stay in this page until you create the copy, and then go to <span className="mono">{endpoint}</span> like any monitor’s settings. The address bar names only the monitor you copied, and the JSON preview masks them unless you show credentials. Change any that should differ.
+                {copy.type === 'push' ? ' This copy has its own new push token, so heartbeats sent with the original’s token never count for it.' : ''}
+              </span>
+            </div>
+          ) : null}
 
           <h3 className="fsec full">Check</h3>
           <TextField label="Name" value={draft.name} onChange={value => set('name', value)} error={visibleErrors.name} hint="Shown in alerts and lists" maxLength={128} autoFocus={!current} disabled={saving} />
-          <TypePicker value={type} onChange={value => set('type', value)} disabled={saving} name={`${formId}-type`} locked={Boolean(current)} />
+          <TextAreaField full optional label="Description" value={draft.description} onChange={value => set('description', value)} error={visibleErrors.description} rows={2} disabled={saving}
+            hint="Notes for the people who use this dashboard, such as what the service is and who owns it. Plain text, up to 8,192 bytes, line breaks allowed. Everyone signed in sees it, viewers included; it’s never published on a status page or sent in notifications. Changing it never starts a new check." />
+          <TypePicker value={type} onChange={value => set('type', value)} disabled={saving} name={`${formId}-type`} locked={Boolean(current || copy)} />
           {current && current.type !== type ? <p className="full fwarn small"><Glyph tone="warn" />Changing the type starts a new check. An open incident closes without a recovery alert.</p> : null}
 
           {TYPED_TARGET_TYPES.has(type) ? (
             <TextField
-              full mono label={meta.targetLabel!} type={type === 'http' || type === 'websocket' ? 'url' : 'text'} inputMode={type === 'http' || type === 'websocket' ? 'url' : 'text'}
+              full mono label={meta.targetLabel!} type={type === 'http' || type === 'websocket' || type === 'real-browser' ? 'url' : 'text'} inputMode={type === 'http' || type === 'websocket' || type === 'real-browser' ? 'url' : 'text'}
               value={target} onChange={value => setDraft(d => ({ ...d, targets: { ...d.targets, [d.type]: value } }))} error={visibleErrors.target}
               placeholder={type === 'dns' && draft.dnsRecord === 'PTR' ? '192.0.2.10' : meta.placeholder} hint={meta.targetHint} disabled={saving}
             />
           ) : null}
+          {type === 'tcp' ? (
+            <CheckField label="Use TLS after connecting" checked={draft.tcpTls} onChange={value => { set('tcpTls', value); if (value) setOpen(state => ({ ...state, tls: true })); }} disabled={saving}
+              hint={draft.tcpTls
+                ? 'Up only when a TLS 1.2+ handshake succeeds right after the connection opens and the certificate is valid, with the settings under “TLS and certificate” below. For a protocol that upgrades to TLS later, such as SMTP STARTTLS, use its own check type.'
+                : 'Off: up as soon as the TCP connection opens; nothing is sent. Turn it on for a service that speaks TLS from the first byte.'} />
+          ) : null}
           {type === 'system-service' ? <SystemServiceNotes name={target.trim()} /> : null}
+          {type === 'tailscale-ping' ? <TailscaleNotes /> : null}
+          {type === 'real-browser' ? (
+            <BrowserFields d={draft.browser} set={change => setDraft(d => ({ ...d, browser: { ...d.browser, ...change } }))} errors={visibleErrors} disabled={saving}
+              storedBearer={Boolean(stored?.type === 'real-browser' && stored.browser.bearer)} timeoutMs={fromDraft(draft.timeout)} />
+          ) : null}
 
           {protocol && serviceDraft ? (
             <ServiceFields
@@ -1158,19 +1361,24 @@ function MonitorFormBody({ id }: { id?: string }) {
 
           {type === 'globalping' ? (
             <GlobalpingFields d={draft.gp} set={change => setDraft(d => ({ ...d, gp: { ...d.gp, ...change } }))} errors={visibleErrors} disabled={saving} open={open} onToggle={toggle}
-              storedToken={Boolean(initial?.type === 'globalping' && initial.gp.token)} timeoutMs={fromDraft(draft.timeout)} intervalMs={fromDraft(draft.interval)} nodeCount={draft.nodeIds.length}
+              storedToken={Boolean(stored?.type === 'globalping' && stored.gp.token)} timeoutMs={fromDraft(draft.timeout)} intervalMs={fromDraft(draft.interval)} nodeCount={draft.nodeIds.length}
               onUseTimeout={ms => set('timeout', toDraft(ms))} />
           ) : null}
 
           {type === 'steam' ? (
             <SteamFields d={draft.steam} set={change => setDraft(d => ({ ...d, steam: { ...d.steam, ...change } }))} errors={visibleErrors} disabled={saving} open={open} onToggle={toggle}
-              storedKey={initial?.type === 'steam' ? initial.steam.apiKey : ''} timeoutMs={fromDraft(draft.timeout)} intervalMs={fromDraft(draft.interval)} nodeCount={draft.nodeIds.length} />
+              storedKey={stored?.type === 'steam' ? stored.steam.apiKey : ''} timeoutMs={fromDraft(draft.timeout)} intervalMs={fromDraft(draft.interval)} nodeCount={draft.nodeIds.length} />
           ) : null}
 
           {type === 'pm2' ? <Pm2Fields d={draft.pm2} set={change => setDraft(d => ({ ...d, pm2: { ...d.pm2, ...change } }))} errors={visibleErrors} disabled={saving} stored={initial?.type === 'pm2' ? initial.pm2.transport : undefined} /> : null}
 
+          {type === 'gamedig' ? (
+            <GameDigFields d={draft.gamedig} set={change => setDraft(d => ({ ...d, gamedig: { ...d.gamedig, ...change } }))} errors={visibleErrors} disabled={saving}
+              storedGame={initial?.type === 'gamedig' ? initial.gamedig.game : undefined} storedToken={Boolean(stored?.type === 'gamedig' && stored.gamedig.token)} timeoutMs={fromDraft(draft.timeout)} />
+          ) : null}
+
           {type === 'push' ? (
-            <PushFields token={draft.pushToken} allowGet={draft.pushAllowGet} stored={initial?.type === 'push' ? initial.pushToken : ''} disabled={saving} error={visibleErrors.pushToken}
+            <PushFields token={draft.pushToken} allowGet={draft.pushAllowGet} stored={stored?.type === 'push' ? stored.pushToken : ''} disabled={saving} error={visibleErrors.pushToken}
               onToken={value => set('pushToken', value)} onAllowGet={value => set('pushAllowGet', value)} interval={fromDraft(draft.interval)} />
           ) : null}
 
@@ -1211,7 +1419,7 @@ function MonitorFormBody({ id }: { id?: string }) {
               </Disclosure>
               <Disclosure title="Authentication and proxy" summary={authSummary(draft.http)} open={Boolean(open.access)} onToggle={() => toggle('access')}>
                 <RequestFields d={draft.http} set={change => set('http', { ...draft.http, ...change })} errors={visibleErrors} prefix="http" disabled={saving}
-                  oauth={<OAuthFields d={draft.oauth} set={change => set('oauth', { ...draft.oauth, ...change })} stored={initial?.type === 'http' && initial.http.auth === 'oauth2' ? initial.oauth : undefined} error={visibleErrors.oauth} disabled={saving} />} />
+                  oauth={<OAuthFields d={draft.oauth} set={change => set('oauth', { ...draft.oauth, ...change })} stored={stored?.type === 'http' && stored.http.auth === 'oauth2' ? stored.oauth : undefined} error={visibleErrors.oauth} disabled={saving} />} />
               </Disclosure>
               <Disclosure title="Response content" summary={responseSummary} open={Boolean(open.response)} onToggle={() => toggle('response')}>
                 <CheckField label="Keyword" checked={draft.keywordOn} onChange={value => set('keywordOn', value)} disabled={saving} hint="Look for text in the response body (up to 1 MiB is read)." />
@@ -1246,9 +1454,16 @@ function MonitorFormBody({ id }: { id?: string }) {
           ) : null}
 
           {type === 'websocket' ? (
-            <Disclosure title="Headers, authentication and proxy" summary={`${plural(draft.ws.headers.filter(row => row.name.trim()).length, 'header')} · ${authSummary(draft.ws)}`} open={Boolean(open.ws)} onToggle={() => toggle('ws')}>
-              <RequestFields d={draft.ws} set={change => set('ws', { ...draft.ws, ...change })} errors={visibleErrors} prefix="ws" disabled={saving} websocket />
-            </Disclosure>
+            <>
+              <TextField full mono label="Subprotocols (optional)" value={draft.wsProtocols} onChange={value => set('wsProtocols', value)} error={visibleErrors.wsProtocols} disabled={saving} placeholder="graphql-transport-ws, v2.chat"
+                hint="Offered in Sec-WebSocket-Protocol, in this order, separated by commas or spaces. Up to 16 distinct names, matched exactly (case counts). Empty: none is offered, and a server that picks one fails the check." />
+              <CheckField label="Require one of them" checked={draft.wsRequire} onChange={value => set('wsRequire', value)} disabled={saving}
+                hint={draft.wsRequire ? 'Down unless the server picks exactly one of the offered subprotocols.' : 'Without it, a server may also pick none. Picking one that wasn’t offered, or several, always fails.'} />
+              <Disclosure title="Headers, authentication and proxy" summary={`${plural(draft.ws.headers.filter(row => row.name.trim()).length, 'header')} · ${authSummary(draft.ws)}`} open={Boolean(open.ws)} onToggle={() => toggle('ws')}>
+                <RequestFields d={draft.ws} set={change => set('ws', { ...draft.ws, ...change })} errors={visibleErrors} prefix="ws" disabled={saving} websocket
+                  oauth={<OAuthFields d={draft.wsOauth} set={change => set('wsOauth', { ...draft.wsOauth, ...change })} stored={stored?.type === 'websocket' && stored.ws.auth === 'oauth2' ? stored.wsOauth : undefined} error={visibleErrors.wsOauth} disabled={saving} websocket />} />
+              </Disclosure>
+            </>
           ) : null}
 
           {type === 'dns' ? (
@@ -1259,11 +1474,15 @@ function MonitorFormBody({ id }: { id?: string }) {
                   {DNS_RECORDS.map(record => <option key={record} value={record}>{record}</option>)}
                 </select>
               </div>
-              <TextField mono label="Resolver (optional)" value={draft.dnsServer} onChange={value => set('dnsServer', value)} error={visibleErrors.dnsServer} placeholder="1.1.1.1:53" disabled={saving}
-                hint="IP:port, or [IPv6]:port. Empty uses each node’s system resolver." />
+              <TextField mono label={dnsNeedsServer(draft.dnsRecord) ? 'Resolver' : 'Resolver (optional)'} value={draft.dnsServer} onChange={value => set('dnsServer', value)} error={visibleErrors.dnsServer} placeholder="1.1.1.1:53" disabled={saving}
+                hint={dnsNeedsServer(draft.dnsRecord)
+                  ? `IP:port, or [IPv6]:port. Required for ${draft.dnsRecord}: each node asks this resolver directly, over UDP and then TCP if the answer is truncated.`
+                  : 'IP:port, or [IPv6]:port. Empty uses each node’s system resolver.'} />
               <TextAreaField full mono optional label="Expected records" value={draft.dnsExpected} onChange={value => set('dnsExpected', value)} error={visibleErrors.dnsExpected} rows={3} disabled={saving}
-                placeholder={draft.dnsRecord === 'MX' ? '10 mail.example.com' : draft.dnsRecord === 'A' ? '192.0.2.10' : draft.dnsRecord === 'AAAA' ? '2001:db8::10' : draft.dnsRecord === 'TXT' ? 'v=spf1 include:example.net -all' : 'host.example.com'}
-                hint="One per line. Every listed record must be in the answer; extra answers are fine. Empty: any answer passes." />
+                placeholder={isExtendedRecord(draft.dnsRecord) ? DNS_RECORD_SHAPE[draft.dnsRecord].example : draft.dnsRecord === 'MX' ? '10 mail.example.com' : draft.dnsRecord === 'A' ? '192.0.2.10' : draft.dnsRecord === 'AAAA' ? '2001:db8::10' : draft.dnsRecord === 'TXT' ? 'v=spf1 include:example.net -all' : 'host.example.com'}
+                hint={isExtendedRecord(draft.dnsRecord)
+                  ? <>One per line, as <span className="mono">{DNS_RECORD_SHAPE[draft.dnsRecord].fields}</span>{draft.dnsRecord === 'CAA' ? <>, the value quoted like <span className="mono">"letsencrypt.org"</span> or unquoted; the tag is compared in lowercase</> : '; names are compared in lowercase, without a trailing dot'}. Every listed record must be in the answer; extra answers are fine. Empty: any answer passes.</>
+                  : 'One per line. Every listed record must be in the answer; extra answers are fine. Empty: any answer passes.'} />
             </>
           ) : null}
 
@@ -1286,8 +1505,8 @@ function MonitorFormBody({ id }: { id?: string }) {
               <CheckField label="Skip certificate verification" checked={draft.tlsIgnore} onChange={value => set('tlsIgnore', value)} disabled={saving} danger
                 hint="Doesn’t check the chain or host name, so an impostor could pass. Validity dates and the minimum above still apply, and results show the certificate as unverified. Prefer adding the CA above." />
             </Disclosure>
-          ) : hasTlsDraft(draft) && (type === 'http' || type === 'websocket' || type === 'smtp') ? (
-            <p className="full muted small"><Icon name="info" className="inline" />TLS settings apply only to encrypted checks{type === 'smtp' ? ' (STARTTLS or implicit TLS)' : ` (${type === 'websocket' ? 'wss://' : 'https://'})`}. They’ll be removed when you save.</p>
+          ) : hasTlsDraft(draft) && (type === 'http' || type === 'websocket' || type === 'smtp' || type === 'tcp') ? (
+            <p className="full muted small"><Icon name="info" className="inline" />TLS settings apply only to encrypted checks{type === 'smtp' ? ' (STARTTLS or implicit TLS)' : type === 'tcp' ? ' (TCP with “Use TLS after connecting”)' : ` (${type === 'websocket' ? 'wss://' : 'https://'})`}. They’ll be removed when you save.</p>
           ) : null}
 
           <CheckField label="Invert the result" checked={draft.upsideDown} onChange={value => set('upsideDown', value)} disabled={saving}
@@ -1318,6 +1537,12 @@ function MonitorFormBody({ id }: { id?: string }) {
               ? 'Each chosen node resolves the host and calls the Steam API itself with the key, so every node counts against the key’s daily limit. All of them ask the same directory: more nodes tell a node’s own DNS or API path apart, not the route to the game server. Out-of-view nodes receive the monitor when they reconnect.'
               : type === 'pm2'
               ? 'Each chosen node asks its own PM2 daemon, so choose nodes on the machines that run the process, all reached through the connection and home above. Mixed Linux and Windows machines need separate monitors. Out-of-view nodes receive the monitor when they reconnect.'
+              : type === 'tailscale-ping'
+              ? 'Each chosen node pings the peer through its own Tailscale client and daemon, so choose nodes on machines that have both and are on the peer’s tailnet. A node that is the peer itself stays pending. Out-of-view nodes receive the monitor when they reconnect.'
+              : type === 'real-browser'
+              ? 'Each chosen node connects to the browser service at the endpoint itself, so every one must reach it. The page loads from the browser service’s network, not the node’s: with one shared service every node measures from the same place, so give each location its own nearby service under the same name to compare locations. Out-of-view nodes receive the monitor when they reconnect.'
+              : type === 'gamedig'
+              ? 'Each chosen node sends its queries to the query service at the address above, so every one must reach it. The game server is queried from the service’s network, not the node’s: with one shared service every node measures from the same place, so give each location its own nearby service under the same name to compare locations. Out-of-view nodes receive the monitor when they reconnect.'
               : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
           />
           <div className="fld full">
@@ -1327,7 +1552,7 @@ function MonitorFormBody({ id }: { id?: string }) {
           </div>
 
           <h3 className="fsec full">Alerts</h3>
-          <ChannelPicker selected={draft.channelIds} onChange={ids => set('channelIds', ids)} disabled={saving} error={visibleErrors.channels} />
+          <ChannelPicker selected={draft.channelIds} onChange={ids => setDraft(d => ({ ...d, channelIds: ids, channelsMode: 'chosen' }))} disabled={saving} error={visibleErrors.channels} mode={draft.channelsMode} />
           <Disclosure title="Legacy webhook URL" summary={draft.webhookUrl ? maskedUrl(draft.webhookUrl) : 'None'} open={Boolean(open.legacy)} onToggle={() => toggle('legacy')}>
             <div className="fld full">
               <label htmlFor={`${formId}-hook`}>Webhook URL <span className="muted">(optional)</span></label>
@@ -1342,7 +1567,7 @@ function MonitorFormBody({ id }: { id?: string }) {
                   <Icon name={showWebhook ? 'eyeOff' : 'eye'} />
                 </button>
               </div>
-              {initial?.webhookUrl && !draft.webhookUrl ? <small className="fwarn"><Glyph tone="warn" />Saving removes the stored webhook.</small> : null}
+              {stored?.webhookUrl && !draft.webhookUrl ? <small className="fwarn"><Glyph tone="warn" />Saving removes the stored webhook.</small> : null}
               <small id={`${formId}-hook-h`}><Icon name="lock" className="inline" />A single JSON webhook from before channels existed. Often contains credentials; stored on nodes and never shown to viewers. Prefer a channel for new alerts.</small>
               <ErrorText id={`${formId}-hook-e`}>{visibleErrors.webhook}</ErrorText>
             </div>
@@ -1392,7 +1617,7 @@ function MonitorFormBody({ id }: { id?: string }) {
             <button type="submit" className="btn primary" disabled={saving || conflicted}>
               <Icon name={current ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current ? 'Save changes' : 'Create monitor'}
             </button>
-            <a className="btn" href={current ? href('monitors', current.id) : href('monitors')}>Cancel</a>
+            <a className="btn" href={current ? href('monitors', current.id) : copy && source ? href('monitors', source.monitor.id) : href('monitors')}>Cancel</a>
             {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : null}
           </div>
         </form>

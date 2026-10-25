@@ -54,6 +54,20 @@ type StatusPageInput struct {
 	Enabled       bool                     `json:"enabled"`
 	Groups        []StatusPageGroup        `json:"groups"`
 	Announcements []StatusPageAnnouncement `json:"announcements"`
+	Appearance    *StatusPageAppearance    `json:"appearance,omitempty"`
+	PublicURL     string                   `json:"publicUrl,omitempty"`
+	RSSEnabled    bool                     `json:"rssEnabled,omitempty"`
+}
+
+// These are explicitly public, operator-authored values. Styling is typed;
+// arbitrary HTML, CSS and scripts are not executed in an authenticated page.
+type StatusPageAppearance struct {
+	Theme             string `json:"theme,omitempty"`
+	AccentColor       string `json:"accentColor,omitempty"`
+	LogoURL           string `json:"logoUrl,omitempty"`
+	FooterText        string `json:"footerText,omitempty"`
+	RefreshIntervalMs int64  `json:"refreshIntervalMs,omitempty"`
+	Markdown          bool   `json:"markdown,omitempty"`
 }
 
 type StatusPage struct {
@@ -104,6 +118,9 @@ type PublicStatusPage struct {
 	GeneratedAt    int64                    `json:"generatedAt"`
 	Groups         []PublicStatusGroup      `json:"groups"`
 	Announcements  []StatusPageAnnouncement `json:"announcements"`
+	Appearance     *StatusPageAppearance    `json:"appearance,omitempty"`
+	PublicURL      string                   `json:"publicUrl,omitempty"`
+	RSSEnabled     bool                     `json:"rssEnabled,omitempty"`
 	publicationKey string
 }
 
@@ -169,9 +186,12 @@ func parseStatusPage(b []byte) (StatusPageInput, error) {
 	if len(b) > maxAPIBody || !utf8.Valid(b) {
 		return in, bad
 	}
-	o, err := statusObject(b, "slug", "title", "description", "enabled", "groups", "announcements", "revision", "revisions", "id", "updatedAt", "deleted")
+	o, err := statusObject(b, "slug", "title", "description", "enabled", "groups", "announcements", "revision", "revisions", "id", "updatedAt", "deleted", "appearance", "publicUrl", "rssEnabled")
 	if err != nil || required(o, "slug", "title", "description", "enabled", "groups", "announcements") != nil || json.Unmarshal(b, &in) != nil ||
 		!statusSlug(in.Slug) || !statusText(in.Title, 128, false, false) || !statusText(in.Description, 2048, true, true) {
+		return in, bad
+	}
+	if err := validateStatusPresentation(o, &in); err != nil {
 		return in, bad
 	}
 	// Metadata permits a management response to be edited and sent back. Only
@@ -533,7 +553,7 @@ func (n *Node) publicStatusPage(slug string) *PublicStatusPage {
 	if err != nil || !in.Enabled {
 		return nil
 	}
-	out := &PublicStatusPage{Slug: in.Slug, Title: in.Title, Description: in.Description, GeneratedAt: n.now(), Groups: []PublicStatusGroup{}, Announcements: in.Announcements}
+	out := &PublicStatusPage{Slug: in.Slug, Title: in.Title, Description: in.Description, GeneratedAt: n.now(), Groups: []PublicStatusGroup{}, Announcements: in.Announcements, Appearance: in.Appearance, PublicURL: in.PublicURL, RSSEnabled: in.RSSEnabled}
 	out.publicationKey = chosen.Resource.ID + "/" + chosen.Resource.Revision + "/" + chosen.EdgeID
 	states := []string{}
 	for _, group := range in.Groups {
@@ -558,6 +578,9 @@ func (n *Node) publicStatusPage(slug string) *PublicStatusPage {
 // CORS and the /api filter. Optional archive reads run outside n.mu under their
 // own bounded, nonwaiting work policy; private history is never implied.
 func (n *Node) servePublicStatus(w http.ResponseWriter, r *http.Request) bool {
+	if n.serveStatusRSS(w, r) {
+		return true
+	}
 	path := r.URL.Path
 	if path != "/public/status" && !strings.HasPrefix(path, publicStatusPrefix) {
 		return false

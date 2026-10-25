@@ -55,6 +55,16 @@ func (d *Dashboard) pushRequest(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, err)
 		return
 	}
+	// Reading a caller's body may block across an address edit or removal.
+	// Use the current route immediately before sending its Push capability.
+	// Delegation rotation alone does not change the node's Push credential.
+	d.mu.Lock()
+	row, ok = d.registry[id]
+	d.mu.Unlock()
+	if !ok || row.State == "enrolling" || row.State == "removing" {
+		errorReply(w, fail(404, "Push node registration not found"))
+		return
+	}
 	u := r.URL.Path
 	if len(query) > 0 {
 		u += "?" + query.Encode()

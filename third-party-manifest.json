@@ -537,6 +537,21 @@
       }
     },
     {
+      "name": "vendored:npm:gamedig-catalogue",
+      "version": "5.3.3 (aff6afd252dc1c4853aae7522423623b7b5adec7)",
+      "notices": [
+        {
+          "file": "LICENSE.gamedig",
+          "sha256": "88935ec7478a0803c62e4f37ff974fdafa9e468403e6ae45048c63dfac89b852"
+        }
+      ],
+      "embeddedSource": {
+        "file": "apps/node-go/internal/gamedigmonitor/catalogue.json",
+        "sha256": "9cc9b3dcc4cbd4624ef4abfb5a5127fdba9408a2e818bf26495349d02164edd2",
+        "upstreamCommit": "aff6afd252dc1c4853aae7522423623b7b5adec7"
+      }
+    },
+    {
       "name": "npm:react",
       "version": "19.3.1",
       "notices": [

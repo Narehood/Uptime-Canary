@@ -16,10 +16,13 @@ NEW = {"node": "sha256:" + "a" * 64, "web": "sha256:" + "b" * 64}
 
 
 class Registry:
-    def __init__(self, initial=True):
-        self.tags = {f"{PREFIX}-{key}:sha-{COMMIT}": value for key, value in NEW.items()}
+    def __init__(self, initial=True, game=False):
+        self.old, self.new = dict(OLD), dict(NEW)
+        if game:
+            self.old['game-query'], self.new['game-query'] = 'sha256:' + '3' * 64, 'sha256:' + 'd' * 64
+        self.tags = {f"{PREFIX}-{key}:sha-{COMMIT}": value for key, value in self.new.items()}
         if initial:
-            self.tags.update({f"{PREFIX}-{key}:latest": value for key, value in OLD.items()})
+            self.tags.update({f"{PREFIX}-{key}:latest": value for key, value in self.old.items()})
         self.calls = []
         self.fail = None
         self.ambiguous = False
@@ -38,25 +41,46 @@ class Registry:
         assert arguments[3] == "create" and "--prefer-index=false" in arguments
         target = arguments[arguments.index("--tag") + 1]
         digest = reference.split("@", 1)[1]
-        key = "node" if "-node:" in target else "web"
-        if self.fail == key and digest == NEW[key]:
+        key = target[len(PREFIX) + 1:].split(':', 1)[0]
+        if self.fail == key and digest == self.new[key]:
             if self.ambiguous:
                 self.tags[target] = digest
                 raise subprocess.TimeoutExpired(arguments, 45)
             return subprocess.CompletedProcess(arguments, 1, "", "Injected promotion failure")
-        if self.rollback_failure and digest == OLD[key]:
+        if self.rollback_failure and digest == self.old[key]:
             return subprocess.CompletedProcess(arguments, 1, "", "Injected rollback outage")
         self.tags[target] = digest
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
     def latest(self):
-        return {key: self.tags.get(f"{PREFIX}-{key}:latest") for key in OLD}
+        return {key: self.tags.get(f"{PREFIX}-{key}:latest") for key in self.old}
 
     def writes(self):
         return [call for call in self.calls if call[3] == "create"]
 
 
 class PublicationTests(unittest.TestCase):
+    def test_three_image_promotion_and_ambiguous_last_write_rollback(self):
+        registry = Registry(game=True)
+        result = publisher.promote(PREFIX, COMMIT, registry, components=('node', 'web', 'game-query'))
+        self.assertEqual(registry.latest(), registry.new)
+        self.assertEqual(set(result), set(registry.new))
+        for ambiguous in (False, True):
+            registry = Registry(game=True)
+            registry.fail, registry.ambiguous = 'game-query', ambiguous
+            with self.assertRaises(publisher.PublicationError):
+                publisher.promote(PREFIX, COMMIT, registry, components=('node', 'web', 'game-query'))
+            self.assertEqual(registry.latest(), registry.old)
+            self.assertEqual(len(registry.writes()), 6)
+
+    def test_missing_optional_service_candidate_cannot_change_existing_tags(self):
+        registry = Registry(game=True)
+        del registry.tags[f'{PREFIX}-game-query:sha-{COMMIT}']
+        with self.assertRaises(publisher.PublicationError):
+            publisher.promote(PREFIX, COMMIT, registry, components=('node', 'web', 'game-query'))
+        self.assertEqual(registry.writes(), [])
+        self.assertEqual(registry.latest(), registry.old)
+
     def test_success_captures_both_previous_digests_before_writing(self):
         registry = Registry()
         result = publisher.promote(PREFIX, COMMIT, registry)

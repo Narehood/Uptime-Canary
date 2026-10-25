@@ -171,10 +171,10 @@ func validResult(r Result, timeout time.Duration) bool {
 // closed sets, never manager-provided diagnostics.
 // Existing network/query engines retain their two-state result contract.
 func validTypedResult(serviceType string, r Result, timeout time.Duration) bool {
-	if serviceType != "system-service" && serviceType != "pm2" {
+	if serviceType != "system-service" && serviceType != "pm2" && serviceType != "tailscale-ping" {
 		return validResult(r, timeout)
 	}
-	if serviceType == "system-service" && !systemServiceSummary(r) || serviceType == "pm2" && !pm2Summary(r) {
+	if serviceType == "system-service" && !systemServiceSummary(r) || serviceType == "pm2" && !pm2Summary(r) || serviceType == "tailscale-ping" && !tailscaleSummary(r) {
 		return false
 	}
 	if r.State == "pending" {
@@ -195,10 +195,19 @@ func pm2Summary(r Result) bool {
 		r.State == "pending" && r.Message == "PM2 status unavailable")
 }
 
+func tailscaleSummary(r Result) bool {
+	return r.State == "up" && r.Message == "Tailscale peer replied" || r.LatencyMs == 0 &&
+		(r.State == "down" && r.Message == "Tailscale peer did not reply" ||
+			r.State == "pending" && r.Message == "Tailscale peer status unavailable")
+}
+
 // Never return arbitrary child text, even when it is valid printable UTF-8.
 // Oracle's diagnostics are fixed strings in the pinned service engine. Other
 // engines retain their real state but use fixed summaries at this boundary.
 func safeMessage(t string, r Result) string {
+	if t == "tailscale-ping" && tailscaleSummary(r) {
+		return r.Message
+	}
 	if t == "pm2" && pm2Summary(r) {
 		return r.Message
 	}

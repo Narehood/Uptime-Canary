@@ -1,0 +1,3591 @@
+Uptime-Canary optional GameDig query service third-party notices
+
+Original dependency terms remain applicable. Node and Alpine base packages are separate.
+
+==============================================================================
+@nodable/entities 2.2.0
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "@nodable/entities",
+  "version": "2.2.0",
+  "description": "Entity parser for XML, HTML, External entites with security and NCR control",
+  "main": "./src/index.js",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./src/index.d.ts",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage",
+    "lint": "eslint src/ test/"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodable/val-parsers.git"
+  },
+  "keywords": [
+    "fast",
+    "xml",
+    "html",
+    "entity",
+    "entities",
+    "stringify",
+    "encode",
+    "decode",
+    "ncr",
+    "security",
+    "safe",
+    "performance"
+  ],
+  "author": "Amit Gupta (https://solothought.com)",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/nodable"
+    }
+  ],
+  "jest": {
+    "testMatch": [
+      "**/?(*.)+(spec|test).[jt]s?(x)",
+      "**/*_spec.[jt]s?(x)"
+    ]
+  }
+}
+
+--- README.md ---
+
+# @nodable/entities
+
+Fast, zero-dependency XML/HTML entity encoder and decoder for Node.js.
+
+## Install
+
+```bash
+npm install @nodable/entities
+```
+
+## Quick start
+
+```js
+import { EntityEncoder, EntityDecoder, ALL_ENTITIES } from '@nodable/entities';
+
+// Encode: plain text → entity references
+const enc = new EntityEncoder();
+enc.encode('Hello © 2024 & <stuff>');
+// → 'Hello &copy; 2024 &amp; &lt;stuff&gt;'
+
+// Decode: entity references → plain text
+const dec = new EntityDecoder({ namedEntities: ALL_ENTITIES });
+dec.decode('Hello &copy; 2024 &amp; &lt;stuff&gt;');
+// → 'Hello © 2024 & <stuff>'
+```
+
+## Performance
+
+|  | encode | decode |
+|---|---|---|
+| `entities` (npm) | 3.65 M req/s | 1.76 M req/s |
+| `@nodable/entities` | 3.33 M req/s | **5.19 M req/s** |
+
+## Documentation
+
+- [EntityEncoder](docs/EntityEncoder.md) — options, API, recipes
+- [EntityDecoder](docs/EntityDecoder.md) — options, API, security limits, entity sets
+
+## License
+
+MIT
+
+==============================================================================
+@sindresorhus/is 5.6.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+@szmarczak/http-timer 5.0.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2018 Szymon Marczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+@types/http-cache-semantics 4.2.0
+==============================================================================
+
+--- LICENSE ---
+
+    MIT License
+
+    Copyright (c) Microsoft Corporation.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
+
+==============================================================================
+any-promise 1.3.0
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (C) 2014-2016 Kevin Beaty
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+anynum 1.0.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2026 Natural Intelligence
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+barse 0.4.3
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "barse",
+  "description": "Binary parser with a fluent api",
+  "version": "0.4.3",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/juliangruber/barse.git"
+  },
+  "homepage": "https://github.com/juliangruber/barse",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/*.js"
+  },
+  "dependencies": {
+    "readable-stream": "~1.0.2"
+  },
+  "devDependencies": {
+    "tape": "~2.3.2"
+  },
+  "keywords": [
+    "binary",
+    "parser",
+    "parse",
+    "fluent"
+  ],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT",
+  "testling": {
+    "files": "test/*.js",
+    "browsers": [
+      "ie/8..latest",
+      "firefox/17..latest",
+      "firefox/nightly",
+      "chrome/22..latest",
+      "chrome/canary",
+      "opera/12..latest",
+      "opera/next",
+      "safari/5.1..latest",
+      "ipad/6.0..latest",
+      "iphone/6.0..latest",
+      "android-browser/4.2..latest"
+    ]
+  }
+}
+
+--- README.md ---
+
+
+# barse
+
+Binary parser with a fluent API.
+
+[![build status](https://secure.travis-ci.org/juliangruber/barse.png)](http://travis-ci.org/juliangruber/barse)
+
+[![testling badge](https://ci.testling.com/juliangruber/barse.png)](https://ci.testling.com/juliangruber/barse)
+
+## Usage
+
+```js
+var parse = require('..');
+
+var parser = parse()
+  .readUInt8('string length')
+  .string('string', 'string length')
+  .readUInt8('field count')
+  .loop('fields', 2, function (loop) {
+    loop.readUInt8('some');
+    loop.readUInt8('numbers');
+  })
+
+parser.on('data', console.log);
+/*
+{
+  "string length" : 3,
+  "string" : "foo",
+  "field count" : 2,
+  "fields" : [
+    { "some" : 13, "numbers" : 37 },
+    { "some" : 73, "numbers" : 31 }
+  ]
+}
+*/
+
+var buf = new Buffer(9);
+buf.writeUInt8(3, 0); // string length
+buf.write('foo', 1); // string
+buf.writeUInt8(2, 4); // field count
+buf.writeUInt8(13, 5); // fields[0].some
+buf.writeUInt8(37, 6); // fields[0].numbers
+buf.writeUInt8(73, 7); // fields[1].some
+buf.writeUInt8(31, 8); // fields[1].numbers
+
+parser.write(buf);
+```
+
+## API
+
+### parse()
+
+Create a new streaming parser.
+
+### parse#string(name, length[, encoding])
+### parse#buffer(name, length)
+### parse#read(U)Int{8,16,32}{BE,LE}(name)
+### parse#read{Float,Double}{BE,LE}(name)
+
+Parse the given type with optional length and store in the results object under
+`name`.
+
+`length` can also be the name of a previously read field, e.g.:
+
+```js
+parse()
+  .readUInt8('length')
+  .string('content', 'length');
+```
+
+### parse#next(name, length, fn)
+
+Consume a chunk of binary data with the given `length`.
+
+`fn` is called with the current `chunk` and `offset` and is expected to synchronously return the parsed Object/String/whatever, which then will be emitted under `name` in the results object.
+In addition, `fn` is bound to the object containing the parsed data of the current chunk.
+
+The example above written using `next`:
+
+```js
+parse()
+  .next('foo', 3, function (chunk, offset) {
+    return chunk.toString('utf8', offset, offset + 3);
+  })
+  .next('bar', 3, function (chunk, offset) {
+    return chunk.toString('utf8', offset, offset + 3);
+  })
+```
+
+### parse#loop(name, length, fn)
+
+Read `length` buffers and store under `name`.
+
+```js
+var parser = parse()
+  .readUInt8('count')
+  .loop('strings', 'count', function (loop) {
+    loop.string('value', 3);
+  });
+
+parser.on('data', console.log);
+// => { strings : [{ value : 'foo' }, { value : 'bar' }]}
+
+var count = new Buffer(1); count.writeUInt8(1, 0); parser.write(count);
+parser.write(new Buffer('foobar'));
+```
+
+## Installation
+
+With [npm](http://npmjs.org) do
+
+```bash
+$ npm install barse
+```
+
+## License
+
+The MIT License (MIT)
+
+Copyright (c) 2013 Julian Gruber &lt;julian@juliangruber.com&gt;
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+cacheable-lookup 7.0.0
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2019 Szymon Marczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+cacheable-request 10.2.14
+==============================================================================
+
+--- package.json ---
+
+{
+	"name": "cacheable-request",
+	"version": "10.2.14",
+	"description": "Wrap native HTTP requests with RFC compliant cache support",
+	"license": "MIT",
+	"repository": "jaredwray/cacheable",
+	"author": "Jared Wray <me@jaredwray.com> (http://jaredwray.com)",
+	"type": "module",
+	"exports": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"engines": {
+		"node": ">=14.16"
+	},
+	"scripts": {
+		"test": "xo && NODE_OPTIONS=--experimental-vm-modules jest --coverage ",
+		"prepare": "npm run build",
+		"build": "tsc --project tsconfig.build.json",
+		"clean": "rm -rf node_modules && rm -rf ./coverage && rm -rf ./test/testdb.sqlite && rm -rf ./dist"
+	},
+	"files": [
+		"dist"
+	],
+	"keywords": [
+		"HTTP",
+		"HTTPS",
+		"cache",
+		"caching",
+		"layer",
+		"cacheable",
+		"RFC 7234",
+		"RFC",
+		"7234",
+		"compliant"
+	],
+	"dependenciesComments": {
+		"@types/http-cache-semantics": "It needs to be in the dependencies list and not devDependencies because otherwise projects that use this one will be getting `Could not find a declaration file for module 'http-cache-semantics'` error when running `tsc`, see https://github.com/jaredwray/cacheable-request/issues/194 for details"
+	},
+	"dependencies": {
+		"@types/http-cache-semantics": "^4.0.2",
+		"get-stream": "^6.0.1",
+		"http-cache-semantics": "^4.1.1",
+		"keyv": "^4.5.3",
+		"mimic-response": "^4.0.0",
+		"normalize-url": "^8.0.0",
+		"responselike": "^3.0.0"
+	},
+	"devDependencies": {
+		"@keyv/sqlite": "^3.6.6",
+		"@types/jest": "^29.5.5",
+		"@types/node": "^20.8.2",
+		"@types/responselike": "^1.0.1",
+		"@types/sqlite3": "^3.1.9",
+		"body-parser": "^1.20.2",
+		"delay": "^6.0.0",
+		"eslint": "^8.50.0",
+		"eslint-plugin-jest": "^27.4.2",
+		"express": "^4.18.2",
+		"jest": "^29.7.0",
+		"pify": "^6.1.0",
+		"sqlite3": "^5.1.6",
+		"ts-jest": "^29.1.1",
+		"ts-jest-resolver": "^2.0.1",
+		"ts-node": "^10.9.1",
+		"typescript": "^5.2.2",
+		"xo": "^0.56.0"
+	},
+	"jest": {
+		"collectCoverageFrom": [
+			"src/**/*.{ts,js}"
+		],
+		"extensionsToTreatAsEsm": [
+			".ts"
+		],
+		"resolver": "ts-jest-resolver",
+		"moduleFileExtensions": [
+			"ts",
+			"js"
+		],
+		"transform": {
+			"^.+\\.(ts|tsx)$": [
+				"ts-jest",
+				{
+					"tsconfig": "./tsconfig.build.json",
+					"useESM": true
+				}
+			]
+		},
+		"testMatch": [
+			"**/test/*.test.(ts|js)"
+		],
+		"testEnvironment": "node"
+	},
+	"xo": {
+		"plugins": [
+			"jest"
+		],
+		"extends": [
+			"plugin:jest/recommended"
+		],
+		"rules": {
+			"@typescript-eslint/triple-slash-reference": 0,
+			"@typescript-eslint/no-namespace": 0,
+			"@typescript-eslint/no-unsafe-assignment": 0,
+			"@typescript-eslint/no-unsafe-call": 0,
+			"@typescript-eslint/ban-types": 0,
+			"@typescript-eslint/restrict-template-expressions": 0,
+			"@typescript-eslint/no-unsafe-return": 0,
+			"@typescript-eslint/no-unsafe-argument": 0,
+			"new-cap": 0,
+			"unicorn/no-abusive-eslint-disable": 0,
+			"@typescript-eslint/restrict-plus-operands": 0,
+			"@typescript-eslint/no-implicit-any-catch": 0,
+			"@typescript-eslint/consistent-type-imports": 0,
+			"@typescript-eslint/consistent-type-definitions": 0,
+			"@typescript-eslint/prefer-nullish-coalescing": 0,
+			"n/prefer-global/url": 0,
+			"n/no-deprecated-api": 0,
+			"unicorn/prefer-event-target": 0
+		}
+	}
+}
+
+--- README.md ---
+
+<h1 align="center"><br><img width="380" src="https://cacheable.org/assets/images/cacheable_symbol.svg" alt="cacheable logo"><br><br></h1>
+
+# cacheable-request
+
+> Wrap native HTTP requests with RFC compliant cache support
+
+[![tests](https://github.com/jaredwray/cacheable/actions/workflows/tests.yaml/badge.svg)](https://github.com/jaredwray/cacheable/actions/workflows/tests.yaml)
+[![codecov](https://codecov.io/gh/jaredwray/cacheable/branch/master/graph/badge.svg?token=LDLaqe4PsI)](https://codecov.io/gh/jaredwray/cacheable)
+[![npm](https://img.shields.io/npm/dm/cacheable-request.svg)](https://www.npmjs.com/package/cacheable-request)
+[![npm](https://img.shields.io/npm/v/cacheable-request.svg)](https://www.npmjs.com/package/cacheable-request)
+
+[RFC 7234](http://httpwg.org/specs/rfc7234.html) compliant HTTP caching for native Node.js HTTP/HTTPS requests. Caching works out of the box in memory or is easily pluggable with a wide range of storage adapters.
+
+**Note:** This is a low level wrapper around the core HTTP modules, it's not a high level request library.
+
+# Table of Contents
+* [Latest Changes](#latest-changes)
+* [Features](#features)
+* [Install and Usage](#install-and-usage)
+* [Storage Adapters](#storage-adapters)
+* [API](#api)
+* [Using Hooks](#using-hooks)
+* [Contributing](#contributing)
+* [Ask a Question](#ask-a-question)
+* [License](#license) (MIT)
+
+# Latest Changes
+
+## Breaking Changes with v10.0.0
+This release contains breaking changes. This is the new way to use this package.
+
+### Usage Before v10
+```js
+import http from 'http';
+import CacheableRequest from 'cacheable-request';
+
+// Then instead of
+const req = http.request('http://example.com', cb);
+req.end();
+
+// You can do
+const cacheableRequest = new CacheableRequest(http.request);
+const cacheReq = cacheableRequest('http://example.com', cb);
+cacheReq.on('request', req => req.end());
+// Future requests to 'example.com' will be returned from cache if still valid
+
+// You pass in any other http.request API compatible method to be wrapped with cache support:
+const cacheableRequest = new CacheableRequest(https.request);
+const cacheableRequest = new CacheableRequest(electron.net);
+```
+
+### Usage After v10.1.0
+```js
+
+import CacheableRequest from 'cacheable-request';
+
+// Now You can do
+const cacheableRequest = new CacheableRequest(http.request).request();
+const cacheReq = cacheableRequest('http://example.com', cb);
+cacheReq.on('request', req => req.end());
+// Future requests to 'example.com' will be returned from cache if still valid
+
+// You pass in any other http.request API compatible method to be wrapped with cache support:
+const cacheableRequest = new CacheableRequest(https.request).request();
+const cacheableRequest = new CacheableRequest(electron.net).request();
+```
+
+The biggest change is that when you do a `new` CacheableRequest you now want to call `request` method will give you the instance to use. 
+
+```diff
+- const cacheableRequest = new CacheableRequest(http.request);
++ const cacheableRequest = new CacheableRequest(http.request).request();
+```
+
+### ESM Support in version 9 and higher. 
+
+We are now using pure esm support in our package. If you need to use commonjs you can use v8 or lower. To learn more about using ESM please read this from `sindresorhus`: https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c
+
+## Features
+
+- Only stores cacheable responses as defined by RFC 7234
+- Fresh cache entries are served directly from cache
+- Stale cache entries are revalidated with `If-None-Match`/`If-Modified-Since` headers
+- 304 responses from revalidation requests use cached body
+- Updates `Age` header on cached responses
+- Can completely bypass cache on a per request basis
+- In memory cache by default
+- Official support for Redis, Memcache, Etcd, MongoDB, SQLite, PostgreSQL and MySQL storage adapters
+- Easily plug in your own or third-party storage adapters
+- If DB connection fails, cache is automatically bypassed ([disabled by default](#optsautomaticfailover))
+- Adds cache support to any existing HTTP code with minimal changes
+- Uses [http-cache-semantics](https://github.com/pornel/http-cache-semantics) internally for HTTP RFC 7234 compliance
+
+## Install and Usage
+
+```shell
+npm install cacheable-request
+```
+
+```js
+import http from 'http';
+import CacheableRequest from 'cacheable-request';
+
+// Then instead of
+const req = http.request('http://example.com', cb);
+req.end();
+
+// You can do
+const cacheableRequest = new CacheableRequest(http.request).createCacheableRequest();
+const cacheReq = cacheableRequest('http://example.com', cb);
+cacheReq.on('request', req => req.end());
+// Future requests to 'example.com' will be returned from cache if still valid
+
+// You pass in any other http.request API compatible method to be wrapped with cache support:
+const cacheableRequest = new CacheableRequest(https.request).createCacheableRequest();
+const cacheableRequest = new CacheableRequest(electron.net).createCacheableRequest();
+```
+
+## Storage Adapters
+
+`cacheable-request` uses [Keyv](https://github.com/jaredwray/keyv) to support a wide range of storage adapters.
+
+For example, to use Redis as a cache backend, you just need to install the official Redis Keyv storage adapter:
+
+```
+npm install @keyv/redis
+```
+
+And then you can pass `CacheableRequest` your connection string:
+
+```js
+const cacheableRequest = new CacheableRequest(http.request, 'redis://user:pass@localhost:6379').createCacheableRequest();
+```
+
+[View all official Keyv storage adapters.](https://github.com/jaredwray/keyv#official-storage-adapters)
+
+Keyv also supports anything that follows the Map API so it's easy to write your own storage adapter or use a third-party solution.
+
+e.g The following are all valid storage adapters
+
+```js
+const storageAdapter = new Map();
+// or
+const storageAdapter = require('./my-storage-adapter');
+// or
+const QuickLRU = require('quick-lru');
+const storageAdapter = new QuickLRU({ maxSize: 1000 });
+
+const cacheableRequest = new CacheableRequest(http.request, storageAdapter).createCacheableRequest();
+```
+
+View the [Keyv docs](https://github.com/jaredwray/keyv) for more information on how to use storage adapters.
+
+## API
+
+### new cacheableRequest(request, [storageAdapter])
+
+Returns the provided request function wrapped with cache support.
+
+#### request
+
+Type: `function`
+
+Request function to wrap with cache support. Should be [`http.request`](https://nodejs.org/api/http.html#http_http_request_options_callback) or a similar API compatible request function.
+
+#### storageAdapter
+
+Type: `Keyv storage adapter`<br>
+Default: `new Map()`
+
+A [Keyv](https://github.com/jaredwray/keyv) storage adapter instance, or connection string if using with an official Keyv storage adapter.
+
+### Instance
+
+#### cacheableRequest(opts, [cb])
+
+Returns an event emitter.
+
+##### opts
+
+Type: `object`, `string`
+
+- Any of the default request functions options.
+- Any [`http-cache-semantics`](https://github.com/kornelski/http-cache-semantics#constructor-options) options.
+- Any of the following:
+
+###### opts.cache
+
+Type: `boolean`<br>
+Default: `true`
+
+If the cache should be used. Setting this to false will completely bypass the cache for the current request.
+
+###### opts.strictTtl
+
+Type: `boolean`<br>
+Default: `false`
+
+If set to `true` once a cached resource has expired it is deleted and will have to be re-requested.
+
+If set to `false` (default), after a cached resource's TTL expires it is kept in the cache and will be revalidated on the next request with `If-None-Match`/`If-Modified-Since` headers.
+
+###### opts.maxTtl
+
+Type: `number`<br>
+Default: `undefined`
+
+Limits TTL. The `number` represents milliseconds.
+
+###### opts.automaticFailover
+
+Type: `boolean`<br>
+Default: `false`
+
+When set to `true`, if the DB connection fails we will automatically fallback to a network request. DB errors will still be emitted to notify you of the problem even though the request callback may succeed.
+
+###### opts.forceRefresh
+
+Type: `boolean`<br>
+Default: `false`
+
+Forces refreshing the cache. If the response could be retrieved from the cache, it will perform a new request and override the cache instead.
+
+##### cb
+
+Type: `function`
+
+The callback function which will receive the response as an argument.
+
+The response can be either a [Node.js HTTP response stream](https://nodejs.org/api/http.html#http_class_http_incomingmessage) or a [responselike object](https://github.com/lukechilds/responselike). The response will also have a `fromCache` property set with a boolean value.
+
+##### .on('request', request)
+
+`request` event to get the request object of the request.
+
+**Note:** This event will only fire if an HTTP request is actually made, not when a response is retrieved from cache. However, you should always handle the `request` event to end the request and handle any potential request errors.
+
+##### .on('response', response)
+
+`response` event to get the response object from the HTTP request or cache.
+
+##### .on('error', error)
+
+`error` event emitted in case of an error with the cache.
+
+Errors emitted here will be an instance of `CacheableRequest.RequestError` or `CacheableRequest.CacheError`. You will only ever receive a `RequestError` if the request function throws (normally caused by invalid user input). Normal request errors should be handled inside the `request` event.
+
+To properly handle all error scenarios you should use the following pattern:
+
+```js
+cacheableRequest('example.com', cb)
+  .on('error', err => {
+    if (err instanceof CacheableRequest.CacheError) {
+      handleCacheError(err); // Cache error
+    } else if (err instanceof CacheableRequest.RequestError) {
+      handleRequestError(err); // Request function thrown
+    }
+  })
+  .on('request', req => {
+    req.on('error', handleRequestError); // Request error emitted
+    req.end();
+  });
+```
+**Note:** Database connection errors are emitted here, however `cacheable-request` will attempt to re-request the resource and bypass the cache on a connection error. Therefore a database connection error doesn't necessarily mean the request won't be fulfilled.
+
+
+## Using Hooks
+Hooks have been implemented since version `v9` and are very useful to modify response before saving it in cache. You can use hooks to modify response before saving it in cache.
+
+### Add Hooks
+
+The hook will pre compute response right before saving it in cache. You can include many hooks and it will run in order you add hook on response object.
+
+```js
+import http from 'http';
+import CacheableRequest from 'cacheable-request';
+
+const cacheableRequest = new CacheableRequest(request, cache).request();
+
+// adding a hook to decompress response
+cacheableRequest.addHook('onResponse', async (value: CacheValue, response: any) => {
+  const buffer = await pm(gunzip)(value.body);
+  value.body = buffer.toString();
+  return value;
+});
+```
+
+here is also an example of how to add in the remote address
+
+```js
+import CacheableRequest, {CacheValue} from 'cacheable-request';
+
+const cacheableRequest = new CacheableRequest(request, cache).request();
+cacheableRequest.addHook('onResponse', (value: CacheValue, response: any) => {
+  if (response.connection) {
+    value.remoteAddress = response.connection.remoteAddress;
+  }
+
+  return value;
+});
+```
+
+### Remove Hooks
+
+You can also remove hook by using below
+
+```js
+CacheableRequest.removeHook('onResponse');
+```
+
+## How to Contribute
+
+Cacheable-Request is an open source package and community driven that is maintained regularly. In addtion we have a couple of other guidelines for review:
+
+* [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - Our code of conduct
+* [CONTRIBUTING.md](CONTRIBUTING.md) - How to contribute to this project
+* [SECURITY.md](SECURITY.md) - Security guidelines and supported versions 
+
+## Post an Issue
+
+To post an issue, navigate to the "Issues" tab in the main repository, and then select "New Issue." Enter a clear title describing the issue, as well as a description containing additional relevant information. Also select the label that best describes your issue type. For a bug report, for example, create an issue with the label "bug." In the description field, Be sure to include replication steps, as well as any relevant error messages.
+
+If you're reporting a security violation, be sure to check out the project's [security policy](SECURITY.md).
+
+Please also refer to our [Code of Conduct](CODE_OF_CONDUCT.md) for more information on how to report issues.
+
+## Ask a Question
+
+To ask a question, create an issue with the label "question." In the issue description, include the related code and any context that can help us answer your question.
+
+## License
+
+This project is under the [MIT](LICENSE) license. 
+
+MIT © Luke Childs 2017-2021 and Jared Wray 2022+
+
+==============================================================================
+commander 6.2.1
+==============================================================================
+
+--- LICENSE ---
+
+(The MIT License)
+
+Copyright (c) 2011 TJ Holowaychuk <tj@vision-media.ca>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+'Software'), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+core-util-is 1.0.3
+==============================================================================
+
+--- LICENSE ---
+
+Copyright Node.js contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+==============================================================================
+decompress-response 6.0.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+mimic-response 3.1.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+defer-to-connect 2.0.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2018 Szymon Marczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+emitter-component 1.1.2
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "emitter-component",
+  "description": "Event emitter",
+  "version": "1.1.2",
+  "funding": "https://github.com/sponsors/sindresorhus",
+  "devDependencies": {
+    "mocha": "*",
+    "should": "*"
+  },
+  "component": {
+    "scripts": {
+      "emitter": "index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sindresorhus/component-emitter.git"
+  }
+}
+
+--- component.json ---
+
+{
+  "name": "emitter",
+  "repo": "component/emitter",
+  "description": "Event emitter",
+  "keywords": ["emitter", "events"],
+  "version": "1.1.1",
+  "scripts": ["index.js"],
+  "license": "MIT"
+}
+
+--- Readme.md ---
+
+# Emitter
+
+  Event emitter component.
+
+## Installation
+
+```
+$ component install component/emitter
+```
+
+## API
+
+### Emitter(obj)
+
+  The `Emitter` may also be used as a mixin. For example
+  a "plain" object may become an emitter, or you may
+  extend an existing prototype.
+
+  As an `Emitter` instance:
+
+```js
+var Emitter = require('emitter');
+var emitter = new Emitter;
+emitter.emit('something');
+```
+
+  As a mixin:
+
+```js
+var Emitter = require('emitter');
+var user = { name: 'tobi' };
+Emitter(user);
+
+user.emit('im a user');
+```
+
+  As a prototype mixin:
+
+```js
+var Emitter = require('emitter');
+Emitter(User.prototype);
+```
+  
+### Emitter#on(event, fn)
+
+  Register an `event` handler `fn`.
+
+### Emitter#once(event, fn)
+
+  Register a single-shot `event` handler `fn`,
+  removed immediately after it is invoked the
+  first time.
+
+### Emitter#off(event, fn)
+
+  * Pass `event` and `fn` to remove a listener.
+  * Pass `event` to remove all listeners on that event.
+  * Pass nothing to remove all listeners on all events.
+
+### Emitter#emit(event, ...)
+
+  Emit an `event` with variable option args.
+
+### Emitter#listeners(event)
+
+  Return an array of callbacks, or an empty array.
+
+### Emitter#hasListeners(event)
+
+  Check if this emitter has `event` handlers.
+
+==============================================================================
+event-to-promise 0.7.0
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (c) 2014, Julien Fontanet <julien.fontanet@isonoe.net>.
+
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+==============================================================================
+fast-xml-builder 1.3.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2026 Natural Intelligence
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+xml-naming 0.3.0
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2026 Natural Intelligence
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+fast-xml-parser 5.8.0
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2017 Amit Kumar Gupta
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+form-data-encoder 2.1.4
+==============================================================================
+
+--- license ---
+
+The MIT License (MIT)
+
+Copyright (c) 2021-present Nick K.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+gamedig 5.3.3
+==============================================================================
+
+--- LICENSE ---
+
+The MIT License (MIT)
+
+Copyright (c) node-gamedig developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+gbxremote 0.2.1
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (c) 2011 Brandon Ace Alexander
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+get-stream 6.0.1
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+got 13.0.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+http-cache-semantics 4.3.0
+==============================================================================
+
+--- LICENSE ---
+
+Copyright 2016-2018 Kornel Lesiński
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+==============================================================================
+http2-wrapper 2.2.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2018 Szymon Marczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+iconv-lite 0.7.2
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (c) 2011 Alexander Shtuchkin
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+inherits 2.0.4
+==============================================================================
+
+--- LICENSE ---
+
+The ISC License
+
+Copyright (c) Isaac Z. Schlueter
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
+isarray 0.0.1
+==============================================================================
+
+--- package.json ---
+
+{
+  "name" : "isarray",
+  "description" : "Array#isArray for older browsers",
+  "version" : "0.0.1",
+  "repository" : {
+    "type" : "git",
+    "url" : "git://github.com/juliangruber/isarray.git"
+  },
+  "homepage": "https://github.com/juliangruber/isarray",
+  "main" : "index.js",
+  "scripts" : {
+    "test" : "tap test/*.js"
+  },
+  "dependencies" : {},
+  "devDependencies" : {
+    "tap" : "*"
+  },
+  "keywords": ["browser","isarray","array"],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT"
+}
+
+--- component.json ---
+
+{
+  "name" : "isarray",
+  "description" : "Array#isArray for older browsers",
+  "version" : "0.0.1",
+  "repository" : "juliangruber/isarray",
+  "homepage": "https://github.com/juliangruber/isarray",
+  "main" : "index.js",
+  "scripts" : [
+    "index.js"
+  ],
+  "dependencies" : {},
+  "keywords": ["browser","isarray","array"],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT"
+}
+
+--- README.md ---
+
+
+# isarray
+
+`Array#isArray` for older browsers.
+
+## Usage
+
+```js
+var isArray = require('isarray');
+
+console.log(isArray([])); // => true
+console.log(isArray({})); // => false
+```
+
+## Installation
+
+With [npm](http://npmjs.org) do
+
+```bash
+$ npm install isarray
+```
+
+Then bundle for the browser with
+[browserify](https://github.com/substack/browserify).
+
+With [component](http://component.io) do
+
+```bash
+$ component install juliangruber/isarray
+```
+
+## License
+
+(MIT)
+
+Copyright (c) 2013 Julian Gruber &lt;julian@juliangruber.com&gt;
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+json-buffer 3.0.1
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (c) 2013 Dominic Tarr
+
+Permission is hereby granted, free of charge, 
+to any person obtaining a copy of this software and 
+associated documentation files (the "Software"), to 
+deal in the Software without restriction, including 
+without limitation the rights to use, copy, modify, 
+merge, publish, distribute, sublicense, and/or sell 
+copies of the Software, and to permit persons to whom 
+the Software is furnished to do so, 
+subject to the following conditions:
+
+The above copyright notice and this permission notice 
+shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES 
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR 
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE 
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+keyv 4.5.4
+==============================================================================
+
+--- package.json ---
+
+{
+	"name": "keyv",
+	"version": "4.5.4",
+	"description": "Simple key-value storage with support for multiple backends",
+	"main": "src/index.js",
+	"scripts": {
+		"build": "echo 'No build step required.'",
+		"prepare": "yarn build",
+		"test": "xo && c8 ava --serial",
+		"test:ci": "xo && ava --serial",
+		"clean": "rm -rf node_modules && rm -rf ./coverage && rm -rf ./test/testdb.sqlite"
+	},
+	"xo": {
+		"rules": {
+			"unicorn/prefer-module": 0,
+			"unicorn/prefer-node-protocol": 0,
+			"@typescript-eslint/consistent-type-definitions": 0,
+			"unicorn/no-typeof-undefined": 0,
+			"unicorn/prefer-event-target": 0
+		}
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jaredwray/keyv.git"
+	},
+	"keywords": [
+		"key",
+		"value",
+		"store",
+		"cache",
+		"ttl"
+	],
+	"author": "Jared Wray <me@jaredwray.com> (http://jaredwray.com)",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/jaredwray/keyv/issues"
+	},
+	"homepage": "https://github.com/jaredwray/keyv",
+	"dependencies": {
+		"json-buffer": "3.0.1"
+	},
+	"devDependencies": {
+		"@keyv/test-suite": "*",
+		"eslint": "^8.51.0",
+		"eslint-plugin-promise": "^6.1.1",
+		"pify": "^5.0.0",
+		"timekeeper": "^2.3.1",
+		"tsd": "^0.29.0"
+	},
+	"tsd": {
+		"directory": "test"
+	},
+	"types": "./src/index.d.ts",
+	"files": [
+		"src"
+	]
+}
+
+--- README.md ---
+
+<h1 align="center">
+	<img width="250" src="https://jaredwray.com/images/keyv.svg" alt="keyv">
+	<br>
+	<br>
+</h1>
+
+> Simple key-value storage with support for multiple backends
+
+[![build](https://github.com/jaredwray/keyv/actions/workflows/tests.yaml/badge.svg)](https://github.com/jaredwray/keyv/actions/workflows/tests.yaml)
+[![codecov](https://codecov.io/gh/jaredwray/keyv/branch/main/graph/badge.svg?token=bRzR3RyOXZ)](https://codecov.io/gh/jaredwray/keyv)
+[![npm](https://img.shields.io/npm/dm/keyv.svg)](https://www.npmjs.com/package/keyv)
+[![npm](https://img.shields.io/npm/v/keyv.svg)](https://www.npmjs.com/package/keyv)
+
+Keyv provides a consistent interface for key-value storage across multiple backends via storage adapters. It supports TTL based expiry, making it suitable as a cache or a persistent key-value store.
+
+## Features
+
+There are a few existing modules similar to Keyv, however Keyv is different because it:
+
+- Isn't bloated
+- Has a simple Promise based API
+- Suitable as a TTL based cache or persistent key-value store
+- [Easily embeddable](#add-cache-support-to-your-module) inside another module
+- Works with any storage that implements the [`Map`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) API
+- Handles all JSON types plus `Buffer`
+- Supports namespaces
+- Wide range of [**efficient, well tested**](#official-storage-adapters) storage adapters
+- Connection errors are passed through (db failures won't kill your app)
+- Supports the current active LTS version of Node.js or higher
+
+## Usage
+
+Install Keyv.
+
+```
+npm install --save keyv
+```
+
+By default everything is stored in memory, you can optionally also install a storage adapter.
+
+```
+npm install --save @keyv/redis
+npm install --save @keyv/mongo
+npm install --save @keyv/sqlite
+npm install --save @keyv/postgres
+npm install --save @keyv/mysql
+npm install --save @keyv/etcd
+```
+
+Create a new Keyv instance, passing your connection string if applicable. Keyv will automatically load the correct storage adapter.
+
+```js
+const Keyv = require('keyv');
+
+// One of the following
+const keyv = new Keyv();
+const keyv = new Keyv('redis://user:pass@localhost:6379');
+const keyv = new Keyv('mongodb://user:pass@localhost:27017/dbname');
+const keyv = new Keyv('sqlite://path/to/database.sqlite');
+const keyv = new Keyv('postgresql://user:pass@localhost:5432/dbname');
+const keyv = new Keyv('mysql://user:pass@localhost:3306/dbname');
+const keyv = new Keyv('etcd://localhost:2379');
+
+// Handle DB connection errors
+keyv.on('error', err => console.log('Connection Error', err));
+
+await keyv.set('foo', 'expires in 1 second', 1000); // true
+await keyv.set('foo', 'never expires'); // true
+await keyv.get('foo'); // 'never expires'
+await keyv.delete('foo'); // true
+await keyv.clear(); // undefined
+```
+
+### Namespaces
+
+You can namespace your Keyv instance to avoid key collisions and allow you to clear only a certain namespace while using the same database.
+
+```js
+const users = new Keyv('redis://user:pass@localhost:6379', { namespace: 'users' });
+const cache = new Keyv('redis://user:pass@localhost:6379', { namespace: 'cache' });
+
+await users.set('foo', 'users'); // true
+await cache.set('foo', 'cache'); // true
+await users.get('foo'); // 'users'
+await cache.get('foo'); // 'cache'
+await users.clear(); // undefined
+await users.get('foo'); // undefined
+await cache.get('foo'); // 'cache'
+```
+
+### Custom Serializers
+
+Keyv uses [`json-buffer`](https://github.com/dominictarr/json-buffer) for data serialization to ensure consistency across different backends.
+
+You can optionally provide your own serialization functions to support extra data types or to serialize to something other than JSON.
+
+```js
+const keyv = new Keyv({ serialize: JSON.stringify, deserialize: JSON.parse });
+```
+
+**Warning:** Using custom serializers means you lose any guarantee of data consistency. You should do extensive testing with your serialisation functions and chosen storage engine.
+
+## Official Storage Adapters
+
+The official storage adapters are covered by [over 150 integration tests](https://github.com/jaredwray/keyv/actions/workflows/tests.yaml) to guarantee consistent behaviour. They are lightweight, efficient wrappers over the DB clients making use of indexes and native TTLs where available.
+
+Database | Adapter | Native TTL
+---|---|---
+Redis | [@keyv/redis](https://github.com/jaredwray/keyv/tree/master/packages/redis) | Yes
+MongoDB | [@keyv/mongo](https://github.com/jaredwray/keyv/tree/master/packages/mongo) | Yes 
+SQLite | [@keyv/sqlite](https://github.com/jaredwray/keyv/tree/master/packages/sqlite) | No 
+PostgreSQL | [@keyv/postgres](https://github.com/jaredwray/keyv/tree/master/packages/postgres) | No 
+MySQL | [@keyv/mysql](https://github.com/jaredwray/keyv/tree/master/packages/mysql) | No 
+Etcd | [@keyv/etcd](https://github.com/jaredwray/keyv/tree/master/packages/etcd) | Yes
+Memcache | [@keyv/memcache](https://github.com/jaredwray/keyv/tree/master/packages/memcache) | Yes
+
+## Third-party Storage Adapters
+
+You can also use third-party storage adapters or build your own. Keyv will wrap these storage adapters in TTL functionality and handle complex types internally.
+
+```js
+const Keyv = require('keyv');
+const myAdapter = require('./my-storage-adapter');
+
+const keyv = new Keyv({ store: myAdapter });
+```
+
+Any store that follows the [`Map`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) api will work.
+
+```js
+new Keyv({ store: new Map() });
+```
+
+For example, [`quick-lru`](https://github.com/sindresorhus/quick-lru) is a completely unrelated module that implements the Map API.
+
+```js
+const Keyv = require('keyv');
+const QuickLRU = require('quick-lru');
+
+const lru = new QuickLRU({ maxSize: 1000 });
+const keyv = new Keyv({ store: lru });
+```
+
+The following are third-party storage adapters compatible with Keyv:
+
+- [quick-lru](https://github.com/sindresorhus/quick-lru) - Simple "Least Recently Used" (LRU) cache
+- [keyv-file](https://github.com/zaaack/keyv-file) - File system storage adapter for Keyv
+- [keyv-dynamodb](https://www.npmjs.com/package/keyv-dynamodb) - DynamoDB storage adapter for Keyv
+- [keyv-lru](https://www.npmjs.com/package/keyv-lru) - LRU storage adapter for Keyv
+- [keyv-null](https://www.npmjs.com/package/keyv-null) - Null storage adapter for Keyv
+- [keyv-firestore ](https://github.com/goto-bus-stop/keyv-firestore) – Firebase Cloud Firestore adapter for Keyv
+- [keyv-mssql](https://github.com/pmorgan3/keyv-mssql) - Microsoft Sql Server adapter for Keyv
+- [keyv-azuretable](https://github.com/howlowck/keyv-azuretable) - Azure Table Storage/API adapter for Keyv
+- [keyv-arango](https://github.com/TimMikeladze/keyv-arango) - ArangoDB storage adapter for Keyv
+- [keyv-momento](https://github.com/momentohq/node-keyv-adaptor/) - Momento storage adapter for Keyv
+
+## Add Cache Support to your Module
+
+Keyv is designed to be easily embedded into other modules to add cache support. The recommended pattern is to expose a `cache` option in your modules options which is passed through to Keyv. Caching will work in memory by default and users have the option to also install a Keyv storage adapter and pass in a connection string, or any other storage that implements the `Map` API.
+
+You should also set a namespace for your module so you can safely call `.clear()` without clearing unrelated app data.
+
+Inside your module:
+
+```js
+class AwesomeModule {
+	constructor(opts) {
+		this.cache = new Keyv({
+			uri: typeof opts.cache === 'string' && opts.cache,
+			store: typeof opts.cache !== 'string' && opts.cache,
+			namespace: 'awesome-module'
+		});
+	}
+}
+```
+
+Now it can be consumed like this:
+
+```js
+const AwesomeModule = require('awesome-module');
+
+// Caches stuff in memory by default
+const awesomeModule = new AwesomeModule();
+
+// After npm install --save keyv-redis
+const awesomeModule = new AwesomeModule({ cache: 'redis://localhost' });
+
+// Some third-party module that implements the Map API
+const awesomeModule = new AwesomeModule({ cache: some3rdPartyStore });
+```
+
+## Compression
+
+Keyv supports `gzip` and `brotli` compression. To enable compression, pass the `compress` option to the constructor.
+
+```js
+const KeyvGzip = require('@keyv/compress-gzip');
+const Keyv = require('keyv');
+
+const keyvGzip = new KeyvGzip();
+const keyv = new Keyv({ compression: KeyvGzip });
+```
+
+You can also pass a custom compression function to the `compression` option. Following the pattern of the official compression adapters.
+
+### Want to build your own? 
+
+Great! Keyv is designed to be easily extended. You can build your own compression adapter by following the pattern of the official compression adapters based on this interface:
+
+```typescript
+interface CompressionAdapter {
+	async compress(value: any, options?: any);
+	async decompress(value: any, options?: any);
+	async serialize(value: any);
+	async deserialize(value: any);
+}
+```
+
+In addition to the interface, you can test it with our compression test suite using @keyv/test-suite:
+
+```js
+const {keyvCompresstionTests} = require('@keyv/test-suite');
+const KeyvGzip = require('@keyv/compress-gzip');
+
+keyvCompresstionTests(test, new KeyvGzip());
+```
+
+## API
+
+### new Keyv([uri], [options])
+
+Returns a new Keyv instance.
+
+The Keyv instance is also an `EventEmitter` that will emit an `'error'` event if the storage adapter connection fails.
+
+### uri
+
+Type: `String`<br>
+Default: `undefined`
+
+The connection string URI.
+
+Merged into the options object as options.uri.
+
+### options
+
+Type: `Object`
+
+The options object is also passed through to the storage adapter. Check your storage adapter docs for any extra options.
+
+#### options.namespace
+
+Type: `String`<br>
+Default: `'keyv'`
+
+Namespace for the current instance.
+
+#### options.ttl
+
+Type: `Number`<br>
+Default: `undefined`
+
+Default TTL. Can be overridden by specififying a TTL on `.set()`.
+
+#### options.compression
+
+Type: `@keyv/compress-<compression_package_name>`<br>
+Default: `undefined`
+
+Compression package to use. See [Compression](#compression) for more details.
+
+#### options.serialize
+
+Type: `Function`<br>
+Default: `JSONB.stringify`
+
+A custom serialization function.
+
+#### options.deserialize
+
+Type: `Function`<br>
+Default: `JSONB.parse`
+
+A custom deserialization function.
+
+#### options.store
+
+Type: `Storage adapter instance`<br>
+Default: `new Map()`
+
+The storage adapter instance to be used by Keyv.
+
+#### options.adapter
+
+Type: `String`<br>
+Default: `undefined`
+
+Specify an adapter to use. e.g `'redis'` or `'mongodb'`.
+
+### Instance
+
+Keys must always be strings. Values can be of any type.
+
+#### .set(key, value, [ttl])
+
+Set a value.
+
+By default keys are persistent. You can set an expiry TTL in milliseconds.
+
+Returns a promise which resolves to `true`.
+
+#### .get(key, [options])
+
+Returns a promise which resolves to the retrieved value.
+
+##### options.raw
+
+Type: `Boolean`<br>
+Default: `false`
+
+If set to true the raw DB object Keyv stores internally will be returned instead of just the value.
+
+This contains the TTL timestamp.
+
+#### .delete(key)
+
+Deletes an entry.
+
+Returns a promise which resolves to `true` if the key existed, `false` if not.
+
+#### .clear()
+
+Delete all entries in the current namespace.
+
+Returns a promise which is resolved when the entries have been cleared.
+
+#### .iterator()
+
+Iterate over all entries of the current namespace.
+
+Returns a iterable that can be iterated by for-of loops. For example:
+
+```js
+// please note that the "await" keyword should be used here
+for await (const [key, value] of this.keyv.iterator()) {
+  console.log(key, value);
+};
+```
+
+# How to Contribute
+
+In this section of the documentation we will cover:
+
+1) How to set up this repository locally
+2) How to get started with running commands
+3) How to contribute changes using Pull Requests
+
+## Dependencies
+
+This package requires the following dependencies to run:
+
+1) [Yarn V1](https://yarnpkg.com/getting-started/install)
+3) [Docker](https://docs.docker.com/get-docker/)
+
+## Setting up your workspace
+
+To contribute to this repository, start by setting up this project locally:
+
+1) Fork this repository into your Git account
+2) Clone the forked repository to your local directory using `git clone`
+3) Install any of the above missing dependencies
+
+## Launching the project
+
+Once the project is installed locally, you are ready to start up its services:
+
+1) Ensure that your Docker service is running.
+2) From the root directory of your project, run the `yarn` command in the command prompt to install yarn.
+3) Run the `yarn bootstrap` command to  install any necessary dependencies.
+4) Run `yarn test:services:start` to start up this project's Docker container. The container will launch all services within your workspace.
+
+## Available Commands
+
+Once the project is running, you can execute a variety of commands. The root workspace and each subpackage contain a `package.json` file with a  `scripts` field listing all the commands that can be executed from that directory. This project also supports native `yarn`, and `docker` commands.
+
+Here, we'll cover the primary commands that can be executed from the root directory. Unless otherwise noted, these commands can also be executed from a subpackage. If executed from a subpackage, they will only affect that subpackage, rather than the entire workspace.
+
+### `yarn`
+
+The `yarn` command installs yarn in the workspace.
+
+### `yarn bootstrap`
+
+The `yarn bootstrap` command installs all dependencies in the workspace.
+
+### `yarn test:services:start`
+
+The `yarn test:services:start` command starts up the project's Docker container, launching all services in the workspace. This command must be executed from the root directory.
+
+### `yarn test:services:stop`
+
+The `yarn test:services:stop` command brings down the project's Docker container, halting all services. This command must be executed from the root directory.
+
+### `yarn test`
+
+The `yarn test` command runs all tests in the workspace.
+
+### `yarn clean`
+
+The `yarn clean` command removes yarn and all dependencies installed by yarn. After executing this command, you must repeat the steps in *Setting up your workspace* to rebuild your workspace.
+
+## Contributing Changes
+
+Now that you've set up your workspace, you're ready to contribute changes to the `keyv` repository.
+
+1) Make any changes that you would like to contribute in your local workspace.
+2) After making these changes, ensure that the project's tests still pass by executing the `yarn test` command in the root directory.
+3) Commit your changes and push them to your forked repository.
+4) Navigate to the original `keyv` repository and go the *Pull Requests* tab.
+5) Click the *New pull request* button, and open a pull request for the branch in your repository that contains your changes.
+6) Once your pull request is created, ensure that all checks have passed and that your branch has no conflicts with the base branch. If there are any issues, resolve these changes in your local repository, and then commit and push them to git.
+7) Similarly, respond to any reviewer comments or requests for changes by making edits to your local repository and pushing them to Git.
+8) Once the pull request has been reviewed, those with write access to the branch will be able to merge your changes into the `keyv` repository.
+
+If you need more information on the steps to create a pull request, you can find a detailed walkthrough in the [Github documentation](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork)
+
+## License
+
+MIT © Jared Wray
+
+==============================================================================
+long 5.3.2
+==============================================================================
+
+--- LICENSE ---
+
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+==============================================================================
+lowercase-keys 3.0.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+mimic-response 4.0.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+minimist 1.2.8
+==============================================================================
+
+--- LICENSE ---
+
+This software is released under the MIT license:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+net 1.0.2
+==============================================================================
+
+--- LICENSE ---
+
+Copyright 2011 Sleepless Software Inc. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+==============================================================================
+normalize-url 8.1.1
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+p-cancelable 3.0.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+path-expression-matcher 1.6.2
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2024
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+process-nextick-args 2.0.1
+==============================================================================
+
+--- license.md ---
+
+# Copyright (c) 2015 Calvin Metcalf
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+**THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.**
+
+==============================================================================
+quick-lru 5.1.1
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+readable-stream 1.0.34
+==============================================================================
+
+--- LICENSE ---
+
+Copyright Joyent, Inc. and other Node contributors. All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+==============================================================================
+resolve-alpn 1.2.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2018 Szymon Marczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+responselike 3.0.0
+==============================================================================
+
+--- license ---
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+Copyright (c) Luke Childs <lukechilds123@gmail.com> (https://lukechilds.co.uk)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+safe-buffer 5.1.2
+==============================================================================
+
+--- LICENSE ---
+
+The MIT License (MIT)
+
+Copyright (c) Feross Aboukhadijeh
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+safer-buffer 2.1.2
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2018 Nikita Skovoroda <chalkerx@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+sax 1.2.4
+==============================================================================
+
+--- LICENSE ---
+
+The ISC License
+
+Copyright (c) Isaac Z. Schlueter and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
+IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+====
+
+`String.fromCodePoint` by Mathias Bynens used according to terms of MIT
+License, as follows:
+
+    Copyright Mathias Bynens <https://mathiasbynens.be/>
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+    LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+    OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+    WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+seek-bzip 2.0.0
+==============================================================================
+
+--- LICENSE ---
+
+The MIT License (MIT)
+
+Copyright &copy; 2013-2015 C. Scott Ananian
+
+Copyright &copy; 2012-2015 Eli Skeggs
+
+Copyright &copy; 2011 Kevin Kwok
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+stream 0.0.2
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "stream",
+  "version": "0.0.2",
+  "description": "Node.js streams in the browser",
+  "main": "index.js",
+  "browser": {
+    "emitter": "emitter-component"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/juliangruber/stream.git"
+  },
+  "keywords": [
+    "stream"
+  ],
+  "author": "Julian Gruber <julian@juliangruber.com>",
+  "license": "MIT",
+  "dependencies": {
+    "emitter-component": "^1.1.1"
+  },
+  "devDependencies": {
+    "mocha": "*",
+    "expect.js": "*"
+  }
+}
+
+--- component.json ---
+
+{
+  "name": "stream",
+  "repo": "juliangruber/stream",
+  "description": "Node.js streams in the browser",
+  "version": "0.0.1",
+  "keywords": [
+    "stream"
+  ],
+  "scripts": [
+    "index.js"
+  ],
+  "dependencies": {
+    "component/emitter": "*"
+  },
+  "development": {
+    "component/jquery": "*"
+  },
+  "license": "MIT"
+}
+
+--- README.md ---
+
+stream
+======
+
+Node.js streams in the browser.
+
+Ported straight from the [Node.js core](https://github.com/joyent/node/blob/master/lib/stream.js) and adapted to [component/emitter](https://github.com/component/emitter)'s api.
+
+For docs:
+
+* [Stream Node.js v0.8.9 Manual & Documentation](http://nodejs.org/api/stream.html)
+* [Stream Handbook](https://github.com/substack/stream-handbook)
+
+A [testsuite](https://github.com/juliangruber/stream/blob/master/test.html) for the browser is there too. Just issue `npm install` after you've cloned this repo and then open the html file.
+
+Installation
+------------
+
+Install with [component(1)](https://github.com/component/component)
+
+```bash
+$ component install juliangruber/stream
+```
+or
+
+```
+$ npm install stream
+```
+
+Usage example
+-------------
+
+```javascript
+var Stream = require('stream');
+
+var src = new Stream();
+src.readable = true;
+
+var dest = new Stream();
+dest.writable = true;
+dest.write = function(data) {
+  assert(data == 'test');
+};
+
+src.pipe(dest);
+
+src.emit('data', 'test');
+```
+
+License
+-------
+(MIT)
+
+Copyright (c) 2012 Julian Gruber &lt;julian@juliangruber.com&gt;
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+string-to-stream 1.1.1
+==============================================================================
+
+--- LICENSE ---
+
+The MIT License (MIT)
+
+Copyright (c) Feross Aboukhadijeh
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+isarray 1.0.0
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "isarray",
+  "description": "Array#isArray for older browsers",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/juliangruber/isarray.git"
+  },
+  "homepage": "https://github.com/juliangruber/isarray",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "tape": "~2.13.4"
+  },
+  "keywords": [
+    "browser",
+    "isarray",
+    "array"
+  ],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT",
+  "testling": {
+    "files": "test.js",
+    "browsers": [
+      "ie/8..latest",
+      "firefox/17..latest",
+      "firefox/nightly",
+      "chrome/22..latest",
+      "chrome/canary",
+      "opera/12..latest",
+      "opera/next",
+      "safari/5.1..latest",
+      "ipad/6.0..latest",
+      "iphone/6.0..latest",
+      "android-browser/4.2..latest"
+    ]
+  },
+  "scripts": {
+    "test": "tape test.js"
+  }
+}
+
+--- component.json ---
+
+{
+  "name" : "isarray",
+  "description" : "Array#isArray for older browsers",
+  "version" : "0.0.1",
+  "repository" : "juliangruber/isarray",
+  "homepage": "https://github.com/juliangruber/isarray",
+  "main" : "index.js",
+  "scripts" : [
+    "index.js"
+  ],
+  "dependencies" : {},
+  "keywords": ["browser","isarray","array"],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT"
+}
+
+--- README.md ---
+
+
+# isarray
+
+`Array#isArray` for older browsers.
+
+[![build status](https://secure.travis-ci.org/juliangruber/isarray.svg)](http://travis-ci.org/juliangruber/isarray)
+[![downloads](https://img.shields.io/npm/dm/isarray.svg)](https://www.npmjs.org/package/isarray)
+
+[![browser support](https://ci.testling.com/juliangruber/isarray.png)
+](https://ci.testling.com/juliangruber/isarray)
+
+## Usage
+
+```js
+var isArray = require('isarray');
+
+console.log(isArray([])); // => true
+console.log(isArray({})); // => false
+```
+
+## Installation
+
+With [npm](http://npmjs.org) do
+
+```bash
+$ npm install isarray
+```
+
+Then bundle for the browser with
+[browserify](https://github.com/substack/browserify).
+
+With [component](http://component.io) do
+
+```bash
+$ component install juliangruber/isarray
+```
+
+## License
+
+(MIT)
+
+Copyright (c) 2013 Julian Gruber &lt;julian@juliangruber.com&gt;
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+readable-stream 2.3.8
+==============================================================================
+
+--- LICENSE ---
+
+Node.js is licensed for use as follows:
+
+"""
+Copyright Node.js contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+"""
+
+This license applies to parts of Node.js originating from the
+https://github.com/joyent/node repository:
+
+"""
+Copyright Joyent, Inc. and other Node contributors. All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+"""
+
+==============================================================================
+string_decoder 1.1.1
+==============================================================================
+
+--- LICENSE ---
+
+Node.js is licensed for use as follows:
+
+"""
+Copyright Node.js contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+"""
+
+This license applies to parts of Node.js originating from the
+https://github.com/joyent/node repository:
+
+"""
+Copyright Joyent, Inc. and other Node contributors. All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+"""
+
+==============================================================================
+string_decoder 0.10.31
+==============================================================================
+
+--- LICENSE ---
+
+Copyright Joyent, Inc. and other Node contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+strnum 2.5.1
+==============================================================================
+
+--- LICENSE ---
+
+MIT License
+
+Copyright (c) 2021 Natural Intelligence
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+telnet-client 2.2.13
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (c) Mario Kozjak, kozjakm1@gmail.com
+
+node-telnet-client is an Open Source project licensed under the terms of
+the LGPLv3 license. Please see <https://www.gnu.org/licenses/lgpl-3.0.html>
+for license text.
+
+For more info on the purchase of a commercial-friendly license allowing private forks
+and modifications of node-telnet-client, please contact me at kozjakm1@gmail.com.
+
+==============================================================================
+util-deprecate 1.0.2
+==============================================================================
+
+--- LICENSE ---
+
+(The MIT License)
+
+Copyright (c) 2014 Nathan Rajlich <nathan@tootallnate.net>
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+varint 6.0.0
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "varint",
+  "version": "6.0.0",
+  "description": "protobuf-style varint bytes - use msb to create integer values of varying sizes",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/chrisdickinson/varint.git"
+  },
+  "keywords": [
+    "varint",
+    "protobuf",
+    "encode",
+    "decode"
+  ],
+  "author": "Chris Dickinson <chris@neversaw.us>",
+  "license": "MIT",
+  "devDependencies": {
+    "tape": "~2.12.3"
+  }
+}
+
+--- README.md ---
+
+# varint
+
+encode whole numbers to an array of [protobuf-style varint bytes](https://developers.google.com/protocol-buffers/docs/encoding#varints) and also decode them.
+
+```javascript
+var varint = require('varint')
+
+var bytes = varint.encode(300) // === [0xAC, 0x02]
+varint.decode(bytes) // 300
+varint.decode.bytes // 2 (the last decode() call required 2 bytes)
+```
+
+## api
+
+### varint = require('varint')
+
+### varint.encode(num[, buffer=[], offset=0]) -> buffer
+
+Encodes `num` into `buffer` starting at `offset`. returns `buffer`, with the encoded varint written into it. If `buffer` is not provided, it will default to a new array.
+
+`varint.encode.bytes` will now be set to the number of bytes
+modified.
+
+### varint.decode(data[, offset=0]) -> number
+
+decodes `data`, which can be either a buffer or array of integers, from position `offset` or default 0 and returns the decoded original integer.
+
+Throws a `RangeError` when `data` does not represent a valid encoding.
+
+### varint.decode.bytes
+
+if you also require the length (number of bytes) that were required to decode the integer you can access it via `varint.decode.bytes`. this is an integer property that will tell you the number of bytes that the last .decode() call had to use to decode.
+
+### varint.encode.bytes
+
+similar to `decode.bytes` when encoding a number it can be useful to know how many bytes where written (especially if you pass an output array). you can access this via `varint.encode.bytes` which holds the number of bytes written in the last encode.
+
+
+### varint.encodingLength(num)
+
+returns the number of bytes this number will be encoded as, up to a maximum of 8.
+
+## usage notes
+
+If varint is passed a buffer that does not contain a valid end
+byte, then `decode` will throw `RangeError`, and `decode.bytes` 
+will be set to 0. If you are reading from a streaming source,
+it's okay to pass an incomplete buffer into `decode`, detect this
+case, and then concatenate the next buffer.
+
+# License
+
+MIT
+
+==============================================================================
+xml-naming 0.1.0
+==============================================================================
+
+--- package.json ---
+
+{
+  "name": "xml-naming",
+  "version": "0.1.0",
+  "description": "Validates XML name productions — Name, NCName, QName, NMToken, NMTokens — for XML 1.0 and 1.1",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "jasmine specs/*spec.js"
+  },
+  "keywords": [
+    "xml",
+    "xml-name",
+    "ncname",
+    "qname",
+    "nmtoken",
+    "xml-validation",
+    "xml-namespace",
+    "name-validator",
+    "xml-1.0",
+    "xml-1.1"
+  ],
+  "author": "Amit Gupta (https://solothought.com)",
+  "license": "MIT",
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/NaturalIntelligence"
+    }
+  ],
+  "devDependencies": {
+    "jasmine": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NaturalIntelligence/xml-naming"
+  },
+  "bugs": {
+    "url": "https://github.com/NaturalIntelligence/xml-naming/issues"
+  }
+}
+
+--- README.md ---
+
+# xml-naming
+
+Validates XML name productions as defined in the [XML 1.0](https://www.w3.org/TR/xml/) and [XML 1.1](https://www.w3.org/TR/xml11/) specifications.
+
+Covers all five productions:
+
+| Production | Description | Colon | Digit/hyphen start |
+|---|---|---|---|
+| `Name` | General XML name | ✅ | ❌ |
+| `NCName` | Non-Colonized name | ❌ | ❌ |
+| `QName` | Namespace-qualified name (`prefix:local`) | ✅ (one only) | ❌ |
+| `NMToken` | Name token (relaxed start) | ✅ | ✅ |
+| `NMTokens` | Whitespace-separated NMToken list | ✅ | ✅ |
+
+Used internally by [fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser), [fast-xml-validator](https://github.com/NaturalIntelligence/fast-xml-validator), [@nodable\flexible-xml-parser](https://github.com/nodable/flexible-xml-parser)  and [fast-svg-parser](https://github.com/amitguptagwl/fast-svg-parser).
+
+---
+
+## Install
+
+```bash
+npm install xml-naming
+```
+
+---
+
+## Usage
+
+### Boolean validators
+
+```js
+import { name, ncName, qName, nmToken, nmTokens } from 'xml-naming';
+
+// Name — colon allowed anywhere, used for DOCTYPE entity names
+name('foo')          // true
+name('a:b:c')        // true  ← multiple colons fine for Name
+name('1foo')         // false ← digit start invalid
+
+// NCName — no colon, used for SVG id attributes, namespace prefixes
+ncName('my-id')      // true
+ncName('xlink:href') // false ← colon not allowed
+
+// QName — exactly one colon as prefix separator, used for element/attribute names
+qName('svg:circle')  // true
+qName('foo')         // true  ← unprefixed QName is valid
+qName('a:b:c')       // false ← only one colon allowed
+qName(':foo')        // false ← cannot start with colon
+
+// NMToken — any NameChar at start, used for DTD NMTOKEN attributes
+nmToken('123')       // true  ← digit start is fine
+nmToken('-bar')      // true
+nmToken('foo bar')   // false ← space not allowed
+
+// NMTokens — whitespace-separated NMToken list
+nmTokens('tok1 tok2 -foo 123')  // true
+```
+
+### XML version option
+
+All validators accept an optional `{ xmlVersion }` option:
+
+```js
+import { name } from 'xml-naming';
+
+name('\u0085', { xmlVersion: '1.0' })  // false — NEL (Next Line), not in 1.0 ranges
+name('\u0085', { xmlVersion: '1.1' })  // true  — explicitly allowed in 1.1
+
+name('\uD800\uDC00', { xmlVersion: '1.0' })  // false
+name('\uD800\uDC00', { xmlVersion: '1.1' })  // true
+```
+
+---
+
+### Diagnostic validation
+
+```js
+import { validate } from 'xml-naming';
+
+validate('svg:circle', 'qName')
+// { valid: true, production: 'qName', input: 'svg:circle' }
+
+validate('1foo', 'ncName')
+// {
+//   valid: false,
+//   production: 'ncName',
+//   input: '1foo',
+//   reason: 'First character "1" is not a valid NameStartChar',
+//   position: 0
+// }
+
+validate('foo:bar', 'ncName')
+// {
+//   valid: false,
+//   production: 'ncName',
+//   input: 'foo:bar',
+//   reason: 'Colon is not allowed in NCName',
+//   position: 3
+// }
+
+validate('a:b:c', 'qName')
+// {
+//   valid: false,
+//   production: 'qName',
+//   input: 'a:b:c',
+//   reason: 'QName can have at most one colon',
+//   position: 3
+// }
+```
+
+---
+
+### Batch validation
+
+```js
+import { validateAll } from 'xml-naming';
+
+validateAll(['svg', 'circle', '123bad', 'xlink:href'], 'ncName')
+// [
+//   { valid: true,  production: 'ncName', input: 'svg' },
+//   { valid: true,  production: 'ncName', input: 'circle' },
+//   { valid: false, production: 'ncName', input: '123bad',    reason: '...', position: 0 },
+//   { valid: false, production: 'ncName', input: 'xlink:href',reason: '...', position: 5 }
+// ]
+```
+
+---
+
+### Sanitize / auto-fix
+
+Useful when generating XML/SVG programmatically from user-supplied strings:
+
+```js
+import { sanitize } from 'xml-naming';
+
+sanitize('123abc',    'ncName')  // '_123abc'   ← digit start fixed
+sanitize('my element','name')   // 'my_element' ← space replaced
+sanitize('foo:bar',   'ncName') // 'foobar'     ← colon stripped
+sanitize('hello!',    'name')   // 'hello_'     ← illegal char replaced
+
+// Custom replacement character
+sanitize('my element', 'name', { replacement: '-' })  // 'my-element'
+```
+
+---
+
+## Which production should I use?
+
+| Context | Production |
+|---|---|
+| XML element/attribute names (namespace-aware) | `qName` |
+| SVG `id` attribute values | `ncName` |
+| Namespace prefix alone | `ncName` |
+| DOCTYPE `<!ENTITY name ...>` | `name` |
+| DOCTYPE `<!NOTATION name ...>` | `name` |
+| DTD `NMTOKEN` attribute values | `nmToken` |
+| DTD `NMTOKENS` attribute values | `nmTokens` |
+
+> **Note:** DOCTYPE entity and notation names must use `Name`, not `QName`. Colons carry no namespace meaning in the DTD subset.
+
+---
+
+## API
+
+### `name(str, opts?)` → `boolean`
+### `ncName(str, opts?)` → `boolean`
+### `qName(str, opts?)` → `boolean`
+### `nmToken(str, opts?)` → `boolean`
+### `nmTokens(str, opts?)` → `boolean`
+
+`opts`:
+- `xmlVersion`: `'1.0'` (default) | `'1.1'`
+
+### `validate(str, production, opts?)` → `ValidationResult`
+
+`production`: `'name'` | `'ncName'` | `'qName'` | `'nmToken'` | `'nmTokens'`
+
+### `validateAll(strings[], production, opts?)` → `ValidationResult[]`
+
+### `sanitize(str, production?, opts?)` → `string`
+
+`opts`:
+- `xmlVersion`: `'1.0'` | `'1.1'`
+- `replacement`: string (default `'_'`)
+
+---
+
+## License
+
+MIT
+
+==============================================================================
+xmlbuilder 8.2.2
+==============================================================================
+
+--- LICENSE ---
+
+The MIT License (MIT)
+
+Copyright (c) 2013 Ozgur Ozcitak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+xmlrpc 1.3.2
+==============================================================================
+
+--- LICENSE ---
+
+Copyright (c) 2011-2016 Brandon Ace Alexander
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

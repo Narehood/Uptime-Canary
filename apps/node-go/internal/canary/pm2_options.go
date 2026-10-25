@@ -22,13 +22,13 @@ func validatePM2MonitorJSON(raw []byte) error {
 	}
 	// Reject case aliases before they can override exact typed fields. Other
 	// monitor families retain their existing management admission rules.
-	if !pm2ExactFieldNames(fields, reflect.TypeFor[Monitor]()) {
+	if !exactJSONFieldNames(fields, reflect.TypeFor[Monitor]()) {
 		return bad()
 	}
 	return nil
 }
 
-func pm2ExactFieldNames(fields map[string]json.RawMessage, typ reflect.Type) bool {
+func exactJSONFieldNames(fields map[string]json.RawMessage, typ reflect.Type) bool {
 	for key := range fields {
 		for _, field := range reflect.VisibleFields(typ) {
 			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
@@ -48,7 +48,7 @@ func pm2MonitorVersionJSON(raw []byte) error {
 	if json.Unmarshal(raw, &fields) != nil {
 		return fail(400, "Invalid PM2 monitor version")
 	}
-	if !pm2ExactFieldNames(fields, reflect.TypeFor[Version]()) {
+	if !exactJSONFieldNames(fields, reflect.TypeFor[Version]()) {
 		return fail(400, "Invalid PM2 monitor version")
 	}
 	return validatePM2MonitorJSON(fields["monitor"])

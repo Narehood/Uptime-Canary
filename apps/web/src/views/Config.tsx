@@ -3,9 +3,11 @@ import type {
   Group, GroupInput, Maintenance, MaintenanceInput, Monitor, MonitorInput, NotificationChannel, NotificationChannelInput, StatusPage, StatusPageInput, StatusPageView, Tag as TagResource, TagInput,
 } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure } from '../api';
+import { browserMasked } from '../browser';
 import { acceptedStatusText, typeLabel } from '../checks';
 import { useCanary, type Canary } from '../context';
 import { MASK, andList, maskedUrl, plural, secretNamed, shortRev, span } from '../format';
+import { gamedigMasked } from '../gamedig';
 import { useResource } from '../hooks';
 import { messagingRoute } from '../messaging';
 import { candidateOrder, groupPath } from '../model';
@@ -61,14 +63,23 @@ export function withOtherFields<T extends object>(rows: Row<T>[], heads: T[], re
   }];
 }
 
-const CHECK_KEYS = ['type', 'target', 'expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'upsideDown'] as const;
-const OPTION_KEYS = ['http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2'] as const;
+const CHECK_KEYS = ['type', 'target', 'expectedStatusCodes', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'browser', 'gamedig', 'upsideDown'] as const;
+const OPTION_KEYS = ['http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'browser', 'gamedig'] as const;
+/**
+ * The options a resolver shows, masked unless revealed. The Steam API key stays masked even then; a browser's whole endpoint
+ * and token, and a game query service's whole address, its token and the game token, are masked until revealed.
+ */
+const shownOption = (key: (typeof OPTION_KEYS)[number], value: unknown, reveal: boolean): unknown =>
+  key === 'steam' ? steamMasked(reveal ? value : maskOptions(value)) : reveal ? value : key === 'pm2' ? pm2Masked(value) : key === 'browser' ? browserMasked(value)
+    : key === 'gamedig' ? gamedigMasked(value) : maskOptions(value);
 
 function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
   const groupName = (id?: string): string => id ? groupPath(id, ctx.groupMap) : 'No group';
   const viewer = ctx.role === 'viewer';
   return [
     picked<Monitor>('name', 'Name', ['name'], m => m.name),
+    // Private metadata (protocol 19), never part of the check: plain text with its line breaks.
+    picked<Monitor>('description', 'Description', ['description'], m => typeof m.description === 'string' && m.description ? <span className="pre-line wrap">{m.description}</span> : <span className="muted">None</span>),
     {
       key: 'check', label: 'Check', keys: CHECK_KEYS, project: m => pick(m, CHECK_KEYS),
       render: m => {
@@ -78,14 +89,20 @@ function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
             <span className="ttype">{typeLabel(m.type)}</span> {m.type !== 'manual' && m.type !== 'push' ? <span className="mono wrap">{m.target}</span> : null}
             {m.type === 'globalping' && m.globalping ? <span className="muted small"> · {String(m.globalping.mode).toLowerCase()} from <span className="mono">{m.globalping.location}</span></span> : null}
             {m.type === 'system-service' ? <span className="muted small"> · read by each node from its own operating system</span> : null}
+            {m.type === 'tailscale-ping' ? <span className="muted small"> · pinged by each node through its own Tailscale client</span> : null}
             {m.type === 'steam' ? <span className="muted small"> · Steam directory listing{viewer || !m.steam ? '' : `${m.steam.skipLatency ? ', no ICMP latency' : ', then an ICMP echo'}${m.steam.apiFailureIsDown ? ', API failures down' : ''} · API key hidden`}</span> : null}
             {m.type === 'pm2' ? <span className="muted small"> · read by each node from its own PM2 daemon{viewer || !m.pm2 ? null : <>{m.pm2.transport === 'unix' ? ' over a Unix socket' : m.pm2.transport === 'windows-pipe' ? ' over the Windows named pipe' : ` over “${m.pm2.transport}”`}{m.pm2.namespace ? <>, namespace <span className="mono wrap">{m.pm2.namespace}</span></> : null}</>}</span> : null}
+            {m.type === 'real-browser' ? <span className="muted small"> · loaded in a dedicated Chromium service{viewer || !m.browser ? '' : `${m.browser.delayMs ? `, then waits ${span(m.browser.delayMs)}` : ''}${m.browser.screenshot ? ', with a private screenshot' : ''}${reveal ? '' : ` · endpoint${m.browser.bearerToken ? ' and token' : ''} hidden`}`}</span> : null}
+            {m.type === 'gamedig' ? <span className="muted small"> · queried through a GameDig service{viewer || !m.gamedig ? null : <>: <span className="mono wrap">{m.gamedig.game}</span>{m.gamedig.port ? `, port ${m.gamedig.port}${m.gamedig.givenPortOnly ? ' only' : ''}` : ', default port'}{reveal ? '' : ` · service address and ${m.gamedig.token ? 'tokens' : 'token'} hidden`}</>}</span> : null}
             {m.type === 'http' ? <span className="muted small"> · accepts {acceptedStatusText(m)}</span> : null}
+            {m.type === 'tcp' ? <span className="muted small"> · {m.tls ? 'with a verified TLS handshake' : 'connection only'}</span> : null}
+            {m.type === 'dns' && m.dns?.recordType ? <span className="muted small"> · {m.dns.recordType} record{m.dns.server ? <> from <span className="mono">{m.dns.server}</span></> : ''}</span> : null}
+            {m.type === 'websocket' && m.websocket?.subprotocols?.length ? <span className="muted small"> · offers <span className="mono wrap">{m.websocket.subprotocols.join(', ')}</span>{m.websocket.requireSubprotocol ? ', one required' : ''}</span> : null}
             {m.type === 'manual' ? <span className="muted small"> · status {m.manual?.state ?? 'not set'}{m.manual?.message ? `: ${m.manual.message}` : ''}</span> : null}
             {m.upsideDown ? <span className="muted small"> · inverted</span> : null}
             {options.length && !viewer ? (
               <details className="opts"><summary className="small">{options.join(', ')} options</summary>
-                <pre className="json-pre small">{JSON.stringify(Object.fromEntries(options.map(key => [key, key === 'steam' ? steamMasked(reveal ? m[key] : maskOptions(m[key])) : reveal ? m[key] : key === 'pm2' ? pm2Masked(m[key]) : maskOptions(m[key])])), null, 2)}</pre>
+                <pre className="json-pre small">{JSON.stringify(Object.fromEntries(options.map(key => [key, shownOption(key, m[key], reveal)])), null, 2)}</pre>
               </details>
             ) : null}
           </>
@@ -110,6 +127,12 @@ function monitorRows(ctx: Canary, reveal: boolean): Row<Monitor>[] {
     { key: 'tags', label: 'Tags', keys: ['tags'], project: m => pick(m, ['tags']), render: m => m.tags?.length ? <MonitorTags tags={m.tags} catalog={ctx.tags.map} /> : <span className="muted">None</span> },
   ];
 }
+
+/**
+ * The monitor resolver rows, for scripts/browser-pure.mjs. `monitorRows` keeps its own name unexported because the
+ * contract harness appends `export { monitorRows }` to its review copy of this file.
+ */
+export const resolverModel = { monitorRows };
 
 function maskOptions(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
@@ -174,6 +197,18 @@ function statusPageRows(ctx: Canary): Row<StatusPage>[] {
       render: p => <>{p.groups.map(group => `${group.name} (${group.monitors.map(sel => sel.showAvailability === true ? `${sel.name} + 24 h history` : sel.name).join(', ') || 'empty'})`).join('; ') || <span className="muted">None</span>}{p.groups.some(group => group.monitors.some(sel => !ctx.monitorMap.has(sel.monitorId))) ? <div className="muted small">Includes monitors unknown to {ctx.endpoint}</div> : null}</>,
     },
     { key: 'announcements', label: 'Announcements', keys: ['announcements'], project: p => ({ announcements: structuredClone(p.announcements) }), render: p => p.announcements.length ? p.announcements.map(note => `${note.title} (${note.state})`).join('; ') : <span className="muted">None</span> },
+    {
+      // Protocol 19 presentation: public values, kept together so a theme, its links and the feed come from one version.
+      key: 'presentation', label: 'Appearance and feed', keys: ['appearance', 'publicUrl', 'rssEnabled'], project: p => pick(p, ['appearance', 'publicUrl', 'rssEnabled']),
+      render: p => {
+        const a = p.appearance;
+        const parts = [
+          a?.theme ? `${a.theme} theme` : '', a?.accentColor ? `accent ${a.accentColor}` : '', a?.logoUrl ? 'logo' : '', a?.footerText ? 'footer' : '',
+          a?.refreshIntervalMs ? `refresh ${span(a.refreshIntervalMs)}` : '', a?.markdown ? 'Markdown' : '', p.publicUrl ? `public address ${p.publicUrl}` : '', p.rssEnabled ? 'RSS feed on' : '',
+        ].filter(Boolean);
+        return parts.length ? <span className="wrap">{parts.join(' · ')}</span> : <span className="muted">Defaults</span>;
+      },
+    },
   ];
 }
 

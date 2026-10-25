@@ -609,6 +609,9 @@ func (n *Node) applySnapshot(s Snapshot) error {
 			}
 		}
 	}
+	if err == nil && headChanged {
+		err = purgeBrowserScreenshots(tx, n.heads, heads)
+	}
 	if err == nil {
 		err = tx.Commit()
 	}

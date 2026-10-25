@@ -138,21 +138,16 @@ func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, acto
 			errorReply(w, fail(403, "Insufficient permissions"))
 			return
 		}
+		if len(parts) == 1 && r.Method == "PATCH" {
+			d.editRegisteredNode(w, r, actor, parts[0])
+			return
+		}
+		if len(parts) == 2 && parts[1] == "rotate" && r.Method == "POST" {
+			d.rotateRegisteredNode(w, r, actor, parts[0])
+			return
+		}
 		if len(parts) == 2 && parts[1] == "retry" && r.Method == "POST" {
-			if err := d.currentActor(r, actor, true); err != nil {
-				errorReply(w, err)
-				return
-			}
-			row, err := d.finishEnrollment(r.Context(), parts[0])
-			if err != nil {
-				errorReply(w, err)
-				return
-			}
-			if row.ID == "" {
-				reply(w, 204, nil)
-				return
-			}
-			reply(w, 200, d.publicNode(row, actor.Role))
+			d.retryRegisteredNode(w, r, actor, parts[0])
 			return
 		}
 		if len(parts) == 1 && r.Method == "DELETE" {
@@ -374,7 +369,7 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 		d.mu.Unlock()
 		return row, fail(409, "This node operation is already running")
 	}
-	if row.State != "enrolling" && row.State != "removing" {
+	if !dashboardOperationPending(row.State) {
 		d.mu.Unlock()
 		return row, nil
 	}
@@ -411,12 +406,15 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 		method = "DELETE"
 		token = secret.Admin
 	}
+	if row.State == "rotating" {
+		method = "PATCH"
+	}
 	if token == "" {
 		return row, fail(503, "Saved enrollment credential is unavailable")
 	}
 	b, _ := json.Marshal(secret.dashboardRoleTokens)
 	resp, _, err := d.nodeRequest(ctx, row, token, method, "/api/dashboard-enrollments/"+row.ID, b)
-	if method == "POST" && err == nil && resp.StatusCode == 401 {
+	if (method == "POST" || method == "PATCH") && err == nil && resp.StatusCode == 401 {
 		// The node may have committed its role bundle before the original
 		// enrollment credential was rotated or its password session expired.
 		resp, _, err = d.nodeRequest(ctx, row, secret.Admin, method, "/api/dashboard-enrollments/"+row.ID, b)
@@ -425,10 +423,10 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 		// Covers cancellation before provisioning and a lost DELETE response.
 		resp, _, err = d.nodeRequest(ctx, row, secret.EnrollmentToken, method, "/api/dashboard-enrollments/"+row.ID, b)
 	}
-	if err == nil && resp.StatusCode != 201 && !(method == "DELETE" && resp.StatusCode == 204) {
+	if err == nil && !(method == "POST" && resp.StatusCode == 201 || method == "PATCH" && resp.StatusCode == 200 || method == "DELETE" && resp.StatusCode == 204) {
 		err = fail(502, "Node delegation was not accepted; check enrollment credentials and node version")
 	}
-	if err == nil && method == "POST" {
+	if err == nil && (method == "POST" || method == "PATCH") {
 		for _, role := range dashboardRoles {
 			if e := d.nodeActor(ctx, row, secret.token(role), role); e != nil {
 				err = e
@@ -507,7 +505,7 @@ func (d *Dashboard) checkNode(ctx context.Context, id string) (registeredNodeRec
 	if !ok {
 		return row, fail(404, "Registered node not found")
 	}
-	if row.State == "enrolling" || row.State == "removing" {
+	if dashboardOperationPending(row.State) {
 		return row, nil
 	}
 	secret, err := d.openSecrets(row)
@@ -524,7 +522,10 @@ func (d *Dashboard) checkNode(ctx context.Context, id string) (registeredNodeRec
 	if !exists {
 		return registeredNodeRecord{}, fail(404, "Registered node not found")
 	}
-	if current.State == "enrolling" || current.State == "removing" {
+	if current.URL != row.URL || current.Credentials != row.Credentials {
+		return current, nil
+	}
+	if dashboardOperationPending(current.State) {
 		return current, nil
 	}
 	if err != nil {
@@ -553,13 +554,24 @@ func (d *Dashboard) proxyNode(w http.ResponseWriter, r *http.Request, actor Acco
 		errorReply(w, fail(404, "Registered node not found"))
 		return
 	}
-	if row.State == "enrolling" || row.State == "removing" {
+	if dashboardOperationPending(row.State) {
 		errorReply(w, fail(409, "This node enrollment or removal is not complete"))
 		return
 	}
 	b, err := readBounded(r.Body, maxAPIBody)
 	if err == nil {
 		err = d.currentActor(r, actor, false)
+	}
+	if err == nil {
+		d.mu.Lock()
+		var exists bool
+		row, exists = d.registry[id]
+		d.mu.Unlock()
+		if !exists {
+			err = fail(404, "Registered node not found")
+		} else if dashboardOperationPending(row.State) {
+			err = fail(409, "This node operation is not complete")
+		}
 	}
 	secret, e := d.openSecrets(row)
 	if err == nil {
@@ -623,7 +635,7 @@ func (d *Dashboard) publicRequest(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	row, ok := d.registry[id]
 	d.mu.Unlock()
-	if !ok || row.State == "enrolling" || row.State == "removing" {
+	if !ok || dashboardOperationPending(row.State) {
 		errorReply(w, fail(404, "Public node registration not found"))
 		return
 	}

@@ -9,6 +9,7 @@ import { Banner, Card, Chip, EmptyState, ErrorText, Modal, PageHead, ReadOnly, R
 import { AmountField, CheckField, ErrorSummary, Seg, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
 import { groupPath, type Tone } from '../model';
+import { storedExtras } from '../writable';
 
 type Strategy = MaintenanceSchedule['strategy'];
 const STRATEGIES: { value: Strategy; label: string; hint: string }[] = [
@@ -209,8 +210,16 @@ function mDraft(m: Maintenance | undefined): MDraft {
 type MField = 'name' | 'selection' | 'timezone' | 'dates' | 'startTime' | 'duration' | 'intervalDays' | 'weekdays' | 'days' | 'cron';
 const MFIELD_LABEL: Record<MField, string> = { name: 'Name', selection: 'Applies to', timezone: 'Time zone', dates: 'Dates', startTime: 'Start time', duration: 'Duration', intervalDays: 'Repeat every', weekdays: 'Weekdays', days: 'Days of the month', cron: 'Cron expression' };
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
+/** Keys this form writes, at the top level and in the schedule. Other stored keys come from a newer node. */
+const MAINTENANCE_KEYS = ['name', 'enabled', 'allMonitors', 'monitorIds', 'groupIds', 'schedule'];
+const SCHEDULE_KEYS = ['strategy', 'timezone', 'startDate', 'endDate', 'startTime', 'durationMinutes', 'intervalDays', 'weekdays', 'daysOfMonth', 'lastDayOfMonth', 'cron'];
 
-function buildMaintenance(d: MDraft): { input?: MaintenanceInput; errors: Partial<Record<MField, string>> } {
+/**
+ * The saved schedule. `stored` is the version being edited (none for a new one): its keys this form doesn't model are
+ * kept. An unknown schedule key may belong to the strategy, so it stays only while the strategy does; a strategy change
+ * drops it along with the old strategy's own fields.
+ */
+function buildMaintenance(d: MDraft, stored?: Maintenance): { input?: MaintenanceInput; errors: Partial<Record<MField, string>> } {
   const errors: Partial<Record<MField, string>> = {};
   const name = d.name.trim();
   if (!name || name.length > 128 || /[\x00-\x1f\x7f]/u.test(name)) errors.name = 'Enter a name of at most 128 characters.';
@@ -248,7 +257,8 @@ function buildMaintenance(d: MDraft): { input?: MaintenanceInput; errors: Partia
     schedule.cron = text;
   }
   if (Object.keys(errors).length) return { errors };
-  const input: MaintenanceInput = { name, enabled: d.enabled, schedule };
+  const keptSchedule = stored?.schedule?.strategy === d.strategy ? storedExtras(stored.schedule, SCHEDULE_KEYS, []) : {};
+  const input: MaintenanceInput = { name, enabled: d.enabled, schedule: { ...schedule, ...keptSchedule }, ...storedExtras(stored, MAINTENANCE_KEYS) };
   if (d.scope === 'all') input.allMonitors = true;
   else {
     if (d.monitorIds.length) input.monitorIds = [...d.monitorIds];
@@ -256,6 +266,12 @@ function buildMaintenance(d: MDraft): { input?: MaintenanceInput; errors: Partia
   }
   return { input, errors };
 }
+
+/**
+ * The form model, for scripts/editor-preservation-pure.mjs. The functions keep their own names unexported because the
+ * contract harness appends `export { mDraft, buildMaintenance }` to its review copy of this file.
+ */
+export const maintenanceFormModel = { mDraft, buildMaintenance };
 
 function PickList({ legend, items, selected, onChange, disabled }: { legend: string; items: { id: string; label: ReactNode; text: string }[]; selected: string[]; onChange: (ids: string[]) => void; disabled: boolean }) {
   const [filter, setFilter] = useState('');
@@ -300,7 +316,9 @@ function MaintenanceFormBody({ id }: { id?: string }) {
   const { maintenance, maintenanceMap, endpoint, editable, api, refresh, assessed, groups, groupMap, stillCurrent } = useCanary();
   const existing = id ? maintenanceMap.get(id) : undefined;
   const [draft, setDraft] = useState<MDraft>(() => mDraft(existing?.maintenance));
-  const [baseRevision, setBaseRevision] = useState(existing?.maintenance.revision);
+  // The version being edited: its revision is the base of the save, and its keys this form doesn't model are kept.
+  const [base, setBase] = useState<Maintenance | undefined>(existing?.maintenance);
+  const baseRevision = base?.revision;
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<{ message: string; stale: boolean } | null>(null);
@@ -315,7 +333,7 @@ function MaintenanceFormBody({ id }: { id?: string }) {
   if (id && !existing) return <div className="view"><PageHead title="Edit maintenance" /><Card><EmptyState title="Maintenance not found">{endpoint} doesn’t know this schedule. It may have been deleted.</EmptyState></Card></div>;
 
   const current = existing?.maintenance;
-  const { input, errors } = buildMaintenance(draft);
+  const { input, errors } = buildMaintenance(draft, base);
   const visible = showErrors ? errors : {};
   const set = <K extends keyof MDraft>(key: K, value: MDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const changedElsewhere = Boolean(current && baseRevision && current.revision !== baseRevision);
@@ -341,7 +359,7 @@ function MaintenanceFormBody({ id }: { id?: string }) {
       setAttempts(n => n + 1);
     } finally { setSaving(false); }
   };
-  const loadLatest = (): void => { if (current) { setDraft(mDraft(current)); setBaseRevision(current.revision); setFailure(null); setShowErrors(false); } };
+  const loadLatest = (): void => { if (current) { setDraft(mDraft(current)); setBase(current); setFailure(null); setShowErrors(false); } };
   const errorList = Object.entries(visible).map(([field, message]) => `${MFIELD_LABEL[field as MField]}: ${message}`);
   const preview = input ? scheduleText(input.schedule) : null;
 

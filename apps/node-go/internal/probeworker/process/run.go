@@ -20,25 +20,26 @@ var slots = make(chan struct{}, 2)
 // earlier of ctx's deadline and the JSON config's timeout. It always kills/reaps a started
 // child before releasing admission. There is no in-process fallback.
 func Run(ctx context.Context, config []byte) Result {
-	return run(ctx, config, execution{slots: slots, executable: workerExecutable, prepare: prepareProcess})
+	return run(ctx, config, execution{slots: slots, executable: workerExecutable, prepare: prepareProcess, prepareTyped: prepareTypedProcess})
 }
 
 // RunConfig admits before bounded JSON serialization, so rejected concurrent
 // checks cannot allocate input buffers outside the two-worker capacity limit.
 // Values must be ordinary JSON configuration data, not custom marshalers.
 func RunConfig(ctx context.Context, timeout time.Duration, config any) Result {
-	return runEncoded(ctx, timeout, func() ([]byte, error) { return EncodeConfig(config) }, execution{slots: slots, executable: workerExecutable, prepare: prepareProcess}, time.Now())
+	return runEncoded(ctx, timeout, func() ([]byte, error) { return EncodeConfig(config) }, execution{slots: slots, executable: workerExecutable, prepare: prepareProcess, prepareTyped: prepareTypedProcess}, time.Now())
 }
 
 // Private injection points allow controlled subprocess failure tests without
 // adding test switches, arbitrary programs, or environment hooks to production.
 type execution struct {
-	slots      chan struct{}
-	executable func() (string, error)
-	prepare    func(*exec.Cmd) (processGuard, error)
-	wrapStdout func(io.Writer) io.Writer
-	wrapStderr func(io.Writer) io.Writer
-	observe    func(executionObservation)
+	slots        chan struct{}
+	executable   func() (string, error)
+	prepare      func(*exec.Cmd) (processGuard, error)
+	prepareTyped func(*exec.Cmd, string) (processGuard, error)
+	wrapStdout   func(io.Writer) io.Writer
+	wrapStderr   func(io.Writer) io.Writer
+	observe      func(executionObservation)
 }
 
 type processGuard interface {
@@ -108,7 +109,12 @@ func runEncoded(ctx context.Context, timeout time.Duration, encode func() ([]byt
 	// Output uses owned file pipes; WaitDelay remains unchanged for exec's
 	// context watcher and never decides whether buffered output is valid.
 	cmd.WaitDelay = 10 * time.Millisecond
-	guard, err := e.prepare(cmd)
+	var guard processGuard
+	if e.prepareTyped != nil {
+		guard, err = e.prepareTyped(cmd, c.Type)
+	} else {
+		guard, err = e.prepare(cmd)
+	}
 	if err != nil {
 		return pending("service worker resource control unavailable")
 	}
@@ -221,7 +227,9 @@ func runEncoded(ctx context.Context, timeout time.Duration, encode func() ([]byt
 		return Result{State: "down", Message: "invalid service configuration", LatencyMs: float64(time.Since(start)) / float64(time.Millisecond)}
 	}
 	r := *final.Result
-	r.LatencyMs = float64(time.Since(start)) / float64(time.Millisecond)
+	if c.Type != "tailscale-ping" {
+		r.LatencyMs = float64(time.Since(start)) / float64(time.Millisecond)
+	}
 	return r
 }
 

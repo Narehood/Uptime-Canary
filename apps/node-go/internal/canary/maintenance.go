@@ -47,7 +47,7 @@ type maintenanceWindowCache struct {
 // Compile outside the node lock, before a resource is admitted or merged.
 func parseMaintenance(b []byte) (MaintenanceInput, error) {
 	var in MaintenanceInput
-	raw, err := jsonObject(b)
+	raw, err := strictResourceObject(b, "name", "enabled", "allMonitors", "monitorIds", "groupIds", "schedule", "id", "revision", "revisions", "updatedAt", "deleted")
 	if err != nil || required(raw, "name", "enabled", "schedule") != nil || optionalNonNull(raw, "allMonitors", "monitorIds", "groupIds") != nil {
 		return in, fail(400, "Invalid maintenance input")
 	}

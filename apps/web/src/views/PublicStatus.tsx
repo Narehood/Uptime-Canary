@@ -1,14 +1,16 @@
-import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import type { PublicStatusGroup, PublicStatusMonitor, PublicStatusPage, PublicStatusState, StatusPageAnnouncement } from '@uptime-canary/shared';
-import { ApiFailure, fetchPublicStatus, isAbort, normalizeApiUrl } from '../api';
+import { ApiFailure, fetchPublicStatus, isAbort, normalizeApiUrl, publicRssUrl } from '../api';
 import { controlPlaneMode, pageOrigin } from '../gateway';
 import { duration } from '../availability';
 import { addressCaveat } from '../badges';
-import { ago, stamp, utc } from '../format';
+import { ago, span, stamp, utc } from '../format';
 import { useNow } from '../hooks';
+import { RichText } from '../markdown';
 import { availabilityText, observedFigures, percentText, readPublicAvailability, stripWords, validProjectionTime, type PublicObserved } from '../publicAvailability';
 import { href, navigate, publicHref } from '../router';
-import { ThemeButton, type ThemeControl } from '../theme';
+import { REFRESH_DEFAULT_MS, accentVariables, readPresentation, type ShownPresentation } from '../statusPresentation';
+import { ThemeButton, setPageTheme, type ThemeControl } from '../theme';
 import { BadgeList } from '../ui/badges';
 import { Time } from '../ui/bits';
 import { ObservedStrip } from '../ui/charts';
@@ -17,7 +19,6 @@ import { TagPill } from '../ui/tags';
 import { lastEndpoint } from './Connect';
 import type { Tone } from '../model';
 
-const REFRESH_MS = 30_000;
 const STATES = new Set<PublicStatusState>(['up', 'down', 'pending', 'unknown']);
 const NOTE_STATES = new Set(['investigating', 'identified', 'monitoring', 'resolved']);
 
@@ -29,7 +30,8 @@ const obj = (value: unknown): Record<string, unknown> => typeof value === 'objec
 /** A published service as shown: `history` is the strictly read `availability` field, present only when published. */
 interface ShownMonitor extends Omit<PublicStatusMonitor, 'availability'> { history?: PublicObserved }
 interface ShownGroup extends Omit<PublicStatusGroup, 'monitors'> { monitors: ShownMonitor[] }
-interface ShownPage extends Omit<PublicStatusPage, 'groups'> { groups: ShownGroup[] }
+/** `presentation` is the operator's appearance, public address and feed setting, each value checked before use. */
+interface ShownPage extends Omit<PublicStatusPage, 'groups' | 'appearance' | 'publicUrl' | 'rssEnabled'> { groups: ShownGroup[]; presentation: ShownPresentation }
 
 /** The public JSON comes from the network: keep only expected fields, as text, with safe fallbacks. */
 function normalize(value: unknown): ShownPage {
@@ -69,6 +71,7 @@ function normalize(value: unknown): ShownPage {
         createdAt: validProjectionTime(note.createdAt) ? note.createdAt : 0, updatedAt: validProjectionTime(note.updatedAt) ? note.updatedAt : 0, pinned: note.pinned === true,
       };
     }),
+    presentation: readPresentation(page),
   };
 }
 
@@ -172,6 +175,8 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
   const [badgeNonce, setBadgeNonce] = useState(0);
   // Badge previews exist only while a visitor has the panel open: no image requests, and no images in the page otherwise.
   const [embedOpen, setEmbedOpen] = useState(false);
+  // The operator's refresh interval, read again before each wait so a changed page takes effect on its next refresh.
+  const refreshMs = useRef(REFRESH_DEFAULT_MS);
 
   useEffect(() => { document.title = load.kind === 'ok' ? `${load.page.title} · status` : 'Status'; }, [load]);
   useEffect(() => {
@@ -183,7 +188,9 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
         const value = await fetchPublicStatus(base, slug, controller.signal, controlPlane ? registration : undefined);
         // A late answer for a node or page no longer selected never paints over the current selection.
         if (controller.signal.aborted) return;
-        setLoad({ kind: 'ok', page: normalize(value), at: Date.now(), from: base, slug });
+        const shownPage = normalize(value);
+        refreshMs.current = shownPage.presentation.refreshMs;
+        setLoad({ kind: 'ok', page: shownPage, at: Date.now(), from: base, slug });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
         const notFound = error instanceof ApiFailure && error.status === 404;
@@ -198,7 +205,7 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
           last: notFound ? undefined : previous.kind === 'ok' && answers(previous, base, slug) ? previous : previous.kind === 'error' && answers(previous.last, base, slug) ? previous.last : undefined,
         }));
       }
-      if (!controller.signal.aborted) timer = setTimeout(() => { if (!document.hidden) void run(); else timer = setTimeout(() => void run(), REFRESH_MS); }, REFRESH_MS);
+      if (!controller.signal.aborted) timer = setTimeout(() => { if (!document.hidden) void run(); else timer = setTimeout(() => void run(), refreshMs.current); }, refreshMs.current);
     };
     setLoad(previous => previous.kind === 'ok' && answers(previous, base, slug) ? previous
       : previous.kind === 'error' && answers(previous.last, base, slug) ? previous : { kind: 'loading' });
@@ -209,6 +216,18 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
   const shown = load.kind === 'ok' ? load : load.kind === 'error' ? load.last : undefined;
   const page = shown?.page;
   const head = page ? headline(page) : null;
+  // Only a page this view has read and checked sets anything: its theme while shown, its accent, its logo and its feed.
+  const look = page?.presentation;
+  const pageTheme = look?.theme === 'light' || look?.theme === 'dark' ? look.theme : null;
+  useEffect(() => { setPageTheme(pageTheme); }, [pageTheme]);
+  useEffect(() => () => setPageTheme(null), []);
+  const markdown = look?.markdown === true;
+  const accentStyle = look?.accent ? accentVariables(look.accent, theme.mode) as CSSProperties : undefined;
+  let rss: string | null = null;
+  if (shown && look?.rss && look.publicUrl) {
+    try { rss = publicRssUrl(shown.from, slug, controlPlane ? registration : undefined); } catch { rss = null; }
+  }
+  const every = span(look?.refreshMs ?? REFRESH_DEFAULT_MS);
   const notes = page ? [...page.announcements.filter(note => note.pinned), ...page.announcements.filter(note => !note.pinned)] : [];
   // The strip legend appears once, under the first service that draws one.
   const firstStrip = page?.groups.flatMap(group => group.monitors).find(monitor => monitor.history?.kind === 'available');
@@ -227,7 +246,7 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
   };
 
   return (
-    <div className="pub">
+    <div className={`pub${look?.accent ? ' pub-accent' : ''}`} style={accentStyle}>
       <header className="pub-top">
         <span className="pub-brand"><CanaryMark /><span>Status</span></span>
         <span className="grow" />
@@ -238,8 +257,15 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
         {page && head ? (
           <>
             <div className="pub-head">
-              <h1>{page.title}</h1>
-              {page.description ? <p className="pub-desc">{page.description}</p> : null}
+              {look?.logo ? (
+                // The operator's opt-in logo: an https:// address the node accepted and this view re-checked, loaded only
+                // after the page itself was read, without a referrer or credentials.
+                <div className="pub-title">
+                  <img className="pub-logo" src={look.logo} alt="" referrerPolicy="no-referrer" decoding="async" />
+                  <h1>{page.title}</h1>
+                </div>
+              ) : <h1>{page.title}</h1>}
+              {page.description ? <RichText text={page.description} markdown={markdown} className="pub-desc" /> : null}
             </div>
             <section className={`pub-state s-${page.state}`} aria-labelledby={`${formId}-state`}>
               <Glyph tone={tone(page.state)} />
@@ -261,7 +287,7 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
                         <h3>{note.title}</h3>
                         {note.pinned ? <Icon name="pin" className="pin" /> : null}
                       </div>
-                      <p>{note.message}</p>
+                      <RichText text={note.message} markdown={markdown} />
                       {note.createdAt ? <p className="muted small">Posted <time dateTime={new Date(note.createdAt).toISOString()} title={utc(note.createdAt)}>{stamp(note.createdAt, now)}</time>{note.updatedAt - note.createdAt >= 60_000 ? <> · updated <time dateTime={new Date(note.updatedAt).toISOString()} title={utc(note.updatedAt)}>{stamp(note.updatedAt, now)}</time></> : null}</p> : null}
                     </article>
                   );
@@ -309,7 +335,7 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
           {controlPlane ? (
             <details className="pub-source">
               <summary>
-                {shown ? <>Live view through this dashboard, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every 30 s</>
+                {shown ? <>Live view through this dashboard, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every {every}</>
                   : <>Data source: one node on this dashboard</>}
               </summary>
               <div className="pub-source-b">
@@ -319,7 +345,7 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
             </details>
           ) : <details className="pub-source">
             <summary>
-              {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every 30 s</>
+              {shown ? <>Live view from <span className="mono">{shown.from}</span>, generated {page?.generatedAt ? <time dateTime={new Date(page.generatedAt).toISOString()} title={utc(page.generatedAt)}>{ago(page.generatedAt, now)}</time> : 'at an unknown time'} · refreshes every {every}</>
                 : <>Data source: <span className="mono">{base ?? 'none'}</span></>}
             </summary>
             <div className="pub-source-b">
@@ -359,6 +385,13 @@ export function PublicStatusView({ slug, nodes, registration, theme, signedIn }:
           ) : null}
           {page?.groups.some(group => group.monitors.some(monitor => monitor.history)) ? (
             <p className="muted small">“Last 24 h” figures are the answering node’s own record for services the operator chose to publish. Availability is up time ÷ (up + down) time; coverage is the share of the 24 hours with a known result. Pending and unknown time don’t count toward availability but lower coverage; gaps are never assumed up, and maintenance changes neither figure. Percentages are truncated, never rounded up: availability reads 100.00% only without down time, and coverage only when every moment had a result. Another node can show different figures, and nothing is merged across nodes.</p>
+          ) : null}
+          {look?.footer ? <RichText text={look.footer} markdown={markdown} className="pub-foot-text" /> : null}
+          {rss ? (
+            <p className="small pub-rss">
+              <a href={rss} type="application/rss+xml"><Icon name="megaphone" className="inline" />RSS feed of announcements</a>
+              <span className="muted"> · the announcements above only, never incidents or measurements</span>
+            </p>
           ) : null}
           <p className="muted small">States are current results, not historical uptime or an SLA. Maintenance is shown beside a result and never turns a failure green. Powered by Uptime Canary.</p>
         </footer>

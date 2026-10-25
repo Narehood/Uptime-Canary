@@ -4,10 +4,11 @@ import type {
   LocalAvailabilityHistory, LocalHistoryStatistics, NotificationChannel, NotificationChannelInput, NotificationChannelView,
   DeliveryAttemptView, Maintenance, MaintenanceInput, MaintenanceView,
   StatusPage, StatusPageInput, StatusPageView, PublicStatusPage, Tag, TagInput, TagView,
-  DashboardOwnerInput, NodeVerification, NodeVerificationInput, RegisteredNode,
+  DashboardOwnerInput, NodeVerification, NodeVerificationInput, RegisteredNode, BrowserScreenshot,
 } from '@uptime-canary/shared';
 import { readAvailability } from './availability';
 import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
+import { readScreenshot } from './screenshot';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
@@ -118,7 +119,7 @@ export function normalizeDashboardOverview(value: unknown): Overview {
   };
 }
 
-const NODE_STATES: readonly RegisteredNode['state'][] = ['starting', 'answering', 'not-answering', 'credential-refused', 'different-node', 'enrolling', 'removing'];
+const NODE_STATES: readonly RegisteredNode['state'][] = ['starting', 'answering', 'not-answering', 'credential-refused', 'different-node', 'enrolling', 'removing', 'rotating'];
 const cleanText = (text: string, limit: number): string => text.replace(/[\x00-\x1f\x7f]+/gu, ' ').trim().slice(0, limit);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
@@ -423,6 +424,9 @@ export async function createDashboardOwner(input: DashboardOwnerInput, signal?: 
 /** `removing`: the dashboard stopped reading it, but the node's revocation isn't confirmed yet (202). */
 export type NodeRemoval = { removed: true } | { removed: false; node: RegisteredNode | null };
 
+/** A registry edit: always the label; `url` only to follow the same node to a new address. */
+export interface RegisteredNodeEdit { label: string; url?: string }
+
 export type Credential = 'token' | 'session';
 
 /** Byte size of a JSON request body, as the node measures it. */
@@ -517,6 +521,23 @@ export class CanaryApi {
     if (!history) throw new ApiFailure(200, 'The node sent observed-time history this dashboard could not read.');
     return history;
   }
+  /**
+   * Editors and admins (protocol 19): the newest private screenshot this node took itself for a real-browser monitor, or
+   * null when it has none for the monitor's current check generation (404; older nodes answer 404 too). No query: the
+   * node refuses one. The answer must be a checked PNG for exactly this monitor.
+   */
+  async screenshot(id: string, signal?: AbortSignal): Promise<BrowserScreenshot | null> {
+    let value: unknown;
+    try {
+      value = await this.call<unknown>(`/api/monitors/${encodeURIComponent(id)}/screenshot`, 'GET', undefined, signal);
+    } catch (error) {
+      if (error instanceof ApiFailure && error.status === 404 && !signal?.aborted) return null;
+      throw error;
+    }
+    const shot = readScreenshot(value, id);
+    if (!shot) throw new ApiFailure(200, 'The node sent a screenshot this dashboard could not read.');
+    return shot;
+  }
   async channels(signal?: AbortSignal): Promise<NotificationChannelView[]> {
     return list(await this.call<unknown>('/api/notification-channels', 'GET', undefined, signal));
   }
@@ -533,6 +554,29 @@ export class CanaryApi {
   }
   testChannel(id: string, revision: string): Promise<{ attempts: DeliveryAttemptView[] }> {
     return this.call(`/api/notification-channels/${encodeURIComponent(id)}/test`, 'POST', { revision });
+  }
+  /**
+   * Editors and admins (protocol 19): one test send with settings that aren't saved, disabled ones included. The node
+   * saves nothing but the attempts' local outcomes, shares the saved test's throttle (one batch, 5 s apart) and answers
+   * 202 with `preview: true`. The settings travel only in this request body; nothing here stores or logs them.
+   */
+  async previewChannelTest(input: NotificationChannelInput, signal?: AbortSignal): Promise<{ attempts: DeliveryAttemptView[] }> {
+    const value = await this.call<unknown>('/api/notification-channels/preview-test', 'POST', input, signal);
+    const reply = typeof value === 'object' && value !== null ? value as { preview?: unknown; attempts?: unknown } : {};
+    if (reply.preview !== true || !Array.isArray(reply.attempts)) throw new ApiFailure(200, 'The node didn’t confirm a test of unsaved settings. Nothing was saved.');
+    return { attempts: reply.attempts as DeliveryAttemptView[] };
+  }
+  /**
+   * Editors and admins (protocol 19): adds this channel to the named monitors, keeping their other destinations, in one
+   * all-or-nothing batch of at most 200 at the revisions shown. A stale channel or monitor, a conflict or a monitor that
+   * already has 16 channels refuses the whole batch (409). `changedIds` lists the monitors that didn't have it yet; it
+   * doesn't start a new check generation.
+   */
+  async applyChannel(id: string, revision: string, monitors: { id: string; revision: string }[]): Promise<{ changedIds: string[] }> {
+    const value = await this.call<unknown>(`/api/notification-channels/${encodeURIComponent(id)}/apply`, 'POST', { revision, monitors: monitors.map(m => ({ id: m.id, revision: m.revision })) });
+    const changed = typeof value === 'object' && value !== null ? (value as { changedIds?: unknown }).changedIds : undefined;
+    if (!Array.isArray(changed) || !changed.every(item => typeof item === 'string')) throw new ApiFailure(200, 'The node applied the channel but sent a reply this dashboard could not read. Refresh to see the monitors.');
+    return { changedIds: changed as string[] };
   }
   async deliveries(options: { monitorId?: string; incidentId?: string; limit?: number } = {}, signal?: AbortSignal): Promise<DeliveryAttemptView[]> {
     const query = new URLSearchParams();
@@ -636,8 +680,9 @@ export class CanaryApi {
   }
   deleteAccount(id: string): Promise<void> { return this.own(`/api/accounts/${encodeURIComponent(id)}`, 'DELETE'); }
 
-  // ----- control plane: the dashboard's shared node registry. Any role reads and rechecks; administrators enroll,
-  // retry and remove. Node credentials go to the dashboard's server in `verifyNode` only and never come back.
+  // ----- control plane: the dashboard's shared node registry. Any role reads and rechecks; administrators enroll, edit,
+  // rotate, retry and remove. Node credentials go to the dashboard's server only in `verifyNode` and as the optional
+  // recovery credential of `rotateNode` and `retryNode`, and never come back.
   async registeredNodes(signal?: AbortSignal): Promise<RegisteredNode[]> {
     const value = await this.own<unknown>('/api/dashboard/nodes', 'GET', undefined, signal);
     if (value !== null && !Array.isArray(value)) throw new ApiFailure(200, 'This dashboard sent a node list this page could not read.');
@@ -658,9 +703,42 @@ export class CanaryApi {
   async checkNode(id: string, signal?: AbortSignal): Promise<RegisteredNode> {
     return normalizeRegisteredNode(await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}/check`, 'POST', undefined, signal));
   }
-  /** Null when the retried removal finished and the entry is gone (204). */
-  async retryNode(id: string, signal?: AbortSignal): Promise<RegisteredNode | null> {
-    const value = await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}/retry`, 'POST', undefined, signal, NODE_CHANGE_TIMEOUT_MS);
+  /**
+   * Renames the entry; with `url`, also moves it to the same node's new address. A rename needs no node. A move is
+   * saved only after the dashboard's server proves the same node ID answers there and accepts all three of this
+   * dashboard's existing role credentials, so the registration ID, its credentials and its public links stay. It can't
+   * point the entry at a different node. The bundled node's address belongs to the deployment (409).
+   */
+  async editNode(id: string, changes: RegisteredNodeEdit, signal?: AbortSignal): Promise<RegisteredNode> {
+    const path = `/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}`;
+    const body: RegisteredNodeEdit = { label: changes.label.trim() };
+    if (changes.url !== undefined) body.url = normalizeApiUrl(changes.url);
+    return normalizeRegisteredNode(await this.own<unknown>(path, 'PATCH', body, signal, NODE_CHANGE_TIMEOUT_MS));
+  }
+  /**
+   * Replaces this dashboard's three role credentials on the node; the old ones, and node sessions made with them, stop
+   * working there. `recovery` is a current administrator credential on this same node, needed only when it no longer
+   * accepts the dashboard's own; it goes in this one request body and nowhere else. A `rotating` answer (202) means the
+   * replacement is saved and the node hasn't confirmed it yet: the server keeps retrying, and `retryNode` resumes it.
+   */
+  async rotateNode(id: string, recovery?: string, signal?: AbortSignal): Promise<RegisteredNode> {
+    const path = `/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}/rotate`;
+    const body: { token?: string } = {};
+    if (recovery) body.token = recovery;
+    return normalizeRegisteredNode(await this.own<unknown>(path, 'POST', body, signal, NODE_CHANGE_TIMEOUT_MS));
+  }
+  /**
+   * Null when the retried removal finished and the entry is gone (204). An unfinished enrollment, removal or rotation
+   * resumes; without `recovery` the request has no body, exactly as before. `recovery` applies only to a pending access
+   * update (`rotating`): a current administrator credential on this same node, for when it stopped accepting the one the
+   * saved update uses. The dashboard's server checks it there and that the node's three accounts for this dashboard still
+   * exist, keeps it with the saved update in place of that credential, and retries the same update; it never makes
+   * other credentials. 200: the node confirmed it. 202 `rotating`: the credential is kept, and the node hasn't confirmed
+   * yet. A refusal comes before it keeps anything. It goes in this one request body and nowhere else.
+   */
+  async retryNode(id: string, recovery?: string, signal?: AbortSignal): Promise<RegisteredNode | null> {
+    const path = `/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}/retry`;
+    const value = await this.own<unknown>(path, 'POST', recovery ? { token: recovery } : undefined, signal, NODE_CHANGE_TIMEOUT_MS);
     return value === undefined ? null : normalizeRegisteredNode(value);
   }
   /** 204: removed and the node confirmed revocation. 202: no longer read, revocation pending (shown as `removing`). */
@@ -712,4 +790,15 @@ export function fetchPublicStatus(baseUrl: string, slug: string, signal?: AbortS
   if (slug.length < 1 || slug.length > 64 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(slug)) throw new Error('Invalid status page address.');
   const query = registration === undefined ? '' : `?${new URLSearchParams({ registration: checkRegistration(registration) })}`;
   return request(normalizeApiUrl(baseUrl), `/public/status/${encodeURIComponent(slug)}${query}`, { signal });
+}
+
+/**
+ * The page's public RSS feed (protocol 19): its published announcements only, never incidents or history. A node serves
+ * it at /public/status/<slug>/rss.xml and refuses any query there; on the control plane the dashboard's server reads it
+ * from the saved node that `registration` names, so the selector is the only query. Nothing here fetches it.
+ */
+export function publicRssUrl(baseUrl: string, slug: string, registration?: string): string {
+  if (slug.length < 1 || slug.length > 64 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(slug)) throw new Error('Invalid status page address.');
+  const query = registration === undefined ? '' : `?${new URLSearchParams({ registration: checkRegistration(registration) })}`;
+  return `${normalizeApiUrl(baseUrl)}/public/status/${encodeURIComponent(slug)}/rss.xml${query}`;
 }

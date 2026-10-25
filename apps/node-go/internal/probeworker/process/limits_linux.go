@@ -74,3 +74,5 @@ func applyChildLimits() error {
 	}
 	return nil
 }
+
+func prepareTypedProcess(cmd *exec.Cmd, _ string) (processGuard, error) { return prepareProcess(cmd) }

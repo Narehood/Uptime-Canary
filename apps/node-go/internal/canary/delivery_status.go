@@ -130,6 +130,11 @@ func (n *Node) startChannelTest(id string, b []byte) (int, any, error) {
 	if !c.Enabled {
 		return 0, nil, fail(409, "Enable the channel before testing it")
 	}
+	return n.queueChannelTest(c, false)
+}
+
+func (n *Node) queueChannelTest(c Channel, preview bool) (int, any, error) {
+	id := c.ID
 	if n.pendingNotificationTests != 0 {
 		return 0, nil, fail(429, "A notification test batch is still pending")
 	}
@@ -165,14 +170,18 @@ func (n *Node) startChannelTest(id string, b []byte) (int, any, error) {
 	for range min(2, len(queued)) {
 		n.launchLocked(func() {
 			for j := range jobs {
-				n.sendChannelTest(c, j.target, j.attempt)
+				n.sendChannelTest(c, j.target, j.attempt, preview)
 			}
 		})
 	}
-	return 202, map[string]any{"attempts": out}, nil
+	result := map[string]any{"attempts": out}
+	if preview {
+		result["preview"] = true
+	}
+	return 202, result, nil
 }
 
-func (n *Node) sendChannelTest(c Channel, t notificationTarget, a attempt) {
+func (n *Node) sendChannelTest(c Channel, t notificationTarget, a attempt, preview bool) {
 	defer func() {
 		n.mu.Lock()
 		n.pendingNotificationTests--
@@ -183,7 +192,7 @@ func (n *Node) sendChannelTest(c Channel, t notificationTarget, a attempt) {
 	}
 	n.mu.Lock()
 	r := n.currentResource(resourceChannel, c.ID)
-	if n.stopped || n.fault != nil || r == nil || r.Revision != c.Revision {
+	if n.stopped || n.fault != nil || !preview && (r == nil || r.Revision != c.Revision) {
 		if !n.stopped && n.fault == nil {
 			a.State, a.ErrorCode = "cancelled", "channel_changed"
 			if n.dbPut("attempts", a.ID, a) {

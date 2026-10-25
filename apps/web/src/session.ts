@@ -203,6 +203,22 @@ export class Session {
     return true;
   }
 
+  /**
+   * Control plane: the selected registration was renamed, or moved to the same node's new address. It is the same
+   * registration and the same node, so nothing is dropped: identity, polls and data stay; only the shown name and the
+   * deployment flag follow the registry. Another registration or node ID is never adopted here; that takes `select`.
+   * Returns whether anything changed.
+   */
+  refreshSelection(node: Pick<RegisteredNode, 'id' | 'label' | 'nodeId' | 'nodeName' | 'local'>, expected: Connection): boolean {
+    const connection = this.snapshot.connection;
+    const current = connection?.selection;
+    if (!controlPlaneMode() || !connection || !current || !this.isCurrent(expected)) return false;
+    if (current.id !== node.id || current.nodeId !== node.nodeId) return false;
+    if (current.label === node.label && current.nodeName === node.nodeName && current.local === node.local) return false;
+    this.patch({ selection: { ...current, label: node.label, nodeName: node.nodeName, local: node.local } });
+    return true;
+  }
+
   setAccount(account: AccountView, expected: Connection): void {
     if (this.isCurrent(expected)) this.patch({ account });
   }

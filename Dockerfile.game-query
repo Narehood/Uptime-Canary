@@ -1,0 +1,22 @@
+FROM node:24.22.1-alpine AS dependencies
+WORKDIR /app/services/game-query
+COPY services/game-query/package.json services/game-query/package-lock.json ./
+RUN npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund --no-bin-links
+WORKDIR /app
+COPY services/game-query/server.mjs services/game-query/worker.mjs services/game-query/server.test.mjs ./services/game-query/
+COPY apps/node-go/internal/gamedigmonitor/catalogue.json apps/node-go/internal/gamedigmonitor/upstream.json ./apps/node-go/internal/gamedigmonitor/
+RUN node --test --test-concurrency=1 services/game-query/server.test.mjs
+
+FROM node:24.22.1-alpine AS runtime
+WORKDIR /app
+COPY --from=dependencies /app/services/game-query/node_modules ./services/game-query/node_modules
+COPY services/game-query/package.json services/game-query/server.mjs services/game-query/worker.mjs ./services/game-query/
+COPY apps/node-go/internal/gamedigmonitor/catalogue.json apps/node-go/internal/gamedigmonitor/upstream.json ./apps/node-go/internal/gamedigmonitor/
+COPY apps/node-go/internal/gamedigmonitor/LICENSE.gamedig /usr/share/licenses/uptime-canary-game-query/LICENSE.gamedig
+COPY LICENSE /usr/share/licenses/uptime-canary-game-query/LICENSE
+COPY services/game-query/THIRD_PARTY_NOTICES.txt services/game-query/third-party-manifest.json /usr/share/licenses/uptime-canary-game-query/
+ENV CANARY_GAME_QUERY_HOST=0.0.0.0 CANARY_GAME_QUERY_PORT=3121
+USER node
+EXPOSE 3121
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD node -e "fetch('http://127.0.0.1:3121/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+CMD ["node", "--max-old-space-size=64", "--permission", "--allow-worker", "--allow-fs-read=/app/services/game-query", "--allow-fs-read=/app/apps/node-go/internal/gamedigmonitor", "services/game-query/server.mjs"]

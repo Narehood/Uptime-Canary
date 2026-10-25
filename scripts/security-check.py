@@ -37,6 +37,9 @@ def fingerprint(source):
     files += sorted((source / "apps/node-go").rglob("*.mod"))
     files += sorted((source / "apps/node-go").rglob("*.sum"))
     files += sorted((source / "apps/web").glob("package*.json"))
+    files += sorted((source / "services/game-query").glob("package*.json"))
+    files += sorted((source / "services/game-query").glob("*.mjs"))
+    files += sorted((source / "apps/node-go/internal/gamedigmonitor").glob("*.json"))
     return {str(p.relative_to(source)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in files if p.is_file()}
 
@@ -173,20 +176,22 @@ def main():
                 "npm_config_update_notifier": "false"})
     env["PATH"] = str(Path(go).parent) + os.pathsep + env.get("PATH", "")
     commands = {"npm": [npm, "audit", "--json"], "go": [scan, "-json", "./apps/node-go/..."]}
+    if (source / 'services/game-query/package-lock.json').is_file():
+        commands['npm-game-query'] = [npm, 'audit', '--json', '--prefix', str(source / 'services/game-query'), '--workspaces=false']
     report = {"startedAt": stamp, "target": {"goos": args.goos, "goarch": args.goarch},
               "source": str(source), "sourceBefore": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(), "checks": {}}
     failed = False
     for name, command in commands.items():
         # npm.cmd requires the Windows command processor; arguments are fixed.
-        invocation = subprocess.list2cmdline(command) if os.name == "nt" and name == "npm" else command
+        invocation = subprocess.list2cmdline(command) if os.name == "nt" and name.startswith("npm") else command
         try:
             result = subprocess.run(invocation, cwd=source, env=env, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, timeout=300,
-                                    shell=os.name == "nt" and name == "npm")
+                                    shell=os.name == "nt" and name.startswith("npm"))
             (output / (name + ".json")).write_bytes(result.stdout)
             (output / (name + ".stderr.txt")).write_bytes(result.stderr)
             item = {"command": command, "exitCode": result.returncode}
-            if name == "npm":
+            if name.startswith("npm"):
                 data = json.loads(result.stdout.decode("utf-8-sig"))
                 item["vulnerabilities"] = data.get("metadata", {}).get("vulnerabilities", {})
                 if "error" in data:

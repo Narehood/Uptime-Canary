@@ -27,24 +27,33 @@ const EARLIER = ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp', 'glob
   'docker', 'mqtt', 'rabbitmq', 'kafka-producer', 'grpc', 'sftp', 'ntp', 'snmp', 'radius', 'sip-options', 'push', 'manual'];
 
 // Protocol 18 adds PM2; the earlier-type order and all Steam rules stay intact.
-check('catalogue: 29 unique types, the 27 earlier ones in their order, plus Steam and protocol-18 PM2', () => {
+// Protocol 19 explicitly adds the Tailscale peer ping as a third local type (validation.go: a typed target with no
+// options), so the count and local-category expectations move from 29 and 2 to 30 and 3; nothing else changes.
+// Protocol 19 also explicitly adds the real browser right after HTTP in the web category (validation.go: an HTTP(S)
+// typed target with `browser` options), so the count moves from 30 to 31; it is filtered out of the earlier order too.
+// Protocol 19 also explicitly adds GameDig right after Steam as a second game-server type (validation.go: a `gamedig`
+// options object; a separate integration, not interchangeable with Steam's directory listing), so the count and
+// game-category expectations move from 31 and 1 to 32 and 2; GameDig is filtered out of the earlier order too.
+check('catalogue: 32 unique types, the 27 earlier ones in their order, plus Steam, protocol-18 PM2 and protocol-19 Tailscale, real browser and GameDig', () => {
   const types = checks.CHECK_TYPES.map(entry => entry.type);
-  assert.equal(types.length, 29);
-  assert.equal(new Set(types).size, 29);
-  assert.deepEqual(types.filter(type => type !== 'steam' && type !== 'pm2'), EARLIER);
+  assert.equal(types.length, 32);
+  assert.equal(new Set(types).size, 32);
+  assert.deepEqual(types.filter(type => type !== 'steam' && type !== 'pm2' && type !== 'tailscale-ping' && type !== 'real-browser' && type !== 'gamedig'), EARLIER);
   assert.equal(Object.keys(specs.SERVICE_PROTOCOL).length, 16);
   const entry = checks.checkType('steam');
   assert.equal(entry.label, 'Steam game server');
   assert.equal(entry.category, 'game');
   assert.equal(checks.CATEGORY_LABEL.game, 'Game servers');
-  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'game').length, 1);
-  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'local').length, 2);
+  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'game').length, 2);
+  assert.deepEqual(checks.CHECK_TYPES.filter(other => other.category === 'game').map(other => other.type), ['steam', 'gamedig'], 'Steam first, then GameDig');
+  assert.equal(checks.CHECK_TYPES.filter(other => other.category === 'local').length, 3);
   assert.equal(entry.targetLabel, undefined, 'the Steam form owns its address field');
 });
 
-check('typed-target sets unchanged; steam is not a service protocol and gets no TLS options', () => {
+check('typed-target sets: network types unchanged, protocol 19 adds tailscale-ping and then real-browser; steam is not a service protocol and gets no TLS options', () => {
   assert.deepEqual([...checks.NETWORK_TYPES], ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp']);
-  assert.deepEqual([...checks.TYPED_TARGET_TYPES], [...checks.NETWORK_TYPES, 'system-service']);
+  assert.deepEqual([...checks.TYPED_TARGET_TYPES].filter(type => type !== 'real-browser'), [...checks.NETWORK_TYPES, 'system-service', 'tailscale-ping']);
+  assert.equal([...checks.TYPED_TARGET_TYPES].at(-1), 'real-browser');
   assert.equal(checks.isServiceType('steam'), false);
   assert.equal(checks.tlsApplies('steam', 'game.example.net:27015', undefined), false);
 });

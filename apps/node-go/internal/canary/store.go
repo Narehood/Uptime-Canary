@@ -84,6 +84,10 @@ func openStore(path string) (*store, error) {
 		db.Close()
 		return nil, fmt.Errorf("Cannot initialize database")
 	}
+	if err = initializeBrowserStore(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err = initializeAvailabilityStore(db); err != nil {
 		db.Close()
 		return nil, err

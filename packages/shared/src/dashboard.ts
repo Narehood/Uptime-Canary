@@ -9,7 +9,7 @@ export interface RegisteredNode {
   /** Only administrators receive the server-reachable address. */
   url?: string;
   local: boolean;
-  state: 'starting' | 'answering' | 'not-answering' | 'credential-refused' | 'different-node' | 'enrolling' | 'removing';
+  state: 'starting' | 'answering' | 'not-answering' | 'credential-refused' | 'different-node' | 'enrolling' | 'removing' | 'rotating';
   lastReadAt?: number;
   monitorCount?: number;
   error?: string;

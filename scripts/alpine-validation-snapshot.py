@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".canary/alpine-validation"
 OUT.mkdir(parents=True, exist_ok=True)
 ROOT_FILES = (
-    "Dockerfile.node", "Dockerfile.web", ".dockerignore", ".gitattributes", "compose.yaml",
+    "Dockerfile.node", "Dockerfile.web", "Dockerfile.game-query", ".dockerignore", ".gitattributes", "compose.yaml",
     "go.mod", "go.sum", "package.json", "package-lock.json", "tsconfig.base.json",
     "apps/proof/package.json",
     "LICENSE", "THIRD_PARTY_NOTICES.txt", "third-party-manifest.json",
@@ -22,10 +22,23 @@ ROOT_FILES = (
     "scripts/dashboard-gateway-pure.mjs",
     "scripts/dashboard-control-plane-pure.mjs",
     "scripts/push-commands-pure.mjs",
+    "scripts/frontend-review-pure.mjs",
+    "scripts/editor-preservation-pure.mjs",
+    "scripts/monitor-clone-pure.mjs",
+    "scripts/tailscale-pure.mjs",
+    "scripts/browser-pure.mjs",
+    "scripts/gamedig-pure.mjs",
+    "scripts/steam-pure.mjs",
+    "scripts/system-service-pure.mjs",
+    "scripts/pm2-pure.mjs",
+    "scripts/network-options-pure.mjs",
+    "scripts/status-presentation-pure.mjs",
+    "scripts/channel-defaults-pure.mjs",
+    "scripts/registry-maintenance-pure.mjs",
     "scripts/package-release.py", "scripts/package_release_test.py",
     "scripts/release-package-validation.py", "scripts/release_package_validation_test.py",
 )
-TREES = ("apps/node-go", "apps/web/src", "apps/web/public", "apps/proof", "packages/shared/src", "deploy")
+TREES = ("apps/node-go", "apps/web/src", "apps/web/public", "apps/proof", "packages/shared/src", "deploy", "services/game-query")
 EXTRA = ("apps/web/index.html", "apps/web/package.json", "apps/web/tsconfig.json",
          "apps/web/vite.config.ts", "packages/shared/package.json", "packages/shared/tsconfig.json")
 EXTENSIONS = {".go", ".mod", ".sum", ".ts", ".tsx", ".js", ".json", ".css", ".html", ".conf", ".txt", ".md", ".mjs", ".patch", ".pem", ".yml", ".yaml", ".sh"}

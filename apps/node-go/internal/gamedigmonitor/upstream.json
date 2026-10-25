@@ -1,0 +1,9 @@
+{
+  "module": "gamedig",
+  "version": "5.3.3",
+  "commit": "aff6afd252dc1c4853aae7522423623b7b5adec7",
+  "source": "lib/games.js",
+  "sourceSha256": "372b1cd7538c07c2bdac7d8ac059e72dc07b6a4608f76bdb0172e6fffeb3f4ee",
+  "licenseSha256": "88935ec7478a0803c62e4f37ff974fdafa9e468403e6ae45048c63dfac89b852",
+  "description": "Literal public game IDs, labels and default ports extracted without executing the source."
+}

@@ -110,7 +110,7 @@ type TLSConfig struct {
 }
 
 type DNSConfig struct {
-	RecordType string   `json:"recordType,omitempty"` // default A
+	RecordType string   `json:"recordType,omitempty"` // default A; SOA/CAA require explicit Server
 	Server     string   `json:"server,omitempty"`     // optional literal IP:port
 	Expected   []string `json:"expected,omitempty"`   // all expected records must be present; extras are allowed
 }
@@ -121,6 +121,9 @@ type WebSocketConfig struct {
 	BearerToken         string            `json:"bearerToken,omitempty"`
 	ProxyURL            string            `json:"proxyUrl,omitempty"`
 	UseEnvironmentProxy bool              `json:"useEnvironmentProxy,omitempty"`
+	OAuth2              *OAuth2Config     `json:"oauth2,omitempty"`
+	Subprotocols        []string          `json:"subprotocols,omitempty"`
+	RequireSubprotocol  bool              `json:"requireSubprotocol,omitempty"`
 }
 
 type SMTPConfig struct {

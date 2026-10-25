@@ -76,6 +76,19 @@ def validate(root):
     assert set(local["services"]) == {"node", "web"}
     assert set(local["services"]["node"]["environment"]["CANARY_CORS_ORIGINS"].split(",")) == {
         "http://localhost:18347", "http://127.0.0.1:18347"}
+    service_fixture = {**clean, **fixture, "CANARY_GAME_QUERY_TOKEN": "private-game-query-config-fixture-0123456789"}
+    game = config("deploy/portainer-game-query.yml", service_fixture)["services"]["game-query"]
+    assert game["image"] == "ghcr.io/narehood/uptime-canary-game-query:latest" and "build" not in game
+    assert game["pull_policy"] == "missing" and game["read_only"] is True
+    assert set(game["environment"]) == {"CANARY_GAME_QUERY_TOKEN"}
+    assert game["ports"][0]["host_ip"] == "127.0.0.1" and int(game["ports"][0]["published"]) == 3121
+    pinned_game = config("deploy/portainer-game-query.yml", {**service_fixture, "CANARY_IMAGE_TAG": pinned})["services"]["game-query"]
+    assert pinned_game["image"].endswith(":" + pinned)
+    private_game = config("deploy/portainer-game-query.yml", {**service_fixture, "CANARY_GAME_QUERY_IMAGE": "private.example.test/game@sha256:" + "b"*64, "CANARY_PULL_POLICY": "never"})["services"]["game-query"]
+    assert private_game["image"] == "private.example.test/game@sha256:" + "b"*64 and private_game["pull_policy"] == "never"
+    source_game = config("compose.yaml", {**service_fixture, "COMPOSE_PROFILES": "web,game-query"})["services"]["game-query"]
+    assert "ports" not in source_game and source_game["read_only"] is True
+    assert set(source_game["environment"]) == {"CANARY_GAME_QUERY_TOKEN"}
 
     def dashboard_port(rendered, published):
         ports = rendered["services"]["web"]["ports"]
@@ -100,6 +113,7 @@ def validate(root):
     print("PASS split service parity, shared dashboard account state, separate retained keys and private node volumes")
     print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
     print("PASS GHCR pulls, matching commit tags, full image overrides and offline pull policy")
+    print("PASS optional GameDig source profile and registry stack use separate credentials and private networking")
 
 
 if __name__ == "__main__":

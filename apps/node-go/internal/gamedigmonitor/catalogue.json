@@ -1,0 +1,1724 @@
+{
+  "version": "5.3.3",
+  "games": [
+    {
+      "id": "a2oa",
+      "name": "ARMA 2: Operation Arrowhead",
+      "defaultPort": 2302
+    },
+    {
+      "id": "aaa",
+      "name": "ARMA: Armed Assault",
+      "defaultPort": 2302
+    },
+    {
+      "id": "aapg",
+      "name": "America's Army: Proving Grounds",
+      "defaultPort": 8777
+    },
+    {
+      "id": "abioticfactor",
+      "name": "Abiotic Factor",
+      "defaultPort": 27015
+    },
+    {
+      "id": "actionsource",
+      "name": "Action: Source",
+      "defaultPort": 27015
+    },
+    {
+      "id": "acwa",
+      "name": "ARMA: Cold War Assault",
+      "defaultPort": 2302
+    },
+    {
+      "id": "ahl",
+      "name": "Action Half-Life",
+      "defaultPort": 27015
+    },
+    {
+      "id": "alienarena",
+      "name": "Alien Arena"
+    },
+    {
+      "id": "alienswarm",
+      "name": "Alien Swarm",
+      "defaultPort": 27015
+    },
+    {
+      "id": "americasarmy",
+      "name": "America's Army",
+      "defaultPort": 1716
+    },
+    {
+      "id": "americasarmy2",
+      "name": "America's Army 2",
+      "defaultPort": 1716
+    },
+    {
+      "id": "americasarmy3",
+      "name": "America's Army 3",
+      "defaultPort": 8777
+    },
+    {
+      "id": "aoc",
+      "name": "Age of Chivalry",
+      "defaultPort": 27015
+    },
+    {
+      "id": "aoe2",
+      "name": "Age of Empires 2"
+    },
+    {
+      "id": "aosc",
+      "name": "Ace of Spades Classic",
+      "defaultPort": 32887
+    },
+    {
+      "id": "arma2",
+      "name": "ARMA 2",
+      "defaultPort": 2302
+    },
+    {
+      "id": "arma3",
+      "name": "ARMA 3",
+      "defaultPort": 2302
+    },
+    {
+      "id": "armagetronadvanced",
+      "name": "Armagetron Advanced",
+      "defaultPort": 4534
+    },
+    {
+      "id": "armareforger",
+      "name": "ARMA: Reforger",
+      "defaultPort": 2001
+    },
+    {
+      "id": "armaresistance",
+      "name": "ARMA: Resistance",
+      "defaultPort": 2302
+    },
+    {
+      "id": "asa",
+      "name": "Ark: Survival Ascended",
+      "defaultPort": 7777
+    },
+    {
+      "id": "ase",
+      "name": "Ark: Survival Evolved",
+      "defaultPort": 7777
+    },
+    {
+      "id": "asr08",
+      "name": "Arca Sim Racing '08",
+      "defaultPort": 34397
+    },
+    {
+      "id": "assettocorsa",
+      "name": "Assetto Corsa",
+      "defaultPort": 9610
+    },
+    {
+      "id": "atlas",
+      "name": "Atlas",
+      "defaultPort": 5761
+    },
+    {
+      "id": "avorion",
+      "name": "Avorion",
+      "defaultPort": 27000
+    },
+    {
+      "id": "avp2",
+      "name": "Aliens versus Predator 2",
+      "defaultPort": 27888
+    },
+    {
+      "id": "avp2010",
+      "name": "Aliens vs. Predator 2010",
+      "defaultPort": 27015
+    },
+    {
+      "id": "baldursgate",
+      "name": "Baldur's Gate",
+      "defaultPort": 6073
+    },
+    {
+      "id": "ballisticoverkill",
+      "name": "Ballistic Overkill",
+      "defaultPort": 27015
+    },
+    {
+      "id": "barotrauma",
+      "name": "Barotrauma",
+      "defaultPort": 27015
+    },
+    {
+      "id": "bas",
+      "name": "Build and Shoot",
+      "defaultPort": 32887
+    },
+    {
+      "id": "basedefense",
+      "name": "Base Defense",
+      "defaultPort": 27015
+    },
+    {
+      "id": "battalion1944",
+      "name": "Battalion 1944",
+      "defaultPort": 7777
+    },
+    {
+      "id": "battlefield1942",
+      "name": "Battlefield 1942",
+      "defaultPort": 14567
+    },
+    {
+      "id": "battlefield2",
+      "name": "Battlefield 2",
+      "defaultPort": 16567
+    },
+    {
+      "id": "battlefield2142",
+      "name": "Battlefield 2142",
+      "defaultPort": 16567
+    },
+    {
+      "id": "battlefield3",
+      "name": "Battlefield 3",
+      "defaultPort": 25200
+    },
+    {
+      "id": "battlefield4",
+      "name": "Battlefield 4",
+      "defaultPort": 25200
+    },
+    {
+      "id": "battlefieldhardline",
+      "name": "Battlefield Hardline",
+      "defaultPort": 25200
+    },
+    {
+      "id": "battlefieldvietnam",
+      "name": "Battlefield Vietnam",
+      "defaultPort": 15567
+    },
+    {
+      "id": "bbc2",
+      "name": "Battlefield: Bad Company 2",
+      "defaultPort": 19567
+    },
+    {
+      "id": "beammp",
+      "name": "BeamMP (2021)",
+      "defaultPort": 30814
+    },
+    {
+      "id": "blackmesa",
+      "name": "Black Mesa",
+      "defaultPort": 27015
+    },
+    {
+      "id": "bladesymphony",
+      "name": "Blade Symphony",
+      "defaultPort": 27015
+    },
+    {
+      "id": "brainbread",
+      "name": "BrainBread",
+      "defaultPort": 27015
+    },
+    {
+      "id": "brainbread2",
+      "name": "BrainBread 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "breach",
+      "name": "Breach",
+      "defaultPort": 27016
+    },
+    {
+      "id": "breed",
+      "name": "Breed",
+      "defaultPort": 7649
+    },
+    {
+      "id": "brink",
+      "name": "Brink"
+    },
+    {
+      "id": "brokeprotocol",
+      "name": "BROKE PROTOCOL"
+    },
+    {
+      "id": "c2d",
+      "name": "CS2D",
+      "defaultPort": 36963
+    },
+    {
+      "id": "c3db",
+      "name": "Commandos 3: Destination Berlin"
+    },
+    {
+      "id": "cacr",
+      "name": "Command and Conquer: Renegade",
+      "defaultPort": 4848
+    },
+    {
+      "id": "cbu",
+      "name": "Clive Barker's Undying",
+      "defaultPort": 7777
+    },
+    {
+      "id": "chaser",
+      "name": "Chaser",
+      "defaultPort": 3000
+    },
+    {
+      "id": "chrome",
+      "name": "Chrome",
+      "defaultPort": 27015
+    },
+    {
+      "id": "cmw",
+      "name": "Chivalry: Medieval Warfare",
+      "defaultPort": 7777
+    },
+    {
+      "id": "cod",
+      "name": "Call of Duty",
+      "defaultPort": 28960
+    },
+    {
+      "id": "cod2",
+      "name": "Call of Duty 2",
+      "defaultPort": 28960
+    },
+    {
+      "id": "cod3",
+      "name": "Call of Duty 3",
+      "defaultPort": 28960
+    },
+    {
+      "id": "cod4mw",
+      "name": "Call of Duty 4: Modern Warfare",
+      "defaultPort": 28960
+    },
+    {
+      "id": "codbo3",
+      "name": "Call of Duty: Black Ops 3",
+      "defaultPort": 27017
+    },
+    {
+      "id": "codenamecure",
+      "name": "Codename CURE",
+      "defaultPort": 27015
+    },
+    {
+      "id": "codenameeagle",
+      "name": "Codename Eagle"
+    },
+    {
+      "id": "codmw2",
+      "name": "Call of Duty: Modern Warfare 2",
+      "defaultPort": 28960
+    },
+    {
+      "id": "codmw3",
+      "name": "Call of Duty: Modern Warfare 3"
+    },
+    {
+      "id": "coduo",
+      "name": "Call of Duty: United Offensive",
+      "defaultPort": 28960
+    },
+    {
+      "id": "codwaw",
+      "name": "Call of Duty: World at War",
+      "defaultPort": 28960
+    },
+    {
+      "id": "coj",
+      "name": "Call of Juarez"
+    },
+    {
+      "id": "colonysurvival",
+      "name": "Colony Survival",
+      "defaultPort": 27004
+    },
+    {
+      "id": "conanexiles",
+      "name": "Conan Exiles",
+      "defaultPort": 7777
+    },
+    {
+      "id": "contagion",
+      "name": "Contagion",
+      "defaultPort": 27015
+    },
+    {
+      "id": "contractjack",
+      "name": "Contract J.A.C.K."
+    },
+    {
+      "id": "corekeeper",
+      "name": "Core Keeper",
+      "defaultPort": 1234
+    },
+    {
+      "id": "counterstrike15",
+      "name": "Counter-Strike 1.5",
+      "defaultPort": 27015
+    },
+    {
+      "id": "counterstrike16",
+      "name": "Counter-Strike 1.6",
+      "defaultPort": 27015
+    },
+    {
+      "id": "counterstrike2",
+      "name": "Counter-Strike 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "crce",
+      "name": "Cross Racing Championship Extreme",
+      "defaultPort": 12321
+    },
+    {
+      "id": "creativerse",
+      "name": "Creativerse",
+      "defaultPort": 26900
+    },
+    {
+      "id": "crysis",
+      "name": "Crysis",
+      "defaultPort": 64087
+    },
+    {
+      "id": "crysis2",
+      "name": "Crysis 2",
+      "defaultPort": 64000
+    },
+    {
+      "id": "crysiswars",
+      "name": "Crysis Wars",
+      "defaultPort": 64100
+    },
+    {
+      "id": "cscz",
+      "name": "Counter-Strike: Condition Zero",
+      "defaultPort": 27015
+    },
+    {
+      "id": "csgo",
+      "name": "Counter-Strike: Global Offensive",
+      "defaultPort": 27015
+    },
+    {
+      "id": "css",
+      "name": "Counter-Strike: Source",
+      "defaultPort": 27015
+    },
+    {
+      "id": "dab",
+      "name": "Double Action: Boogaloo",
+      "defaultPort": 27015
+    },
+    {
+      "id": "daikatana",
+      "name": "Daikatana",
+      "defaultPort": 27982
+    },
+    {
+      "id": "dal",
+      "name": "Dark and Light",
+      "defaultPort": 7777
+    },
+    {
+      "id": "dayofdragons",
+      "name": "Day of Dragons",
+      "defaultPort": 7777
+    },
+    {
+      "id": "dayz",
+      "name": "DayZ",
+      "defaultPort": 2302
+    },
+    {
+      "id": "dayzmod",
+      "name": "DayZ Mod",
+      "defaultPort": 2302
+    },
+    {
+      "id": "ddd",
+      "name": "Dino D-Day",
+      "defaultPort": 27015
+    },
+    {
+      "id": "ddpt",
+      "name": "Deadly Dozen: Pacific Theater"
+    },
+    {
+      "id": "deathmatchclassic",
+      "name": "Deathmatch Classic",
+      "defaultPort": 27015
+    },
+    {
+      "id": "deerhunter2005",
+      "name": "Deer Hunter 2005",
+      "defaultPort": 23459
+    },
+    {
+      "id": "descent3",
+      "name": "Descent 3",
+      "defaultPort": 2092
+    },
+    {
+      "id": "deusex",
+      "name": "Deus Ex",
+      "defaultPort": 7791
+    },
+    {
+      "id": "devastation",
+      "name": "Devastation",
+      "defaultPort": 7777
+    },
+    {
+      "id": "dhe4445",
+      "name": "Darkest Hour: Europe '44-'45",
+      "defaultPort": 7757
+    },
+    {
+      "id": "discord",
+      "name": "Discord"
+    },
+    {
+      "id": "dmomam",
+      "name": "Dark Messiah of Might and Magic",
+      "defaultPort": 27015
+    },
+    {
+      "id": "dnf2001",
+      "name": "Duke Nukem Forever 2001",
+      "defaultPort": 7777
+    },
+    {
+      "id": "dod",
+      "name": "Day of Defeat",
+      "defaultPort": 27015
+    },
+    {
+      "id": "dods",
+      "name": "Day of Defeat: Source",
+      "defaultPort": 27015
+    },
+    {
+      "id": "doi",
+      "name": "Day of Infamy",
+      "defaultPort": 27015
+    },
+    {
+      "id": "doom3",
+      "name": "Doom 3",
+      "defaultPort": 27666
+    },
+    {
+      "id": "dootf",
+      "name": "Drakan: Order of the Flame",
+      "defaultPort": 27045
+    },
+    {
+      "id": "dota2",
+      "name": "Dota 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "dow",
+      "name": "Days of War",
+      "defaultPort": 27015
+    },
+    {
+      "id": "dst",
+      "name": "Don't Starve Together",
+      "defaultPort": 10999
+    },
+    {
+      "id": "dtr2",
+      "name": "Dirt Track Racing 2",
+      "defaultPort": 32240
+    },
+    {
+      "id": "dystopia",
+      "name": "Dystopia",
+      "defaultPort": 27015
+    },
+    {
+      "id": "eco",
+      "name": "Eco",
+      "defaultPort": 3000
+    },
+    {
+      "id": "egs",
+      "name": "Empyrion - Galactic Survival",
+      "defaultPort": 30000
+    },
+    {
+      "id": "eldewrito",
+      "name": "Halo Online - ElDewrito",
+      "defaultPort": 11775
+    },
+    {
+      "id": "empiresmod",
+      "name": "Empires Mod",
+      "defaultPort": 27015
+    },
+    {
+      "id": "enshrouded",
+      "name": "enshrouded",
+      "defaultPort": 15636
+    },
+    {
+      "id": "etqw",
+      "name": "Enemy Territory: Quake Wars",
+      "defaultPort": 3074
+    },
+    {
+      "id": "ets2",
+      "name": "Euro Truck Simulator 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "exfil",
+      "name": "Exfil",
+      "defaultPort": 7777
+    },
+    {
+      "id": "f1c9902",
+      "name": "F1 Challenge '99-'02"
+    },
+    {
+      "id": "factorio",
+      "name": "Factorio"
+    },
+    {
+      "id": "farcry",
+      "name": "Far Cry",
+      "defaultPort": 49001
+    },
+    {
+      "id": "farcry2",
+      "name": "Far Cry 2"
+    },
+    {
+      "id": "farmingsimulator19",
+      "name": "Farming Simulator 19",
+      "defaultPort": 8080
+    },
+    {
+      "id": "farmingsimulator22",
+      "name": "Farming Simulator 22",
+      "defaultPort": 8080
+    },
+    {
+      "id": "farmingsimulator25",
+      "name": "Farming Simulator 25",
+      "defaultPort": 8080
+    },
+    {
+      "id": "fear",
+      "name": "F.E.A.R."
+    },
+    {
+      "id": "ffow",
+      "name": "Frontlines: Fuel of War",
+      "defaultPort": 5476
+    },
+    {
+      "id": "fof",
+      "name": "Fistful of Frags",
+      "defaultPort": 27015
+    },
+    {
+      "id": "formulaone2002",
+      "name": "Formula One 2002"
+    },
+    {
+      "id": "fortressforever",
+      "name": "Fortress Forever",
+      "defaultPort": 27015
+    },
+    {
+      "id": "foundry",
+      "name": "FOUNDRY",
+      "defaultPort": 27015
+    },
+    {
+      "id": "garrysmod",
+      "name": "Garry's Mod",
+      "defaultPort": 27015
+    },
+    {
+      "id": "gck",
+      "name": "Giants: Citizen Kabuto"
+    },
+    {
+      "id": "geneshift",
+      "name": "Geneshift",
+      "defaultPort": 11235
+    },
+    {
+      "id": "globaloperations",
+      "name": "Global Operations"
+    },
+    {
+      "id": "goldeneyesource",
+      "name": "GoldenEye: Source",
+      "defaultPort": 27015
+    },
+    {
+      "id": "groundbreach",
+      "name": "Ground Breach",
+      "defaultPort": 27015
+    },
+    {
+      "id": "gta5am",
+      "name": "Grand Theft Auto V - alt:V Multiplayer",
+      "defaultPort": 7788
+    },
+    {
+      "id": "gta5f",
+      "name": "Grand Theft Auto V - FiveM",
+      "defaultPort": 30120
+    },
+    {
+      "id": "gta5r",
+      "name": "Grand Theft Auto V - RageMP",
+      "defaultPort": 22005
+    },
+    {
+      "id": "gtasam",
+      "name": "Grand Theft Auto: San Andreas Multiplayer",
+      "defaultPort": 7777
+    },
+    {
+      "id": "gtasamta",
+      "name": "Grand Theft Auto: San Andreas - Multi Theft Auto",
+      "defaultPort": 22003
+    },
+    {
+      "id": "gtasao",
+      "name": "Grand Theft Auto: San Andreas OpenMP",
+      "defaultPort": 7777
+    },
+    {
+      "id": "gtavcmta",
+      "name": "Grand Theft Auto: Vice City - Multi Theft Auto",
+      "defaultPort": 22003
+    },
+    {
+      "id": "gunmanchronicles",
+      "name": "Gunman Chronicles",
+      "defaultPort": 27015
+    },
+    {
+      "id": "gus",
+      "name": "Gore: Ultimate Soldier",
+      "defaultPort": 27777
+    },
+    {
+      "id": "halo",
+      "name": "Halo",
+      "defaultPort": 2302
+    },
+    {
+      "id": "halo2",
+      "name": "Halo 2",
+      "defaultPort": 2302
+    },
+    {
+      "id": "hawakening",
+      "name": "Hawakening",
+      "defaultPort": 7777
+    },
+    {
+      "id": "heretic2",
+      "name": "Heretic II",
+      "defaultPort": 27900
+    },
+    {
+      "id": "hexen2",
+      "name": "Hexen II",
+      "defaultPort": 26900
+    },
+    {
+      "id": "hiddendangerous2",
+      "name": "Hidden & Dangerous 2",
+      "defaultPort": 11001
+    },
+    {
+      "id": "hl2d",
+      "name": "Half-Life 2: Deathmatch",
+      "defaultPort": 27015
+    },
+    {
+      "id": "hld",
+      "name": "Half-Life Deathmatch",
+      "defaultPort": 27015
+    },
+    {
+      "id": "hlds",
+      "name": "Half-Life Deathmatch: Source",
+      "defaultPort": 27015
+    },
+    {
+      "id": "hll",
+      "name": "Hell Let Loose",
+      "defaultPort": 27015
+    },
+    {
+      "id": "hlof",
+      "name": "Half-Life: Opposing Force",
+      "defaultPort": 27015
+    },
+    {
+      "id": "homefront",
+      "name": "Homefront",
+      "defaultPort": 27015
+    },
+    {
+      "id": "homeworld2",
+      "name": "Homeworld 2"
+    },
+    {
+      "id": "hurtworld",
+      "name": "Hurtworld",
+      "defaultPort": 12871
+    },
+    {
+      "id": "hytale",
+      "name": "Hytale",
+      "defaultPort": 5523
+    },
+    {
+      "id": "i2cs",
+      "name": "IGI 2: Covert Strike"
+    },
+    {
+      "id": "i2s",
+      "name": "IL-2 Sturmovik"
+    },
+    {
+      "id": "icarus",
+      "name": "Icarus",
+      "defaultPort": 27015
+    },
+    {
+      "id": "imic",
+      "name": "Insurgency: Modern Infantry Combat",
+      "defaultPort": 27015
+    },
+    {
+      "id": "insurgency",
+      "name": "Insurgency",
+      "defaultPort": 27015
+    },
+    {
+      "id": "insurgencysandstorm",
+      "name": "Insurgency: Sandstorm",
+      "defaultPort": 27015
+    },
+    {
+      "id": "ironstorm",
+      "name": "Iron Storm"
+    },
+    {
+      "id": "jb0n",
+      "name": "James Bond 007: Nightfire"
+    },
+    {
+      "id": "jc2m",
+      "name": "Just Cause 2 - Multiplayer",
+      "defaultPort": 7777
+    },
+    {
+      "id": "jc3m",
+      "name": "Just Cause 3 - Multiplayer",
+      "defaultPort": 4200
+    },
+    {
+      "id": "killingfloor",
+      "name": "Killing Floor",
+      "defaultPort": 7707
+    },
+    {
+      "id": "killingfloor2",
+      "name": "Killing Floor 2",
+      "defaultPort": 7777
+    },
+    {
+      "id": "kloc",
+      "name": "Kingpin: Life of Crime",
+      "defaultPort": 31510
+    },
+    {
+      "id": "kpctnc",
+      "name": "Kiss: Psycho Circus: The Nightmare Child",
+      "defaultPort": 7777
+    },
+    {
+      "id": "kreedzclimbing",
+      "name": "Kreedz Climbing",
+      "defaultPort": 27015
+    },
+    {
+      "id": "kspd",
+      "name": "Kerbal Space Program - DMP",
+      "defaultPort": 6702
+    },
+    {
+      "id": "l4d",
+      "name": "Left 4 Dead",
+      "defaultPort": 27015
+    },
+    {
+      "id": "l4d2",
+      "name": "Left 4 Dead 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "m2m",
+      "name": "Mafia II - Multiplayer",
+      "defaultPort": 27016
+    },
+    {
+      "id": "m2o",
+      "name": "Mafia II - Online",
+      "defaultPort": 27015
+    },
+    {
+      "id": "mbe",
+      "name": "Minecraft: Bedrock Edition",
+      "defaultPort": 19132
+    },
+    {
+      "id": "medievalengineers",
+      "name": "Medieval Engineers",
+      "defaultPort": 27015
+    },
+    {
+      "id": "mgm",
+      "name": "Mumble - GT Murmur",
+      "defaultPort": 64738
+    },
+    {
+      "id": "minecraft",
+      "name": "Minecraft",
+      "defaultPort": 25565
+    },
+    {
+      "id": "minetest",
+      "name": "Minetest",
+      "defaultPort": 30000
+    },
+    {
+      "id": "mnc",
+      "name": "Monday Night Combat",
+      "defaultPort": 7777
+    },
+    {
+      "id": "moe",
+      "name": "Myth of Empires"
+    },
+    {
+      "id": "moh",
+      "name": "Medal of Honor",
+      "defaultPort": 7673
+    },
+    {
+      "id": "moha",
+      "name": "Medal of Honor: Airborne",
+      "defaultPort": 12203
+    },
+    {
+      "id": "mohaa",
+      "name": "Medal of Honor: Allied Assault",
+      "defaultPort": 12203
+    },
+    {
+      "id": "mohaab",
+      "name": "Medal of Honor: Allied Assault Breakthrough",
+      "defaultPort": 12203
+    },
+    {
+      "id": "mohaas",
+      "name": "Medal of Honor: Allied Assault Spearhead",
+      "defaultPort": 12203
+    },
+    {
+      "id": "mohpa",
+      "name": "Medal of Honor: Pacific Assault",
+      "defaultPort": 13203
+    },
+    {
+      "id": "mohw",
+      "name": "Medal of Honor: Warfighter",
+      "defaultPort": 25200
+    },
+    {
+      "id": "mordhau",
+      "name": "Mordhau",
+      "defaultPort": 7777
+    },
+    {
+      "id": "mumble",
+      "name": "Mumble",
+      "defaultPort": 64738
+    },
+    {
+      "id": "mutantfactions",
+      "name": "Mutant Factions",
+      "defaultPort": 11235
+    },
+    {
+      "id": "nab",
+      "name": "Nerf Arena Blast",
+      "defaultPort": 4444
+    },
+    {
+      "id": "nascarthunder2004",
+      "name": "NASCAR Thunder 2004"
+    },
+    {
+      "id": "naturalselection",
+      "name": "Natural Selection",
+      "defaultPort": 27015
+    },
+    {
+      "id": "naturalselection2",
+      "name": "Natural Selection 2"
+    },
+    {
+      "id": "netpanzer",
+      "name": "netPanzer",
+      "defaultPort": 3030
+    },
+    {
+      "id": "neverwinternights",
+      "name": "Neverwinter Nights"
+    },
+    {
+      "id": "neverwinternights2",
+      "name": "Neverwinter Nights 2",
+      "defaultPort": 5121
+    },
+    {
+      "id": "nexuiz",
+      "name": "Nexuiz"
+    },
+    {
+      "id": "nfshp2",
+      "name": "Need for Speed: Hot Pursuit 2"
+    },
+    {
+      "id": "nitrofamily",
+      "name": "Nitro Family"
+    },
+    {
+      "id": "nla",
+      "name": "Nova-Life: Amboise"
+    },
+    {
+      "id": "nmrih",
+      "name": "No More Room in Hell",
+      "defaultPort": 27015
+    },
+    {
+      "id": "nolf2asihw",
+      "name": "No One Lives Forever 2: A Spy in H.A.R.M.'s Way"
+    },
+    {
+      "id": "nucleardawn",
+      "name": "Nuclear Dawn",
+      "defaultPort": 27015
+    },
+    {
+      "id": "ofcwc",
+      "name": "Operation Flashpoint: Cold War Crisis",
+      "defaultPort": 2302
+    },
+    {
+      "id": "ofr",
+      "name": "Operation Flashpoint: Resistance",
+      "defaultPort": 2302
+    },
+    {
+      "id": "ohd",
+      "name": "Operation: Harsh Doorstop",
+      "defaultPort": 7777
+    },
+    {
+      "id": "onset",
+      "name": "Onset",
+      "defaultPort": 7777
+    },
+    {
+      "id": "openarena",
+      "name": "OpenArena"
+    },
+    {
+      "id": "openttd",
+      "name": "OpenTTD",
+      "defaultPort": 3979
+    },
+    {
+      "id": "painkiller",
+      "name": "Painkiller",
+      "defaultPort": 3455
+    },
+    {
+      "id": "palworld",
+      "name": "Palworld",
+      "defaultPort": 8212
+    },
+    {
+      "id": "pce",
+      "name": "Primal Carnage: Extinction",
+      "defaultPort": 7777
+    },
+    {
+      "id": "pixark",
+      "name": "PixARK",
+      "defaultPort": 7777
+    },
+    {
+      "id": "plutonium",
+      "name": "Plutonium",
+      "defaultPort": 28960
+    },
+    {
+      "id": "postal2",
+      "name": "Postal 2",
+      "defaultPort": 7777
+    },
+    {
+      "id": "postscriptum",
+      "name": "Post Scriptum",
+      "defaultPort": 10037
+    },
+    {
+      "id": "prb2",
+      "name": "Project Reality: Battlefield 2",
+      "defaultPort": 16567
+    },
+    {
+      "id": "prey",
+      "name": "Prey",
+      "defaultPort": 27719
+    },
+    {
+      "id": "projectcars",
+      "name": "Project Cars",
+      "defaultPort": 27015
+    },
+    {
+      "id": "projectcars2",
+      "name": "Project Cars 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "projectzomboid",
+      "name": "Project Zomboid",
+      "defaultPort": 16261
+    },
+    {
+      "id": "pvak2",
+      "name": "Pirates, Vikings, and Knights II",
+      "defaultPort": 27015
+    },
+    {
+      "id": "q3a",
+      "name": "Quake 3: Arena",
+      "defaultPort": 27960
+    },
+    {
+      "id": "quake",
+      "name": "Quake",
+      "defaultPort": 27500
+    },
+    {
+      "id": "quake2",
+      "name": "Quake 2",
+      "defaultPort": 27910
+    },
+    {
+      "id": "quake4",
+      "name": "Quake 4",
+      "defaultPort": 28004
+    },
+    {
+      "id": "quakelive",
+      "name": "Quake Live",
+      "defaultPort": 27960
+    },
+    {
+      "id": "rainbowsix",
+      "name": "Rainbow Six"
+    },
+    {
+      "id": "rallisportchallenge",
+      "name": "RalliSport Challenge"
+    },
+    {
+      "id": "rallymasters",
+      "name": "Rally Masters"
+    },
+    {
+      "id": "rdkf",
+      "name": "Rag Doll Kung Fu",
+      "defaultPort": 27015
+    },
+    {
+      "id": "rdr2r",
+      "name": "Red Dead Redemption 2 - RedM",
+      "defaultPort": 30120
+    },
+    {
+      "id": "redline",
+      "name": "Redline"
+    },
+    {
+      "id": "redorchestra",
+      "name": "Red Orchestra",
+      "defaultPort": 7758
+    },
+    {
+      "id": "redorchestra2",
+      "name": "Red Orchestra 2",
+      "defaultPort": 7777
+    },
+    {
+      "id": "renegade10",
+      "name": "Renegade X"
+    },
+    {
+      "id": "renown",
+      "name": "Renown"
+    },
+    {
+      "id": "rfactor",
+      "name": "rFactor",
+      "defaultPort": 34397
+    },
+    {
+      "id": "rfactor2",
+      "name": "rFactor 2"
+    },
+    {
+      "id": "ricochet",
+      "name": "Ricochet",
+      "defaultPort": 27015
+    },
+    {
+      "id": "risingworld",
+      "name": "Rising World",
+      "defaultPort": 4255
+    },
+    {
+      "id": "ron",
+      "name": "Rise of Nations"
+    },
+    {
+      "id": "roo4145",
+      "name": "Red Orchestra: Ostfront 41-45",
+      "defaultPort": 7757
+    },
+    {
+      "id": "ror2",
+      "name": "Risk of Rain 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "rs2rs",
+      "name": "Rainbow Six 2: Rogue Spear"
+    },
+    {
+      "id": "rs2v",
+      "name": "Rising Storm 2: Vietnam",
+      "defaultPort": 27015
+    },
+    {
+      "id": "rs3rs",
+      "name": "Rainbow Six 3: Raven Shield",
+      "defaultPort": 7777
+    },
+    {
+      "id": "rtcw",
+      "name": "Return to Castle Wolfenstein"
+    },
+    {
+      "id": "rune",
+      "name": "Rune",
+      "defaultPort": 7777
+    },
+    {
+      "id": "rust",
+      "name": "Rust",
+      "defaultPort": 28015
+    },
+    {
+      "id": "s2ats",
+      "name": "Savage 2: A Tortured Soul"
+    },
+    {
+      "id": "satisfactory",
+      "name": "Satisfactory",
+      "defaultPort": 7777
+    },
+    {
+      "id": "sdtd",
+      "name": "7 Days to Die",
+      "defaultPort": 26900
+    },
+    {
+      "id": "serioussam",
+      "name": "Serious Sam",
+      "defaultPort": 25600
+    },
+    {
+      "id": "serioussam2",
+      "name": "Serious Sam 2",
+      "defaultPort": 25600
+    },
+    {
+      "id": "shatteredhorizon",
+      "name": "Shattered Horizon",
+      "defaultPort": 27015
+    },
+    {
+      "id": "shogo",
+      "name": "Shogo"
+    },
+    {
+      "id": "shootmania",
+      "name": "Shootmania",
+      "defaultPort": 2350
+    },
+    {
+      "id": "sin",
+      "name": "SiN"
+    },
+    {
+      "id": "sinepisodes",
+      "name": "SiN Episodes",
+      "defaultPort": 27015
+    },
+    {
+      "id": "sof",
+      "name": "Soldier of Fortune",
+      "defaultPort": 28910
+    },
+    {
+      "id": "sof2",
+      "name": "Soldier of Fortune 2"
+    },
+    {
+      "id": "soldat",
+      "name": "Soldat",
+      "defaultPort": 23073
+    },
+    {
+      "id": "sotf",
+      "name": "Sons Of The Forest",
+      "defaultPort": 8766
+    },
+    {
+      "id": "soulmask",
+      "name": "Soulmask",
+      "defaultPort": 8777
+    },
+    {
+      "id": "spaceengineers",
+      "name": "Space Engineers",
+      "defaultPort": 27015
+    },
+    {
+      "id": "squad",
+      "name": "Squad",
+      "defaultPort": 7787
+    },
+    {
+      "id": "ssl",
+      "name": "SCP: Secret Labratory"
+    },
+    {
+      "id": "sstse",
+      "name": "Serious Sam: The Second Encounter",
+      "defaultPort": 25600
+    },
+    {
+      "id": "stalker",
+      "name": "S.T.A.L.K.E.R.",
+      "defaultPort": 5445
+    },
+    {
+      "id": "starbound",
+      "name": "Starbound",
+      "defaultPort": 21025
+    },
+    {
+      "id": "starmade",
+      "name": "StarMade",
+      "defaultPort": 4242
+    },
+    {
+      "id": "starsiege",
+      "name": "Starsiege",
+      "defaultPort": 29001
+    },
+    {
+      "id": "stbc",
+      "name": "Star Trek: Bridge Commander"
+    },
+    {
+      "id": "stn",
+      "name": "Survive the Nights",
+      "defaultPort": 7950
+    },
+    {
+      "id": "stvef",
+      "name": "Star Trek: Voyager - Elite Force"
+    },
+    {
+      "id": "stvef2",
+      "name": "Star Trek: Voyager - Elite Force 2"
+    },
+    {
+      "id": "suicidesurvival",
+      "name": "Suicide Survival",
+      "defaultPort": 27015
+    },
+    {
+      "id": "svencoop",
+      "name": "Sven Coop",
+      "defaultPort": 27015
+    },
+    {
+      "id": "swat4",
+      "name": "SWAT 4",
+      "defaultPort": 10480
+    },
+    {
+      "id": "swb",
+      "name": "Star Wars: Battlefront"
+    },
+    {
+      "id": "swb2",
+      "name": "Star Wars: Battlefront 2"
+    },
+    {
+      "id": "swjk2jo",
+      "name": "Star Wars Jedi Knight II: Jedi Outcast"
+    },
+    {
+      "id": "swjkja",
+      "name": "Star Wars Jedi Knight: Jedi Academy"
+    },
+    {
+      "id": "swrc",
+      "name": "Star Wars: Republic Commando",
+      "defaultPort": 7777
+    },
+    {
+      "id": "synergy",
+      "name": "Synergy",
+      "defaultPort": 27015
+    },
+    {
+      "id": "t1s",
+      "name": "Tribes 1: Starsiege",
+      "defaultPort": 28001
+    },
+    {
+      "id": "tacticalops",
+      "name": "Tactical Ops",
+      "defaultPort": 7777
+    },
+    {
+      "id": "tcgraw",
+      "name": "Tom Clancy's Ghost Recon Advanced Warfighter"
+    },
+    {
+      "id": "tcgraw2",
+      "name": "Tom Clancy's Ghost Recon Advanced Warfighter 2"
+    },
+    {
+      "id": "teamfactor",
+      "name": "Team Factor"
+    },
+    {
+      "id": "teamfortress2",
+      "name": "Team Fortress 2",
+      "defaultPort": 27015
+    },
+    {
+      "id": "teamspeak2",
+      "name": "Teamspeak 2",
+      "defaultPort": 8767
+    },
+    {
+      "id": "teamspeak3",
+      "name": "Teamspeak 3",
+      "defaultPort": 9987
+    },
+    {
+      "id": "terminus",
+      "name": "Terminus"
+    },
+    {
+      "id": "terrariatshock",
+      "name": "Terraria - TShock",
+      "defaultPort": 7777
+    },
+    {
+      "id": "tfc",
+      "name": "Team Fortress Classic",
+      "defaultPort": 27015
+    },
+    {
+      "id": "theforest",
+      "name": "The Forest",
+      "defaultPort": 27015
+    },
+    {
+      "id": "thefront",
+      "name": "The Front"
+    },
+    {
+      "id": "thehidden",
+      "name": "The Hidden",
+      "defaultPort": 27015
+    },
+    {
+      "id": "theisle",
+      "name": "The Isle",
+      "defaultPort": 7707
+    },
+    {
+      "id": "theship",
+      "name": "The Ship",
+      "defaultPort": 27015
+    },
+    {
+      "id": "thespecialists",
+      "name": "The Specialists",
+      "defaultPort": 27015
+    },
+    {
+      "id": "thps3",
+      "name": "Tony Hawk's Pro Skater 3"
+    },
+    {
+      "id": "thps4",
+      "name": "Tony Hawk's Pro Skater 4"
+    },
+    {
+      "id": "thu2",
+      "name": "Tony Hawk's Underground 2"
+    },
+    {
+      "id": "tie",
+      "name": "The Isle Evrima",
+      "defaultPort": 7777
+    },
+    {
+      "id": "toh",
+      "name": "Take On Helicopters",
+      "defaultPort": 2302
+    },
+    {
+      "id": "tonolf",
+      "name": "The Operative: No One Lives Forever"
+    },
+    {
+      "id": "towerunite",
+      "name": "Tower Unite",
+      "defaultPort": 27015
+    },
+    {
+      "id": "toxikk",
+      "name": "TOXIKK",
+      "defaultPort": 7777
+    },
+    {
+      "id": "trackmania2",
+      "name": "Trackmania 2",
+      "defaultPort": 2350
+    },
+    {
+      "id": "trackmaniaforever",
+      "name": "Trackmania Forever",
+      "defaultPort": 2350
+    },
+    {
+      "id": "tremulous",
+      "name": "Tremulous"
+    },
+    {
+      "id": "tribesvengeance",
+      "name": "Tribes: Vengeance",
+      "defaultPort": 7777
+    },
+    {
+      "id": "tron20",
+      "name": "Tron 2.0"
+    },
+    {
+      "id": "turok2",
+      "name": "Turok 2"
+    },
+    {
+      "id": "u2tax",
+      "name": "Unreal 2: The Awakening - XMP",
+      "defaultPort": 7777
+    },
+    {
+      "id": "universalcombat",
+      "name": "Universal Combat",
+      "defaultPort": 1135
+    },
+    {
+      "id": "unreal",
+      "name": "Unreal",
+      "defaultPort": 7777
+    },
+    {
+      "id": "unrealtournament",
+      "name": "Unreal Tournament",
+      "defaultPort": 7777
+    },
+    {
+      "id": "unrealtournament2003",
+      "name": "Unreal Tournament 2003",
+      "defaultPort": 7757
+    },
+    {
+      "id": "unrealtournament2004",
+      "name": "Unreal Tournament 2004",
+      "defaultPort": 7777
+    },
+    {
+      "id": "unrealtournament3",
+      "name": "Unreal Tournament 3",
+      "defaultPort": 7777
+    },
+    {
+      "id": "unturned",
+      "name": "unturned",
+      "defaultPort": 27015
+    },
+    {
+      "id": "urbanterror",
+      "name": "Urban Terror"
+    },
+    {
+      "id": "v8sc",
+      "name": "V8 Supercar Challenge"
+    },
+    {
+      "id": "valheim",
+      "name": "Valheim",
+      "defaultPort": 2456
+    },
+    {
+      "id": "vampireslayer",
+      "name": "Vampire Slayer",
+      "defaultPort": 27015
+    },
+    {
+      "id": "vcm",
+      "name": "Vice City Multiplayer",
+      "defaultPort": 8192
+    },
+    {
+      "id": "ventrilo",
+      "name": "Ventrilo",
+      "defaultPort": 3784
+    },
+    {
+      "id": "vietcong",
+      "name": "Vietcong",
+      "defaultPort": 5425
+    },
+    {
+      "id": "vietcong2",
+      "name": "Vietcong 2",
+      "defaultPort": 5001
+    },
+    {
+      "id": "vintagestory",
+      "name": "Vintage Story",
+      "defaultPort": 42420
+    },
+    {
+      "id": "vrising",
+      "name": "V Rising",
+      "defaultPort": 27015
+    },
+    {
+      "id": "warfork",
+      "name": "Warfork"
+    },
+    {
+      "id": "warsow",
+      "name": "Warsow",
+      "defaultPort": 44400
+    },
+    {
+      "id": "wet",
+      "name": "Wolfenstein: Enemy Territory"
+    },
+    {
+      "id": "wolfenstein",
+      "name": "Wolfenstein",
+      "defaultPort": 27666
+    },
+    {
+      "id": "wop",
+      "name": "World Of Padman",
+      "defaultPort": 26000
+    },
+    {
+      "id": "wot",
+      "name": "Wheel of Time",
+      "defaultPort": 7777
+    },
+    {
+      "id": "wurmunlimited",
+      "name": "Wurm Unlimited",
+      "defaultPort": 3724
+    },
+    {
+      "id": "xonotic",
+      "name": "Xonotic",
+      "defaultPort": 26000
+    },
+    {
+      "id": "xpandrally",
+      "name": "Xpand Rally",
+      "defaultPort": 28015
+    },
+    {
+      "id": "zombiemaster",
+      "name": "Zombie Master",
+      "defaultPort": 27015
+    },
+    {
+      "id": "zps",
+      "name": "Zombie Panic: Source",
+      "defaultPort": 27015
+    }
+  ]
+}
