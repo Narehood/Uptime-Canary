@@ -67,7 +67,7 @@ func TestNodeConnectionStaleResultDoesNotCancelSibling(t *testing.T) {
 	t.Cleanup(server.Close)
 	d.connectionURL = server.URL
 	v := connectionInvitation(t, d, owner, "stale-result-node")
-	n, err := New(Options{NodeID: v.NodeID, Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: t.TempDir(), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: v.Token})
+	n, err := New(Options{NodeID: v.NodeID, Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: v.Token})
 	if err != nil {
 		t.Fatal(err)
 	}

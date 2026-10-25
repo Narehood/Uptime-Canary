@@ -71,7 +71,7 @@ func TestNodeConnectionExpiredMutationIsNotDispatchedAfterLocalSlotWait(t *testi
 	t.Cleanup(server.Close)
 	d.connectionURL = server.URL
 	v := connectionInvitation(t, d, owner, "deadline-node")
-	n, err := New(Options{NodeID: "deadline-node", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: t.TempDir(), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: v.Token})
+	n, err := New(Options{NodeID: "deadline-node", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: v.Token})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,13 @@ import (
 type invitationFixture struct {
 	nodeInvitation
 	Token string `json:"token"`
+}
+
+// TempDir's existing leaf can be 0755 on Linux. Let the allocator create its
+// own private child, as in the retained-origin fixtures; keep its 0700 check.
+func connectionIdentityDirectory(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "identity")
 }
 
 func connectionInvitation(t *testing.T, d *Dashboard, owner, nodeID string) invitationFixture {
@@ -52,7 +60,7 @@ func TestNodeInvitationFirstConfirmationAndScopedRoleTransport(t *testing.T) {
 	t.Cleanup(server.Close)
 	d.connectionURL = server.URL
 	invitation := connectionInvitation(t, d, owner, "outbound-a")
-	n, err := New(Options{NodeID: "outbound-a", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: t.TempDir(), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: invitation.Token})
+	n, err := New(Options{NodeID: "outbound-a", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: invitation.Token})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +358,7 @@ func TestNodeConnectionDedicatedListenerAuthenticatesBeforeBody(t *testing.T) {
 }
 
 func TestNodeConnectorIdentityPinsOriginAndSurvivesRestartWithoutInvitation(t *testing.T) {
-	dir := t.TempDir()
+	dir := connectionIdentityDirectory(t)
 	opts := Options{NodeID: "retained-node", DBPath: ":memory:", IdentityDirectory: dir, AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: "https://connection.fixture.invalid", DashboardEnrollToken: strings.Repeat("a", 32) + "." + strings.Repeat("b", 64)}
 	n, err := New(opts)
 	if err != nil {
@@ -399,7 +407,7 @@ func TestNodeConnectorReplacementInvitationPreservesDeviceOnFailedClaim(t *testi
 	t.Cleanup(server.Close)
 	d.connectionURL = server.URL
 	first := connectionInvitation(t, d, owner, "replace-node")
-	opts := Options{NodeID: "replace-node", DBPath: ":memory:", IdentityDirectory: t.TempDir(), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: first.Token}
+	opts := Options{NodeID: "replace-node", DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: first.Token}
 	n, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -511,7 +519,7 @@ func TestNodeConnectorRefusesRedirectWithoutFollowingOrForwardingCredential(t *t
 		reply(w, 200, map[string]any{"ok": true})
 	}))
 	defer server.Close()
-	n, err := New(Options{NodeID: "redirect-node", DBPath: ":memory:", IdentityDirectory: t.TempDir(), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: strings.Repeat("a", 32) + "." + strings.Repeat("b", 64)})
+	n, err := New(Options{NodeID: "redirect-node", DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: strings.Repeat("a", 32) + "." + strings.Repeat("b", 64)})
 	if err != nil {
 		t.Fatal(err)
 	}
