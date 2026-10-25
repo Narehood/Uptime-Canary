@@ -362,6 +362,7 @@ type Doer interface {
 type Options struct {
 	NodeID, NodeName, Host, DBPath, AdminToken, ClusterToken string
 	IdentityDirectory                                        string
+	DashboardURL, DashboardEnrollToken                       string
 	Port                                                     *int
 	Peers                                                    []Peer
 	CORSOrigins                                              []string

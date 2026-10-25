@@ -13,6 +13,7 @@ import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createProxyAuthFixture, reviewProxyAuth } from './proxy-auth-browser.mjs';
 import { createDashboardControlPlaneFixture, reviewDashboardControlPlane } from './dashboard-control-plane-browser.mjs';
+import { finishInterception } from './cdp-interception.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.env.TSX_DISABLE_CACHE = '1';
@@ -177,8 +178,12 @@ async function launchBrowser() {
   page.on('Fetch.requestPaused', p => {
     if (requestHook?.(p)) return;
     let ok = false; try { const u = new URL(p.request.url); ok = allowed.has(u.origin) || u.protocol === 'data:'; } catch {}
-    if (ok) void page.send('Fetch.continueRequest', { requestId: p.requestId });
-    else { report.blocked.push(p.request.url); void page.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'BlockedByClient' }); }
+    const outcome = {
+      canceled() { report.canceledInterceptions = (report.canceledInterceptions ?? 0) + 1; },
+      failed(error) { report.exceptions.push(redact(`CDP interception failed: ${error.message}`)); },
+    };
+    if (ok) void finishInterception(page, 'Fetch.continueRequest', { requestId: p.requestId }, outcome);
+    else { report.blocked.push(p.request.url); void finishInterception(page, 'Fetch.failRequest', { requestId: p.requestId, errorReason: 'BlockedByClient' }, outcome); }
   });
   page.on('Runtime.exceptionThrown', p => { report.exceptions.push(redact(p.exceptionDetails?.exception?.description || p.exceptionDetails?.text)); });
   page.on('Network.requestWillBeSent', p => {

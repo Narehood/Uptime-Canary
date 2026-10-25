@@ -82,6 +82,7 @@ type Node struct {
 	cancel                                         context.CancelFunc
 	wg                                             sync.WaitGroup
 	stopDone                                       chan struct{}
+	connector                                      *nodeConnector
 }
 
 func digest(v string) string { h := sha256.Sum256([]byte(v)); return hex.EncodeToString(h[:]) }
@@ -415,6 +416,10 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 	n.ctx, n.cancel = context.WithCancel(context.Background())
 	n.peerProgress = map[string]syncProgress{}
 	n.server = &http.Server{Handler: n, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 32 * 1024, BaseContext: func(net.Listener) context.Context { return n.ctx }}
+	if err = n.prepareConnector(o); err != nil {
+		n.cancel()
+		return nil, err
+	}
 	return n, nil
 }
 func (n *Node) Start() error {
@@ -439,6 +444,9 @@ func (n *Node) Start() error {
 	}
 	n.url = "http://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
 	n.started = true
+	if n.connector != nil {
+		n.launchLocked(func() { n.connector.run(n.ctx, n) })
+	}
 	n.launchLocked(func() { _ = n.server.Serve(listener) })
 	n.launchLocked(func() {
 		n.tick()

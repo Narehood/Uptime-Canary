@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { NodeVerification, RegisteredNode } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure, isAbort } from '../api';
 import { useCanary } from '../context';
@@ -15,6 +15,10 @@ import { session } from '../session';
 import { Banner, Card, EmptyState, Modal, PageHead, Spinner, Tag, Time, nodeStateText, nodeTone } from '../ui/bits';
 import { ErrorSummary, SecretField, TextField } from '../ui/forms';
 import { EndpointMark, Glyph, Icon } from '../ui/icons';
+import { secretsFor, secretsForNode, type DialogSecrets, type DirectTarget, type Platform } from '../onboarding';
+import {
+  AddNodeChooser, NewNodeDeploy, OutboundNode, PendingNodesCard, useInvitations, useOnboarding, type AddPlan, type NewNodeDraft, type Taken,
+} from './NodeWizard';
 
 /*
  * Control plane: the dashboard's shared node registry. One list for every account; administrators add, retry and
@@ -26,6 +30,8 @@ import { EndpointMark, Glyph, Icon } from '../ui/icons';
  * recovery credential lives only in its dialog's state and is cleared as soon as it is sent, and when the dialog closes.
  * Recover access finishes a pending access update through Retry's route, never with another rotation; its optional
  * credential is handled the same way.
+ * Add node also offers the wizard in NodeWizard.tsx: a new node to deploy, and nodes that connect to this dashboard
+ * themselves. The direct form for a running node stays its default and works as before.
  */
 
 const period = (text: string): string => /[.!?]$/u.test(text) ? text : `${text}.`;
@@ -39,6 +45,7 @@ export function RegistryView({ home = false }: { home?: boolean }) {
   const [recovering, setRecovering] = useState<RegisteredNode | null>(null);
   const nodes = registryOrder(registry.list ?? []);
   const summary = registrySummary(nodes);
+  const outbound = nodes.some(node => node.connection === 'outbound');
   const add = (): void => setAdding(true);
   const addButton = <button type="button" className="btn primary" onClick={add}><Icon name="plus" />Add node</button>;
   return (
@@ -50,7 +57,8 @@ export function RegistryView({ home = false }: { home?: boolean }) {
           : 'Monitoring nodes this dashboard reads for every account. You sign in here, not on each node.'}
         actions={admin ? addButton : <Tag icon="lock">Administrators add and remove nodes</Tag>}
       />
-      {home ? null : <DashboardPath />}
+      {home ? null : <DashboardPath outbound={outbound} />}
+      {!home && admin ? <PendingNodesCard /> : null}
       {registry.error && !registry.list ? (
         <Banner tone="down" title="The node list couldn’t be loaded" actions={<button type="button" className="btn sm" onClick={registry.reload}><Icon name="refresh" />Try again</button>}>
           {describeFailure(registry.error)} Sign-in and accounts keep working.
@@ -70,11 +78,12 @@ export function RegistryView({ home = false }: { home?: boolean }) {
           </div>
           <div className="nodes-grid">
             {nodes.map(node => <NodeCard key={node.id} node={node} onRemove={setRemoving} onEdit={setEditing} onRotate={setRotation} onRecover={setRecovering} />)}
-            {admin ? <button type="button" className="add-tile" onClick={add}><Icon name="plus" /><b>Add node</b><small>Its private address and an enrollment credential</small></button> : null}
+            {admin ? <button type="button" className="add-tile" onClick={add}><Icon name="plus" /><b>Add node</b><small>A running node, or a new one to deploy</small></button> : null}
           </div>
           <p className="foot-note">
             Monitor counts are each node’s own report. Adding a node here doesn’t change its peers; peer membership stays in each node’s own configuration.
             {admin ? '' : ' Node addresses are shown to administrators only.'}
+            {outbound ? ' Last connected is when a node that connects to this dashboard last opened its connection; it says nothing about its checks.' : ''}
           </p>
         </>
       )}
@@ -88,7 +97,7 @@ export function RegistryView({ home = false }: { home?: boolean }) {
   );
 }
 
-function DashboardPath() {
+function DashboardPath({ outbound }: { outbound: boolean }) {
   const page = pageOrigin();
   return (
     <Card title="How this dashboard reaches nodes">
@@ -99,9 +108,17 @@ function DashboardPath() {
         <span className="arr" aria-hidden="true">→</span>
         <span className="box"><Icon name="nodes" />Each node’s private address</span>
       </div>
+      {outbound ? (
+        <div className="path" role="img" aria-label="Nodes that connect to this dashboard open their own HTTPS connection to its node-connection address. The dashboard never dials them.">
+          <span className="box"><Icon name="nodes" />Nodes that connect out</span>
+          <span className="arr" aria-hidden="true">→</span>
+          <span className="box ep"><EndpointMark /><span><b>This dashboard</b><span className="sub">its node-connection address</span></span></span>
+        </div>
+      ) : null}
       <p className="foot-note">
         Only the dashboard’s server contacts nodes, so LAN, NetBird and Tailscale addresses work as long as the server can reach them.
         Your browser talks to this dashboard and nothing else. Nodes keep monitoring and alerting if this dashboard stops.
+        {outbound ? ' Nodes marked “Connects to this dashboard” open their own HTTPS connection to it instead, so they need no route from the dashboard.' : ''}
       </p>
     </Card>
   );
@@ -117,8 +134,8 @@ function EmptyRegistry({ onAdd }: { onAdd: () => void }) {
       {admin ? (
         <ol className="howto">
           <li><b>Run a node</b> where it can check your services. It works on its own; this dashboard is optional.</li>
-          <li><b>Check the route.</b> This dashboard’s server, not your browser, has to reach the node’s address.</li>
-          <li><b>Have an enrollment credential</b> from the node, such as an admin account token, then choose Add node.</li>
+          <li><b>Check the route.</b> This dashboard’s server, not your browser, has to reach the node’s address, or the node has to reach this dashboard.</li>
+          <li><b>Have an enrollment credential</b> from the node, such as an admin account token, then choose Add node. Add node also has the steps to deploy a new one.</li>
         </ol>
       ) : null}
     </Card>
@@ -139,6 +156,7 @@ function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
   const viewing = selection?.id === node.id;
   const dashboardNow = now + (connection.issuerSkew ?? 0);
   const unfinished = pendingOperation(node.state);
+  const outbound = node.connection === 'outbound';
 
   const act = async (kind: 'check' | 'retry'): Promise<void> => {
     if (busy) return;
@@ -174,10 +192,17 @@ function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
         </div>
         <Glyph tone={info.tone} label={info.label} />
       </div>
-      {node.local || viewing ? <span className="row-wrap">{node.local ? <Tag tone="accent">Added automatically</Tag> : null}{viewing ? <Tag icon="eye">Viewing</Tag> : null}</span> : null}
+      {node.local || viewing || outbound ? (
+        <span className="row-wrap">
+          {node.local ? <Tag tone="accent">Added automatically</Tag> : null}
+          {outbound ? <Tag icon="plug">Connects to this dashboard</Tag> : null}
+          {viewing ? <Tag icon="eye">Viewing</Tag> : null}
+        </span>
+      ) : null}
       <p className="nc-state"><b>{info.label}.</b> {info.text}{node.error ? <> <span className="muted">{period(node.error)}</span></> : null}</p>
       <dl className="kv">
         {node.url ? <><dt>Address</dt><dd className="mono">{node.url}</dd></> : null}
+        {outbound ? <><dt>Last connected</dt><dd>{node.lastConnectedAt ? <><Time at={node.lastConnectedAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastConnectedAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd></> : null}
         {node.nodeName && node.nodeName !== node.nodeId && node.nodeName !== node.label ? <><dt>Node name</dt><dd>{node.nodeName}</dd></> : null}
         <dt>Last read</dt><dd>{node.lastReadAt ? <><Time at={node.lastReadAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastReadAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd>
         <dt>Monitors</dt><dd>{node.monitorCount === undefined ? <span className="muted">Not read yet</span> : <>{node.monitorCount}{node.state === 'answering' ? '' : <span className="muted"> · last known</span>}</>}</dd>
@@ -318,12 +343,14 @@ export function NodePickerDialog({ onClose }: { onClose: () => void }) {
 
 type Failure = { title: string; text: string };
 
-function verifyFailure(error: unknown): Failure {
+function verifyFailure(error: unknown, generated = false): Failure {
   const text = describeFailure(error, { preferDetail: true });
   if (!(error instanceof ApiFailure)) return { title: 'Not verified', text };
   const detail = error.detail ?? '';
   if (error.status === 502 && /credential/iu.test(detail)) {
-    return { title: 'The node refused this credential', text: 'It may be mistyped, revoked, or not an admin credential on that node. Paste it again to retry. Nothing was saved.' };
+    return generated
+      ? { title: 'The node refused its new administrator token', text: 'Check that it started with the settings from the previous step, on new, empty volumes: a node that already has accounts ignores CANARY_ADMIN_TOKEN. Nothing was saved.' }
+      : { title: 'The node refused this credential', text: 'It may be mistyped, revoked, or not an admin credential on that node. Paste it again to retry. Nothing was saved.' };
   }
   if (error.status === 502 && /different node/iu.test(detail)) return { title: 'A different node answers at this address', text: `${text} Nothing was saved.` };
   if (error.status === 502 && /redirect/iu.test(detail)) {
@@ -340,10 +367,106 @@ function verifyFailure(error: unknown): Failure {
   return { title: 'Not verified', text: `${text} Nothing was saved.` };
 }
 
-function AddNodeDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Add node: one dialog, with the direct form for a running node as its default. Above it, administrators choose a new
+ * node instead, or a node that connects to this dashboard (NodeWizard.tsx). The choice hides once a flow has something
+ * in progress: a verification, a deployment to verify or an invitation. A new node's credentials are made the first
+ * time a new node is chosen and live in this dialog's state until it closes. They follow the node ID being typed until
+ * they're used for one (shown, copied, saved, verified with or written for an invitation); another ID then gets its own
+ * pair, and the pair of the one ID left before comes back with that ID (onboarding.ts secretsForNode).
+ */
+export function AddNodeDialog({ onClose }: { onClose: () => void }) {
+  const { registry } = useCanary();
+  const onboarding = useOnboarding();
+  const invitations = useInvitations();
+  const [plan, setPlan] = useState<AddPlan>({ fresh: false, link: 'direct' });
+  const [secrets, setSecrets] = useState<DialogSecrets>({ current: null, earlier: null });
+  // The latest pair, for handlers that run before the next render (an invitation's answer, a draft change).
+  const held = useRef(secrets);
+  const [secretFailure, setSecretFailure] = useState<string | null>(null);
+  const [draft, setDraft] = useState<NewNodeDraft>({ label: '', nodeId: '', address: '', platform: 'docker' });
+  const [platform, setPlatform] = useState<Platform>('docker');
+  const [deployed, setDeployed] = useState<DirectTarget | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // An outbound flow refuses to close while its invitation's token wasn't shown, copied or saved; it asks instead.
+  const guard = useRef<(() => boolean) | null>(null);
+  const lock = useCallback((value: boolean) => setLocked(value), []);
+  const hold = useCallback((value: boolean) => setBusy(value), []);
+  const taken: Taken = { nodes: registry.list ?? [], invitations: invitations.data ?? [] };
+  const requestClose = (): void => { if (!guard.current || guard.current()) onClose(); };
+
+  /** The tokens once the node ID is `nodeId` (and used for it when `use`); made only when none may serve it. */
+  const tokensFor = (nodeId: string, use = false): void => {
+    try {
+      const next = secretsForNode(held.current, nodeId, use);
+      if (next !== held.current) { held.current = next; setSecrets(next); }
+      setSecretFailure(null);
+    } catch (error) {
+      // Nothing changed: a pair used for another ID still isn't shown for this one, so its steps stay hidden.
+      setSecretFailure(error instanceof Error ? error.message : 'This browser couldn’t make random credentials.');
+    }
+  };
+  const changeDraft = (next: NewNodeDraft): void => {
+    // Only a different node ID can change the tokens; a label, address or platform never does.
+    if (next.nodeId !== draft.nodeId) tokensFor(next.nodeId);
+    setDraft(next);
+  };
+
+  const choose = (next: AddPlan): void => {
+    if (next.fresh && !held.current.current) tokensFor(draft.nodeId);
+    setLocked(false);
+    setPlan(next);
+  };
+
+  // A new node's pair, as each flow may show it, and the other ID whose pair this dialog also keeps.
+  const pair = secrets.current;
+  const earlier = secrets.earlier?.nodeId ?? null;
+  const verifying = deployed ? secretsFor(pair, draft.nodeId) : null;
+  let body: ReactNode;
+  if (!plan.fresh && plan.link === 'direct') body = <DirectAddForm onClose={onClose} onBusy={hold} onStage={lock} />;
+  else if (plan.link === 'direct') {
+    body = deployed && verifying
+      ? <DirectAddForm key="new" onClose={onClose} onBusy={hold} onStage={lock} credential={verifying.admin} expectedId={draft.nodeId} initialLabel={draft.label.trim()} initialUrl={deployed.url} onBack={() => setDeployed(null)} />
+      : <NewNodeDeploy draft={draft} onDraft={changeDraft} secrets={pair} earlier={earlier} onboarding={onboarding} taken={taken}
+        onNext={target => { tokensFor(draft.nodeId, true); setDeployed(target); }} onUse={nodeId => tokensFor(nodeId, true)} onCancel={onClose} />;
+  } else {
+    body = <OutboundNode fresh={plan.fresh} onboarding={onboarding} secrets={pair} earlier={earlier} onUse={nodeId => tokensFor(nodeId, true)} taken={taken} platform={platform} onPlatform={setPlatform}
+      onClose={onClose} onRequestClose={requestClose} onLock={lock} onBusy={hold} guard={guard} onTakenChanged={invitations.reload} />;
+  }
+  return (
+    <Modal title="Add node" onClose={requestClose} busy={busy} wide xwide={plan.fresh || plan.link === 'outbound'}>
+      {locked || deployed ? null : <AddNodeChooser plan={plan} onPlan={choose} onboarding={onboarding} />}
+      {plan.fresh && secretFailure ? (
+        <Banner tone="down" title="No credentials for a new node" actions={<button type="button" className="btn sm" onClick={() => tokensFor('')}><Icon name="refresh" />Try again</button>}>
+          {secretFailure} Use a browser with secure random numbers, or set up the node yourself and add it as a running node.
+        </Banner>
+      ) : null}
+      {body}
+    </Modal>
+  );
+}
+
+interface DirectOptions {
+  onClose: () => void;
+  onBusy: (busy: boolean) => void;
+  /** True while a verified node waits for confirmation: the dialog then hides its other choices. */
+  onStage: (locked: boolean) => void;
+  /** A new node: the administrator token this browser made for it, used instead of a pasted credential. */
+  credential?: string;
+  /** The new node's ID; a different node at the address is shown and can't be added from here. */
+  expectedId?: string;
+  initialLabel?: string;
+  initialUrl?: string;
+  /** Back to the new node's deployment steps. */
+  onBack?: () => void;
+}
+
+/** Verify, then confirm: the form a running node is added with, and a new direct node's last step. */
+function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initialLabel = '', initialUrl = '', onBack }: DirectOptions) {
   const { api, registry, connection, stillCurrent } = useCanary();
-  const [label, setLabel] = useState('');
-  const [url, setUrl] = useState('');
+  const [label, setLabel] = useState(initialLabel);
+  const [url, setUrl] = useState(initialUrl);
   const [token, setToken] = useState('');
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState<null | 'verify' | 'add'>(null);
@@ -368,8 +491,13 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
     if (outstanding) void apiRef.current.discardVerification(outstanding).catch(() => undefined);
   }, []);
   useEffect(() => { if (verified) okRef.current?.focus(); }, [verified]);
+  useEffect(() => { onBusy(busy === 'add'); }, [busy, onBusy]);
+  useEffect(() => { onStage(verified !== null); }, [verified, onStage]);
 
-  const errors = { label: labelProblem(label), url: nodeAddressProblem(url), token: credentialProblem(token) };
+  // A new node's own administrator token stays with the dialog, so a failed check can simply be tried again.
+  const generated = credential !== undefined;
+  const sent = credential ?? token;
+  const errors = { label: labelProblem(label), url: nodeAddressProblem(url), token: credentialProblem(sent) };
   const visible: Partial<typeof errors> = show ? errors : {};
   const discard = (): void => {
     const outstanding = ticket.current;
@@ -386,7 +514,7 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
     attempt.current = controller;
     setBusy('verify');
     try {
-      const result = await api.verifyNode({ label, url, token }, controller.signal);
+      const result = await api.verifyNode({ label, url, token: sent }, controller.signal);
       setToken('');
       if (controller.signal.aborted || !stillCurrent()) { void api.discardVerification(result.ticket).catch(() => undefined); return; }
       ticket.current = result.ticket;
@@ -395,9 +523,9 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
     } catch (error) {
       // The request may have reached the server either way, so the page lets go of the credential.
       setToken('');
-      if (isAbort(error)) { setNotice('Stopped. Nothing was saved. Paste the credential again to verify.'); return; }
+      if (isAbort(error)) { setNotice(generated ? 'Stopped. Nothing was saved.' : 'Stopped. Nothing was saved. Paste the credential again to verify.'); return; }
       if (!stillCurrent()) return;
-      setFailure(verifyFailure(error));
+      setFailure(verifyFailure(error, generated));
       failed();
     } finally {
       if (attempt.current === controller) attempt.current = null;
@@ -408,7 +536,8 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
   const back = (): void => {
     discard();
     setVerified(null); setFailure(null); setShow(false);
-    setNotice(spent ? 'Paste the credential again to verify.' : 'Going back discarded that verification. Paste the credential again to verify.');
+    if (generated) setNotice(spent ? null : 'Going back discarded that verification.');
+    else setNotice(spent ? 'Paste the credential again to verify.' : 'Going back discarded that verification. Paste the credential again to verify.');
   };
 
   const add = async (): Promise<void> => {
@@ -450,18 +579,25 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
   if (!verified) {
     body = (
       <form className="connect-form" onSubmit={event => { void verify(event); }} noValidate aria-busy={busy === 'verify'}>
-        <p className="sec">The dashboard’s server contacts the node at this address; your browser doesn’t. A private, NetBird or Tailscale address is fine as long as the server can reach it. Verifying changes nothing on the node.</p>
+        <p className="sec">{generated
+          ? <>The dashboard’s server contacts the new node <span className="mono">{expectedId}</span> at this address with the administrator token made for it; your browser doesn’t. Verifying changes nothing on the node.</>
+          : 'The dashboard’s server contacts the node at this address; your browser doesn’t. A private, NetBird or Tailscale address is fine as long as the server can reach it. Verifying changes nothing on the node.'}</p>
         {notice ? <Banner tone="info" title={notice} /> : null}
         <ErrorSummary ref={summaryRef} title={failure ? failure.title : 'Check these fields'} errors={errorList}>{failure ? <p>{failure.text}</p> : null}</ErrorSummary>
         <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={visible.label} maxLength={128} disabled={busy !== null} autoFocus
           hint="Every account on this dashboard sees it. The node keeps its own ID." />
         <TextField label="Node address" type="url" inputMode="url" mono value={url} onChange={setUrl} error={visible.url} disabled={busy !== null} placeholder="http://100.79.12.4:3100"
           hint="Scheme, host and port, as the dashboard’s server reaches it. HTTPS certificates are checked and redirects aren’t followed." />
-        <SecretField label="Enrollment credential" value={token} onChange={setToken} error={visible.token} disabled={busy !== null}
-          hint="From the node, for example an admin account token. It goes only to the dashboard’s server; this page forgets it after each verification." />
+        {generated ? (
+          <dl className="kv"><dt>Enrollment credential</dt><dd>The administrator token made for <span className="mono">{expectedId}</span> in the previous step. It goes only to the dashboard’s server.</dd></dl>
+        ) : (
+          <SecretField label="Enrollment credential" value={token} onChange={setToken} error={visible.token} disabled={busy !== null}
+            hint="From the node, for example an admin account token. It goes only to the dashboard’s server; this page forgets it after each verification." />
+        )}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
+            {onBack && busy === null ? <button type="button" className="btn" onClick={onBack}><Icon name="chevLeft" />Back</button> : null}
             {busy === 'verify'
               ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
               : <button type="button" className="btn" onClick={onClose}>Cancel</button>}
@@ -472,15 +608,20 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
     );
   } else {
     const name = verified.label || label.trim();
+    // A new node is expected by its ID; another node answering there is never added from this step.
+    const mismatch = expectedId !== undefined && verified.node.id !== expectedId;
     body = (
       <>
         <div className="banner b-ok" role="status">
           <Glyph tone="up" />
           <div>
             <b className="bt" tabIndex={-1} ref={okRef}>Verified by the dashboard’s server</b>
-            <div className="bb">The node proved it is <span className="mono">{verified.node.id}</span>. The credential is on the dashboard’s server now; this page no longer holds it. Nothing has changed on the node yet.</div>
+            <div className="bb">The node proved it is <span className="mono">{verified.node.id}</span>. {generated
+              ? 'The administrator token made here went to the dashboard’s server with this check; this page keeps its own copy only until this dialog closes.'
+              : 'The credential is on the dashboard’s server now; this page no longer holds it.'} Nothing has changed on the node yet.</div>
           </div>
         </div>
+        {mismatch ? <Banner tone="down" title="A different node answers at this address">It proved it is <span className="mono">{verified.node.id}</span>, not the new node <span className="mono">{expectedId}</span>, so it can’t be added from here. Go back and check the address. Nothing was saved.</Banner> : null}
         <dl className="kv">
           <dt>Name on this dashboard</dt><dd>{name}</dd>
           <dt>Node ID</dt><dd className="mono">{verified.node.id}</dd>
@@ -496,20 +637,25 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
           <button type="button" className="btn" onClick={back} disabled={busy !== null}><Icon name="chevLeft" />Back</button>
           <span className="row-wrap">
             <button type="button" className="btn" onClick={onClose} disabled={busy !== null}>{spent ? 'Close' : 'Cancel'}</button>
-            {spent && !busy ? null : <button type="button" className="btn primary" onClick={() => { void add(); }} disabled={busy !== null || expired}><Icon name="plus" />{busy === 'add' ? 'Adding…' : `Add “${name}”`}</button>}
+            {(spent && !busy) || mismatch ? null : <button type="button" className="btn primary" onClick={() => { void add(); }} disabled={busy !== null || expired}><Icon name="plus" />{busy === 'add' ? 'Adding…' : `Add “${name}”`}</button>}
           </span>
         </div>
       </>
     );
   }
-  return <Modal title="Add node" onClose={onClose} busy={busy === 'add'} wide>{body}</Modal>;
+  return body;
 }
 
-function RemoveNodeDialog({ node, onClose }: { node: RegisteredNode; onClose: () => void }) {
+export function RemoveNodeDialog({ node, onClose }: { node: RegisteredNode; onClose: () => void }) {
   const { api, registry, selection, select, stillCurrent } = useCanary();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const note = node.state === 'answering'
+  // An outbound node's connection stops carrying anything but that revocation as soon as the entry leaves the list.
+  const note = node.connection === 'outbound'
+    ? `${node.state === 'answering'
+      ? 'The dashboard stops using the node’s connection for anything else at once, and asks the node over it to revoke the access this dashboard set up there.'
+      : 'The node isn’t connected right now. The dashboard stops using its connection at once, except so the node can confirm that this dashboard’s access there was revoked; until it connects again, the entry stays as “Removal unfinished”.'} A change sent to the node just before may still finish there.`
+    : node.state === 'answering'
     ? 'The dashboard’s server also asks the node to revoke the access this dashboard set up there.'
     : node.state === 'different-node'
       ? <>This address now answers as a different node, so the dashboard won’t send it anything. Revoke this dashboard’s access on <span className="mono">{node.nodeId}</span> wherever it runs now.</>
@@ -561,7 +707,7 @@ export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode
   const [summaryRef, failed] = useSummaryFocus();
 
   // The bundled node's address belongs to the deployment; the server refuses to move it (409).
-  const movable = !node.local && opened.url !== undefined;
+  const movable = !node.local && opened.connection !== 'outbound' && opened.url !== undefined;
   const pending = pendingOperation(node.state);
   const changedMeanwhile = node.label !== opened.label || node.url !== opened.url;
   const { input, moving, errors } = editChanges(opened, label, url, movable);
@@ -614,6 +760,8 @@ export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode
         {movable ? (
           <TextField label="Node address" type="url" inputMode="url" mono value={url} onChange={setUrl} error={visible.url} disabled={busy} placeholder="http://100.79.12.4:3100"
             hint={<>Change it only when <span className="mono">{opened.nodeId}</span> itself moved. Before saving, the dashboard’s server checks that the node answering there is the same one and accepts all three of this dashboard’s access credentials. It can’t point this entry at a different node; add that one as its own node.</>} />
+        ) : opened.connection === 'outbound' ? (
+          <p className="small muted">This node connects to the dashboard itself, so its entry has no address to edit. Renaming works even while it isn’t connected.</p>
         ) : (
           <>
             <dl className="kv"><dt>Address</dt><dd className="mono">{node.url ?? 'Not shown'}</dd></dl>

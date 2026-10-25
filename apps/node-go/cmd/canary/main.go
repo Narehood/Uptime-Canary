@@ -55,6 +55,9 @@ func run() int {
 		return 1
 	}
 	fmt.Printf("Uptime-Canary %s listening at %s\n", node.ID, node.URL())
+	if fingerprint := node.ConnectionFingerprint(); fingerprint != "" {
+		fmt.Printf("Node connection fingerprint (compare before confirming): %s\n", fingerprint)
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	select {

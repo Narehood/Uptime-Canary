@@ -45,7 +45,11 @@ def validate(root):
     assert web["services"]["web"]["environment"] == {
         "CANARY_LOCAL_NODE_URL": "http://node:3100",
         "CANARY_LOCAL_NODE_TOKEN": fixture["CANARY_ADMIN_TOKEN"],
-        "CANARY_DASHBOARD_ORIGINS": fixture["CANARY_CORS_ORIGINS"]}
+        "CANARY_DASHBOARD_ORIGINS": fixture["CANARY_CORS_ORIGINS"],
+        # Accepted onboarding contract: optional dedicated listener and the
+        # matching node image tag are dashboard-owned settings.
+        "CANARY_DASHBOARD_CONNECTION_URL": "",
+        "CANARY_DASHBOARD_NODE_IMAGE_TAG": "latest"}
     empty = config("deploy/portainer-dashboard.yml", {**clean, "CANARY_CORS_ORIGINS": fixture["CANARY_CORS_ORIGINS"]})
     assert empty["services"]["web"]["environment"]["CANARY_LOCAL_NODE_URL"] == ""
     default_bundle = config("deploy/portainer-stack.yml", {**clean, **{k: v for k, v in fixture.items() if k != "CANARY_LOCAL_NODE_URL"}})
@@ -92,10 +96,17 @@ def validate(root):
 
     def dashboard_port(rendered, published):
         ports = rendered["services"]["web"]["ports"]
-        assert len(ports) == 1
-        assert ports[0]["target"] == 8080
-        assert str(ports[0]["published"]) == str(published)
-        assert ports[0]["host_ip"] == "127.0.0.1"
+        # The browser mapping retains every original assertion. Outbound node
+        # support adds one separate loopback mapping; it never exposes /api.
+        assert len(ports) == 2
+        browser = [port for port in ports if port["target"] == 8080]
+        assert len(browser) == 1
+        assert str(browser[0]["published"]) == str(published)
+        assert browser[0]["host_ip"] == "127.0.0.1"
+        connection = [port for port in ports if port["target"] == 8081]
+        assert len(connection) == 1
+        assert str(connection[0]["published"]) == "18348"
+        assert connection[0]["host_ip"] == "127.0.0.1"
 
     for rendered in (combined, web, local):
         dashboard_port(rendered, 18347)
@@ -109,11 +120,33 @@ def validate(root):
             dashboard_port(rendered, published)
             if "node" in rendered["services"]:
                 assert rendered["services"]["node"]["environment"]["CANARY_CORS_ORIGINS"] == origin
+    connection_fixture = {**clean, **fixture, "CANARY_DASHBOARD_CONNECTION_URL": "https://connect.example.test",
+                          "CANARY_DASHBOARD_URL": "https://connect.example.test",
+                          "CANARY_DASHBOARD_ENROLL_TOKEN": "a"*32 + "." + "b"*64}
+    outbound = config("deploy/portainer-node-outbound.yml", connection_fixture)
+    assert set(outbound["services"]) == {"node"}
+    service = outbound["services"]["node"]
+    assert "ports" not in service and "build" not in service
+    assert service["read_only"] and service["init"] and service["cap_drop"] == ["ALL"]
+    assert service["cap_add"] == ["NET_RAW"] and service["security_opt"] == ["no-new-privileges:true"]
+    assert service["environment"]["CANARY_DASHBOARD_URL"] == connection_fixture["CANARY_DASHBOARD_URL"]
+    assert service["environment"]["CANARY_DASHBOARD_ENROLL_TOKEN"] == connection_fixture["CANARY_DASHBOARD_ENROLL_TOKEN"]
+    assert set(outbound["volumes"]) == {"canary-data", "canary-identity"}
+    without_invitation = config("deploy/portainer-node-outbound.yml", {k:v for k,v in connection_fixture.items() if k not in {"CANARY_DASHBOARD_ENROLL_TOKEN", "CANARY_CORS_ORIGINS"}})
+    assert without_invitation["services"]["node"]["environment"]["CANARY_DASHBOARD_ENROLL_TOKEN"] == ""
+    assert without_invitation["services"]["node"]["environment"]["CANARY_CORS_ORIGINS"] == ""
+    connected = config("deploy/portainer-dashboard.yml", {**connection_fixture, "CANARY_IMAGE_TAG": pinned,
+                       "CANARY_CONNECT_BIND_ADDRESS": "192.0.2.19", "CANARY_CONNECT_PORT": "19348"})["services"]["web"]
+    assert connected["environment"]["CANARY_DASHBOARD_CONNECTION_URL"] == connection_fixture["CANARY_DASHBOARD_URL"]
+    assert connected["environment"]["CANARY_DASHBOARD_NODE_IMAGE_TAG"] == pinned
+    mapping = [p for p in connected["ports"] if p["target"] == 8081]
+    assert len(mapping) == 1 and mapping[0]["host_ip"] == "192.0.2.19" and str(mapping[0]["published"]) == "19348"
     print("PASS combined, node-only, dashboard-only and build-from-checkout Compose configuration")
     print("PASS split service parity, shared dashboard account state, separate retained keys and private node volumes")
     print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
     print("PASS GHCR pulls, matching commit tags, full image overrides and offline pull policy")
     print("PASS optional GameDig source profile and registry stack use separate credentials and private networking")
+    print("PASS optional node connection listener, private host binding and outbound node with no inbound port")
 
 
 if __name__ == "__main__":

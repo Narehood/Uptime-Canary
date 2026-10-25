@@ -109,6 +109,10 @@ func (d *Dashboard) currentActor(r *http.Request, actor AccountView, admin bool)
 
 func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, actor AccountView) {
 	p := r.URL.Path
+	if p == "/api/dashboard/onboarding" || p == "/api/dashboard/invitations" || strings.HasPrefix(p, "/api/dashboard/invitations/") {
+		d.invitationRequest(w, r, actor)
+		return
+	}
 	if p == "/api/dashboard/nodes" && r.Method == "GET" {
 		d.mu.Lock()
 		out := []RegisteredNode{}

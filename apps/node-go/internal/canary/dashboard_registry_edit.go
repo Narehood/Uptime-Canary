@@ -43,6 +43,10 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 	d.mu.Unlock()
 	candidate := before
 	candidate.Label = input.Label
+	if input.URL != nil && before.Connection == "outbound" {
+		errorReply(w, fail(400, "Node-initiated connections have no dashboard-dialed node address"))
+		return
+	}
 	if input.URL != nil {
 		candidate.URL, err = dashboardNodeURL(*input.URL)
 		if err == nil && (slices.Contains(d.origins, candidate.URL) || strings.EqualFold(strings.SplitN(candidate.URL, "://", 2)[1], r.Host)) {
@@ -86,7 +90,7 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	for key, saved := range d.registry {
-		if key != id && saved.URL == candidate.URL {
+		if key != id && candidate.URL != "" && saved.URL == candidate.URL {
 			errorReply(w, fail(409, "This node address is already registered"))
 			return
 		}

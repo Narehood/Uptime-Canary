@@ -1,5 +1,6 @@
-import type { RegisteredNode, Role } from '@uptime-canary/shared';
+import type { NodeInvitation, RegisteredNode, Role } from '@uptime-canary/shared';
 import { ApiFailure, checkRegistration, describeFailure, normalizeApiUrl } from './api';
+import { elapsed } from './format';
 import { pageOrigin } from './gateway';
 import type { Tone } from './model';
 
@@ -22,6 +23,8 @@ export interface NodeStateInfo {
 }
 
 export function nodeStateInfo(node: RegisteredNode): NodeStateInfo {
+  const outbound = node.connection === 'outbound' ? outboundStateInfo(node) : null;
+  if (outbound) return outbound;
   switch (node.state) {
     case 'answering':
       return { tone: 'up', label: 'Answering', text: 'The dashboard’s server reads it.', out: false, attention: false, readable: true };
@@ -68,6 +71,42 @@ export function nodeStateInfo(node: RegisteredNode): NodeStateInfo {
 }
 
 /**
+ * A node that connects to this dashboard itself: the server never dials it and keeps no address for it, so these states
+ * name its connection instead. Enrolling and rotating read the same as for any node. Last connected is transport
+ * activity, never a sign that monitoring is healthy.
+ */
+function outboundStateInfo(node: RegisteredNode): NodeStateInfo | null {
+  switch (node.state) {
+    case 'answering':
+      return { tone: 'up', label: 'Answering', text: 'Connected. The dashboard’s server reads it over the node’s own connection.', out: false, attention: false, readable: true };
+    case 'starting':
+      return { tone: 'pending', label: 'Starting', text: 'It hasn’t connected since the dashboard started. Sign-in, accounts and other nodes work meanwhile.', out: false, attention: false, readable: true };
+    case 'not-answering':
+      return {
+        tone: 'warn', label: 'Not answering', out: true, attention: true, readable: true,
+        text: 'It isn’t connected to this dashboard right now, so the dashboard’s server can’t read it. A node’s own checks and alerts don’t depend on this dashboard and may still be running.',
+      };
+    case 'credential-refused':
+      return {
+        tone: 'serious', label: 'Credential refused', out: true, attention: true, readable: false,
+        text: 'It connects, but refuses this dashboard’s credential, which may have been revoked on the node. The dashboard stopped reading it.',
+      };
+    case 'different-node':
+      return {
+        tone: 'serious', label: 'Different node connected', out: true, attention: true, readable: false,
+        text: `A node other than ${node.nodeId || 'the one that was added'} answered over this connection. The dashboard stopped reading it so two nodes’ data don’t mix.`,
+      };
+    case 'removing':
+      return {
+        tone: 'pending', label: 'Removal unfinished', out: true, attention: true, readable: false,
+        text: 'The dashboard no longer reads it. It accepts the node’s connection only so the node can confirm that this dashboard’s access there was revoked, which happens when the node connects again.',
+      };
+    default:
+      return null;
+  }
+}
+
+/**
  * The states in which the dashboard's server is changing the node's access and refuses monitoring, rechecks, edits
  * and another rotation (Go `dashboardOperationPending`). Only Retry (administrators) and Remove act on them.
  */
@@ -99,7 +138,8 @@ export function nodeActions(node: RegisteredNode, admin: boolean): NodeActions {
     check: !pending,
     retry: admin && pending ? RETRY_LABELS[node.state] ?? 'Retry' : null,
     edit: manage,
-    move: manage && !node.local && node.url !== undefined,
+    // An outbound node has no address here: it connects to the dashboard, so there's nothing to move.
+    move: manage && !node.local && node.connection !== 'outbound' && node.url !== undefined,
     rotate: manage && node.state !== 'different-node',
     remove: admin && !node.local && node.state !== 'removing',
   };
@@ -424,6 +464,111 @@ export function pushCommands(baseUrl: string, token: string | null, allowGet: bo
 
 # or, without a header:
 curl "${baseUrl}/api/push/${shown}?${selector ? `${selector}&` : ''}status=up&msg=ok"` : ''}`;
+}
+
+// ----- invitations of nodes that connect to this dashboard (administrators only). They aren't registry entries: a node
+// joins the list only when an administrator confirms its first connection.
+
+export interface InvitationInfo { tone: Tone; label: string; text: string; /** Still open: it can connect or be confirmed. */ open: boolean }
+
+/**
+ * After an invitation ends unconfirmed (expired or cancelled): a node already deployed with it keeps the tokens it
+ * first started with in its data, so deploying it again as a new node, with new tokens, would stop it from starting.
+ */
+export const REINVITE_DEPLOYED = 'If the node is already deployed, make the next invitation with “A node that’s already running” and the same node ID, then replace only CANARY_DASHBOARD_ENROLL_TOKEN in its settings. Don’t deploy it again as a new node: its data keeps its first tokens, so new ones would stop it from starting.';
+
+/**
+ * Why a node may not have connected while its invitation waits. The node prints its connection fingerprint only when
+ * it starts with CANARY_DASHBOARD_URL, so a missing line has more than one cause; none of them is singled out.
+ */
+export function connectionWaitingHint(image: string, connectionUrl: string): string {
+  return `No “Node connection fingerprint” line in the node’s log? Then it isn’t connecting: its image or build may predate node connections (for Docker, pull ${image} again and recreate it), its settings may lack CANARY_DASHBOARD_URL or CANARY_DASHBOARD_ENROLL_TOKEN, or it refused to start (its log says “Invalid startup configuration”). With the line, “node connection unavailable” in its log means it can’t finish connecting: check that it reaches ${connectionUrl} and trusts its certificate.`;
+}
+
+/** The dashboard's server answered that the invitation doesn't exist (any more): it was cancelled or cleared. */
+export const invitationGone = (failure: unknown): boolean => failure instanceof ApiFailure && failure.status === 404;
+
+/** An invitation as the dashboard's server reports it; `now` is on the server's clock. Its token is never part of this. */
+export function invitationInfo(invitation: NodeInvitation, now: number): InvitationInfo {
+  switch (invitation.state) {
+    case 'waiting': {
+      const left = invitation.expiresAt - now;
+      return { tone: 'pending', label: 'Waiting for first connection', open: true, text: left > 0 ? `It works once, and ends in ${elapsed(left)}.` : 'Its time is up; the dashboard’s server marks it expired.' };
+    }
+    case 'connected':
+      return { tone: 'warn', label: 'Connected, waiting for confirmation', open: true, text: 'The node proved it holds this invitation. Compare its ID and fingerprint, then add it. Until then the dashboard reads nothing from it and sets up no access there.' };
+    case 'expired':
+      return { tone: 'serious', label: 'Expired', open: false, text: `Nothing was added. Cancel it, then make another invitation if you still want this node. ${REINVITE_DEPLOYED}` };
+    case 'confirmed':
+      return { tone: 'up', label: 'Added', open: false, text: 'Confirmed by an administrator; the node is on the node list now.' };
+  }
+}
+
+/**
+ * Whether the confirmation can be offered: the node connected, reported its identity, and the ID it proved is the one the
+ * invitation expects. The server refuses any other ID; a mismatch here means the page shouldn't offer to add it either.
+ */
+export function pairingProblem(invitation: NodeInvitation): string | null {
+  if (invitation.state !== 'connected') return 'The node hasn’t connected with this invitation yet.';
+  if (!invitation.node) return 'The dashboard’s server hasn’t reported the node’s identity yet.';
+  if (invitation.node.id !== invitation.nodeId) return `The node reported ${invitation.node.id}, not ${invitation.nodeId}. Don’t add it; cancel this invitation.`;
+  return null;
+}
+
+const NOT_CREATED = 'Nothing was created.';
+const NOT_ADDED = 'Nothing was added.';
+
+/**
+ * A refused or unanswered invitation request. Creating returns the only copy of the token, so an unknown outcome says
+ * that an invitation made meanwhile can't show it again. Cancelling never takes a registered node off the list, and
+ * confirming either adds the node or changes nothing, except when the answer is lost.
+ */
+export function invitationFailure(error: unknown, action: 'create' | 'cancel' | 'confirm'): ChangeFailure {
+  const text = describeFailure(error, { preferDetail: true });
+  const nothing = action === 'create' ? NOT_CREATED : action === 'confirm' ? NOT_ADDED : 'Nothing was cancelled.';
+  const done = (title: string, body: string, reload = false): ChangeFailure => ({ title, text: `${sentence(body)} ${nothing}`, unknown: false, reload });
+  if (!(error instanceof ApiFailure)) return done(action === 'create' ? 'Not created' : action === 'confirm' ? 'Not added' : 'Not cancelled', text);
+  const detail = error.detail ?? '';
+  if (error.status === 0 || error.status === 200 || (action === 'confirm' && (error.status === 502 || error.status === 504))) {
+    const may = action === 'create'
+      ? 'The dashboard’s server may have made the invitation. If it’s listed under “Waiting to connect”, its token can’t be shown again: cancel it there and make another.'
+      : action === 'confirm'
+        ? 'The dashboard’s server may have added the node. The node list now shows what it has: an unfinished enrollment shows there as “Enrollment unfinished”, with Retry.'
+        : 'The dashboard’s server may have cancelled it. The list now shows what it has.';
+    return { title: 'The result isn’t known yet', text: `${describeFailure(error)} ${may}`, unknown: true, reload: true };
+  }
+  if (error.status === 401) return done('Your sign-in to this dashboard ended', 'Sign in again, then try again.');
+  if (error.status === 403) return done('Only administrators add nodes', text);
+  if (error.status === 404) {
+    return action === 'create'
+      ? done('Node connections aren’t available here', `${text} This dashboard’s server may predate them.`)
+      : { title: 'This invitation is no longer on this dashboard', text: 'It may have been cancelled or cleared meanwhile.', unknown: false, reload: true };
+  }
+  if (error.status === 429) return done('Too many invitations are waiting', `${text} Cancel unused ones under “Waiting to connect”, or wait until they expire.`);
+  if (error.status === 503) return done(action === 'confirm' ? 'The dashboard’s server can’t add it right now' : 'Node connections aren’t set up on this dashboard', text);
+  if (error.status === 409 && /permissions/iu.test(detail)) return done('Your dashboard permissions changed', text);
+  // The 409s below are Go's own words (dashboard_invitations.go). Creating without the dedicated node-connection address
+  // and either capacity limit aren't an ID in use.
+  if (error.status === 409 && /connection endpoint/iu.test(detail)) return done('Node connections aren’t set up on this dashboard', `${text} Its operator sets the node-connection address in the dashboard’s deployment.`);
+  if (error.status === 409 && /capacity/iu.test(detail)) {
+    return done('No room for another node', `${text} ${action === 'create' ? 'Cancel unused invitations under “Waiting to connect”, or remove a node.' : 'Remove a node first.'}`);
+  }
+  if (action === 'cancel' && error.status === 409) {
+    return { title: 'This node was already added', text: 'Its first connection was confirmed, so it’s on the node list now. Cancelling an invitation never takes a node off the list; its card does that.', unknown: false, reload: true };
+  }
+  if (action === 'confirm' && error.status === 409 && /expired/iu.test(detail)) return done('This invitation expired', `Cancel it and make another one. ${REINVITE_DEPLOYED}`, true);
+  // "A current connected invitation must be confirmed": it expired, was cancelled or isn't connected any more. Its
+  // "confirmed" doesn't mean an administrator already added the node.
+  if (action === 'confirm' && error.status === 409 && /must be confirmed/iu.test(detail)) return done('This invitation changed meanwhile', `${text} Its status now shows what the dashboard’s server has.`, true);
+  if (action === 'confirm' && error.status === 409 && /no longer authorized/iu.test(detail)) {
+    return done('This invitation is no longer valid', `The administrator account that made it changed or was removed. Cancel it and make another one. ${REINVITE_DEPLOYED}`, true);
+  }
+  if (action === 'confirm' && error.status === 409 && /already|confirmed|registered/iu.test(detail)) {
+    return { title: 'Already added', text: `${sentence(text)} The node list shows it.`, unknown: false, reload: true };
+  }
+  if (action === 'confirm' && error.status === 409) return done('This invitation changed meanwhile', `${text} Its status now shows what the dashboard’s server has.`, true);
+  if (action === 'create' && error.status === 409) return done('This node ID is already in use here', `${text} A node or a waiting invitation already has it.`);
+  return done(action === 'create' ? 'Not created' : action === 'confirm' ? 'Not added' : 'Not cancelled', text);
 }
 
 /** Page titles for the sections a node answers for, used when none is selected. */

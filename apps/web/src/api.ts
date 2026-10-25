@@ -5,6 +5,7 @@ import type {
   DeliveryAttemptView, Maintenance, MaintenanceInput, MaintenanceView,
   StatusPage, StatusPageInput, StatusPageView, PublicStatusPage, Tag, TagInput, TagView,
   DashboardOwnerInput, NodeVerification, NodeVerificationInput, RegisteredNode, BrowserScreenshot,
+  NodeInvitation, NodeInvitationCreated, NodeInvitationInput, NodeOnboardingCapabilities,
 } from '@uptime-canary/shared';
 import { readAvailability } from './availability';
 import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
@@ -142,7 +143,92 @@ export function normalizeRegisteredNode(value: unknown): RegisteredNode {
   if (finite(value.lastReadAt) && value.lastReadAt > 0) node.lastReadAt = value.lastReadAt;
   if (finite(value.monitorCount) && value.monitorCount >= 0) node.monitorCount = Math.floor(value.monitorCount);
   if (typeof value.error === 'string' && cleanText(value.error, 240)) node.error = cleanText(value.error, 240);
+  // Outbound nodes open the connection themselves and have no address here. Last connected is transport activity only.
+  if (value.connection === 'outbound' || value.connection === 'direct') node.connection = value.connection;
+  if (finite(value.lastConnectedAt) && value.lastConnectedAt > 0) node.lastConnectedAt = value.lastConnectedAt;
   return node;
+}
+
+const INVITATION_STATES: readonly NodeInvitation['state'][] = ['waiting', 'connected', 'confirmed', 'expired'];
+/** Docker's tag grammar: what `<image>:<tag>` accepts, so a tag can't add flags or another reference to a command. */
+const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u;
+const CONTAINER_PLATFORM = /^[a-z0-9]+\/[a-z0-9]+(?:\/[a-z0-9]+)?$/u;
+/**
+ * The one-time invitation token's characters: the URL-safe and base64 sets, so it is written verbatim in env files, YAML
+ * and shell text without quoting rules of its own.
+ */
+const INVITATION_TOKEN = /^[A-Za-z0-9._~:+\/=-]{24,1024}$/u;
+
+/**
+ * A dashboard's node-connection address: an HTTPS origin, as its deployment configured it (canonical form). Nodes dial
+ * it with normal certificate checks; the browser never contacts it and never derives it from its own address.
+ */
+export function connectionOrigin(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  let url: URL;
+  try { url = new URL(value); } catch { return null; }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
+  return url.origin;
+}
+
+/**
+ * Administrators: what the Add node wizard may offer. `outboundEnabled` holds only with a usable connection address. A
+ * protocol this page doesn't know means the page is older than its dashboard, so nothing is guessed.
+ */
+export function normalizeOnboarding(value: unknown): NodeOnboardingCapabilities {
+  if (!isRecord(value) || typeof value.imageTag !== 'string' || !IMAGE_TAG.test(value.imageTag)) {
+    throw new ApiFailure(200, 'This dashboard sent onboarding settings this page could not read.');
+  }
+  if (value.connectionProtocol !== 1) throw new ApiFailure(200, 'This dashboard uses a node-connection protocol this page doesn’t know. Reload the page.');
+  const connectionUrl = value.outboundEnabled === true ? connectionOrigin(value.connectionUrl) : null;
+  const capabilities: NodeOnboardingCapabilities = {
+    outboundEnabled: connectionUrl !== null,
+    connectionProtocol: 1,
+    imageTag: value.imageTag,
+    containerPlatforms: list<unknown>(value.containerPlatforms).filter((item): item is string => typeof item === 'string' && CONTAINER_PLATFORM.test(item)).slice(0, 8),
+    nativeDownloadAvailable: value.nativeDownloadAvailable === true,
+  };
+  if (connectionUrl) capabilities.connectionUrl = connectionUrl;
+  return capabilities;
+}
+
+/** An invitation's status. Unknown fields are dropped, a token included: only creation returns one. */
+export function normalizeInvitation(value: unknown): NodeInvitation {
+  const connectionUrl = isRecord(value) ? connectionOrigin(value.connectionUrl) : null;
+  if (!isRecord(value) || typeof value.id !== 'string' || !REGISTRATION_ID.test(value.id) || typeof value.nodeId !== 'string' || !REGISTRATION_ID.test(value.nodeId)
+      || !finite(value.expiresAt) || typeof value.state !== 'string' || !(INVITATION_STATES as readonly string[]).includes(value.state) || !connectionUrl) {
+    throw new ApiFailure(200, 'This dashboard sent an invitation this page could not read.');
+  }
+  const invitation: NodeInvitation = {
+    id: value.id,
+    label: (typeof value.label === 'string' ? cleanText(value.label, 128) : '') || value.nodeId,
+    nodeId: value.nodeId,
+    connectionUrl,
+    expiresAt: value.expiresAt,
+    state: value.state as NodeInvitation['state'],
+  };
+  if (typeof value.registrationId === 'string' && REGISTRATION_ID.test(value.registrationId)) invitation.registrationId = value.registrationId;
+  const node = value.node;
+  if (isRecord(node) && typeof node.id === 'string' && typeof node.fingerprint === 'string' && cleanText(node.fingerprint, 256)) {
+    const id = cleanText(node.id, 128);
+    const reported: NonNullable<NodeInvitation['node']> = {
+      id,
+      name: typeof node.name === 'string' && node.name.trim() ? cleanText(node.name, 128) : id,
+      version: typeof node.version === 'string' ? cleanText(node.version, 64) : '',
+      fingerprint: cleanText(node.fingerprint, 256),
+    };
+    if (typeof node.sourceCommit === 'string' && /^[0-9a-f]{7,64}$/iu.test(node.sourceCommit)) reported.sourceCommit = node.sourceCommit.toLowerCase();
+    invitation.node = reported;
+  }
+  return invitation;
+}
+
+/** The creation answer: the status plus the one-time token, which the caller keeps in memory only. */
+export function normalizeInvitationCreated(value: unknown): NodeInvitationCreated {
+  const invitation = normalizeInvitation(value);
+  const token = isRecord(value) ? value.token : undefined;
+  if (typeof token !== 'string' || !INVITATION_TOKEN.test(token)) throw new ApiFailure(200, 'This dashboard sent an invitation this page could not read.');
+  return { ...invitation, token };
 }
 
 /** What the dashboard's server found at an address. The ticket is an opaque, short-lived handle kept only in memory. */
@@ -753,6 +839,38 @@ export class CanaryApi {
     }
     if (value === undefined) return { removed: true };
     try { return { removed: false, node: normalizeRegisteredNode(value) }; } catch { return { removed: false, node: null }; }
+  }
+
+  // ----- node onboarding (administrators): the Add node wizard's settings and the invitations of nodes that connect to
+  // this dashboard themselves. All of them are the dashboard's own routes. An invitation's token comes back only from
+  // `createInvitation`, once; statuses never carry it, and nothing here keeps it.
+  async onboarding(signal?: AbortSignal): Promise<NodeOnboardingCapabilities> {
+    return normalizeOnboarding(await this.own<unknown>('/api/dashboard/onboarding', 'GET', undefined, signal));
+  }
+  async invitations(signal?: AbortSignal): Promise<NodeInvitation[]> {
+    const value = await this.own<unknown>('/api/dashboard/invitations', 'GET', undefined, signal);
+    if (value !== null && !Array.isArray(value)) throw new ApiFailure(200, 'This dashboard sent an invitation list this page could not read.');
+    return list<unknown>(value).map(normalizeInvitation);
+  }
+  /** One-time and bound to the expected node ID. The answer's token is the only copy this page ever gets. */
+  async createInvitation(input: NodeInvitationInput, signal?: AbortSignal): Promise<NodeInvitationCreated> {
+    const body: NodeInvitationInput = { label: input.label.trim(), nodeId: input.nodeId };
+    return normalizeInvitationCreated(await this.own<unknown>('/api/dashboard/invitations', 'POST', body, signal));
+  }
+  async invitation(id: string, signal?: AbortSignal): Promise<NodeInvitation> {
+    return normalizeInvitation(await this.own<unknown>(`/api/dashboard/invitations/${encodeURIComponent(checkRegistration(id))}`, 'GET', undefined, signal));
+  }
+  /** Cancels an unconfirmed invitation (204). A confirmed one answers 409: this never removes a registered node. */
+  async cancelInvitation(id: string, signal?: AbortSignal): Promise<void> {
+    await this.own<unknown>(`/api/dashboard/invitations/${encodeURIComponent(checkRegistration(id))}`, 'DELETE', undefined, signal);
+  }
+  /**
+   * First pairing: an administrator confirms the connected node's ID and fingerprint. No body. Until then the dashboard
+   * reads nothing from the node and sets up no access there. 201 or 202 with the new registry entry.
+   */
+  async confirmInvitation(id: string, signal?: AbortSignal): Promise<RegisteredNode> {
+    const path = `/api/dashboard/invitations/${encodeURIComponent(checkRegistration(id))}/confirm`;
+    return normalizeRegisteredNode(await this.own<unknown>(path, 'POST', undefined, signal, NODE_CHANGE_TIMEOUT_MS));
   }
 }
 

@@ -134,13 +134,14 @@ def main():
             factory = publication_legacy_fixture if args.publication_upgrade else legacy_fixture
             overlay, report["legacyFixture"] = factory(source, output)
             legacy = output / ("canary-legacy.exe" if os.name == "nt" else "canary-legacy")
-            built = run("build-legacy-fixture", [str(go), "build", "-mod=readonly", "-overlay", str(overlay),
+            built = run("build-legacy-fixture", [str(go), "build", "-p", "1", "-mod=readonly", "-overlay", str(overlay),
                 "-trimpath", "-o", str(legacy), "./apps/node-go/cmd/canary"], source, 180)
             if built.returncode:
                 return built.returncode
             env["CANARY_LEGACY_BIN"] = str(legacy)
             report["legacySha256"] = hashlib.sha256(legacy.read_bytes()).hexdigest()
-        built = run("build", [str(go), "build", "-mod=readonly", "-trimpath", "-o", str(binary),
+        # Serialize compiler packages to keep cold builds inside the scratch budget.
+        built = run("build", [str(go), "build", "-p", "1", "-mod=readonly", "-trimpath", "-o", str(binary),
                               "./apps/node-go/cmd/canary"], source, 180)
         if built.returncode:
             return built.returncode
