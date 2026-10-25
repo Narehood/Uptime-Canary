@@ -14,10 +14,9 @@ func TestBrowserScreenshotRetainsOriginalObserverAfterStateTransfer(t *testing.T
 	input := browserInput()
 	input.NodeIDs = []string{node.ID, "b"}
 	input.Browser.Screenshot = true
-	monitor, err := node.writeMonitor(input, nil, "restored-browser", false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The running node has scheduler and peer goroutines. Use the API's locked
+	// writer, as a deployed caller would, rather than mutating its maps directly.
+	monitor := add(t, node, input)
 	var pixels bytes.Buffer
 	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 1024, 576))); err != nil {
 		t.Fatal(err)

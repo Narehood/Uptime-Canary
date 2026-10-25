@@ -102,6 +102,18 @@ metadata/unsupported-host controls pass locally on source `56c67031...`; live
 execution of the corrected upgrade and the final head's other gates remain
 required. This does not turn that earlier failed job into acceptance.
 
+The Alpine parent-race job on `9cd68ba` reported ten warnings, all from the
+screenshot-provenance test calling the internal monitor writer without the
+node mutex while its scheduler and peer loops were running. The fixture now
+creates the monitor through the public API's locked path and keeps those
+background loops and every provenance assertion. Both focused screenshot and
+legacy-migration tests pass without race instrumentation on unchanged Windows
+source `2ee42581...` (1.522 seconds of Go tests, 106.406 guarded seconds with
+compilation; scratch cleaned to zero). A local native race compiler is absent;
+the complete Alpine race gate must verify the new head. Its original warning
+stacks and failing result remain recorded, and no race filter or worker limit
+was changed.
+
 ## PM2 work resumed after the review and capacity merges, 2026-10-24
 
 PR #6 merged as `d4cc56d`; PR #7 merged as `020bc4b` after exact-head
