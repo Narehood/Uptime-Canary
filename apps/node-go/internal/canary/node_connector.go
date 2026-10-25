@@ -257,17 +257,22 @@ func (c *nodeConnector) session(parent context.Context, n *Node) error {
 			defer stop()
 			result, err := n.connectionDispatch(jobCtx, c.identity.RegistrationID, frame)
 			if err != nil {
-				cancel()
+				// Expiring this job is not a failure of the session or its sibling.
+				if !errors.Is(err, context.DeadlineExceeded) {
+					cancel()
+				}
 				return
 			}
 			resultCtx, finish := context.WithTimeout(ctx, 5*time.Second)
 			defer finish()
-			_, _, err = c.post(resultCtx, "/connect/v1/result", c.identity.Secret, struct {
+			status, _, err := c.post(resultCtx, "/connect/v1/result", c.identity.Secret, struct {
 				RegistrationID string `json:"registrationId"`
 				Session        string `json:"session"`
 				nodeconnection.Response
 			}{c.identity.RegistrationID, opened.Session, result}, 4096)
-			if err != nil {
+			// Only 410 means this result's pending caller went away. An epoch
+			// change remains 409; authentication/transport errors still reconnect.
+			if err != nil && status != http.StatusGone {
 				cancel()
 			}
 		}(frame, deadline)

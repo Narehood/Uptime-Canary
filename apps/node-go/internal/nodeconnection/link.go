@@ -28,6 +28,7 @@ const (
 var (
 	ErrDisconnected = errors.New("Node connection is unavailable; a dispatched request may have completed")
 	ErrSession      = errors.New("Node connection session changed")
+	ErrStale        = errors.New("Node connection request is no longer pending")
 	ErrBusy         = errors.New("Node connection is busy")
 	ErrMessage      = errors.New("Invalid node connection message")
 )
@@ -295,7 +296,10 @@ func (h *Hub) Complete(id, epoch string, result Response) error {
 		return ErrSession
 	}
 	pending := s.pending[result.ID]
-	if pending == nil || !pending.dispatched || pending.ctx.Err() != nil {
+	if pending == nil || pending.ctx.Err() != nil {
+		return ErrStale
+	}
+	if !pending.dispatched {
 		return ErrSession
 	}
 	delete(s.pending, result.ID)

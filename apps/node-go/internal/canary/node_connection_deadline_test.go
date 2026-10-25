@@ -21,6 +21,7 @@ func TestNodeConnectionExpiredMutationIsNotDispatchedAfterLocalSlotWait(t *testi
 	d.connectionEnabled = true
 	var gate atomic.Bool
 	var held atomic.Int32
+	var reopened atomic.Int32
 	acknowledged := make(chan struct{}, 2)
 	mutationDelivered := make(chan struct{}, 1)
 	handled := make(chan struct{}, 2)
@@ -55,6 +56,7 @@ func TestNodeConnectionExpiredMutationIsNotDispatchedAfterLocalSlotWait(t *testi
 			}
 		}
 		if gate.Load() && r.URL.Path == "/connect/v1/open" {
+			reopened.Add(1)
 			select {
 			case handled <- struct{}{}:
 			default:
@@ -138,6 +140,16 @@ func TestNodeConnectionExpiredMutationIsNotDispatchedAfterLocalSlotWait(t *testi
 	transitAllowance := time.NewTimer(500 * time.Millisecond)
 	<-transitAllowance.C
 	unlock()
+	// A locally expired job must neither execute nor tear down the shared
+	// session. A new read proves progress without allowing a reconnect retry.
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer probeCancel()
+	if _, _, err := d.nodeRequest(probeCtx, row, secrets.Admin, "GET", "/api/monitors", nil); err != nil {
+		t.Fatal("expired local work interrupted the next read", err)
+	}
+	if reopened.Load() != 0 {
+		t.Fatal("a request deadline reset the shared connection session")
+	}
 	select {
 	case <-handled:
 	case <-time.After(4 * time.Second):

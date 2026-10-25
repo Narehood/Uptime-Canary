@@ -146,6 +146,10 @@ func connectionError(w http.ResponseWriter, err error) {
 		errorReply(w, fail(400, "Invalid node connection message"))
 		return
 	}
+	if errors.Is(err, nodeconnection.ErrStale) {
+		errorReply(w, fail(410, "Node connection request is no longer pending"))
+		return
+	}
 	errorReply(w, fail(409, "Node connection session or request changed"))
 }
 

@@ -70,7 +70,9 @@ func TestHubPreservesAuthorizedRequestAndBoundedResponse(t *testing.T) {
 	if result.err != nil || result.value.Status != 201 || !bytes.Equal(result.value.Body, reply(job).Body) {
 		t.Fatal("Response did not complete exactly its request")
 	}
-	if err = h.Complete(registration, epoch, reply(job)); !errors.Is(err, ErrSession) {
+	// Accepted distinction: a duplicate remains refused, now as a stale
+	// request rather than incorrectly claiming that the epoch changed.
+	if err = h.Complete(registration, epoch, reply(job)); !errors.Is(err, ErrStale) {
 		t.Fatal("Duplicate result was admitted")
 	}
 	if pendingCount(h) != 0 {

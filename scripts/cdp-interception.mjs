@@ -12,3 +12,23 @@ export async function finishInterception(page, method, params, { canceled, faile
     failed(error);
   }
 }
+
+// Stop admitting callbacks before awaiting their outcomes. A late CDP failure
+// must reach the review report before its summary and exit status are chosen.
+export function interceptionTracker(failed) {
+  const pending = new Set();
+  let accepting = true;
+  return {
+    run(work) {
+      if (!accepting) return;
+      const task = Promise.resolve().then(work).catch(failed);
+      pending.add(task);
+      // Both arms observe settlement even if the failure reporter throws.
+      void task.then(() => pending.delete(task), () => pending.delete(task));
+    },
+    async stop() {
+      accepting = false;
+      await Promise.all([...pending]);
+    },
+  };
+}
