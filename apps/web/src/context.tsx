@@ -1,8 +1,8 @@
 import { createContext, useContext } from 'react';
-import type { AccountView, GroupView, MaintenanceView, MonitorView, NotificationChannelView, Overview, Role, TagView } from '@uptime-canary/shared';
+import type { AccountView, GroupView, MaintenanceView, MonitorView, NotificationChannelView, Overview, RegisteredNode, Role, TagView } from '@uptime-canary/shared';
 import type { CanaryApi } from './api';
 import type { Assessed, Assessment, NodeColumn } from './model';
-import type { Connection } from './session';
+import type { Connection, NodeSelection } from './session';
 
 export interface SwitchRequest {
   url?: string;
@@ -20,6 +20,8 @@ export interface Catalog<T> {
 }
 export type ChannelState = Catalog<NotificationChannelView>;
 export type TagState = Catalog<TagView>;
+/** Control plane: the dashboard's shared node registry. Elsewhere an always-empty list. */
+export type RegistryState = Catalog<RegisteredNode>;
 
 export interface Canary {
   connection: Connection;
@@ -54,6 +56,18 @@ export interface Canary {
    * so a slow answer from one node can never be shown as if it came from another.
    */
   stillCurrent: () => boolean;
+  /**
+   * Control plane (`controlPlaneMode()`): accounts and sign-in belong to the dashboard, `registry` is the shared
+   * node list, and `selection` the registration monitoring views read (null: none yet). `role`, `admin` and
+   * `account` are then the dashboard account's; `editable` also needs the selected node's delegation to allow edits.
+   */
+  controlPlane: boolean;
+  selection: NodeSelection | null;
+  registry: RegistryState;
+  /** Read another registered node, or none, with the same sign-in. Monitoring state from the previous one is dropped. */
+  select: (node: Pick<RegisteredNode, 'id' | 'label' | 'nodeId' | 'nodeName' | 'local'> | null) => void;
+  /** Where accounts and sign-in live, for copy: "this dashboard" on the control plane, otherwise the endpoint's ID. */
+  accountHome: string;
 }
 
 export const CanaryContext = createContext<Canary | null>(null);

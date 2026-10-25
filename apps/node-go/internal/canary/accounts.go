@@ -117,6 +117,10 @@ func (n *Node) accountRequest(w http.ResponseWriter, r *http.Request, actor acco
 		id = newID()
 	}
 	a, exists := n.accounts[id]
+	if exists && dashboardManagedAccountID(id) && r.Method != "DELETE" {
+		errorReply(w, fail(409, "Dashboard role credentials are managed by their enrollment; remove and enroll the dashboard again"))
+		return
+	}
 	if !exists && !(r.Method == "POST" && !passwordAction) {
 		errorReply(w, fail(404, "Account not found"))
 		return

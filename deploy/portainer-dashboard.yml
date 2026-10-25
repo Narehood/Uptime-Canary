@@ -1,10 +1,17 @@
-# One static dashboard, with no node, credentials or persistent data.
+# Dashboard-owned accounts and shared node registry. Retain both private volumes.
 # Pull from GHCR; also usable with docker compose -f this-file.
 services:
   web:
     image: ${CANARY_WEB_IMAGE:-ghcr.io/narehood/uptime-canary-web:${CANARY_IMAGE_TAG:-latest}}
     pull_policy: ${CANARY_PULL_POLICY:-missing}
     restart: unless-stopped
+    environment:
+      CANARY_LOCAL_NODE_URL: ${CANARY_LOCAL_NODE_URL:-}
+      CANARY_LOCAL_NODE_TOKEN: ${CANARY_LOCAL_NODE_TOKEN:-}
+      CANARY_DASHBOARD_ORIGINS: ${CANARY_CORS_ORIGINS:?Set the browser dashboard origin}
+    volumes:
+      - canary-dashboard-data:/data
+      - canary-dashboard-identity:/identity
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=32m
@@ -19,3 +26,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  canary-dashboard-data:
+  canary-dashboard-identity:

@@ -6,7 +6,7 @@ Portainer or with Docker Compose directly:
 | File | Services | Use |
 | --- | --- | --- |
 | [deploy/portainer-node.yml](../deploy/portainer-node.yml) | One Go node | Deploy once per monitoring host, with a unique node ID and its own two volumes. |
-| [deploy/portainer-dashboard.yml](../deploy/portainer-dashboard.yml) | Static dashboard only | Deploy once wherever browsers can reach it; it needs no node credentials, database, peer network or node container. |
+| [deploy/portainer-dashboard.yml](../deploy/portainer-dashboard.yml) | Dashboard account server | Create its owner, then add private nodes to its shared list. It retains its own account database and encrypted node credentials. |
 | [deploy/portainer-stack.yml](../deploy/portainer-stack.yml) | One node and dashboard together | Existing all-in-one deployment. |
 
 The separate files retain the same service settings as the combined file.
@@ -68,147 +68,206 @@ or build the two Dockerfiles yourself and set the full image overrides. Set
 
 ## Create the stack
 
-In **Stacks → Add stack**, select **Git Repository**, use
-`https://github.com/Narehood/Uptime-Canary`, and set the Compose path to
-`deploy/portainer-stack.yml`. Choose a stable stack name and the intended
-repository reference. You can also paste the YAML into the web editor or
-upload the file. No relative bind mounts or Business Edition path feature
-are needed.
-
-Enter these variables in Portainer's stack environment section:
+In Portainer **Stacks > Add stack**, use repository
+`https://github.com/Narehood/Uptime-Canary` and Compose path
+`deploy/portainer-stack.yml`. Use a stable stack name. The web editor or file
+upload works too; the host pulls the GHCR images without building them.
 
 | Variable | Value |
 | --- | --- |
-| `CANARY_NODE_ID` | Unique persistent identity, for example `canary-home-1`. Never reuse for another live node. |
-| `CANARY_ADMIN_TOKEN` | A fresh random token, at least 32 characters. Used only for management. |
-| `CANARY_CLUSTER_TOKEN` | A different fresh random token, at least 32 characters. Share only among members of this cluster. |
-| `CANARY_CORS_ORIGINS` | Exact dashboard browser origin, for example `https://canary.example.com` or `http://192.168.1.20:18347`. |
+| `CANARY_NODE_ID` | Unique persistent node identity, for example `canary-main`. Never reuse it for another live node. |
+| `CANARY_ADMIN_TOKEN` | A unique random node management token, used to enroll the bundled node. This is not the dashboard owner's password. |
+| `CANARY_CLUSTER_TOKEN` | A separate random cluster token, shared only with that cluster's peers. |
+| `CANARY_CORS_ORIGINS` | Exact external dashboard origin, such as `https://canary.example.com`, without a trailing slash. |
 
-Generate tokens in a password manager. Keep them in Portainer's environment
-configuration, outside the Git repository. No `.env` file is required. These
-four required variables apply to the node-only and combined stacks. The
-dashboard-only stack needs none of them and must not receive account or
-cluster credentials.
+Generate independent tokens in a password manager or with the commands in the
+[setup wiki](https://github.com/Narehood/Uptime-Canary/wiki/Setup-and-Testing#generate-the-portainer-tokens).
+Keep them in Portainer's environment configuration, outside Git. No `.env` is
+required. Node-only and combined stacks require all four variables; a
+standalone dashboard requires its browser origin and can start with no nodes.
 
-Optional variables:
-
-| Variable | Default / use |
+| Optional variable | Default / use |
 | --- | --- |
 | `CANARY_NODE_NAME` | `Uptime Canary` |
-| `CANARY_IMAGE_TAG` | `latest`; use the same published `sha-<full commit>` tag for a pinned pair. |
-| `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | Optional full image references; override each GHCR default. Remove old local-development overrides to switch. |
+| `CANARY_IMAGE_TAG` | `latest`; pin the same published `sha-<full commit>` on both images. |
+| `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | Full references override the defaults, including digests. |
 | `CANARY_PULL_POLICY` | `missing`; use `never` only for preloaded/offline image overrides. |
-| `CANARY_BIND_ADDRESS`, `CANARY_WEB_BIND_ADDRESS` | `127.0.0.1`. Set to the host's LAN IP to access from another computer, or keep loopback behind a local reverse proxy. |
-| `CANARY_PORT`, `CANARY_WEB_PORT` | Published host ports `3100` and `18347`. The dashboard's container port remains `8080`. |
-| `CANARY_PEERS` | `[]`, or a JSON array such as `[{"id":"canary-home-2","url":"http://192.168.1.21:3100"}]`. URLs must be reachable from the node container. |
-| History and timing settings | Defaults match `compose.yaml`; edit the explicit variables in the template as needed. |
+| `CANARY_BIND_ADDRESS`, `CANARY_WEB_BIND_ADDRESS` | `127.0.0.1`; use the intended private host interface if a remote proxy/peer needs it. |
+| `CANARY_PORT`, `CANARY_WEB_PORT` | Host ports 3100 and 18347. Dashboard container port remains 8080. |
+| `CANARY_LOCAL_NODE_URL`, `CANARY_LOCAL_NODE_TOKEN` | Local auto-enrollment. The bundle supplies `http://node:3100` and the node admin token. A standalone dashboard can leave both empty. Corrected values are applied to unfinished enrollment after redeployment; see below for already provisioned nodes. |
+| `CANARY_PEERS` | `[]`, or explicit peer IDs and node-reachable URLs. Registry enrollment does not configure these. |
 
-Click **Deploy the stack**. The Dockerfiles supply health checks for both
-containers. Open the dashboard at its published URL, select the node's
-browser-reachable URL, and sign in with the admin token. The browser connects
-directly to the node; the dashboard container does not proxy API calls.
-An HTTPS dashboard needs an HTTPS node endpoint too. Terminate TLS at your
-reverse proxy and use matching browser origins. Plain HTTP transports tokens
-without encryption; use it only on a trusted network.
+Deploy and open the dashboard URL. On first use, obtain the private setup code
+from the **dashboard container's log**, or `/identity/setup.code` inside it.
+Create the first dashboard administrator with an account name and a password
+of 12 to 128 characters. The UI signs in automatically. Once an owner exists,
+that setup code stops working; administrators create later accounts on the
+Accounts page. Node passwords and tokens are not copied into dashboard accounts.
 
-The templates add `NET_RAW` only to the node for ICMP. Both images run as their
-existing nonroot users. Container logs rotate at 10 MiB × 3 per service.
+All users share one saved node list. Administrators add/remove nodes and manage
+accounts, editors manage monitoring configuration, and viewers read with the
+node's own secret redaction. A bundled local node is registered automatically,
+including a visible starting entry while it is unavailable. A standalone
+installation starts with **No nodes yet**. Login needs no answering node.
 
-The dashboard's default host port is `18347`; `CANARY_WEB_PORT` can override it.
-Existing explicit port settings are preserved. When changing ports, update
-`CANARY_CORS_ORIGINS` on each node to the exact origin you open in your browser,
-then redeploy the affected stack(s) to recreate their containers. Redeploy the
-combined stack once; with separate stacks, redeploy the node for CORS changes
-and the dashboard for host-port changes. Existing stack variables and `.env`
-files are not rewritten automatically. Keep `CANARY_WEB_PORT=8080` if you intentionally
-want the earlier host mapping. The listener and health check inside the
-dashboard container still use port `8080`.
+If the local enrollment credential was wrong, correct it and redeploy: the
+unfinished registration keeps its role credentials and retries with the new
+value. Its address can also be corrected before identity discovery. Once a
+node identity is proved, changing the configured address does not silently
+send its credentials to another destination. The old card exposes **Remove**;
+keep its old endpoint reachable until revocation completes, then the new local
+destination is added automatically. Clearing the local settings exposes the
+same removal action. An undiscovered placeholder can be removed without
+contacting a node; provisioned role credentials still require confirmed remote
+revocation. Do not delete dashboard volumes to repair these settings.
 
-A plain container restart keeps the previous environment and port bindings.
-Use Portainer's stack redeploy, or `docker compose up -d` with the same Compose
-file, project name and environment values used for that deployment. See
-[Docker's restart documentation](https://docs.docker.com/reference/cli/docker/compose/restart/).
+If the configured node is already registered manually, its registration and
+role bundle are reused. Adopting it through a different address requires the
+same node identity and successful verification of every existing role there.
+Changing the enrollment token after successful enrollment does not rotate the
+saved role credentials.
+
+Use **Nodes > Add node** to enter a label, the private origin reachable from the
+dashboard server and an admin enrollment credential. Verification is read-only:
+check the proved node ID before confirming Add. Confirmation journals encrypted
+credentials before atomically creating three role accounts on the node. An
+interrupted enrollment/removal remains visible and retryable; removal is only
+confirmed after the node acknowledges revocation. Selecting another node needs
+no additional sign-in. In-place credential/address editing is not implemented.
+
+The browser reaches only the dashboard server. The server generates its runtime
+configuration and writes an HTML marker so a blocked config script cannot make
+the UI fall back to direct node connections. It uses saved destinations and
+role credentials, verifies HTTPS certificates, refuses redirects, and forwards
+no proxy cookies or peer-sync routes. The Go service serves the assets and API;
+nginx is not part of the current dashboard image. Health checks use `/readyz`;
+`/healthz` remains a liveness endpoint.
+
+The templates add `NET_RAW` only to nodes for ICMP. Both images run as nonroot
+users. Container logs rotate at 10 MiB times three per service.
+
+## Ports, origins and redeployment
+
+The dashboard host port defaults to 18347 through `CANARY_WEB_PORT`. An explicit
+older mapping such as 8080 remains supported. Whenever the browser origin
+changes, update `CANARY_CORS_ORIGINS` and redeploy the affected dashboard.
+The template passes that value to `CANARY_DASHBOARD_ORIGINS`.
+
+Server-to-node requests send no browser Origin. Direct/static browser access
+to a node still requires that node's matching CORS allowance. Changing a node's
+allowance also requires redeploying its container. A plain restart retains old
+environment values and port bindings; use Portainer's stack redeploy or
+`docker compose up -d` with the same project, files and environment. Existing
+stack variables and `.env` files are not rewritten automatically. See
+[Docker restart behavior](https://docs.docker.com/reference/cli/docker/compose/restart/).
+
+## Sign-in-protected reverse proxies
+
+Route the entire external origin to the dashboard's published port:
+
+```text
+https://canary.example.com/ -> http://<dashboard-private-host>:18347
+```
+
+Use a matching published node/dashboard build containing the account service
+before replacing an older direct-API deployment. Then remove any separate
+`/api/` target to node port 3100: it would bypass dashboard authentication.
+Keep paths, query strings, request bodies and Canary's Authorization header.
+The browser needs no route to node APIs.
+
+For NetBird, enable **Preserve Full Path** and **Use service authentication** on
+the root target, with the intended SSO/access policy. Use its session method
+without consuming Canary's own Authorization header. NetBird strips the header
+matched by header authentication before forwarding; see
+[NetBird authentication](https://docs.netbird.io/manage/reverse-proxy/authentication).
+Proxy identity headers do not create or authorize Canary accounts.
+
+The browser sends proxy cookies only to its own origin. Canary still requires
+its separate dashboard account; the server contacts each node using a role
+credential without that proxy cookie. If the proxy session expires, reload and
+sign into the proxy again. API calls refuse login redirects. Canary sign-out
+does not sign out of the proxy.
+
+With NetBird or Tailscale, the private node route belongs to the **dashboard
+container**. Configure its DNS and network access accordingly. A host-local
+proxy can use the dashboard's loopback bind; a proxy in another container needs
+an explicit route rather than that container's own loopback. HTTPS at the
+browser may terminate before a trusted private HTTP server-to-node connection.
+
+Public badge/status links on an SSO-protected origin still need proxy access;
+a public Canary projection does not override the proxy's policy. Push senders
+also need any proxy credentials required by that origin, or must use the node's
+private push API. No broad management-API authentication bypass is needed.
+
+The VPN wiki guide is prepared for publication with the matching images.
+Provider references: [NetBird path routing](https://docs.netbird.io/manage/reverse-proxy#path-based-routing),
+[NetBird authentication](https://docs.netbird.io/manage/reverse-proxy/authentication),
+[Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve).
+Synthetic proxy fixtures do not certify a live provider deployment.
 
 ## Deploy separate dashboard and node stacks
 
-1. Create the dashboard stack using Compose path
-   `deploy/portainer-dashboard.yml`, for example with stack name
-   `canary-dashboard`. Set its image and bind address as needed. It serves
-   the UI on host port 18347 by default; it has no node API.
-2. On each monitoring host, create a node stack using Compose path
-   `deploy/portainer-node.yml`, for example `canary-home-1` and
-   `canary-office-1`. Set the node's unique ID, management token, cluster
-   token and the exact external dashboard origin in `CANARY_CORS_ORIGINS`.
-   Expose the API using the host's LAN address or a reverse proxy.
-3. Open the dashboard, enter a browser-reachable node URL, then authenticate
-   to that node. Docker service names such as `node` are not browser URLs.
-   If the dashboard uses HTTPS, the node's browser URL must also use HTTPS.
-4. To form an HA cluster, configure `CANARY_PEERS` on the nodes with each
-   other's persistent IDs and container-reachable API URLs, sharing the
-   cluster token. Being selected in one dashboard does not peer the nodes.
-   Different Docker hosts need routed addresses; their private Docker DNS
-   names are not shared automatically. Keep the loopback bind when a reverse
-   proxy process runs directly on the Docker host. Change `CANARY_BIND_ADDRESS`
-   only when a peer or proxy on another host must reach the API directly, using
-   the intended host interface. A proxy in another container needs an explicit
-   network route to the node; that container's own loopback is not the Docker
-   host's loopback. Do not expose the API on the LAN just to use a host-local
-   reverse proxy.
+1. Deploy `deploy/portainer-dashboard.yml`, with a stable name such as
+   `canary-dashboard`, the intended image, private bind address and exact origin
+   in `CANARY_CORS_ORIGINS`. It can start with both local-node variables empty.
+2. Deploy `deploy/portainer-node.yml` on each monitoring host, with unique IDs,
+   separate management/cluster tokens, and retained node data/identity volumes.
+   Expose its API on the private interface reachable from the dashboard server.
+3. Create the dashboard owner, sign in, and use **Nodes > Add node** for each
+   server-reachable private node origin. Verify the returned identity first.
+4. Configure HA peering separately using `CANARY_PEERS` and a shared cluster
+   token. Docker DNS names do not resolve across independent networks or hosts
+   automatically; use routed addresses. Adding nodes to the registry does not
+   join clusters or change their identities, tokens or peer configuration.
 
-The dashboard sends no management token from its container. Authentication
-and API requests go from the browser to the selected node. Stopping or
-updating the dashboard does not stop probing or alerting; stopping a node
-does not stop the static dashboard, although that node's data is unavailable.
-Switching nodes is explicit; the dashboard does not automatically fail over.
-
-The same files work from a checkout with Docker Compose. Supply the node's
-required environment values through your shell or a private environment file,
-then use stable, separate project names:
+The files also work from a checkout. Supply environment values through your
+shell or a private file and keep separate stable project names:
 
 ```sh
 docker compose -p canary-dashboard -f deploy/portainer-dashboard.yml up -d
-docker compose -p canary-home-1 -f deploy/portainer-node.yml up -d
+docker compose -p canary-main -f deploy/portainer-node.yml up -d
 ```
 
-These commands pull images from GHCR without building locally. A dashboard-only
-host pulls only the web image. A node-only host pulls only the node image.
-Use the same published `CANARY_IMAGE_TAG` for compatible source versions.
+These commands pull images rather than building on the deployment host. Use
+the same matching published source tag across the dashboard and nodes.
+Stopping the dashboard leaves checks and alerts running on nodes. An unavailable
+node leaves dashboard login and other node selections available. Dashboard HA
+and automatic management endpoint failover are not implemented.
 
-### Splitting an existing combined stack
+### Splitting an existing bundle
 
-Keep the existing stack/project name for the node when changing its Compose
-path to `deploy/portainer-node.yml`. This preserves its existing project-scoped
-`canary-data` and `canary-identity` volumes. Stop/remove the old web service
-before reusing its host port for a separate dashboard; do not remove the node
-or its volumes. Deploy the dashboard under a new stack name, and update
-`CANARY_CORS_ORIGINS` if its browser origin changes.
+Keep the old stack/project name for the node when switching its Compose path
+to `deploy/portainer-node.yml`. Preserve `canary-data` and `canary-identity`.
+Stop/remove the old web container before reusing its host port; never remove
+node volumes. An older static dashboard had no accounts to migrate: create the
+new dashboard owner without altering node accounts or data.
 
-Renaming the node stack or moving it to another Docker host does not move
-the volumes. Use the documented stopped-node data/identity migration process
-for that operation; do not bootstrap another live node with the same ID.
+If moving an already initialized dashboard account server to another project,
+retain and explicitly migrate both of its volumes. A new project name does not
+move the old volumes. Update the exact allowed browser origin if it changes.
+Moving a node host likewise requires the documented stopped-node data/identity
+migration; never bootstrap another live node under the same ID.
 
 ## Preserve identity and data
 
-Keep both `canary-data` and `canary-identity` volumes when updating or removing
-containers. Docker scopes their actual names to the stack name. Keep that name
-stable; renaming a stack creates different volumes. Do not attach either volume
-to two live nodes. The image initializes `/identity` with private permissions.
+Retain both node volumes, `canary-data` and `canary-identity`, plus the dashboard
+volumes, `canary-dashboard-data` and `canary-dashboard-identity`. Actual Docker
+names are project-scoped: keep the stack name stable. Do not attach a node's
+volumes to two live nodes. Dashboard accounts, sessions and encrypted role
+credentials live under `/data`; its encryption key, setup code and identity
+material live under `/identity`. Protect that identity volume separately from
+database backups. Startup refuses a database without its matching key instead
+of generating a replacement. No credential rotation UI is implemented.
 
-Retain identity reservations independently of database backups. Database restore
-is an explicit quarantine/activation workflow; replacing a database file is not
-a safe way to clone a node. Follow the existing backup/restore instructions before
-using historical data. Do not restore an old identity directory alongside an old
-database, or delete it to bypass a lock or startup refusal.
-
-Update/redeploy without removing volumes. Development `latest` images can
-advance; pin the common commit tag or full image digests for controlled
-upgrades. Automatic GitOps updates are optional, not required to pull an image
-when deploying a stack. Upgrade all cluster nodes together when the peer
-protocol changes.
+Node database restore remains its explicit quarantine/activation workflow;
+replacing a database is not a safe way to clone a node. Do not restore an old
+identity directory with an old database or delete it to bypass a startup lock.
+Update/redeploy without removing volumes. Pin matching source tags or digests
+for controlled upgrades, and upgrade cluster peers together on protocol changes.
 
 ## Scope and references
 
-The combined template has passed actual Docker Compose runtime validation,
+Earlier versions of the combined template passed actual Docker Compose runtime validation,
 including readiness, CORS, private identity storage and restart persistence.
 On `0c3d131`, [workflow 40013131856](https://github.com/Narehood/Uptime-Canary/actions/runs/40013131856)
 also passed actual separate-project Compose runtime: independent networks, no
@@ -217,8 +276,9 @@ and persistent node history. Configuration parsing and split-template parity
 passed, and all 565 source-manifest entries matched the committed source; see
 [the exact evidence](public-availability.md#split-deployment-checkpoint).
 That run predates the completed public-history interface. No deployment through
-a Portainer instance has been performed. These checks do not certify a complete
-release or cross-host networking.
+a Portainer instance has been performed. Those historical checks do not cover the new dashboard-owned account service,
+encrypted registry or onboarding. New exact-source container/platform checks
+remain required. Neither record certifies a complete release or cross-host networking.
 
 - [Portainer: add a stack and supply environment variables](https://docs.portainer.io/user/docker/stacks/add)
 - [Portainer: build an image](https://docs.portainer.io/user/docker/images/build)

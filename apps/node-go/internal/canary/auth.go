@@ -138,7 +138,7 @@ func (n *Node) serveIdentity(w http.ResponseWriter, r *http.Request) {
 			errorReply(w, fail(503, "Runtime unavailable"))
 			return
 		}
-		reply(w, 200, map[string]any{"passwordLogin": true, "passwordConfigured": configured, "setupRequired": !configured, "tokenLogin": true, "mfaSupported": true})
+		reply(w, 200, map[string]any{"passwordLogin": true, "passwordConfigured": configured, "setupRequired": !configured, "tokenLogin": true, "mfaSupported": true, "dashboardEnrollment": true})
 		return
 	}
 	publicLogin := path == "/api/auth/login" && r.Method == "POST"

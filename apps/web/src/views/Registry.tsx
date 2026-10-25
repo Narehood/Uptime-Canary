@@ -1,0 +1,517 @@
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import type { NodeVerification, RegisteredNode } from '@uptime-canary/shared';
+import { ApiFailure, describeFailure, isAbort } from '../api';
+import { useCanary } from '../context';
+import { credentialProblem, labelProblem, nodeAddressProblem, nodeStateInfo, registryOrder, registrySummary, SECTION_TITLES, shownNodeId } from '../dashboard';
+import { ago, elapsed, plural } from '../format';
+import { pageOrigin } from '../gateway';
+import { useNow, useSummaryFocus } from '../hooks';
+import { notify } from '../notices';
+import { href, navigate } from '../router';
+import { session } from '../session';
+import { Banner, Card, EmptyState, Modal, PageHead, Spinner, Tag, Time, nodeStateText, nodeTone } from '../ui/bits';
+import { ErrorSummary, SecretField, TextField } from '../ui/forms';
+import { EndpointMark, Glyph, Icon } from '../ui/icons';
+
+/*
+ * Control plane: the dashboard's shared node registry. One list for every account; administrators add, retry and
+ * remove entries, every role reads and rechecks them. Only the dashboard's server ever contacts a node, so nothing
+ * here sends a node address anywhere except to the dashboard itself, when an administrator verifies a new node.
+ * The enrollment credential lives only in the Add node form's state and is cleared after each verification attempt,
+ * on Back, on cancel and when the dialog closes. Verification tickets live only in memory; unused ones are discarded.
+ */
+
+const period = (text: string): string => /[.!?]$/u.test(text) ? text : `${text}.`;
+
+export function RegistryView({ home = false }: { home?: boolean }) {
+  const { registry, admin, selection, connection } = useCanary();
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<RegisteredNode | null>(null);
+  const nodes = registryOrder(registry.list ?? []);
+  const summary = registrySummary(nodes);
+  const add = (): void => setAdding(true);
+  const addButton = <button type="button" className="btn primary" onClick={add}><Icon name="plus" />Add node</button>;
+  return (
+    <div className="view">
+      <PageHead
+        title={home ? 'Overview' : 'Nodes'}
+        sub={home
+          ? 'The nodes this dashboard reads for you. Open one to see its monitors, incidents and alerts.'
+          : 'Monitoring nodes this dashboard reads for every account. You sign in here, not on each node.'}
+        actions={admin ? addButton : <Tag icon="lock">Administrators add and remove nodes</Tag>}
+      />
+      {home ? null : <DashboardPath />}
+      {registry.error && !registry.list ? (
+        <Banner tone="down" title="The node list couldn’t be loaded" actions={<button type="button" className="btn sm" onClick={registry.reload}><Icon name="refresh" />Try again</button>}>
+          {describeFailure(registry.error)} Sign-in and accounts keep working.
+        </Banner>
+      ) : !registry.list ? (
+        <Card><Spinner label="Loading nodes…" /></Card>
+      ) : !nodes.length ? (
+        <EmptyRegistry onAdd={add} />
+      ) : (
+        <>
+          <div className="sumrow">
+            {summary.answering ? <span className="chip c-up"><Glyph tone="up" /><b>{summary.answering}</b><span>answering</span></span> : null}
+            {summary.notAnswering ? <span className="chip c-warn"><Glyph tone="warn" /><b>{summary.notAnswering}</b><span>not answering</span></span> : null}
+            {summary.attention - summary.notAnswering ? <span className="chip c-serious"><Glyph tone="serious" /><b>{summary.attention - summary.notAnswering}</b><span>{summary.attention - summary.notAnswering === 1 ? 'needs' : 'need'} an administrator</span></span> : null}
+            {summary.starting ? <span className="chip"><Glyph tone="pending" /><b>{summary.starting}</b><span>starting</span></span> : null}
+            <span className="small muted">As seen by this dashboard’s server{registry.error ? '. Couldn’t refresh just now' : ''}.</span>
+          </div>
+          <div className="nodes-grid">
+            {nodes.map(node => <NodeCard key={node.id} node={node} onRemove={setRemoving} />)}
+            {admin ? <button type="button" className="add-tile" onClick={add}><Icon name="plus" /><b>Add node</b><small>Its private address and an enrollment credential</small></button> : null}
+          </div>
+          <p className="foot-note">
+            Monitor counts are each node’s own report. Adding a node here doesn’t change its peers; peer membership stays in each node’s own configuration.
+            {admin ? '' : ' Node addresses are shown to administrators only.'}
+          </p>
+        </>
+      )}
+      {!home && selection && !connection.awaiting ? <PeersCard /> : null}
+      {adding ? <AddNodeDialog onClose={() => setAdding(false)} /> : null}
+      {removing ? <RemoveNodeDialog node={removing} onClose={() => setRemoving(null)} /> : null}
+    </div>
+  );
+}
+
+function DashboardPath() {
+  const page = pageOrigin();
+  return (
+    <Card title="How this dashboard reaches nodes">
+      <div className="path" role="img" aria-label="Your browser talks only to this dashboard. Its server contacts each node at the private address saved for it.">
+        <span className="box"><Icon name="overview" />This browser tab</span>
+        <span className="arr" aria-hidden="true">→</span>
+        <span className="box ep"><EndpointMark /><span><b>This dashboard</b>{page ? <span className="mono sub">{page}</span> : null}</span></span>
+        <span className="arr" aria-hidden="true">→</span>
+        <span className="box"><Icon name="nodes" />Each node’s private address</span>
+      </div>
+      <p className="foot-note">
+        Only the dashboard’s server contacts nodes, so LAN, NetBird and Tailscale addresses work as long as the server can reach them.
+        Your browser talks to this dashboard and nothing else. Nodes keep monitoring and alerting if this dashboard stops.
+      </p>
+    </Card>
+  );
+}
+
+function EmptyRegistry({ onAdd }: { onAdd: () => void }) {
+  const { admin } = useCanary();
+  return (
+    <Card>
+      <EmptyState title="No nodes yet" action={admin ? <button type="button" className="btn primary" onClick={onAdd}><Icon name="plus" />Add node</button> : undefined}>
+        {admin ? 'This dashboard is ready. Add a monitoring node to see its monitors, incidents and alerts here.' : 'An administrator hasn’t added any nodes yet. Sign-in and your account work meanwhile.'}
+      </EmptyState>
+      {admin ? (
+        <ol className="howto">
+          <li><b>Run a node</b> where it can check your services. It works on its own; this dashboard is optional.</li>
+          <li><b>Check the route.</b> This dashboard’s server, not your browser, has to reach the node’s address.</li>
+          <li><b>Have an enrollment credential</b> from the node, such as an admin account token, then choose Add node.</li>
+        </ol>
+      ) : null}
+    </Card>
+  );
+}
+
+function NodeCard({ node, onRemove }: { node: RegisteredNode; onRemove: (node: RegisteredNode) => void }) {
+  const { admin, selection, select, api, registry, connection, stillCurrent } = useCanary();
+  const now = useNow(5000);
+  const [busy, setBusy] = useState<null | 'check' | 'retry'>(null);
+  const [error, setError] = useState<string | null>(null);
+  const info = nodeStateInfo(node);
+  const viewing = selection?.id === node.id;
+  const dashboardNow = now + (connection.issuerSkew ?? 0);
+  const unfinished = node.state === 'enrolling' || node.state === 'removing';
+
+  const act = async (kind: 'check' | 'retry'): Promise<void> => {
+    if (busy) return;
+    setBusy(kind); setError(null);
+    try {
+      const result = kind === 'check' ? await api.checkNode(node.id) : await api.retryNode(node.id);
+      if (!stillCurrent()) return;
+      registry.reload();
+      if (kind === 'retry') {
+        notify(result === null ? `Removed ${node.label}. The node confirmed this dashboard’s access was revoked.`
+          : result.state === 'enrolling' || result.state === 'removing' ? `Retried ${node.label}, but it’s still unfinished. ${result.error ? period(result.error) : 'Try again when the node answers.'}`
+          : `${node.label} is ${nodeStateInfo(result).label.toLowerCase()}.`);
+      }
+    } catch (failure) {
+      if (stillCurrent()) setError(describeFailure(failure, { preferDetail: true }));
+    } finally {
+      if (stillCurrent()) setBusy(null);
+    }
+  };
+
+  return (
+    <article className={`ncard rnode${viewing ? ' ep' : ''}${info.out ? ' out' : ''}${info.tone === 'serious' ? ' attn' : ''}`} aria-labelledby={`r-${node.id}`}>
+      <div className="nc-h">
+        <div>
+          <h3 id={`r-${node.id}`}>{node.label}</h3>
+          <span className="mono">{shownNodeId(node) ?? 'node ID not read yet'}</span>
+        </div>
+        <Glyph tone={info.tone} label={info.label} />
+      </div>
+      {node.local || viewing ? <span className="row-wrap">{node.local ? <Tag tone="accent">Added automatically</Tag> : null}{viewing ? <Tag icon="eye">Viewing</Tag> : null}</span> : null}
+      <p className="nc-state"><b>{info.label}.</b> {info.text}{node.error ? <> <span className="muted">{period(node.error)}</span></> : null}</p>
+      <dl className="kv">
+        {node.url ? <><dt>Address</dt><dd className="mono">{node.url}</dd></> : null}
+        {node.nodeName && node.nodeName !== node.nodeId && node.nodeName !== node.label ? <><dt>Node name</dt><dd>{node.nodeName}</dd></> : null}
+        <dt>Last read</dt><dd>{node.lastReadAt ? <><Time at={node.lastReadAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastReadAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd>
+        <dt>Monitors</dt><dd>{node.monitorCount === undefined ? <span className="muted">Not read yet</span> : <>{node.monitorCount}{node.state === 'answering' ? '' : <span className="muted"> · last known</span>}</>}</dd>
+      </dl>
+      <div className="nc-acts row-wrap">
+        {viewing
+          ? <a className="btn sm primary" href={href('overview')}><Icon name="overview" />Its overview</a>
+          : info.readable ? <button type="button" className="btn sm primary" onClick={() => { select(node); navigate(href('overview')); }} aria-label={`Open ${node.label}`}><Icon name="eye" />Open</button> : null}
+        {unfinished ? null : <button type="button" className="btn sm" onClick={() => { void act('check'); }} disabled={busy !== null}><Icon name="refresh" />{busy === 'check' ? 'Checking…' : 'Check now'}</button>}
+        {admin && unfinished ? <button type="button" className="btn sm" onClick={() => { void act('retry'); }} disabled={busy !== null}><Icon name="repeat" />{busy === 'retry' ? 'Retrying…' : node.state === 'enrolling' ? 'Retry enrollment' : 'Retry removal'}</button> : null}
+        {admin && !node.local && node.state !== 'removing' ? <button type="button" className="btn sm danger" onClick={() => onRemove(node)} disabled={busy !== null}><Icon name="trash" />Remove</button> : null}
+      </div>
+      {node.local ? <p className="small muted">Set by this deployment’s configuration, so it can’t be removed here.</p> : null}
+      {admin && !node.local && node.state === 'credential-refused' ? <p className="small muted">To give it a new credential, remove it and add it again.</p> : null}
+      {!admin && unfinished ? <p className="small muted">An administrator can retry or remove it.</p> : null}
+      {error ? <p className="small fwarn" role="alert"><Glyph tone="down" />{error}</p> : null}
+    </article>
+  );
+}
+
+/** The selected node's own view of its peers. Peers are read here only if they were added as nodes themselves. */
+function PeersCard() {
+  const { selection, nodes, endpoint, overview, registry } = useCanary();
+  if (!selection) return null;
+  const added = new Set((registry.list ?? []).map(node => node.nodeId));
+  const peers = nodes.filter(node => node.id !== endpoint && node.state !== 'unlisted');
+  return (
+    <Card title={<>Peers {selection.label} reports</>} hint={<>As known to <span className="mono">{endpoint}</span>. Each node keeps its own checks, history and alerts.</>}>
+      {peers.length ? (
+        <div className="peer-pick">
+          <ul>
+            {peers.map(peer => (
+              <li key={peer.id}>
+                <Glyph tone={nodeTone(peer)} label={peer.state === 'connected' ? 'connected' : 'out of view'} />
+                <span className="grow"><b className="mono">{peer.id}</b> <span className="muted">{peer.name !== peer.id ? peer.name : ''}</span><span className="sub">{nodeStateText(peer, endpoint, overview.now)}</span></span>
+                {added.has(peer.id) ? <Tag>On this dashboard</Tag> : <span className="small muted">Not added</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : <p className="muted">No peers are configured on {endpoint}.</p>}
+      <p className="foot-note">To read a peer here, add it as its own node. Adding it doesn’t change peer membership.</p>
+    </Card>
+  );
+}
+
+/** Compact registry list for choosing a node: on monitoring pages without a selection and in the top bar's picker. */
+function NodeRows({ onPick }: { onPick?: () => void }) {
+  const { registry, selection, select, admin } = useCanary();
+  if (registry.error && !registry.list) {
+    return <Banner tone="down" title="The node list couldn’t be loaded" actions={<button type="button" className="btn sm" onClick={registry.reload}><Icon name="refresh" />Try again</button>}>{describeFailure(registry.error)}</Banner>;
+  }
+  if (!registry.list) return <Spinner label="Loading nodes…" />;
+  const nodes = registryOrder(registry.list);
+  if (!nodes.length) {
+    return (
+      <EmptyState title="No nodes yet" action={admin ? <a className="btn primary" href={href('nodes')} onClick={onPick}><Icon name="plus" />Add a node</a> : undefined}>
+        {admin ? 'Add a monitoring node on the Nodes page to see its monitors here.' : 'An administrator hasn’t added any nodes yet.'}
+      </EmptyState>
+    );
+  }
+  return (
+    <div className="peer-pick">
+      <ul>
+        {nodes.map(node => {
+          const info = nodeStateInfo(node);
+          const current = selection?.id === node.id;
+          return (
+            <li key={node.id}>
+              <Glyph tone={info.tone} label={info.label} />
+              <span className="grow">
+                <b>{node.label}</b> <span className="mono muted">{shownNodeId(node) ?? ''}</span>{node.local ? <> <Tag tone="accent">local</Tag></> : null}
+                <span className="sub">{info.label}{node.monitorCount !== undefined ? ` · ${plural(node.monitorCount, 'monitor')}${node.state === 'answering' ? '' : ' last known'}` : ''}</span>
+              </span>
+              {current ? <Tag icon="eye">Viewing</Tag>
+                : info.readable ? <button type="button" className="btn sm" onClick={() => { onPick?.(); select(node); }} aria-label={`Open ${node.label}`}>Open</button>
+                : <span className="small muted">Can’t be read</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+export function ChooseNodeView({ section }: { section: string }) {
+  return (
+    <div className="view">
+      <PageHead title={SECTION_TITLES[section] ?? 'Choose a node'} sub="Monitoring lives on each node. Choose one and this dashboard’s server reads it for you." />
+      <Card title="Choose a node" actions={<a className="btn sm" href={href('nodes')}><Icon name="nodes" />Nodes</a>}>
+        <NodeRows />
+      </Card>
+    </div>
+  );
+}
+
+/** A selected node that hasn't answered yet: never shown as "no monitors". */
+export function NodePendingView() {
+  const { selection, connection } = useCanary();
+  if (!selection) return null;
+  const head = <PageHead title={selection.label} sub={<span className="mono">{selection.nodeId}</span>} />;
+  if (connection.link !== 'stale') return <div className="view">{head}<Card><Spinner label={`Reading ${selection.label} through the dashboard’s server…`} /></Card></div>;
+  return (
+    <div className="view">
+      {head}
+      <Card>
+        <EmptyState title={`Nothing from ${selection.label} yet`} action={<div className="row-wrap">
+          <button type="button" className="btn" onClick={() => session.refresh()}><Icon name="refresh" />Try now</button>
+          <a className="btn" href={href('nodes')}><Icon name="nodes" />Nodes</a>
+        </div>}>
+          {connection.failure ? `${describeFailure(connection.failure)} ` : ''}The dashboard’s server keeps trying. Sign-in, accounts and other nodes keep working.
+        </EmptyState>
+      </Card>
+    </div>
+  );
+}
+
+export function NodePickerDialog({ onClose }: { onClose: () => void }) {
+  const { selection, select } = useCanary();
+  return (
+    <Modal title="Choose a node" onClose={onClose} wide>
+      <p className="sec">The same sign-in reads every node on this dashboard. Choosing one changes only what this tab shows; monitoring and alerts continue on every node.</p>
+      <NodeRows onPick={onClose} />
+      <div className="modal-foot">
+        <a className="btn" href={href('nodes')} onClick={onClose}><Icon name="nodes" />Manage nodes</a>
+        {selection ? <button type="button" className="btn" onClick={() => { onClose(); select(null); }}><Icon name="overview" />All nodes</button> : null}
+      </div>
+    </Modal>
+  );
+}
+
+// ----- Add node: verify (read-only), then confirm. Nothing is enrolled until the administrator confirms.
+
+type Failure = { title: string; text: string };
+
+function verifyFailure(error: unknown): Failure {
+  const text = describeFailure(error, { preferDetail: true });
+  if (!(error instanceof ApiFailure)) return { title: 'Not verified', text };
+  const detail = error.detail ?? '';
+  if (error.status === 502 && /credential/iu.test(detail)) {
+    return { title: 'The node refused this credential', text: 'It may be mistyped, revoked, or not an admin credential on that node. Paste it again to retry. Nothing was saved.' };
+  }
+  if (error.status === 502 && /different node/iu.test(detail)) return { title: 'A different node answers at this address', text: `${text} Nothing was saved.` };
+  if (error.status === 502 && /redirect/iu.test(detail)) {
+    return { title: 'The address answered with a redirect', text: 'The dashboard doesn’t follow redirects, so an address can’t send it somewhere else. Enter the node’s own address. Nothing was saved.' };
+  }
+  if (error.status === 0 || error.status === 502 || error.status === 504) {
+    return { title: 'The dashboard’s server couldn’t verify this node', text: `${text} Your browser wasn’t involved, so it doesn’t matter whether this computer can reach the address. Nothing was saved.` };
+  }
+  if (error.status === 401) return { title: 'Your sign-in to this dashboard ended', text: 'Sign in again, then add the node. Nothing was saved.' };
+  if (error.status === 403) return { title: 'Only administrators add nodes', text };
+  if (error.status === 409 && /already/iu.test(detail)) return { title: 'Already on this dashboard', text: `${text} If the node moved, remove the old entry first.` };
+  if (error.status === 409) return { title: 'This node can’t be added yet', text: `${text} Nothing was saved.` };
+  if (error.status === 429) return { title: 'Too many verifications are waiting', text: `${text} Unused verifications expire after 2 minutes.` };
+  return { title: 'Not verified', text: `${text} Nothing was saved.` };
+}
+
+function AddNodeDialog({ onClose }: { onClose: () => void }) {
+  const { api, registry, connection, stillCurrent } = useCanary();
+  const [label, setLabel] = useState('');
+  const [url, setUrl] = useState('');
+  const [token, setToken] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState<null | 'verify' | 'add'>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [verified, setVerified] = useState<NodeVerification | null>(null);
+  const [spent, setSpent] = useState(false);
+  const [summaryRef, failed] = useSummaryFocus();
+  const okRef = useRef<HTMLElement>(null);
+  const attempt = useRef<AbortController | null>(null);
+  const ticket = useRef<string | null>(null);
+  const apiRef = useRef(api);
+  apiRef.current = api;
+  const now = useNow(1000);
+
+  // Closing for any reason (Cancel, Escape, sign-out, another node selected) stops a running request and drops an
+  // unused ticket. The credential is state of this dialog only, so it goes with it.
+  useEffect(() => () => {
+    attempt.current?.abort();
+    const outstanding = ticket.current;
+    ticket.current = null;
+    if (outstanding) void apiRef.current.discardVerification(outstanding).catch(() => undefined);
+  }, []);
+  useEffect(() => { if (verified) okRef.current?.focus(); }, [verified]);
+
+  const errors = { label: labelProblem(label), url: nodeAddressProblem(url), token: credentialProblem(token) };
+  const visible: Partial<typeof errors> = show ? errors : {};
+  const discard = (): void => {
+    const outstanding = ticket.current;
+    ticket.current = null;
+    if (outstanding) void api.discardVerification(outstanding).catch(() => undefined);
+  };
+
+  const verify = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy) return;
+    setShow(true); setFailure(null); setNotice(null);
+    if (Object.values(errors).some(Boolean)) { failed(); return; }
+    const controller = new AbortController();
+    attempt.current = controller;
+    setBusy('verify');
+    try {
+      const result = await api.verifyNode({ label, url, token }, controller.signal);
+      setToken('');
+      if (controller.signal.aborted || !stillCurrent()) { void api.discardVerification(result.ticket).catch(() => undefined); return; }
+      ticket.current = result.ticket;
+      setShow(false); setSpent(false);
+      setVerified(result);
+    } catch (error) {
+      // The request may have reached the server either way, so the page lets go of the credential.
+      setToken('');
+      if (isAbort(error)) { setNotice('Stopped. Nothing was saved. Paste the credential again to verify.'); return; }
+      if (!stillCurrent()) return;
+      setFailure(verifyFailure(error));
+      failed();
+    } finally {
+      if (attempt.current === controller) attempt.current = null;
+      setBusy(null);
+    }
+  };
+
+  const back = (): void => {
+    discard();
+    setVerified(null); setFailure(null); setShow(false);
+    setNotice(spent ? 'Paste the credential again to verify.' : 'Going back discarded that verification. Paste the credential again to verify.');
+  };
+
+  const add = async (): Promise<void> => {
+    if (!verified || busy || spent) return;
+    const used = verified.ticket;
+    // Enrolling uses the ticket up, whatever the outcome; it is never discarded or sent again.
+    ticket.current = null;
+    setSpent(true);
+    const controller = new AbortController();
+    attempt.current = controller;
+    setBusy('add'); setFailure(null);
+    try {
+      const node = await api.enrollNode(used, controller.signal);
+      if (!stillCurrent()) return;
+      registry.reload();
+      notify(node.state === 'enrolling'
+        ? `${node.label} is listed, but enrolling it didn’t finish. Retry it from Nodes.`
+        : `${node.label} added. The dashboard’s server reads it from now on.`);
+      onClose();
+    } catch (error) {
+      if (isAbort(error) || !stillCurrent()) return;
+      registry.reload();
+      const refused = error instanceof ApiFailure && error.status >= 400 && error.status < 500 && error.status !== 408;
+      const reason = describeFailure(error, { preferDetail: true });
+      setFailure(refused
+        ? { title: 'Not added', text: /verify again/iu.test(reason) ? reason : `${reason} Go back and verify again.` }
+        : { title: 'The result isn’t known yet', text: `${describeFailure(error)} The dashboard may have finished adding it. Check the node list: an unfinished enrollment shows there as “Enrollment unfinished”, with Retry and Remove.` });
+    } finally {
+      if (attempt.current === controller) attempt.current = null;
+      setBusy(null);
+    }
+  };
+
+  const remaining = verified ? verified.expiresAt - (now + (connection.issuerSkew ?? 0)) : 0;
+  const expired = Boolean(verified) && remaining <= 0;
+  const errorList = failure ? [] : Object.values(visible).filter(Boolean) as string[];
+
+  let body: ReactNode;
+  if (!verified) {
+    body = (
+      <form className="connect-form" onSubmit={event => { void verify(event); }} noValidate aria-busy={busy === 'verify'}>
+        <p className="sec">The dashboard’s server contacts the node at this address; your browser doesn’t. A private, NetBird or Tailscale address is fine as long as the server can reach it. Verifying changes nothing on the node.</p>
+        {notice ? <Banner tone="info" title={notice} /> : null}
+        <ErrorSummary ref={summaryRef} title={failure ? failure.title : 'Check these fields'} errors={errorList}>{failure ? <p>{failure.text}</p> : null}</ErrorSummary>
+        <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={visible.label} maxLength={128} disabled={busy !== null} autoFocus
+          hint="Every account on this dashboard sees it. The node keeps its own ID." />
+        <TextField label="Node address" type="url" inputMode="url" mono value={url} onChange={setUrl} error={visible.url} disabled={busy !== null} placeholder="http://100.79.12.4:3100"
+          hint="Scheme, host and port, as the dashboard’s server reaches it. HTTPS certificates are checked and redirects aren’t followed." />
+        <SecretField label="Enrollment credential" value={token} onChange={setToken} error={visible.token} disabled={busy !== null}
+          hint="From the node, for example an admin account token. It goes only to the dashboard’s server; this page forgets it after each verification." />
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            {busy === 'verify'
+              ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
+              : <button type="button" className="btn" onClick={onClose}>Cancel</button>}
+            <button type="submit" className="btn primary" disabled={busy !== null}><Icon name="check" />{busy === 'verify' ? 'Verifying…' : failure ? 'Verify again' : 'Verify node'}</button>
+          </span>
+        </div>
+      </form>
+    );
+  } else {
+    const name = verified.label || label.trim();
+    body = (
+      <>
+        <div className="banner b-ok" role="status">
+          <Glyph tone="up" />
+          <div>
+            <b className="bt" tabIndex={-1} ref={okRef}>Verified by the dashboard’s server</b>
+            <div className="bb">The node proved it is <span className="mono">{verified.node.id}</span>. The credential is on the dashboard’s server now; this page no longer holds it. Nothing has changed on the node yet.</div>
+          </div>
+        </div>
+        <dl className="kv">
+          <dt>Name on this dashboard</dt><dd>{name}</dd>
+          <dt>Node ID</dt><dd className="mono">{verified.node.id}</dd>
+          {verified.node.name !== verified.node.id ? <><dt>Node name</dt><dd>{verified.node.name}</dd></> : null}
+          <dt>Address</dt><dd className="mono">{verified.url}</dd>
+          <dt>Verification</dt><dd>{expired ? 'Expired' : `Ends in ${elapsed(remaining)}`}</dd>
+        </dl>
+        {verified.plainHttp ? <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use HTTPS, or a network that encrypts it, such as NetBird or Tailscale.</p> : null}
+        <p className="modal-note">Adding it lets every account on this dashboard read this node, and editors and administrators change its monitoring. The dashboard’s server sets up its own access on the node for each role. It doesn’t join the node to other nodes’ peers or change its identity, credentials or cluster secret.</p>
+        {expired && !spent ? <Banner tone="warn" title="This verification expired">Nothing was added. Go back and verify again.</Banner> : null}
+        {failure ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null}
+        <div className="modal-foot">
+          <button type="button" className="btn" onClick={back} disabled={busy !== null}><Icon name="chevLeft" />Back</button>
+          <span className="row-wrap">
+            <button type="button" className="btn" onClick={onClose} disabled={busy !== null}>{spent ? 'Close' : 'Cancel'}</button>
+            {spent && !busy ? null : <button type="button" className="btn primary" onClick={() => { void add(); }} disabled={busy !== null || expired}><Icon name="plus" />{busy === 'add' ? 'Adding…' : `Add “${name}”`}</button>}
+          </span>
+        </div>
+      </>
+    );
+  }
+  return <Modal title="Add node" onClose={onClose} busy={busy === 'add'} wide>{body}</Modal>;
+}
+
+function RemoveNodeDialog({ node, onClose }: { node: RegisteredNode; onClose: () => void }) {
+  const { api, registry, selection, select, stillCurrent } = useCanary();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const note = node.state === 'answering'
+    ? 'The dashboard’s server also asks the node to revoke the access this dashboard set up there.'
+    : node.state === 'different-node'
+      ? <>This address now answers as a different node, so the dashboard won’t send it anything. Revoke this dashboard’s access on <span className="mono">{node.nodeId}</span> wherever it runs now.</>
+      : 'The node isn’t accepting the dashboard’s requests right now, so its access may not be revoked yet. The entry then stays as “Removal unfinished” until the dashboard can confirm it.';
+  const remove = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await api.removeNode(node.id);
+      if (!stillCurrent()) return;
+      notify(result.removed
+        ? `Removed ${node.label}. The node confirmed this dashboard’s access was revoked.`
+        : `${node.label} is no longer read, but the node hasn’t confirmed that this dashboard’s access was revoked. It shows as “Removal unfinished”; retry when the node answers.`);
+      onClose();
+      if (selection?.id === node.id) select(null);
+      else registry.reload();
+    } catch (failure) {
+      if (!stillCurrent()) return;
+      setError(describeFailure(failure, { preferDetail: true }));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={<>Remove “{node.label}”?</>} onClose={onClose} busy={busy}>
+      <p>This dashboard stops reading <span className="mono">{node.nodeId}</span> for every account. The node keeps running, checking and alerting, with its own accounts, data and peers.</p>
+      <p className="modal-note">{note}</p>
+      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Not removed</b><p>{error}</p></div></div> : null}
+      <div className="row-wrap modal-acts">
+        <button type="button" className="btn danger-solid" onClick={() => { void remove(); }} disabled={busy}><Icon name="trash" />{busy ? 'Removing…' : 'Remove node'}</button>
+        <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}

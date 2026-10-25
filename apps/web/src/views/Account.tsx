@@ -4,6 +4,7 @@ import { ApiFailure, codeProblem, describeFailure, fetchAuthStatus, passwordProb
 import { useCanary } from '../context';
 import { elapsed, shortClock } from '../format';
 import { useNow, useResource, useSummaryFocus } from '../hooks';
+import { DASHBOARD_ROLES } from '../dashboard';
 import { ROLES } from '../model';
 import { notify } from '../notices';
 import { session, signOut } from '../session';
@@ -15,27 +16,32 @@ import { encodeQr } from '../ui/qr';
 /** Base32 key in groups of four, the way authenticator apps show it. */
 const grouped = (secret: string): string => secret.replace(/(.{4})/gu, '$1 ').trim();
 
+/** On the control plane this account is the dashboard's, whatever node is selected; `accountHome` names it. */
 export function AccountView() {
-  const { api, endpoint, account, overview } = useCanary();
+  const { api, accountHome: endpoint, account, overview, controlPlane } = useCanary();
   const status = useResource(`${api.baseUrl}|auth-status`, signal => fetchAuthStatus(api.baseUrl, signal));
   const name = account?.name ?? overview.user.name;
   const role = account?.role ?? overview.user.role;
   const supportsPasswords = status.data ? status.data.passwordLogin : true;
+  const Home = controlPlane ? 'This dashboard' : endpoint;
+  const ROLES_HERE = controlPlane ? DASHBOARD_ROLES : ROLES;
 
   return (
     <div className="view">
       <PageHead
         title="Your account"
-        sub={<><b>{name}</b> · {role} on <span className="mono">{endpoint}</span>. Sign-in settings belong to this node only; other nodes keep their own accounts.</>}
+        sub={controlPlane
+          ? <><b>{name}</b> · {role} on this dashboard. Sign-in settings belong to this dashboard; accounts on monitoring nodes are separate and unchanged.</>
+          : <><b>{name}</b> · {role} on <span className="mono">{endpoint}</span>. Sign-in settings belong to this node only; other nodes keep their own accounts.</>}
       />
       <div className="g2">
         <div className="vstack">
           {!account ? (
             <Card title="Sign-in settings">
-              <EmptyState title={`${endpoint} doesn’t offer account settings`}>This node predates password sign-in. You’re connected with an account token; an admin can upgrade the node to add passwords and two-factor authentication.</EmptyState>
+              <EmptyState title={`${Home} doesn’t offer account settings`}>This node predates password sign-in. You’re connected with an account token; an admin can upgrade the node to add passwords and two-factor authentication.</EmptyState>
             </Card>
           ) : !supportsPasswords ? (
-            <Card title="Sign-in settings"><EmptyState title="Token sign-in only">{endpoint} doesn’t offer password sign-in.</EmptyState></Card>
+            <Card title="Sign-in settings"><EmptyState title="Token sign-in only">{Home} doesn’t offer password sign-in.</EmptyState></Card>
           ) : (
             <>
               <PasswordCard account={account} />
@@ -47,7 +53,7 @@ export function AccountView() {
           <SignedInCard account={account} />
           <Card title="Your role" hint={`On ${endpoint}`}>
             <dl className="roles">
-              {ROLES.map(entry => <div key={entry.role} className={entry.role === role ? 'me-role' : undefined}><dt>{entry.label}{entry.role === role ? <span className="vh"> (yours)</span> : null}</dt><dd>{entry.can}</dd></div>)}
+              {ROLES_HERE.map(entry => <div key={entry.role} className={entry.role === role ? 'me-role' : undefined}><dt>{entry.label}{entry.role === role ? <span className="vh"> (yours)</span> : null}</dt><dd>{entry.can}</dd></div>)}
             </dl>
             <p className="foot-note">Only an admin can change your role. Admins can also reset your password and two-factor authentication if you lose access.</p>
           </Card>
@@ -58,18 +64,20 @@ export function AccountView() {
 }
 
 function SignedInCard({ account }: { account: Account | null }) {
-  const { api, endpoint, overview, connection } = useCanary();
+  const { api, accountHome: endpoint, overview, connection } = useCanary();
   const now = useNow(30_000);
   const [confirmAll, setConfirmAll] = useState(false);
   const [busy, setBusy] = useState(false);
-  const nodeNow = now + (overview.now - connection.fetchedAt);
+  // The session's issuer clock: the dashboard's on the control plane, whichever node is selected.
+  const nodeNow = now + (connection.issuerSkew ?? overview.now - connection.fetchedAt);
+  const issuedNow = connection.issuerSkew === null ? overview.now : connection.fetchedAt + connection.issuerSkew;
   return (
     <Card title="How you’re signed in">
       <dl className="kv">
         <dt>Method</dt>
         <dd>{api.credential === 'session' ? <><Icon name="lock" className="inline" />Password session</> : <><Icon name="key" className="inline" />Account token</>}</dd>
         {api.expiresAt ? (
-          <><dt>Session ends</dt><dd><Time at={api.expiresAt} now={overview.now} /> <span className="muted">· in {elapsed(Math.max(0, api.expiresAt - nodeNow))}</span></dd></>
+          <><dt>Session ends</dt><dd><Time at={api.expiresAt} now={issuedNow} /> <span className="muted">· in {elapsed(Math.max(0, api.expiresAt - nodeNow))}</span></dd></>
         ) : (
           <><dt>Valid</dt><dd>Until an admin replaces the token or removes the account</dd></>
         )}
@@ -93,7 +101,8 @@ function SignedInCard({ account }: { account: Account | null }) {
 }
 
 function SignOutEverywhere({ account, onClose }: { account: Account; onClose: () => void }) {
-  const { api, endpoint, connection } = useCanary();
+  const { api, accountHome: endpoint, connection, controlPlane } = useCanary();
+  const Home = controlPlane ? 'This dashboard' : endpoint;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async (): Promise<void> => {
@@ -105,7 +114,7 @@ function SignOutEverywhere({ account, onClose }: { account: Account; onClose: ()
       if (api.credential === 'session') {
         session.end({ url: api.baseUrl, name: account.name, message: `Signed out of every password session for ${account.name} on ${endpoint}.`, tone: 'info' }, connection);
       } else {
-        notify(`${endpoint} ended every password session for ${account.name}. This tab stays connected with the account token.`);
+        notify(`${Home} ended every password session for ${account.name}. This tab stays connected with the account token.`);
         onClose();
       }
     } catch (failure) {
@@ -116,8 +125,8 @@ function SignOutEverywhere({ account, onClose }: { account: Account; onClose: ()
   };
   return (
     <Modal title="Sign out everywhere?" onClose={onClose} busy={busy}>
-      <p>{endpoint} ends every password session for <b>{account.name}</b>, on every browser and device{api.credential === 'session' ? ', including this one' : ''}.</p>
-      <p className="muted small">Account tokens keep working. Other nodes keep their own sessions.</p>
+      <p>{Home} ends every password session for <b>{account.name}</b>, on every browser and device{api.credential === 'session' ? ', including this one' : ''}.</p>
+      <p className="muted small">Account tokens keep working. {controlPlane ? 'Accounts and sessions on monitoring nodes aren’t affected.' : 'Other nodes keep their own sessions.'}</p>
       {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Nothing changed</b><p>{error}</p></div></div> : null}
       <div className="row-wrap modal-acts">
         <button type="button" className="btn danger-solid" onClick={() => { void run(); }} disabled={busy}><Icon name="logout" />{busy ? 'Signing out…' : 'Sign out everywhere'}</button>
@@ -128,7 +137,7 @@ function SignOutEverywhere({ account, onClose }: { account: Account; onClose: ()
 }
 
 function PasswordCard({ account }: { account: Account }) {
-  const { api, endpoint, connection } = useCanary();
+  const { api, accountHome: endpoint, connection } = useCanary();
   const first = !account.passwordEnabled;
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -243,7 +252,7 @@ function QrImage({ value, label }: { value: string; label: string }) {
 type Enrollment = AuthenticatorEnrollment & { password: string };
 
 function TwoFactorCard({ account, mfaSupported }: { account: Account; mfaSupported: boolean }) {
-  const { api, endpoint, overview, connection } = useCanary();
+  const { api, accountHome: endpoint, overview, connection, controlPlane } = useCanary();
   const now = useNow(1000);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -257,11 +266,12 @@ function TwoFactorCard({ account, mfaSupported }: { account: Account; mfaSupport
   useEffect(() => () => { setEnrollment(null); setPassword(''); }, []);
 
   const reset = (): void => { setEnrollment(null); setPassword(''); setCode(''); setShow(false); setFailure(null); setDisabling(false); };
-  const nodeNow = now + (overview.now - connection.fetchedAt);
+  // The enrollment's issuer clock: the dashboard's on the control plane, whichever node is selected.
+  const nodeNow = now + (connection.issuerSkew ?? overview.now - connection.fetchedAt);
   const remaining = enrollment ? enrollment.expiresAt - nodeNow : 0;
 
   if (!mfaSupported) {
-    return <Card title="Two-factor authentication"><EmptyState title="Not offered by this node">{endpoint} doesn’t support authenticator codes.</EmptyState></Card>;
+    return <Card title="Two-factor authentication"><EmptyState title={controlPlane ? 'Not offered by this dashboard' : 'Not offered by this node'}>{controlPlane ? 'This dashboard' : endpoint} doesn’t support authenticator codes.</EmptyState></Card>;
   }
   if (!account.passwordEnabled) {
     return (

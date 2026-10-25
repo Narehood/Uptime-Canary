@@ -1,5 +1,6 @@
 /** Public management API contract. Runtime coordination types remain private to the node. */
 export * from './status.js';
+export * from './dashboard.js';
 export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam' | 'pm2';
 export type ObservationState = 'up' | 'down' | 'unknown' | 'pending';
 export type Role = 'admin' | 'editor' | 'viewer';
@@ -405,6 +406,8 @@ export interface Overview {
 
 export interface AccountView { id: string; name: string; role: Role; passwordEnabled?: boolean; mfaEnabled?: boolean }
 export interface AuthenticationStatus {
+  /** Present on the dashboard-owned account service, independent of any node. */
+  dashboard?: boolean;
   passwordLogin: boolean;
   passwordConfigured: boolean;
   setupRequired: boolean;

@@ -67,8 +67,33 @@ Bootstrap environment credentials initialize only an empty account database;
 they cannot resurrect a revoked token or undo account edits on restart.
 
 The API accepts explicit bearer credentials rather than ambient cookies, so a
-separately hosted dashboard does not depend on third-party cookie access. Exact
-CORS origins still apply. Use HTTPS or a trusted private network. Protect the
+separately hosted dashboard does not depend on third-party cookie access.
+
+Container dashboards own a separate account domain and shared node registry.
+Their first owner requires the private server setup code; later accounts are
+administrator-controlled. Login works without a monitoring node. The server
+uses the existing durable password/session/MFA primitives, with admin, editor
+and viewer roles. It never copies a node's password hashes into global accounts.
+
+The browser's fetch policy is `same-origin`, so a sign-in proxy's cookie is
+included only at the dashboard's origin. The dashboard validates its own bearer
+and uses server-held role credentials for saved nodes. Proxy cookies and identity
+headers are not forwarded as node authority. Node credentials are encrypted
+using a retained key outside database backups. Verification is read-only;
+confirmed enrollment atomically installs three dedicated node role accounts.
+Interrupted enrollment and revocation remain journaled and retryable. Managed
+role accounts cannot be promoted through the node's ordinary account editor.
+
+The dashboard checks its exact allowed browser origins. Server-to-node calls
+send no browser Origin. Legacy direct/static dashboards still require each
+node's CORS allowance and omit cookies to other origins. Proxy redirects remain
+refused: an expired proxy session requires full-page proxy sign-in. The
+service exposes neither peer transport nor an arbitrary browser-selected URL
+proxy. See [deployment and proxy setup](portainer.md#sign-in-protected-reverse-proxies)
+and [the control-plane contract](dashboard-control-plane.md). These source
+changes still require their exact-source acceptance and publication.
+
+Use HTTPS or a trusted private network. Protect the
 SQLite database and backups: password/token hashes, authenticator seeds and
 monitoring configuration are sensitive local records. MFA seeds are not currently
 encrypted at rest. Authentication does not replicate with operational snapshots.

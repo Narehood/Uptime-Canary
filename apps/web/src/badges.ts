@@ -1,4 +1,4 @@
-import { normalizeApiUrl } from './api';
+import { checkRegistration, normalizeApiUrl } from './api';
 
 /**
  * Public SVG badges (node route `/public/badge/<slug>.svg`). A badge reads the same public projection as the status
@@ -15,14 +15,20 @@ export interface BadgeSelection { group: string; monitor: string }
 /** `uptime`: the 24-hour observed badge. It needs a single-service selection; there is no whole-page figure. */
 export type BadgeMetric = 'uptime';
 
-/** The image address on one node. Throws for an address that isn't a plain node origin or a slug the node can't serve. */
-export function badgeUrl(nodeUrl: string, slug: string, selection?: BadgeSelection, metric?: BadgeMetric): string {
+/**
+ * The image address on one node. Throws for an address that isn't a plain node origin or a slug the node can't serve.
+ * On the control plane `nodeUrl` is the dashboard's origin and `registration` the saved node its server reads; the
+ * selector is last only by convention: the dashboard's server removes it by key and forwards the rest to the node.
+ */
+export function badgeUrl(nodeUrl: string, slug: string, selection?: BadgeSelection, metric?: BadgeMetric, registration?: string): string {
   if (!SLUG.test(slug)) throw new Error('This page address can’t have a badge.');
   if (metric && !selection) throw new Error('An observed badge needs one service.');
   const base = normalizeApiUrl(nodeUrl);
-  // Exactly these parameters, in this order: the node rejects any other key, repeat or empty value.
+  // Only these parameters, in one fixed order so a badge always has the same address. The node and the dashboard's
+  // server read them by key, so the order isn't required; the node rejects any other key, repeat or empty value.
   const params: [string, string][] = selection ? [['group', selection.group], ['monitor', selection.monitor]] : [];
   if (metric) params.push(['metric', metric]);
+  if (registration) params.push(['registration', checkRegistration(registration)]);
   const query = params.length ? `?${new URLSearchParams(params)}` : '';
   return `${base}${BADGE_PREFIX}${slug}.svg${query}`;
 }

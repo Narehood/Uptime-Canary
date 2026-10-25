@@ -3,14 +3,39 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
+COPY deploy ./deploy
+COPY Dockerfile.web ./Dockerfile.web
 COPY scripts/public-availability-pure.mjs ./scripts/public-availability-pure.mjs
+COPY scripts/proxy-auth-pure.mjs scripts/node-login-copy-pure.mjs scripts/dashboard-gateway-pure.mjs scripts/dashboard-control-plane-pure.mjs scripts/push-commands-pure.mjs ./scripts/
 RUN npm ci \
     && TSX_DISABLE_CACHE=1 node scripts/public-availability-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/proxy-auth-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/node-login-copy-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/dashboard-gateway-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/dashboard-control-plane-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/push-commands-pure.mjs \
     && npm run build --workspace @uptime-canary/web
 
-FROM nginxinc/nginx-unprivileged:stable-alpine
+FROM golang:1.27.3-alpine AS server
+WORKDIR /app
+COPY go.mod go.sum ./
+COPY apps/node-go/third_party/goja ./apps/node-go/third_party/goja
+RUN go mod download
+COPY apps/node-go ./apps/node-go
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/canary ./apps/node-go/cmd/canary
+
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S canary && adduser -S -G canary canary \
+    && mkdir -p /data /identity /app/web \
+    && chown canary:canary /data /identity && chmod 0700 /data /identity
+WORKDIR /app
 COPY LICENSE THIRD_PARTY_NOTICES.txt /usr/share/licenses/uptime-canary/
-COPY deploy/web.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+COPY --from=server /out/canary /usr/local/bin/canary
+COPY --from=build /app/apps/web/dist /app/web
+ENV CANARY_DASHBOARD_DATA=/data CANARY_DASHBOARD_IDENTITY=/identity CANARY_DASHBOARD_ASSETS=/app/web CANARY_DASHBOARD_HOST=0.0.0.0 CANARY_DASHBOARD_PORT=8080
+USER canary
+VOLUME ["/data", "/identity"]
+CMD ["/usr/local/bin/canary", "dashboard"]
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD wget -q -O /dev/null http://127.0.0.1:8080/readyz || exit 1

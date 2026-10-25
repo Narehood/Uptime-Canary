@@ -31,12 +31,14 @@ function BadgeRow({ image, alt, link, label, full, nonce }: { image: string; alt
  * public name pick exactly one entry. Ambiguous names get an explanation instead of a link that would answer 404.
  * A service whose saved selection publishes observed availability also gets its 24-hour observed badge.
  */
-export function BadgeList({ slug, title, groups, nodeUrl, pageLink, nonce }: {
+export function BadgeList({ slug, title, groups, nodeUrl, pageLink, nonce, registration }: {
   slug: string; title: string; nodeUrl: string; pageLink: string; nonce: number;
   groups: { id: string; name: string; monitors: { name: string; observed?: boolean }[] }[];
+  /** Control plane: the saved node the dashboard's server reads; `nodeUrl` is then the dashboard's origin. */
+  registration?: string;
 }) {
   let whole: string;
-  try { whole = badgeUrl(nodeUrl, slug); } catch (error) { return <p className="small fwarn"><Glyph tone="warn" />{error instanceof Error ? error.message : 'No badge address.'}</p>; }
+  try { whole = badgeUrl(nodeUrl, slug, undefined, undefined, registration); } catch (error) { return <p className="small fwarn"><Glyph tone="warn" />{error instanceof Error ? error.message : 'No badge address.'}</p>; }
   const targets = badgeTargets(groups);
   const seen = new Set<string>();
   const rows: ({ kind: 'ok'; selection: BadgeSelection; section: string; observed: boolean } | { kind: 'dup'; name: string; section: string; matches: number })[] = [];
@@ -58,10 +60,10 @@ export function BadgeList({ slug, title, groups, nodeUrl, pageLink, nonce }: {
           <summary>Single services <span className="muted">({usable} of {targets.length}{observed ? `, ${observed} with 24 h observed` : ''})</span></summary>
           {rows.map(row => row.kind === 'ok' ? (
             <div key={JSON.stringify(row.selection)} className="badge-pair">
-              <BadgeRow image={badgeUrl(nodeUrl, slug, row.selection)} alt={`${row.selection.monitor} status`} link={pageLink} nonce={nonce}
+              <BadgeRow image={badgeUrl(nodeUrl, slug, row.selection, undefined, registration)} alt={`${row.selection.monitor} status`} link={pageLink} nonce={nonce}
                 label={<><span className="muted">{row.section} ›</span> <b>{row.selection.monitor}</b></>} />
               {row.observed ? (
-                <BadgeRow image={badgeUrl(nodeUrl, slug, row.selection, 'uptime')} alt={`${row.selection.monitor} observed availability, last 24 h`} link={pageLink} nonce={nonce}
+                <BadgeRow image={badgeUrl(nodeUrl, slug, row.selection, 'uptime', registration)} alt={`${row.selection.monitor} observed availability, last 24 h`} link={pageLink} nonce={nonce}
                   label={<><span className="tag t-accent">24 h observed</span> <span className="muted small">{row.selection.monitor}: availability and coverage</span></>} />
               ) : null}
             </div>

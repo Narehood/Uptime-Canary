@@ -18,6 +18,8 @@ def validate(root):
         "CANARY_ADMIN_TOKEN": "ci-admin-fixture-000000000000000000000000",
         "CANARY_CLUSTER_TOKEN": "ci-cluster-fixture-0000000000000000000000",
         "CANARY_CORS_ORIGINS": "http://127.0.0.1:18347",
+        "CANARY_LOCAL_NODE_URL": "http://node:3100",
+        "CANARY_LOCAL_NODE_TOKEN": "ci-admin-fixture-000000000000000000000000",
     }
 
     def config(name, environment):
@@ -30,17 +32,24 @@ def validate(root):
 
     combined = config("deploy/portainer-stack.yml", {**clean, **fixture})
     node = config("deploy/portainer-node.yml", {**clean, **fixture})
-    # An isolated dashboard must parse without any node IDs, tokens or origins.
-    web = config("deploy/portainer-dashboard.yml", clean)
+    # The dashboard owns accounts and node registration; standalone can start empty.
+    web = config("deploy/portainer-dashboard.yml", {**clean, **fixture})
     assert set(combined["services"]) == {"node", "web"}
     assert set(node["services"]) == {"node"}
     assert set(web["services"]) == {"web"}
     assert node["services"]["node"] == combined["services"]["node"]
     assert web["services"]["web"] == combined["services"]["web"]
-    assert node["volumes"] == combined["volumes"]
+    assert set(combined["volumes"]) == set(node["volumes"]) | set(web["volumes"])
     assert set(node["volumes"]) == {"canary-data", "canary-identity"}
-    assert not web.get("volumes")
-    assert not web["services"]["web"].get("environment")
+    assert set(web["volumes"]) == {"canary-dashboard-data", "canary-dashboard-identity"}
+    assert web["services"]["web"]["environment"] == {
+        "CANARY_LOCAL_NODE_URL": "http://node:3100",
+        "CANARY_LOCAL_NODE_TOKEN": fixture["CANARY_ADMIN_TOKEN"],
+        "CANARY_DASHBOARD_ORIGINS": fixture["CANARY_CORS_ORIGINS"]}
+    empty = config("deploy/portainer-dashboard.yml", {**clean, "CANARY_CORS_ORIGINS": fixture["CANARY_CORS_ORIGINS"]})
+    assert empty["services"]["web"]["environment"]["CANARY_LOCAL_NODE_URL"] == ""
+    default_bundle = config("deploy/portainer-stack.yml", {**clean, **{k: v for k, v in fixture.items() if k != "CANARY_LOCAL_NODE_URL"}})
+    assert default_bundle["services"]["web"]["environment"]["CANARY_LOCAL_NODE_URL"] == "http://node:3100"
     # A fresh Portainer environment must pull real GHCR names, with no build
     # context or preloaded development-image requirement.
     for rendered in (combined, node, web):
@@ -88,7 +97,7 @@ def validate(root):
             if "node" in rendered["services"]:
                 assert rendered["services"]["node"]["environment"]["CANARY_CORS_ORIGINS"] == origin
     print("PASS combined, node-only, dashboard-only and build-from-checkout Compose configuration")
-    print("PASS split service parity, independent dashboard configuration and private node volumes")
+    print("PASS split service parity, shared dashboard account state, separate retained keys and private node volumes")
     print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
     print("PASS GHCR pulls, matching commit tags, full image overrides and offline pull policy")
 

@@ -4,6 +4,7 @@ import { ApiFailure, describeFailure } from '../api';
 import { DAY, allowedSteps, autoStep, duration, pct, planAvailability, stepText, type AvailabilityPlan } from '../availability';
 import { checkFacts, inputOf, typeLabel } from '../checks';
 import { useCanary } from '../context';
+import { nodeStateInfo, registryOrder } from '../dashboard';
 import { ago, elapsed, hasLatency, latency, latencyOf, maskedUrl, percent, plural, shortRev, span } from '../format';
 import { useResource } from '../hooks';
 import { candidateOrder, observationFor, outOfView, stateTone, stateWord, type Assessment } from '../model';
@@ -253,7 +254,7 @@ function ObservedTime({ view, range, customFrom, customTo, asTable }: { view: Mo
 }
 
 function HistoryCard({ view }: { view: MonitorView }) {
-  const { api, endpoint, overview, nodeMap, openSwitch } = useCanary();
+  const { api, endpoint, overview, nodeMap, openSwitch, controlPlane, registry, selection, select } = useCanary();
   const formId = useId();
   const [asTable, setAsTable] = useState(false);
   const [range, setRange] = useState<Range>('24h');
@@ -283,10 +284,23 @@ function HistoryCard({ view }: { view: MonitorView }) {
 
   if (!runsHere) {
     const elsewhere = candidateOrder(view.monitor.nodeIds).filter(id => nodeMap.get(id)?.url);
+    // Control plane: an assigned node that is also on this dashboard opens with the same sign-in, on this same page.
+    const registered = controlPlane
+      ? registryOrder(registry.list ?? []).filter(node => node.id !== selection?.id && view.monitor.nodeIds.includes(node.nodeId) && nodeStateInfo(node).readable)
+      : [];
     return (
       <Card title={<>History on <span className="mono">{endpoint}</span></>} hint="History stays on the node that measured it">
-        <EmptyState title={`${endpoint} doesn’t run this check`}>So it has no local history for it. Switch the endpoint to an assigned node to read that node’s history.</EmptyState>
-        {elsewhere.length ? (
+        <EmptyState title={`${endpoint} doesn’t run this check`}>
+          {controlPlane
+            ? `So it has no local history for it. ${registered.length ? 'Open an assigned node on this dashboard to read that node’s history.' : 'None of its assigned nodes is on this dashboard; an administrator can add one.'}`
+            : 'So it has no local history for it. Switch the endpoint to an assigned node to read that node’s history.'}
+        </EmptyState>
+        {registered.length ? (
+          <div className="row-wrap center">
+            {registered.map(node => <button key={node.id} type="button" className="btn sm" onClick={() => select(node)}><Icon name="eye" />Open {node.label}</button>)}
+          </div>
+        ) : null}
+        {!controlPlane && elsewhere.length ? (
           <div className="row-wrap center">
             {elsewhere.map(id => <button key={id} type="button" className="btn sm" onClick={() => openSwitch({ url: nodeMap.get(id)!.url, reason: `Reading ${view.monitor.name}’s history needs a connection to a node that runs it, such as ${id}.` })}><Icon name="plug" />View from {id}</button>)}
           </div>

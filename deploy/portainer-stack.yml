@@ -47,6 +47,13 @@ services:
     image: ${CANARY_WEB_IMAGE:-ghcr.io/narehood/uptime-canary-web:${CANARY_IMAGE_TAG:-latest}}
     pull_policy: ${CANARY_PULL_POLICY:-missing}
     restart: unless-stopped
+    environment:
+      CANARY_LOCAL_NODE_URL: ${CANARY_LOCAL_NODE_URL:-http://node:3100}
+      CANARY_LOCAL_NODE_TOKEN: ${CANARY_ADMIN_TOKEN:?Set a unique random admin token}
+      CANARY_DASHBOARD_ORIGINS: ${CANARY_CORS_ORIGINS:?Set the browser dashboard origin}
+    volumes:
+      - canary-dashboard-data:/data
+      - canary-dashboard-identity:/identity
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=32m
@@ -67,3 +74,5 @@ services:
 volumes:
   canary-data:
   canary-identity:
+  canary-dashboard-data:
+  canary-dashboard-identity:
