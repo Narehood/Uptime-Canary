@@ -17,7 +17,7 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     service = ROOT / 'services/game-query'
-    lock = json.loads((service / 'package-lock.json').read_text())
+    lock = json.loads((service / 'package-lock.json').read_text(encoding='utf-8'))
     sections, packages = [], []
     for relative, entry in sorted(lock['packages'].items()):
         if not relative:
@@ -28,11 +28,14 @@ def main():
         directory = service.joinpath(*path.parts)
         if not directory.resolve().is_relative_to(service.resolve()) or directory.is_symlink():
             raise ValueError('Service dependency escapes owned tree')
-        package = json.loads((directory / 'package.json').read_text())
+        package = json.loads((directory / 'package.json').read_text(encoding='utf-8'))
         if package['version'] != entry['version']:
             raise ValueError('Installed service dependency differs from lock')
         try:
-            texts = notices.texts(directory)
+            # Path comparisons fold case on Windows but not on Linux. Use the
+            # retained relative filename, with explicit case-sensitive order,
+            # so identical installed bytes produce identical notices everywhere.
+            texts = sorted(notices.texts(directory), key=lambda entry: entry[0])
         except RuntimeError:
             # Several historical npm packages publish their notice in README
             # or component.json rather than a standalone LICENSE. Preserve
@@ -42,11 +45,11 @@ def main():
             declaration = package.get('license')
             if component.is_file():
                 evidence.append(component)
-                declaration = declaration or json.loads(component.read_text()).get('license')
+                declaration = declaration or json.loads(component.read_text(encoding='utf-8')).get('license')
             if declaration != 'MIT' or not evidence:
                 raise ValueError('Service dependency has no identifiable license evidence: ' + package['name'])
             texts = [('package.json', (directory / 'package.json').read_text(encoding='utf-8').replace('\r\n', '\n'))]
-            for file in sorted(evidence):
+            for file in sorted(evidence, key=lambda file: file.relative_to(directory).as_posix()):
                 raw = file.read_bytes()
                 if len(raw) > 256 * 1024 or b'\0' in raw:
                     raise ValueError('Service license evidence exceeds bounds')

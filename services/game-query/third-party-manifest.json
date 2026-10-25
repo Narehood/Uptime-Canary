@@ -177,12 +177,12 @@
           "sha256": "53ca043ff2b9998b62849942cfa4d7c676985e22c64af08f72e4480650e019e3"
         },
         {
-          "file": "component.json",
-          "sha256": "34d8c079a5427455ffa065405346d71d37602ab80f69a82e273cfcbccf0aee8f"
-        },
-        {
           "file": "Readme.md",
           "sha256": "6cd9a615bee4ee38d464a4f78c7c497348177d56dad115929d20ff28aaefba16"
+        },
+        {
+          "file": "component.json",
+          "sha256": "34d8c079a5427455ffa065405346d71d37602ab80f69a82e273cfcbccf0aee8f"
         }
       ]
     },
@@ -339,12 +339,12 @@
           "sha256": "083f974e63787f3d95611642c78c036bc2c5e0fbed443804500b9328ea69f74d"
         },
         {
-          "file": "component.json",
-          "sha256": "f9e5ef95d8e8f65a5dcd3a200b38e5a13461ed95114dac053d908c391c12d731"
-        },
-        {
           "file": "README.md",
           "sha256": "5601c343c9aa96449e18aca7a4562038b1d4062f4742a2c9c7f9039f1a303f72"
+        },
+        {
+          "file": "component.json",
+          "sha256": "f9e5ef95d8e8f65a5dcd3a200b38e5a13461ed95114dac053d908c391c12d731"
         }
       ]
     },
@@ -571,12 +571,12 @@
           "sha256": "228375d2facb0945ba53ed9c230e3957cd8a56286b9fde71f030687821eb2353"
         },
         {
-          "file": "component.json",
-          "sha256": "f89cda6704d002db180bb19f0b16d1bded1e00f3cede4bb763d3a20e4d7469ec"
-        },
-        {
           "file": "README.md",
           "sha256": "bf8da9e464b8fd963a591893bb290496de06bed507caa0cf306cca79bed83e68"
+        },
+        {
+          "file": "component.json",
+          "sha256": "f89cda6704d002db180bb19f0b16d1bded1e00f3cede4bb763d3a20e4d7469ec"
         }
       ]
     },
@@ -601,12 +601,12 @@
           "sha256": "93165ce56e458216c18240cd961a522af5b18e51da06f55d88ac552234455d95"
         },
         {
-          "file": "component.json",
-          "sha256": "f9e5ef95d8e8f65a5dcd3a200b38e5a13461ed95114dac053d908c391c12d731"
-        },
-        {
           "file": "README.md",
           "sha256": "ff138e683771b187f3629c383db72ee7d632009010a36d08e18e8d2a34222ec7"
+        },
+        {
+          "file": "component.json",
+          "sha256": "f9e5ef95d8e8f65a5dcd3a200b38e5a13461ed95114dac053d908c391c12d731"
         }
       ]
     },

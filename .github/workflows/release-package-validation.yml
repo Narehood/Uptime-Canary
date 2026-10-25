@@ -19,6 +19,7 @@ on:
       - 'scripts/browser*'
       - 'scripts/coordinated*'
       - 'scripts/game-query*'
+      - 'scripts/game_query*'
       - 'services/game-query/**'
       - 'Dockerfile.game-query'
       - 'scripts/*-pure.mjs'
@@ -109,6 +110,8 @@ jobs:
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/browser_real_validation_test.py
       - name: Verify published-baseline metadata and native-host refusals
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/coordinated_upgrade_validation_test.py
+      - name: Verify portable query-service attribution controls
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/game_query_notices_test.py
       - name: Verify optional query service notices
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/game-query-notices.py --check
       - name: Verify archive and provenance fixtures

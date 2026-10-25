@@ -1067,18 +1067,6 @@ emitter-component 1.1.2
   }
 }
 
---- component.json ---
-
-{
-  "name": "emitter",
-  "repo": "component/emitter",
-  "description": "Event emitter",
-  "keywords": ["emitter", "events"],
-  "version": "1.1.1",
-  "scripts": ["index.js"],
-  "license": "MIT"
-}
-
 --- Readme.md ---
 
 # Emitter
@@ -1151,6 +1139,18 @@ Emitter(User.prototype);
 ### Emitter#hasListeners(event)
 
   Check if this emitter has `event` handlers.
+
+--- component.json ---
+
+{
+  "name": "emitter",
+  "repo": "component/emitter",
+  "description": "Event emitter",
+  "keywords": ["emitter", "events"],
+  "version": "1.1.1",
+  "scripts": ["index.js"],
+  "license": "MIT"
+}
 
 ==============================================================================
 event-to-promise 0.7.0
@@ -1499,28 +1499,6 @@ isarray 0.0.1
   "license": "MIT"
 }
 
---- component.json ---
-
-{
-  "name" : "isarray",
-  "description" : "Array#isArray for older browsers",
-  "version" : "0.0.1",
-  "repository" : "juliangruber/isarray",
-  "homepage": "https://github.com/juliangruber/isarray",
-  "main" : "index.js",
-  "scripts" : [
-    "index.js"
-  ],
-  "dependencies" : {},
-  "keywords": ["browser","isarray","array"],
-  "author": {
-    "name": "Julian Gruber",
-    "email": "mail@juliangruber.com",
-    "url": "http://juliangruber.com"
-  },
-  "license": "MIT"
-}
-
 --- README.md ---
 
 
@@ -1577,6 +1555,28 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--- component.json ---
+
+{
+  "name" : "isarray",
+  "description" : "Array#isArray for older browsers",
+  "version" : "0.0.1",
+  "repository" : "juliangruber/isarray",
+  "homepage": "https://github.com/juliangruber/isarray",
+  "main" : "index.js",
+  "scripts" : [
+    "index.js"
+  ],
+  "dependencies" : {},
+  "keywords": ["browser","isarray","array"],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT"
+}
 
 ==============================================================================
 json-buffer 3.0.1
@@ -2736,28 +2736,6 @@ stream 0.0.2
   }
 }
 
---- component.json ---
-
-{
-  "name": "stream",
-  "repo": "juliangruber/stream",
-  "description": "Node.js streams in the browser",
-  "version": "0.0.1",
-  "keywords": [
-    "stream"
-  ],
-  "scripts": [
-    "index.js"
-  ],
-  "dependencies": {
-    "component/emitter": "*"
-  },
-  "development": {
-    "component/jquery": "*"
-  },
-  "license": "MIT"
-}
-
 --- README.md ---
 
 stream
@@ -2819,6 +2797,28 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--- component.json ---
+
+{
+  "name": "stream",
+  "repo": "juliangruber/stream",
+  "description": "Node.js streams in the browser",
+  "version": "0.0.1",
+  "keywords": [
+    "stream"
+  ],
+  "scripts": [
+    "index.js"
+  ],
+  "dependencies": {
+    "component/emitter": "*"
+  },
+  "development": {
+    "component/jquery": "*"
+  },
+  "license": "MIT"
+}
 
 ==============================================================================
 string-to-stream 1.1.1
@@ -2899,28 +2899,6 @@ isarray 1.0.0
   }
 }
 
---- component.json ---
-
-{
-  "name" : "isarray",
-  "description" : "Array#isArray for older browsers",
-  "version" : "0.0.1",
-  "repository" : "juliangruber/isarray",
-  "homepage": "https://github.com/juliangruber/isarray",
-  "main" : "index.js",
-  "scripts" : [
-    "index.js"
-  ],
-  "dependencies" : {},
-  "keywords": ["browser","isarray","array"],
-  "author": {
-    "name": "Julian Gruber",
-    "email": "mail@juliangruber.com",
-    "url": "http://juliangruber.com"
-  },
-  "license": "MIT"
-}
-
 --- README.md ---
 
 
@@ -2983,6 +2961,28 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--- component.json ---
+
+{
+  "name" : "isarray",
+  "description" : "Array#isArray for older browsers",
+  "version" : "0.0.1",
+  "repository" : "juliangruber/isarray",
+  "homepage": "https://github.com/juliangruber/isarray",
+  "main" : "index.js",
+  "scripts" : [
+    "index.js"
+  ],
+  "dependencies" : {},
+  "keywords": ["browser","isarray","array"],
+  "author": {
+    "name": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com"
+  },
+  "license": "MIT"
+}
 
 ==============================================================================
 readable-stream 2.3.8

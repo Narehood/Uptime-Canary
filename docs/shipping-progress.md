@@ -61,6 +61,20 @@ actual upgrade needs native Linux execution. Publication remains a later
 step from approved main source. The user explicitly requires approval before
 merging the completion PR; no completion merge or tagged release is authorized.
 
+PR #12 opened at `d9a75b3`; its README follow-up is `67fcb59`. The first native
+Linux amd64 job stopped before compilation because optional-service notice
+generation used native path ordering: Windows placed `component.json` before
+mixed-case README names, whereas Linux did the reverse. The repair defines
+case-sensitive relative-filename order and retains every text and file hash in
+all 61 locked notice sets. Both original ordering regressions were reproduced
+locally before the repair; four new attribution controls, three existing
+embedded-attribution controls and both generated-notice checks then passed on
+unchanged Windows source `70323263...` in 7.016 guarded seconds, with scratch
+cleaned to zero. This is a tooling repair, not a native runtime pass. The new
+head must rerun the complete hosted gates. CodeRabbit skipped the initial
+review because 178 selected files exceeded its 100-file limit and it reported
+insufficient usage capacity; no automated source approval is claimed.
+
 ## PM2 work resumed after the review and capacity merges, 2026-10-24
 
 PR #6 merged as `d4cc56d`; PR #7 merged as `020bc4b` after exact-head
