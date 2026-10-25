@@ -11,9 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"uptime-canary/apps/node-go/internal/browsermonitor"
+	"uptime-canary/apps/node-go/internal/gamedigmonitor"
 	"uptime-canary/apps/node-go/internal/globalping"
 	"uptime-canary/apps/node-go/internal/pm2monitor"
 	"uptime-canary/apps/node-go/internal/steam"
+	"uptime-canary/apps/node-go/internal/tailscalemonitor"
 )
 
 const maxBody = 1_048_576
@@ -142,6 +145,12 @@ func placement(ids []string, known map[string]bool) error {
 	return nil
 }
 func validateMonitor(m *MonitorInput, known map[string]bool) error {
+	if m.Type != "gamedig" && m.GameDig != nil {
+		return fail(400, "Game query options do not match monitor type")
+	}
+	if m.Type != "real-browser" && m.Browser != nil {
+		return fail(400, "Browser options do not match monitor type")
+	}
 	if m.Type != "pm2" && m.PM2 != nil {
 		return fail(400, "PM2 options do not match monitor type")
 	}
@@ -167,9 +176,12 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	if err := validText(m.Name, "name", 128); err != nil {
 		return err
 	}
+	if !statusText(m.Description, 8192, true, true) {
+		return fail(400, "Monitor description must be valid text of at most 8192 bytes")
+	}
 	var err error
 	switch m.Type {
-	case "http":
+	case "http", "real-browser":
 		m.Target, err = httpURL(m.Target, "target")
 	case "ping":
 		err = pingTarget(m.Target)
@@ -177,8 +189,8 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 		m.Target = "manual"
 	case "push":
 		m.Target = "push"
-	case "tcp", "tls", "dns", "websocket", "smtp", "system-service":
-	case "globalping", "steam", "pm2":
+	case "tcp", "tls", "dns", "websocket", "smtp", "system-service", "tailscale-ping":
+	case "globalping", "steam", "pm2", "gamedig":
 	case "docker", "redis", "postgres", "mysql", "mqtt", "sftp", "mongodb", "sqlserver", "ntp", "grpc", "snmp", "radius", "sip-options", "rabbitmq", "kafka-producer", "oracledb":
 	default:
 		return fail(400, "Invalid monitor type")
@@ -250,7 +262,22 @@ func validateMonitor(m *MonitorInput, known map[string]bool) error {
 	if m.Type != "ping" && m.Ping != nil {
 		return fail(400, "Ping options do not match monitor type")
 	}
-	if m.Type == "pm2" {
+	if m.Type == "gamedig" {
+		if m.GameDig == nil || m.Browser != nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil || gamedigmonitor.Validate(gamedigConfig(*m)) != nil {
+			return fail(400, "Invalid game query configuration")
+		}
+	} else if m.Type == "real-browser" {
+		if m.Browser == nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil || browsermonitor.Validate(browserConfig(*m)) != nil {
+			return fail(400, "Invalid browser monitor configuration")
+		}
+	} else if m.Type == "tailscale-ping" {
+		if m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
+			return fail(400, "Options do not match Tailscale peer monitor")
+		}
+		if tailscalemonitor.Validate(tailscaleConfig(*m)) != nil {
+			return fail(400, "Invalid Tailscale peer name or address")
+		}
+	} else if m.Type == "pm2" {
 		if m.PM2 == nil || m.Service != nil || m.HTTP != nil || m.TLS != nil || m.DNS != nil || m.WebSocket != nil || m.SMTP != nil || m.Manual != nil || m.Ping != nil {
 			return fail(400, "Options do not match PM2 monitor")
 		}
@@ -386,7 +413,7 @@ func parseMonitor(b []byte, known map[string]bool) (MonitorInput, error) {
 	if err = required(o, "name", "type", "target", "intervalMs", "timeoutMs", "nodeIds", "enabled"); err != nil {
 		return m, err
 	}
-	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam", "pm2"); err != nil {
+	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam", "pm2", "browser", "gamedig", "description"); err != nil {
 		return m, err
 	}
 	if json.Unmarshal(b, &m) != nil {
@@ -394,6 +421,12 @@ func parseMonitor(b []byte, known map[string]bool) (MonitorInput, error) {
 	}
 	if (m.Type == "pm2" || m.PM2 != nil) && validatePM2MonitorJSON(b) != nil {
 		return m, fail(400, "Invalid PM2 monitor input")
+	}
+	if (m.Type == "real-browser" || m.Browser != nil) && validateBrowserMonitorJSON(b) != nil {
+		return m, fail(400, "Invalid browser monitor input")
+	}
+	if (m.Type == "gamedig" || m.GameDig != nil) && typedMonitorJSON(b, "gamedig") != nil {
+		return m, fail(400, "Invalid game monitor input")
 	}
 	if m.NotificationIDs != nil && (!validIDs(m.NotificationIDs, 16) || len(unique(m.NotificationIDs)) != len(m.NotificationIDs)) {
 		return m, fail(400, "notificationIds must contain at most 16 unique channel IDs")

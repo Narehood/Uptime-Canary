@@ -1,0 +1,22 @@
+# Optional service. Nodes still own all scheduling, state, incidents and HA.
+# Configure a GameDig monitor to reach this private API and use this separate
+# service credential. No node administrator or cluster credential is needed.
+services:
+  game-query:
+    image: ${CANARY_GAME_QUERY_IMAGE:-ghcr.io/narehood/uptime-canary-game-query:${CANARY_IMAGE_TAG:-latest}}
+    pull_policy: ${CANARY_PULL_POLICY:-missing}
+    restart: unless-stopped
+    environment:
+      CANARY_GAME_QUERY_TOKEN: ${CANARY_GAME_QUERY_TOKEN:?Generate a separate high entropy query service token}
+    ports:
+      - "${CANARY_GAME_QUERY_BIND_ADDRESS:-127.0.0.1}:${CANARY_GAME_QUERY_PORT:-3121}:3121"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 64

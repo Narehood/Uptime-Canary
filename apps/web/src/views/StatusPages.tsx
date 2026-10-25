@@ -1,16 +1,20 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import type { StatusPage, StatusPageAnnouncement, StatusPageAnnouncementState, StatusPageInput, StatusPageView } from '@uptime-canary/shared';
-import { ApiFailure, describeFailure } from '../api';
+import { ApiFailure, describeFailure, publicRssUrl } from '../api';
 import { useCanary } from '../context';
 import { addressCaveat, badgeTargets } from '../badges';
-import { bytesOf, plural, shortRev } from '../format';
+import { bytesOf, plural, shortRev, span } from '../format';
 import { useResource } from '../hooks';
+import { RichText } from '../markdown';
 import { notify } from '../notices';
 import { SELECTION_KEYS, otherFields, selectionFields, writeSelection, type SelectionFields } from '../publicAvailability';
 import { href, navigate, publicHref } from '../router';
+import {
+  REFRESH_CHOICES, accentVariables, buildPresentation, logoUrlProblem, presentationDraft, type PresentationDraft, type PresentationField,
+} from '../statusPresentation';
 import { BadgeList } from '../ui/badges';
 import { Banner, Card, Chip, CopyButton, EmptyState, ErrorText, Modal, PageHead, ReadOnly, Rev, Tag, Time, TypeTag } from '../ui/bits';
-import { CheckField, ErrorSummary, SelectField, TextAreaField, TextField } from '../ui/forms';
+import { CheckField, Disclosure, ErrorSummary, Seg, SelectField, TextAreaField, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
 
 export const ANNOUNCEMENT_STATES: { value: StatusPageAnnouncementState; label: string }[] = [
@@ -228,10 +232,11 @@ export function StatusPagesView() {
 interface SelDraft extends SelectionFields { key: number; other: Record<string, unknown> }
 interface GroupDraft { key: number; id: string; name: string; monitors: SelDraft[]; other: Record<string, unknown> }
 interface NoteDraft { key: number; id: string; title: string; message: string; state: StatusPageAnnouncementState; createdAt: number; updatedAt: number; pinned: boolean; touched: boolean; other: Record<string, unknown> }
-interface PageDraft { slug: string; slugTouched: boolean; title: string; description: string; enabled: boolean; groups: GroupDraft[]; notes: NoteDraft[]; other: Record<string, unknown> }
+/** `look`: the protocol 19 presentation (theme, accent, logo, footer, refresh, Markdown, public address and RSS feed). */
+interface PageDraft { slug: string; slugTouched: boolean; title: string; description: string; enabled: boolean; groups: GroupDraft[]; notes: NoteDraft[]; look: PresentationDraft; other: Record<string, unknown> }
 let draftKey = 0;
 
-const PAGE_KEYS = ['slug', 'title', 'description', 'enabled', 'groups', 'announcements', 'id', 'revision', 'updatedAt', 'deleted'] as const;
+const PAGE_KEYS = ['slug', 'title', 'description', 'enabled', 'groups', 'announcements', 'appearance', 'publicUrl', 'rssEnabled', 'id', 'revision', 'updatedAt', 'deleted'] as const;
 const GROUP_KEYS = ['id', 'name', 'monitors'] as const;
 const NOTE_KEYS = ['id', 'title', 'message', 'state', 'createdAt', 'updatedAt', 'pinned'] as const;
 const newSelection = (): SelDraft => ({ key: ++draftKey, monitorId: '', name: '', showCertificate: false, showTags: false, showAvailability: false, other: {} });
@@ -247,16 +252,21 @@ function pageDraft(page: StatusPage | undefined): PageDraft {
       key: ++draftKey, id: note.id, title: note.title, message: note.message, state: note.state, createdAt: note.createdAt, updatedAt: note.updatedAt, pinned: note.pinned,
       touched: false, other: otherFields(note, NOTE_KEYS),
     })),
+    look: presentationDraft(page),
     other: page ? otherFields(page, PAGE_KEYS) : {},
   };
 }
 
-type PField = 'title' | 'slug' | 'description' | 'groups' | 'notes';
-const PFIELD_LABEL: Record<PField, string> = { title: 'Title', slug: 'Address', description: 'Description', groups: 'Sections', notes: 'Announcements' };
+type PField = 'title' | 'slug' | 'description' | 'groups' | 'notes' | PresentationField;
+const PFIELD_LABEL: Record<PField, string> = {
+  title: 'Title', slug: 'Address', description: 'Description', groups: 'Sections', notes: 'Announcements',
+  theme: 'Theme', accent: 'Accent color', logo: 'Logo image URL', footer: 'Footer', refresh: 'Refresh', publicUrl: 'Public page address', rss: 'RSS feed',
+};
 const plainLine = (text: string, limit: number): boolean => Boolean(text.trim()) && bytesOf(text) <= limit && !/[\x00-\x1f\x7f]/u.test(text);
 const plainBlock = (text: string, limit: number): boolean => bytesOf(text) <= limit && !/[\x00-\x09\x0b-\x1f\x7f]/u.test(text);
 
-function buildPage(d: PageDraft, now: number): { input?: StatusPageInput; errors: Partial<Record<PField, string>>; rowErrors: Record<number, string> } {
+/** `stored` is the saved page being edited, whose appearance object (with any keys a newer node added) is built upon. */
+function buildPage(d: PageDraft, now: number, stored?: StatusPage): { input?: StatusPageInput; errors: Partial<Record<PField, string>>; rowErrors: Record<number, string> } {
   const errors: Partial<Record<PField, string>> = {};
   const rowErrors: Record<number, string> = {};
   if (!plainLine(d.title, 128)) errors.title = 'Enter a title of at most 128 bytes on one line.';
@@ -289,6 +299,7 @@ function buildPage(d: PageDraft, now: number): { input?: StatusPageInput; errors
     noteIds.add(note.id);
   }
   if (d.notes.some(note => rowErrors[note.key])) errors.notes ??= 'Fix the highlighted announcements.';
+  const presentation = buildPresentation(stored, d.look, errors);
   if (Object.keys(errors).length) return { errors, rowErrors };
   // Opt-in flags are written only when on, so a page that publishes no history saves exactly as before protocol 15.
   const input: StatusPageInput = {
@@ -301,9 +312,14 @@ function buildPage(d: PageDraft, now: number): { input?: StatusPageInput; errors
       ...note.other, id: note.id, title: note.title.trim(), message: note.message, state: note.state, pinned: note.pinned,
       createdAt: note.createdAt, updatedAt: note.touched ? Math.max(now, note.createdAt) : note.updatedAt,
     })),
+    // Written only when set, as Go's omitempty stores them, so a page without them saves exactly as before.
+    ...presentation,
   };
   return { input, errors, rowErrors };
 }
+
+/** The editor's page model, for scripts/status-presentation-pure.mjs. */
+export const statusPageModel = { pageDraft, buildPage };
 
 /** Badge groups for a saved page: public section IDs and names only, and which services publish observed history. */
 function savedBadgeGroups(page: StatusPage): { id: string; name: string; monitors: { name: string; observed: boolean }[] }[] {
@@ -326,6 +342,121 @@ function badgesChange(saved: StatusPage, draft: PageDraft): boolean {
   if (saved.slug !== draft.slug || saved.enabled !== draft.enabled) return true;
   const after = badgeKeys(draft.groups.map(group => ({ id: group.id, name: group.name, monitors: group.monitors.map(sel => ({ name: sel.name.trim(), observed: sel.showAvailability })) })));
   return [...badgeKeys(savedBadgeGroups(saved))].some(key => !after.has(key));
+}
+
+/** The dashboard's current light or dark mode, for previewing an accent against the right surface. */
+const currentMode = (): 'light' | 'dark' => typeof document !== 'undefined' && document.documentElement?.dataset?.mode === 'dark' ? 'dark' : 'light';
+
+/**
+ * The page's public look: theme default, accent color, logo, footer, visitors' refresh interval and Markdown. Typed
+ * settings only, never CSS, HTML or script. The logo is an external image every visitor's browser loads, so the editor
+ * loads it only when asked to; the preview shows the text with the accent and the Markdown choice.
+ */
+function AppearanceCard({ draft, stored, setLook, errors, disabled, formId }: {
+  draft: PageDraft; stored: StatusPage | undefined; setLook: (change: Partial<PresentationDraft>) => void; errors: Partial<Record<PField, string>>; disabled: boolean; formId: string;
+}) {
+  const look = draft.look;
+  const [open, setOpen] = useState(false);
+  const [logoShown, setLogoShown] = useState<string | null>(null);
+  const storedLook = presentationDraft(stored);
+  const hexOk = /^#[0-9a-fA-F]{6}$/u.test(look.accent.trim());
+  const refreshOptions = [
+    { value: '0', label: 'Every 30 s (default)' },
+    ...REFRESH_CHOICES.map(ms => ({ value: String(ms), label: `Every ${span(ms)}` })),
+    ...(look.refreshMs && !(REFRESH_CHOICES as readonly number[]).includes(look.refreshMs) ? [{ value: String(look.refreshMs), label: `Every ${span(look.refreshMs)} (as stored)` }] : []),
+  ];
+  // Only an address the node would accept is ever loaded, and only after the editor asks.
+  const logoReady = Boolean(look.logo.trim()) && !logoUrlProblem(look.logo.trim());
+  const firstNote = draft.notes[0];
+  const accent = hexOk ? look.accent.trim() : '';
+  const summary = [look.theme ? `${look.theme} theme` : '', accent ? accent : '', look.logo ? 'logo' : '', look.footer ? 'footer' : '', look.markdown ? 'Markdown' : ''].filter(Boolean).join(' · ') || 'Defaults';
+  return (
+    <Card title="Appearance" hint="Public. Typed settings only: no custom CSS, HTML or scripts.">
+      <div className="form">
+        <Seg legend="Theme" name={`${formId}-theme`} value={look.theme} onChange={theme => setLook({ theme })} disabled={disabled} full
+          options={[{ value: '', label: 'Visitor’s setting' }, ...(look.theme === 'system' || storedLook.theme === 'system' ? [{ value: 'system', label: 'System' }] : []), { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
+          hint="The theme for visitors who haven’t chosen light or dark themselves. They can still switch with the theme button." />
+        <div className="fld">
+          <label htmlFor={`${formId}-accent`}>Accent color <span className="muted">(optional)</span></label>
+          <div className="row-wrap accent-in">
+            <input type="color" aria-label="Pick the accent color" value={hexOk ? look.accent.trim().toLowerCase() : '#2a78d6'} onChange={event => setLook({ accent: event.target.value })} disabled={disabled} />
+            <input id={`${formId}-accent`} type="text" className="mono" value={look.accent} placeholder="#2a78d6" maxLength={16} spellCheck={false} autoComplete="off" disabled={disabled}
+              aria-invalid={errors.accent ? true : undefined} aria-describedby={`${formId}-accent-h${errors.accent ? ` ${formId}-accent-e` : ''}`} onChange={event => setLook({ accent: event.target.value })} />
+            {look.accent ? <button type="button" className="linkbtn" onClick={() => setLook({ accent: '' })} disabled={disabled}>Use the default</button> : null}
+          </div>
+          <small id={`${formId}-accent-h`}>A hex color like #2a78d6, for marks and outlines. Links and buttons use it only where their text stays readable (4.5:1).</small>
+          <ErrorText id={`${formId}-accent-e`}>{errors.accent}</ErrorText>
+        </div>
+        <TextField full mono label="Logo image URL (optional)" value={look.logo} onChange={logo => setLook({ logo })} error={errors.logo} disabled={disabled} placeholder="https://www.example.com/logo.png"
+          hint="An https:// image address without a ?query or #fragment, at most 2,048 bytes. Every visitor’s browser loads it from that server when the page opens; the node never fetches it. Use an image you control." />
+        {look.logo.trim() ? (
+          <div className="fld full">
+            {logoShown === look.logo.trim() && logoReady
+              ? <span className="logo-preview"><img src={logoShown} alt="Logo preview" referrerPolicy="no-referrer" decoding="async" /></span>
+              : <button type="button" className="btn sm" onClick={() => setLogoShown(look.logo.trim())} disabled={disabled || !logoReady}><Icon name="eye" />Load a preview</button>}
+            <small>This dashboard loads the image only when you ask, from your browser.</small>
+          </div>
+        ) : null}
+        <TextAreaField full optional label="Footer" value={look.footer} onChange={footer => setLook({ footer })} error={errors.footer} rows={2} disabled={disabled}
+          hint="Public text at the bottom of the page, up to 2,048 bytes. Line breaks are fine." />
+        <SelectField label="Visitors’ pages refresh" value={String(look.refreshMs)} options={refreshOptions} onChange={value => setLook({ refreshMs: Number(value) })} error={errors.refresh} disabled={disabled}
+          hint="How often an open page reads its node again. A hidden tab waits." />
+        <CheckField label="Format text with Markdown" checked={look.markdown} onChange={markdown => setLook({ markdown })} disabled={disabled}
+          hint={<>For the description, the footer and announcements: <span className="mono">**bold**</span>, <span className="mono">*italic*</span>, <span className="mono">`code`</span>, fenced code, “-” and “1.” lists, and <span className="mono">[links](https://…)</span> to http:// or https:// addresses. HTML, scripts, images and other link schemes stay plain text. The RSS feed always carries the text as written.</>} />
+        <Disclosure title="Preview" summary={summary} open={open} onToggle={() => setOpen(value => !value)}>
+          <div className="full sp-preview" style={accentVariables(accent, currentMode()) as CSSProperties}>
+            <div className="sp-preview-h"><span className="pv-mark" aria-hidden="true" /><b>{draft.title.trim() || 'Status'}</b></div>
+            {draft.description ? <RichText text={draft.description} markdown={look.markdown} className="pub-desc" /> : <p className="muted small">No description.</p>}
+            {firstNote?.message ? (
+              <article className="pub-note">
+                <div className="pub-note-h"><h3>{firstNote.title || 'Announcement'}</h3></div>
+                <RichText text={firstNote.message} markdown={look.markdown} />
+              </article>
+            ) : null}
+            {look.footer ? <RichText text={look.footer} markdown={look.markdown} className="pub-foot-text" /> : null}
+            <p className="muted small">The text with this page’s accent and Markdown choice, in this dashboard’s current theme. Sections, states and the logo are left out.</p>
+          </div>
+        </Disclosure>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The page's public address and its opt-in RSS feed of announcements. The feed carries only what the page's
+ * announcements say, with links to the public address; never incidents, history, monitors or notifications.
+ */
+function FeedCard({ draft, current, setLook, errors, disabled }: {
+  draft: PageDraft; current: StatusPage | undefined; setLook: (change: Partial<PresentationDraft>) => void; errors: Partial<Record<PField, string>>; disabled: boolean;
+}) {
+  const { api, selection } = useCanary();
+  const look = draft.look;
+  const suggested = selection
+    ? `${location.origin}${location.pathname}${publicHref(draft.slug || 'status', [], selection.id)}`
+    : publicLink(draft.slug || 'status', [api.baseUrl]);
+  let feed: string | null = null;
+  if (current?.enabled && current.rssEnabled && current.publicUrl) {
+    try { feed = publicRssUrl(api.baseUrl, current.slug, selection ? selection.id : undefined); } catch { feed = null; }
+  }
+  return (
+    <Card title="Public address and RSS">
+      <div className="form">
+        <TextField full mono label="Public page address (optional)" value={look.publicUrl} onChange={publicUrl => setLook({ publicUrl })} error={errors.publicUrl} disabled={disabled} placeholder="https://status.example.com/"
+          hint="The complete http:// or https:// address visitors open, at most 2,048 bytes; a #/status route and a registration selector are fine. The RSS feed links to it. The node never fetches it." />
+        {look.publicUrl.trim() !== suggested ? <div className="full"><button type="button" className="linkbtn small" onClick={() => setLook({ publicUrl: suggested })} disabled={disabled || !draft.slug}>Use this dashboard’s public link</button></div> : null}
+        <CheckField label="Publish an RSS feed of announcements" checked={look.rss} onChange={rss => setLook({ rss })} disabled={disabled}
+          hint="Off by default. Feed readers get the announcements you write here, newest first, linking to the address above. Never incidents, history, monitors or private names; no email or webhook subscriptions." />
+        {errors.rss ? <div className="full"><ErrorText id="sp-rss-e">{errors.rss}</ErrorText></div> : null}
+        {feed ? (
+          <div className="fld full">
+            <span className="flabel">Feed address</span>
+            <code className="link-out">{feed}</code>
+            <div className="row-wrap"><CopyButton value={feed} label="Copy feed address" /></div>
+          </div>
+        ) : current && look.rss && !(current.enabled && current.rssEnabled && current.publicUrl) ? <p className="full muted small">Save{current.enabled ? '' : ' and publish'} the page to get its feed address.</p> : null}
+      </div>
+    </Card>
+  );
 }
 
 function move<T>(list: T[], index: number, delta: number): T[] {
@@ -361,7 +492,7 @@ export function StatusPageFormView({ id }: { id?: string }) {
   useEffect(() => {
     if (id && !draft && existing && !existing.configConflict) { setDraft(pageDraft(existing.statusPage)); setBase(existing.statusPage); }
   }, [id, draft, existing]);
-  const result = useMemo(() => draft ? buildPage(draft, Date.now()) : null, [draft]);
+  const result = useMemo(() => draft ? buildPage(draft, Date.now(), base) : null, [draft, base]);
 
   if (!editable) return <div className="view"><PageHead title="Status page" /><Card><EmptyState title="Viewers can’t publish status pages">Sign in with an editor or admin account.</EmptyState></Card></div>;
   if (pages.error instanceof ApiFailure && pages.error.status === 404) return <div className="view"><PageHead title="Status page" /><Card><EmptyState title={`${endpoint} doesn’t publish status pages`}>It probably runs an older Uptime-Canary version.</EmptyState></Card></div>;
@@ -373,6 +504,7 @@ export function StatusPageFormView({ id }: { id?: string }) {
   const visible = showErrors ? errors : {};
   const visibleRows = showErrors ? rowErrors : {};
   const update = (change: Partial<PageDraft>): void => setDraft(d => d ? { ...d, ...change } : d);
+  const setLook = (change: Partial<PresentationDraft>): void => setDraft(d => d ? { ...d, look: { ...d.look, ...change } } : d);
   const setGroup = (key: number, change: Partial<GroupDraft>): void => update({ groups: draft.groups.map(group => group.key === key ? { ...group, ...change } : group) });
   const setSel = (groupKey: number, key: number, change: Partial<SelDraft>): void => setGroup(groupKey, { monitors: draft.groups.find(group => group.key === groupKey)!.monitors.map(sel => sel.key === key ? { ...sel, ...change } : sel) });
   const setNote = (key: number, change: Partial<NoteDraft>): void => update({ notes: draft.notes.map(note => note.key === key ? { ...note, ...change, touched: true } : note) });
@@ -441,6 +573,8 @@ export function StatusPageFormView({ id }: { id?: string }) {
                   hint={draft.enabled ? 'Anyone with the address can read it from every node that has this revision.' : 'A draft: every node answers “not found” for its address.'} />
               </div>
             </Card>
+
+            <AppearanceCard draft={draft} stored={base} setLook={setLook} errors={visible} disabled={saving} formId={formId} />
 
             <Card title="Sections and monitors" hint={`${plural(draft.groups.length, 'section')} of 16 · ${plural(total, 'monitor')} of 64`}
               actions={<button type="button" className="btn sm" onClick={() => update({ groups: [...draft.groups, { key: ++draftKey, id: randomId('section'), name: '', monitors: [], other: {} }] })} disabled={saving || draft.groups.length >= 16}><Icon name="plus" />Add section</button>}>
@@ -532,6 +666,7 @@ export function StatusPageFormView({ id }: { id?: string }) {
               ) : <p className="muted small">None. Resolved announcements stay public until you remove them.</p>}
               <p className="foot-note">Times are your browser’s clock when you save; they don’t schedule anything. Announcements never change the measured state.</p>
             </Card>
+            <FeedCard draft={draft} current={current} setLook={setLook} errors={visible} disabled={saving} />
             <Card title="Share">
               {current ? <PublicLinkBuilder slug={current.slug} enabled={current.enabled} /> : <p className="muted small">Save the page to get its public link and badges.</p>}
               {current && (draft.slug !== current.slug || draft.enabled !== current.enabled) ? <p className="small fwarn"><Glyph tone="warn" />Unsaved address or publication changes aren’t in this link yet.</p> : null}

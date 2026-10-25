@@ -129,6 +129,17 @@ def main():
             "upstreamCommit": commit,
         }
     pending = list(json.loads((ROOT / "apps/web/package.json").read_text())["dependencies"])
+    game_catalogue = ROOT / 'apps/node-go/internal/gamedigmonitor'
+    if game_catalogue.is_dir():
+        upstream = json.loads((game_catalogue / 'upstream.json').read_text())
+        license = (game_catalogue / 'LICENSE.gamedig').read_bytes()
+        if hashlib.sha256(license).hexdigest() != upstream['licenseSha256']:
+            raise RuntimeError('Game catalogue license differs from pinned provenance')
+        add('vendored:npm:gamedig-catalogue', upstream['version'] + ' (' + upstream['commit'] + ')', game_catalogue,
+            [('LICENSE.gamedig', license.decode().replace('\r\n', '\n'))])
+        manifest[-1]['embeddedSource'] = {'file': 'apps/node-go/internal/gamedigmonitor/catalogue.json',
+            'sha256': hashlib.sha256((game_catalogue / 'catalogue.json').read_bytes()).hexdigest(),
+            'upstreamCommit': upstream['commit']}
     visited = set()
     while pending:
         name = pending.pop(0)

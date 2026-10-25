@@ -12,9 +12,11 @@ class PublicationError(RuntimeError):
     pass
 
 
-def promote(prefix, commit, run=subprocess.run):
+def promote(prefix, commit, run=subprocess.run, components=("node", "web")):
     if not re.fullmatch(r"ghcr\.io/[a-z0-9-]+/uptime-canary", prefix) or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise PublicationError("Invalid container publication identity")
+    if tuple(components) not in (("node", "web"), ("node", "web", "game-query")):
+        raise PublicationError("Invalid container component set")
 
     def command(*arguments):
         try:
@@ -47,7 +49,6 @@ def promote(prefix, commit, run=subprocess.run):
         if result.returncode:
             raise PublicationError((result.stderr or result.stdout or "Registry promotion failed").strip())
 
-    components = ("node", "web")
     # Capture both candidates and old tags before any write. Promote captured
     # digests, so a mutable commit tag cannot change halfway through the pair.
     candidates = {key: inspect(prefix + "-" + key + ":sha-" + commit) for key in components}
@@ -78,9 +79,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prefix", required=True)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--with-game-query", action="store_true")
     args = parser.parse_args()
     try:
-        result = promote(args.prefix, args.commit)
+        result = promote(args.prefix, args.commit, components=("node", "web", "game-query") if args.with_game_query else ("node", "web"))
     except PublicationError as error:
         print("Container promotion failed: " + str(error), file=sys.stderr)
         return 1

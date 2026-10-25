@@ -61,6 +61,12 @@ func (v *Version) UnmarshalJSON(b []byte) error {
 	if (out.Monitor.Type == "pm2" || out.Monitor.PM2 != nil) && pm2MonitorVersionJSON(b) != nil {
 		return fail(400, "Invalid PM2 monitor version")
 	}
+	if (out.Monitor.Type == "real-browser" || out.Monitor.Browser != nil) && browserMonitorVersionJSON(b) != nil {
+		return fail(400, "Invalid browser monitor version")
+	}
+	if (out.Monitor.Type == "gamedig" || out.Monitor.GameDig != nil) && typedMonitorVersionJSON(b, "gamedig") != nil {
+		return fail(400, "Invalid game monitor version")
+	}
 	*v = Version(out)
 	return nil
 }

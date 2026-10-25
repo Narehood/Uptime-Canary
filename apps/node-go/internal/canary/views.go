@@ -9,6 +9,8 @@ func publicMonitor(m Monitor, role string) Monitor {
 		m.Globalping = nil
 		m.Steam = nil
 		m.PM2 = nil
+		m.Browser = nil
+		m.GameDig = nil
 		m.WebhookURL = ""
 		m.Service = nil
 		if m.Push != nil {
@@ -32,6 +34,7 @@ func publicMonitor(m Monitor, role string) Monitor {
 			o.Headers = nil
 			o.BasicAuth = nil
 			o.BearerToken = ""
+			o.OAuth2 = nil
 			o.ProxyURL = ""
 			m.WebSocket = &o
 		}

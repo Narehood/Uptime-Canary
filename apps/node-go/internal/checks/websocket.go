@@ -30,6 +30,13 @@ func headerToken(h http.Header, name, want string) bool {
 
 func checkWebSocket(ctx context.Context, c Config) Result {
 	o := wsOptions(c)
+	if o.OAuth2 != nil {
+		token, err := oauth2Token(ctx, HTTPConfig{OAuth2: o.OAuth2, ProxyURL: o.ProxyURL, UseEnvironmentProxy: o.UseEnvironmentProxy})
+		if err != nil {
+			return down("OAuth2 token request failed")
+		}
+		o.BearerToken = token
+	}
 	tlsOpts := tlsOptions(c)
 	u, _ := parseTargetURL(c.Target, true)
 	if u.Scheme == "wss" {
@@ -56,6 +63,9 @@ func checkWebSocket(ctx context.Context, c Config) Result {
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Sec-WebSocket-Version", "13")
 	req.Header.Set("Sec-WebSocket-Key", key)
+	if len(o.Subprotocols) != 0 {
+		req.Header.Set("Sec-WebSocket-Protocol", strings.Join(o.Subprotocols, ", "))
+	}
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -67,7 +77,7 @@ func checkWebSocket(ctx context.Context, c Config) Result {
 		r.Certificate = certificateSummary(*resp.TLS, tlsOpts)
 	}
 	digest := sha1.Sum([]byte(key + websocketGUID)) // mandated by RFC 6455, not used as a security hash
-	if resp.StatusCode != 101 || !headerToken(resp.Header, "Connection", "upgrade") || !headerToken(resp.Header, "Upgrade", "websocket") || len(resp.Header.Values("Sec-WebSocket-Accept")) != 1 || resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(digest[:]) || resp.Header.Get("Sec-WebSocket-Extensions") != "" || resp.Header.Get("Sec-WebSocket-Protocol") != "" {
+	if resp.StatusCode != 101 || !headerToken(resp.Header, "Connection", "upgrade") || !headerToken(resp.Header, "Upgrade", "websocket") || len(resp.Header.Values("Sec-WebSocket-Accept")) != 1 || resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(digest[:]) || resp.Header.Get("Sec-WebSocket-Extensions") != "" || !selectedSubprotocol(resp.Header, o) {
 		r.Message = "WebSocket upgrade validation failed"
 		return r
 	}
@@ -130,6 +140,22 @@ func checkWebSocket(ctx context.Context, c Config) Result {
 	}
 	r.Message = "WebSocket frame count exceeds limit"
 	return r
+}
+
+func selectedSubprotocol(header http.Header, options WebSocketConfig) bool {
+	values := header.Values("Sec-WebSocket-Protocol")
+	if len(values) == 0 {
+		return !options.RequireSubprotocol
+	}
+	if len(values) != 1 || values[0] == "" {
+		return false
+	}
+	for _, offered := range options.Subprotocols {
+		if values[0] == offered {
+			return true
+		}
+	}
+	return false
 }
 
 // writeWSControl always masks client frames with an independent random key.

@@ -16,7 +16,13 @@ on:
       - 'scripts/third-party-notices.py'
       - 'scripts/pm2-real*'
       - 'scripts/pm2_real*'
-      - 'scripts/pm2-pure.mjs'
+      - 'scripts/browser*'
+      - 'scripts/coordinated*'
+      - 'scripts/game-query*'
+      - 'scripts/game_query*'
+      - 'services/game-query/**'
+      - 'Dockerfile.game-query'
+      - 'scripts/*-pure.mjs'
       - 'scripts/fixtures/pm2-real/**'
       - '.github/workflows/release-package-validation.yml'
       - 'go.mod'
@@ -41,7 +47,7 @@ jobs:
   native-package:
     name: native-package (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -98,15 +104,25 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify storage guard fixtures
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/bounded_validation_test.py
+      - name: Install optional query service's locked proof dependencies
+        run: python scripts/bounded_validation.py --timeout 180 -- python -B scripts/game-query-dependencies.py
+      - name: Verify private browser launcher refusal and archive controls
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/browser_real_validation_test.py
+      - name: Verify published-baseline metadata and native-host refusals
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/coordinated_upgrade_validation_test.py
+      - name: Verify portable query-service attribution controls
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/game_query_notices_test.py
+      - name: Verify optional query service notices
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/game-query-notices.py --check
       - name: Verify archive and provenance fixtures
         run: python scripts/bounded_validation.py --timeout 60 -- python -B -m unittest discover -s scripts -p '*package*test.py'
       - name: Verify PM2 namespace refusal controls without privilege changes
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/pm2_real_validation_test.py
       - name: Verify PM2 editor and configuration contracts
         run: python scripts/bounded_validation.py --timeout 60 -- node scripts/pm2-pure.mjs
-      - name: Exercise native PM2 workers and process boundaries
+      - name: Exercise native local-manager, browser and query adapters and process boundaries
         if: matrix.target != 'linux-arm64'
-        run: python scripts/bounded_validation.py --timeout 300 -- go test -mod=readonly -p=1 -count=1 ./apps/node-go/internal/pm2monitor ./apps/node-go/internal/probeworker/process
+        run: python scripts/bounded_validation.py --timeout 300 -- go test -mod=readonly -p=1 -count=1 ./apps/node-go/internal/pm2monitor ./apps/node-go/internal/tailscalemonitor ./apps/node-go/internal/browsermonitor ./apps/node-go/internal/gamedigmonitor ./apps/node-go/internal/probeworker/process
       - name: Exercise all node packages on native arm64
         if: matrix.target == 'linux-arm64'
         # Omit compiler DWARF as well as linker symbols: cold native compilation
@@ -122,12 +138,14 @@ jobs:
           import subprocess
           import sys
           target = os.environ['PACKAGE_TARGET']
-          command = [sys.executable, 'scripts/bounded_validation.py', '--timeout', '1200', '--',
+          command = [sys.executable, 'scripts/bounded_validation.py', '--timeout', '1500', '--',
                      sys.executable, '-B', 'scripts/release-package-validation.py',
                      '--commit', os.environ['SOURCE_COMMIT'], '--version', '0.0.0-dev',
                      '--target', target, '--require-native', '--full-proofs']
           if target.startswith('linux-'):
-              command.extend(['--alpine-help', '--pm2-interop'])
+              command.extend(['--alpine-help', '--pm2-interop', '--browser-interop'])
+          if target == 'linux-amd64':
+              command.append('--coordinated-upgrade')
           subprocess.run(command, check=True)
       - name: Upload reports only
         if: always()
@@ -137,6 +155,8 @@ jobs:
           path: |
             .canary/release-package-current.json
             .canary/pm2-real-current.json
+            .canary/browser-linux-current.json
+            .canary/coordinated-upgrade-current.json
             .canary/work/current/latest.json
             .canary/work/current/latest.log
           retention-days: 7

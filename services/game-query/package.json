@@ -1,0 +1,10 @@
+{
+  "name": "@uptime-canary/game-query",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Optional isolated GameDig protocol service; Go nodes retain scheduling, policy, state and HA",
+  "license": "MIT",
+  "engines": { "node": ">=24.13.0 <25" },
+  "dependencies": { "gamedig": "5.3.3" }
+}

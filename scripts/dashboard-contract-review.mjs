@@ -74,7 +74,9 @@ async function fixture() {
   const go = process.env.CANARY_GO || join(root, '.canary', 'tools', 'go', 'bin', process.platform === 'win32' ? 'go.exe' : 'go');
   const binary = join(runDir, process.platform === 'win32' ? 'review-node.exe' : 'review-node');
   console.log(`BUILD ${runDir}`);
-  await command(go, ['build', '-p', '1', '-trimpath', '-o', binary, './apps/node-go/cmd/canary'], source, { ...cleanEnv, CGO_ENABLED: '0', GOTOOLCHAIN: 'local' });
+  // Omit compiler debug data and linker symbols to fit the same 512 MiB
+  // disposable-storage budget used by native package validation.
+  await command(go, ['build', '-p', '1', '-trimpath', '-gcflags=all=-dwarf=false', '-ldflags=-s -w', '-o', binary, './apps/node-go/cmd/canary'], source, { ...cleanEnv, CGO_ENABLED: '0', GOTOOLCHAIN: 'local' });
   const webRoot = join(source, 'apps', 'web'), dist = join(runDir, 'dist'), vite = join(root, 'node_modules', 'vite', 'bin', 'vite.js');
   const tsc = await command(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '--noEmit', '-p', webRoot], source);
   const webBuild = await command(process.execPath, [vite, 'build', '--outDir', dist, '--emptyOutDir'], webRoot);
@@ -218,7 +220,15 @@ async function functionsUnderReview() {
   const checks = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/checks.tsx')).href, import.meta.url);
   // Protocol 18: the PM2 builder and rules are already exported, so the form/node admission mirror needs no appended export.
   const pm2 = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/pm2.tsx')).href, import.meta.url);
-  return { ...monitor, ...channel, ...config, ...maintenance, ...specs, ...checks, ...pm2 };
+  // Protocol 19: the Tailscale target rule is exported too, for the same form/node admission mirror.
+  const tailscale = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/tailscale.tsx')).href, import.meta.url);
+  // Protocol 19 real browser: the endpoint, token and wait rules and the builder are exported for the same admission mirror.
+  const browser = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/browser.tsx')).href, import.meta.url);
+  // Protocol 19 GameDig: the game, address, port, token and service rules and the builder are exported for the same mirror.
+  const gamedig = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/gamedig.tsx')).href, import.meta.url);
+  // Protocol 19 status-page presentation: the appearance, public address and feed rules, for the same form/node mirror.
+  const presentation = await tsImport(pathToFileURL(join(state.source, 'apps/web/src/statusPresentation.ts')).href, import.meta.url);
+  return { ...monitor, ...channel, ...config, ...maintenance, ...specs, ...checks, ...pm2, ...tailscale, ...browser, ...gamedig, ...presentation };
 }
 
 async function review() {
@@ -258,12 +268,18 @@ async function review() {
   });
   // Protocol 16 accepted 27 types; protocol 17 explicitly adds the Steam directory monitor.
   // Protocol 17 accepted 28 types; protocol 18 explicitly adds the PM2 process monitor.
-  await step('Catalogue matches all 29 implemented check types, including Globalping, system-service, Steam and PM2', async () => {
-    assert.equal(f.CHECK_TYPES.length, 29); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 29);
+  // Protocol 18 accepted 29 types; protocol 19 explicitly adds the Tailscale peer ping (validation.go: typed target).
+  // Protocol 19 also explicitly adds the real browser (validation.go: an HTTP(S) typed target with `browser`), so 30 -> 31.
+  // Protocol 19 also explicitly adds GameDig (validation.go: a `gamedig` options object for an optional query service), so 31 -> 32.
+  await step('Catalogue matches all 32 implemented check types, including Globalping, system-service, Steam, PM2, Tailscale, real browser and GameDig', async () => {
+    assert.equal(f.CHECK_TYPES.length, 32); assert.equal(new Set(f.CHECK_TYPES.map(v => v.type)).size, 32);
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'gamedig'));
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'real-browser'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'globalping'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'system-service'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'steam'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'pm2'));
+    assert.ok(f.CHECK_TYPES.some(v => v.type === 'tailscale-ping'));
     assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
     assert.equal(f.PROVIDERS.length, 11);
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
@@ -311,23 +327,99 @@ async function review() {
     // Protocol 18: a numeric-looking name stays a literal PM2 name, never an id or PID; odd durations and retries must
     // survive the form's duration fields. Paused, so no node contacts a PM2 daemon.
     pm2: { target: '0042', intervalMs: 61500, timeoutMs: 1234, retries: 2, retryIntervalMs: 2500, pm2: { transport: 'unix', home: '/var/lib/canary-review/.pm2', namespace: 'review ns/pm2' } },
+    // Protocol 19: the target is the whole configuration, with no options object. Paused, so no node runs a Tailscale client.
+    'tailscale-ping': { target: 'canary-review-peer.example-tailnet.ts.net', timeoutMs: 4321, retries: 1, retryIntervalMs: 5000, upsideDown: true },
+    // Protocol 19: a private endpoint with a credential in its query, a bearer token, a wait below the timeout and
+    // screenshots on. Paused, so no node connects to a browser service; the discard port 9 is never dialled.
+    'real-browser': { target: state.sink + '/browser-page', timeoutMs: 4000, retries: 1, browser: { endpoint: 'ws://127.0.0.1:9/devtools/browser/canary-review?token=review-browser-query-secret', bearerToken: 'review-browser-bearer-secret', screenshot: true, delayMs: 250 } },
+    // Protocol 19 GameDig: every option set, a private game token and service token, and an https service address that
+    // is never resolved. Paused, so no node contacts a query service or a game server.
+    gamedig: { target: 'play.canary-review.test', timeoutMs: 4000, retries: 1, gamedig: { game: 'minecraft', port: 25565, givenPortOnly: true, token: 'review-game-token-secret', endpoint: 'https://game-query.canary-review.test:3121', bearerToken: 'review-game-query-bearer-0123456789' } },
   };
   for (const [type, options] of Object.entries(networkOptions)) await step(`API + form: ${type} preserves all non-service options and nullable omission`, async () => {
     if (options.push) secrets.add(options.push.token);
     if (options.steam) secrets.add(options.steam.apiKey);
+    if (options.browser) { secrets.add(options.browser.bearerToken); secrets.add('review-browser-query-secret'); }
+    if (options.gamedig) { secrets.add(options.gamedig.token); secrets.add(options.gamedig.bearerToken); }
     const made = await api(A, '/api/monitors', 'POST', base(type, options)); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.draftFrom(m, [A.id]), initial = structuredClone(d); d.name += ' renamed'; const built = f.build(d, m, initial); assert.ok(built.input, JSON.stringify({ ...built.errors, ...built.serviceErrors }));
     const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text);
-    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','pm2','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
+    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','pm2','browser','gamedig','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved.value[key], m[key], key);
     assert.equal(saved.value.target, m.target);
     if (type === 'push') { assert.equal(saved.value.pushStartedAt, m.pushStartedAt); assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision); }
     if (type === 'steam') assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+    if (type === 'real-browser') {
+      assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+      assert.equal(JSON.stringify(saved.value.browser), JSON.stringify(m.browser), 'browser options byte for byte');
+      assert.deepEqual(m.browser, options.browser, 'the node stored the options as sent');
+    }
     if (type === 'pm2') {
       assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
       assert.equal(JSON.stringify(saved.value.pm2), JSON.stringify(m.pm2), 'PM2 options byte for byte');
       for (const key of ['intervalMs', 'timeoutMs']) assert.equal(saved.value[key], m[key], key);
     }
+    if (type === 'gamedig') {
+      assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+      assert.equal(JSON.stringify(saved.value.gamedig), JSON.stringify(m.gamedig), 'GameDig options byte for byte');
+      assert.deepEqual(m.gamedig, options.gamedig, 'the node stored the options as sent');
+      assert.equal(saved.value.target, options.target);
+    }
     networkMonitors[type] = saved.value; return { id: m.id, allOptionsPreserved: true };
+  });
+  // r5 (protocol 19): DNS SRV/SOA/CAA, WebSocket subprotocols and OAuth2, TLS on TCP and the monitor description. Each
+  // case is a stored-shape monitor: the form must accept exactly what the node accepts, and sends what its builder
+  // produced. The existing paused DNS, WebSocket and TCP monitors take every case by PUT, so no monitor is created and no
+  // node queries a resolver or opens a connection. The last accepted case of each stays for the browser and viewer steps.
+  await step('API + form (r5): DNS SRV/SOA/CAA, WebSocket subprotocols and OAuth2, TCP TLS and descriptions are accepted and refused exactly as on the node', async () => {
+    const wsSecret = 'review-ws-oauth-secret'; secrets.add(wsSecret);
+    const ws = networkMonitors.websocket.websocket, oauth2 = { tokenUrl: state.sink + '/token', clientId: 'review-ws-client', clientSecret: wsSecret, allowInsecureHttp: true };
+    const results = [];
+    const run = async (type, patch, label) => {
+      const current = networkMonitors[type], candidate = { ...current, ...patch };
+      for (const [key, value] of Object.entries(patch)) if (value === undefined) delete candidate[key];
+      const d = f.draftFrom(candidate, [A.id]), built = f.build(d, candidate, undefined), formAccepts = Boolean(built.input);
+      const body = built.input ?? Object.fromEntries(Object.entries(f.inputOf(candidate)));
+      const saved = await api(A, `/api/monitors/${current.id}`, 'PUT', { ...body, revision: current.revision });
+      assert.ok(saved.status === 200 || saved.status === 400, `${label}: ${saved.status} ${saved.text}`);
+      assert.equal(saved.status === 200, formAccepts, `${label}: form ${formAccepts ? 'accepts' : `refuses (${Object.values(built.errors).join(' ')})`}, node answered ${saved.status}`);
+      if (saved.status === 200) {
+        // The node re-encodes in Go's field order, so values are compared, not key order.
+        for (const key of Object.keys(patch)) assert.deepEqual(saved.value[key], body[key], `${label}: ${key} stored as sent`);
+        assert.equal(saved.value.enabled, false, 'admission cases stay paused');
+        networkMonitors[type] = saved.value;
+      }
+      results.push({ label, accepted: formAccepts });
+      return saved;
+    };
+    const dns = [
+      [{ recordType: 'SRV', expected: ['10 5 5060 sip.example.com'] }, 'SRV, system resolver'], [{ recordType: 'SRV', server: '127.0.0.1:9999', expected: ['010 05 5060 SIP.Example.COM.'] }, 'SRV non-canonical'],
+      [{ recordType: 'SRV', expected: ['0 0 65536 host.invalid'] }, 'SRV port out of range'], [{ recordType: 'SOA' }, 'SOA without resolver'],
+      [{ recordType: 'SOA', server: '127.0.0.1:9999', expected: ['ns1.example.com hostmaster.example.com 2026102401 7200 3600 1209600 300'] }, 'SOA'],
+      [{ recordType: 'SOA', server: '127.0.0.1:9999', expected: ['ns.invalid host.invalid 4294967296 1 1 1 1'] }, 'SOA serial out of range'], [{ recordType: 'CAA' }, 'CAA without resolver'],
+      [{ recordType: 'CAA', server: '127.0.0.1:9999', expected: ['0 issue "letsencrypt.org"', '0 ISSUE pki.goog'] }, 'CAA quoted and unquoted'],
+      [{ recordType: 'CAA', server: '127.0.0.1:9999', expected: ['0 bad-tag "value"'] }, 'CAA tag'], [{ recordType: 'CAA', server: '127.0.0.1:9999', expected: ['0 issue "unfinished'] }, 'CAA unfinished value'],
+      [{ recordType: 'A', server: '127.0.0.1:9999', expected: ['127.0.0.1'] }, 'A restored'],
+    ];
+    for (const [options, label] of dns) await run('dns', { dns: options }, `dns ${label}`);
+    const websocket = [
+      [{ ...ws, subprotocols: ['chat', 'v2'], requireSubprotocol: true }, 'offers, one required'], [{ ...ws, subprotocols: ['chat', 'chat'] }, 'duplicate offer'], [{ ...ws, requireSubprotocol: true }, 'required without offers'],
+      [{ ...ws, subprotocols: Array.from({ length: 17 }, (_, i) => `p${i}`) }, '17 offers'], [{ ...ws, subprotocols: ['a'.repeat(129)] }, 'offer over 128 bytes'],
+      [{ headers: ws.headers, proxyUrl: ws.proxyUrl, oauth2: { ...oauth2, allowInsecureHttp: false } }, 'OAuth2 with an http:// token endpoint and no plain-HTTP allowance'],
+      [{ headers: { ...ws.headers, Authorization: 'Bearer review-other' }, oauth2 }, 'OAuth2 with an Authorization header'],
+      [{ headers: ws.headers, proxyUrl: ws.proxyUrl, oauth2, subprotocols: ['chat', 'v2'], requireSubprotocol: true }, 'OAuth2 and offers'],
+    ];
+    for (const [options, label] of websocket) await run('websocket', { websocket: options }, `websocket ${label}`);
+    const before = networkMonitors.tcp;
+    for (const [patch, label] of [[{ tls: {} }, 'TLS with defaults'], [{ tls: { serverName: 'localhost', minValidityDays: 3 } }, 'TLS with options'], [{ tls: {} }, 'TLS with defaults again']]) await run('tcp', patch, `tcp ${label}`);
+    assert.notEqual(networkMonitors.tcp.checkGeneration || networkMonitors.tcp.revision, before.checkGeneration || before.revision, 'turning TLS on is a new check');
+    const description = 'Review description: private notes\nsecond line';
+    for (const [text, label] of [['a'.repeat(8192), '8,192 bytes'], ['a'.repeat(8193), '8,193 bytes'], ['tab\there', 'tab'], ['cr\rhere', 'carriage return'], [description, 'two lines']]) {
+      const previous = networkMonitors.tcp;
+      const saved = await run('tcp', { description: text }, `description ${label}`);
+      if (saved.status === 200) assert.equal(saved.value.checkGeneration || saved.value.revision, previous.checkGeneration || previous.revision, `${label}: a description keeps the check generation`);
+    }
+    assert.equal(networkMonitors.tcp.description, description); assert.deepEqual(networkMonitors.tcp.tls, {});
+    return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length, monitorsCreated: 0 };
   });
   const maintenanceWindows = {};
   for (const strategy of ['once','interval','daily','weekly','monthly','cron']) await step(`Maintenance ${strategy}: API + form exact schedule preservation`, async () => {
@@ -412,6 +504,139 @@ async function review() {
     }
     return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length };
   });
+  // Protocol 19: tailscale.tsx mirrors tailscalemonitor.Validate (Go net/netip for literal addresses, ASCII labels for
+  // names). Both sides get the same raw bytes; every case is paused, so no node runs a Tailscale client.
+  await step('Tailscale admission: the form and the node accept exactly the same peer names and addresses', async () => {
+    const c = String.fromCodePoint, results = [];
+    const n253 = `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`, dotted253 = `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(60)}.`;
+    const cases = [
+      'peer', 'Build-Server', 'build-server.example-tailnet.ts.net', 'build-server.example-tailnet.ts.net.', '0', 'xn--caf-dma', 'a'.repeat(63), 'a'.repeat(64), n253, `${n253}d`, dotted253, `${dotted253.slice(0, -1)}d.`,
+      '', '.', '..', '.peer', 'peer..net', '-peer', 'peer-', 'pe_er', 'peer name', ' peer', 'peer\n', `pe${c(0)}er`, `peer${c(0x2028)}`, `caf${c(0xe9)}`, `pe${String.fromCharCode(0xd800)}er`,
+      '100.101.102.103', '127.0.0.1', '255.255.255.255', '240.0.0.1', '0.0.0.0', '224.0.0.1', '239.255.255.255',
+      '01.2.3.4', '1.2.3.256', '1.2.3', '1.2.3.4.5', '1.2.3.4.', '0.0.0.0.', '224.0.0.1.',
+      'fd7a:115c:a1e0::1', 'FD7A:115C:A1E0::1', '::1', '1:2:3:4:5:6:7::', '1:2:3:4:5:6:1.2.3.4', '::ffff:100.64.0.1', '::ffff:0.0.0.0',
+      '::', '::0.0.0.0', 'ff02::1', '::ffff:224.0.0.1', '1::2::3', '12345::1', '1:2:3:4:5:6:7:8::', '::01.2.3.4', '1:2:3:4:5:6:7:1.2.3.4',
+      'fe80::1%eth0', '[::1]', 'peer:41641', '100.101.102.103:41641', 'https://peer', 'peer/x', 'user@peer', 'peer;id', '$(id)', '--help',
+    ];
+    for (const target of cases) {
+      const formAccepts = f.tailscaleTargetAccepted(target);
+      assert.equal(f.tailscaleTargetProblem(target) === undefined, formAccepts, `${JSON.stringify(target)}: rule and message agree`);
+      const made = await api(A, '/api/monitors', 'POST', base('tailscale-ping', { name: `Review Tailscale admission ${results.length + 1}`, target }));
+      assert.ok(made.status === 201 || made.status === 400, made.text);
+      assert.equal(made.status === 201, formAccepts, `${JSON.stringify(target)}: form ${formAccepts ? 'accepts' : `refuses (${f.tailscaleTargetProblem(target)})`}, node answered ${made.status}`);
+      results.push({ accepted: formAccepts });
+    }
+    // A typed target's edges are trimmed by the form before it is sent; the node stores the trimmed bytes.
+    const trimmed = f.build({ ...f.draftFrom(undefined, [A.id]), name: 'Review Tailscale trimmed', type: 'tailscale-ping', enabled: false, targets: { 'tailscale-ping': '  canary-review-peer  ' } }, undefined, undefined);
+    assert.ok(trimmed.input, JSON.stringify(trimmed.errors));
+    const made = await api(A, '/api/monitors', 'POST', trimmed.input); assert.equal(made.status, 201, made.text);
+    assert.equal(made.value.target, 'canary-review-peer'); assert.equal(made.value.enabled, false);
+    return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length };
+  });
+  // Protocol 19: browser.tsx mirrors browsermonitor.Validate over Go 1.27's url.Parse (strict colons for http and https)
+  // and the node's strict JSON reading. Each case sends the raw value the rule judged; every monitor is paused, so no
+  // node connects to a browser service and the discard port 9 is never dialled.
+  await step('Real-browser admission: the form and the node accept exactly the same endpoints, tokens and waits', async () => {
+    const c = String.fromCodePoint, lone = String.fromCharCode(0xd800), ok = 'ws://127.0.0.1:9/devtools/browser/review', results = [];
+    const endpoints = [
+      ok, 'wss://chromium.review.test/devtools/browser/x?token=abc', 'WS://Chromium.Review.test:9222/x', 'http://127.0.0.1:9', 'http://127.0.0.1:9/', 'https://chromium.review.test',
+      'http://127.0.0.1:9/?', 'ws://127.0.0.1:9/x#', 'ws://[::1]:9/x', 'ws://[fe80::1%25eth0]:9/x', 'ws://[::ffff:127.0.0.1]:9/', 'ws://127.0.0.1:/x', 'ws://127.0.0.1:99999/x',
+      'ws://a:1:2/x', 'ws://h/a b', `ws://b${c(0xfc)}cher.review.test/x`, 'ws://h/%41', 'ws://h?x/y', 'ws://a]b/', `ws://${'a'.repeat(2042)}/`,
+      '', ' ws://127.0.0.1:9/', 'ftp://127.0.0.1/', 'ws:127.0.0.1:9', 'ws:/127.0.0.1/', 'ws:///x', 'ws://:9/x', 'ws://user:pw@127.0.0.1:9/x', 'ws://@127.0.0.1:9/x',
+      'ws://127.0.0.1:9/x#frag', 'http://127.0.0.1:9/json/version', 'http://127.0.0.1:9/?x=1', 'http://127.0.0.1:9/??', 'http://a:1:2/', 'ws://127.0.0.1:x/', 'ws://[127.0.0.1]:9/',
+      'ws://[::1/', 'ws://a[b]/', 'ws://[fe80::1%25]:9/', 'ws://[fe80::1%eth0]:9/', 'ws://a b/', 'ws://a%41/', 'ws://h/%zz', 'ws://h/\n', `ws://h/${lone}`, `ws://${'a'.repeat(2043)}/`,
+      'ws://h\\x/', 'ws://h^/',
+    ];
+    const tokens = ['', 'review-token', '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~', 'a'.repeat(4096), 'a'.repeat(4097), 'a b', ' a', 'a\t', 'a\n', `${c(0xe9)}`, `a${c(0)}`, 'a\x7f', 'Bearer abc', `a${lone}`];
+    const waits = [[0, 1000], [1, 1000], [999, 1000], [1000, 1000], [30000, 30001], [30000, 30000], [30001, 60000], [-1, 1000], [1.5, 1000]];
+    const cases = [
+      ...endpoints.map(endpoint => ({ label: `endpoint ${JSON.stringify(endpoint.length > 80 ? `${endpoint.slice(0, 40)}… (${endpoint.length} characters)` : endpoint)}`, form: f.browserEndpointProblem(endpoint), browser: { endpoint } })),
+      ...tokens.map((token, index) => ({ label: `token case ${index + 1} (${token.length} characters)`, form: f.browserBearerProblem(token), browser: { endpoint: ok, bearerToken: token } })),
+      ...waits.map(([delayMs, timeoutMs]) => ({ label: `wait ${delayMs} ms with a ${timeoutMs} ms timeout`, form: f.browserDelayProblem(String(delayMs), timeoutMs), browser: { endpoint: ok, delayMs }, timeoutMs })),
+    ];
+    for (const item of cases) {
+      const made = await api(A, '/api/monitors', 'POST', base('real-browser', { name: `Review browser admission ${results.length + 1}`, target: state.sink + '/browser-page', timeoutMs: item.timeoutMs ?? 1000, browser: item.browser }));
+      assert.ok(made.status === 201 || made.status === 400, made.text);
+      const formAccepts = item.form === undefined;
+      assert.equal(made.status === 201, formAccepts, `${item.label}: form ${formAccepts ? 'accepts' : `refuses (${item.form})`}, node answered ${made.status}`);
+      if (made.status === 201) assert.equal(made.value.enabled, false, 'admission cases stay paused');
+      results.push({ accepted: formAccepts });
+    }
+    // Typed values are trimmed before they are sent, and a zero wait is omitted like Go's omitempty encoding.
+    const typed = f.buildBrowser(undefined, { endpoint: `  ${ok}  `, bearer: ' review-typed-token ', screenshot: false, delay: ' 0 ' }, 1000, {});
+    assert.deepEqual(typed.value, { endpoint: ok, bearerToken: 'review-typed-token' });
+    return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length };
+  });
+  // Protocol 19 GameDig: gamedig.tsx mirrors gamedigmonitor.Validate (the Tailscale peer rule for the target, Go 1.27's
+  // url.Parse for the query service origin) and the node's strict JSON reading. Each case sends exactly what the form's
+  // builder produced. One paused monitor takes every case by PUT, which runs the same parseMonitor admission as a create,
+  // so the run stays far below the node's 200-monitor cap. No node contacts a query service or a game server.
+  await step('GameDig admission: the form and the node accept exactly the same games, addresses, ports, tokens and service settings', async () => {
+    const c = String.fromCodePoint, lone = String.fromCharCode(0xd800), bearer = 'review-game-admission-bearer-0123', results = [];
+    secrets.add(bearer);
+    const draft = { game: 'minecraft', target: 'play.canary-review.test', port: '', givenPortOnly: false, token: '', endpoint: 'https://game-query.canary-review.test:3121', bearer, insecure: false };
+    const first = f.buildGameDig(undefined, draft, {});
+    const made = await api(A, '/api/monitors', 'POST', base('gamedig', { name: 'Review GameDig admission', target: first.target, gamedig: first.value }));
+    assert.equal(made.status, 201, made.text);
+    let current = made.value;
+    const cases = [
+      ...['minecraft', 'terrariatshock', 'mbe', 'Minecraft', 'not-a-game', ''].map(game => ({ game })),
+      ...['203.0.113.10', '2001:db8::10', 'Play-01.canary-review.test.', '01.2.3.4', ' play.canary-review.test ', 'play:25565', '[::1]', 'https://play.canary-review.test', 'fe80::1%eth0',
+        '0.0.0.0', '224.0.0.1', 'pl_ay', `caf${c(0xe9)}`, 'a'.repeat(64)].map(target => ({ target })),
+      ...['0', '1', '65535', '65536', '-1', '1.5', 'abc', '0x10'].map(port => ({ port })),
+      { port: '25565', givenPortOnly: true }, { port: '', givenPortOnly: true }, { port: '0', givenPortOnly: true },
+      // r5: a catalogue game without a default port (alienarena) needs an explicit port, with or without "only this port".
+      { game: 'alienarena' }, { game: 'alienarena', port: '0' }, { game: 'alienarena', port: '27901' }, { game: 'alienarena', port: '27901', givenPortOnly: true },
+      ...['x', ' spaced ', 'a'.repeat(1024), 'a'.repeat(1025), c(0xe9).repeat(512), c(0xe9).repeat(513), `a${c(0x2028)}b`, '<&>', 'a\nb', 'a\tb', `a${c(0x85)}b`, `a${lone}b`].map(token => ({ token })),
+      ...['https://game-query.canary-review.test', 'HTTPS://Game-Query.Canary-Review.Test:3121/', 'https://[::1]:3121', 'https://h?', 'https://h#', 'https://h:99999', `https://${'a'.repeat(2040)}`,
+        'https://h/v1/query', 'https://h?x=1', 'https://user:pw@h', 'https://h#frag', 'ws://h', 'ftp://h', 'https://a:1:2', 'https://[127.0.0.1]', 'https://a b', `https://${'a'.repeat(2041)}`, `https://h/${lone}`,
+      ].map(endpoint => ({ endpoint })),
+      { endpoint: 'http://127.0.0.1:9' }, { endpoint: 'http://127.0.0.1:9', insecure: true }, { endpoint: 'HTTP://127.0.0.1:9/', insecure: true }, { insecure: true },
+      ...['a'.repeat(23), 'a'.repeat(24), 'a'.repeat(256), 'a'.repeat(257), '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~', ` ${'b'.repeat(30)} `, `${'a'.repeat(24)} b`, `${'a'.repeat(24)}${c(0xe9)}`].map(value => ({ bearer: value })),
+    ];
+    for (const change of cases) {
+      const errors = {}, built = f.buildGameDig(undefined, { ...draft, ...change }, errors), formAccepts = !Object.keys(errors).length;
+      const label = JSON.stringify(Object.fromEntries(Object.entries(change).map(([key, value]) => [key, typeof value === 'string' && value.length > 60 ? `${value.slice(0, 30)}… (${value.length} characters)` : value])));
+      const saved = await api(A, `/api/monitors/${current.id}`, 'PUT', { ...base('gamedig', { name: 'Review GameDig admission', target: built.target, gamedig: built.value }), revision: current.revision });
+      assert.ok(saved.status === 200 || saved.status === 400, `${label}: ${saved.status} ${saved.text}`);
+      assert.equal(saved.status === 200, formAccepts, `${label}: form ${formAccepts ? 'accepts' : `refuses (${Object.values(errors).join(' ')})`}, node answered ${saved.status}`);
+      if (saved.status === 200) {
+        assert.equal(JSON.stringify(saved.value.gamedig), JSON.stringify(built.value), `${label}: stored as sent, in Go’s field order`);
+        assert.equal(saved.value.target, built.target); assert.equal(saved.value.enabled, false, 'admission cases stay paused');
+        current = saved.value;
+      }
+      results.push({ accepted: formAccepts });
+    }
+    return { cases: results.length, accepted: results.filter(v => v.accepted).length, refused: results.filter(v => !v.accepted).length, monitorsCreated: 1 };
+  });
+  // Monitor clone (frontend only): the form's create body from cloneInput, through the real node. Sources are paused, so
+  // their copies are too; a push copy carries a new token, and the source must read back unchanged.
+  await step('Clone API + form: copies keep every setting, get a new ID (and push token) and leave the source unchanged', async () => {
+    const oauthSecret = 'review-oauth-clone-secret'; secrets.add(oauthSecret);
+    const oauth = await api(A, '/api/monitors', 'POST', base('http', { name: 'Review OAuth2 clone source', target: state.sink + '/ok', http: { oauth2: { tokenUrl: state.sink + '/token', clientId: 'review-client', clientSecret: oauthSecret, scope: 'read', allowInsecureHttp: true } } }));
+    assert.equal(oauth.status, 201, oauth.text);
+    const sources = { http: networkMonitors.http, oauth: oauth.value, redis: monitors.redis, steam: networkMonitors.steam, pm2: networkMonitors.pm2, 'tailscale-ping': networkMonitors['tailscale-ping'], push: networkMonitors.push, 'real-browser': networkMonitors['real-browser'], gamedig: networkMonitors.gamedig };
+    const kept = ['type', 'target', 'intervalMs', 'timeoutMs', 'nodeIds', 'enabled', 'http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'globalping', 'steam', 'pm2', 'browser', 'gamedig', 'expectedStatusCodes', 'retries', 'retryIntervalMs', 'upsideDown', 'webhookUrl', 'notificationIds', 'repeatAfterMs', 'groupId', 'tags'];
+    const current = async id => (await api(A, '/api/monitors')).value.find(v => v.monitor.id === id).monitor;
+    const ids = [];
+    for (const [kind, m] of Object.entries(sources)) {
+      const before = await current(m.id), copy = f.cloneInput(before, f.newPushToken);
+      if (copy.push) secrets.add(copy.push.token);
+      const d = f.draftFrom(copy, [A.id]), built = f.build(d, copy, structuredClone(d));
+      assert.ok(built.input, `${kind}: ${JSON.stringify({ ...built.errors, ...built.serviceErrors })}`);
+      assert.equal('revision' in built.input || 'id' in built.input, false, `${kind}: a create body`);
+      const made = await api(A, '/api/monitors', 'POST', built.input); assert.equal(made.status, 201, made.text);
+      const saved = made.value;
+      assert.notEqual(saved.id, before.id); assert.equal(saved.name, `${before.name} (copy)`); assert.equal(saved.enabled, false);
+      for (const key of kept) assert.deepEqual(saved[key], before[key], `${kind} ${key}`);
+      if (kind === 'push') {
+        assert.match(saved.push.token, /^[0-9a-f]{64}$/u); assert.notEqual(saved.push.token, before.push.token); assert.equal(saved.push.allowGet, before.push.allowGet);
+      } else assert.deepEqual(saved.push, before.push);
+      assert.deepEqual(await current(m.id), before, `${kind}: the source is unchanged`);
+      ids.push(saved.id);
+    }
+    return { copies: ids.length, newIds: new Set(ids).size === ids.length, pushTokenNew: true, sourcesUnchanged: true };
+  });
   await browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows });
   if (proxyAuthFixture) await reviewProxyAuth({ fixture: proxyAuthFixture, state, A, B, page, step, signIn, until, text, ready, report });
   if (dashboardControlPlaneFixture) await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets });
@@ -467,6 +692,36 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
     networkMonitors.steam = saved;
     return { targetPreserved: true, optionsPreserved: true, generationPreserved: true, noDirectoryRequests: saved.enabled === false };
+  });
+  await step('Browser: Tailscale peer target loads, refuses a port before saving and survives a rename', async () => {
+    const m = networkMonitors['tailscale-ping'];
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await text('Each selected node asks its own Tailscale client, never another machine’s.');
+    await text('The ordinary Alpine node image has neither the client nor the daemon');
+    assert.equal(await page.eval(`__field('Peer name or Tailscale address').value`), m.target);
+    const puts = () => report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length, before = puts();
+    await fill('Peer name or Tailscale address', 'canary-review-peer:41641'); await click('Save changes'); await text('Remove the port');
+    assert.equal(puts(), before);
+    await fill('Peer name or Tailscale address', m.target); await fill('Name', 'Review Tailscale renamed'); await click('Save changes');
+    await heading('Review Tailscale renamed');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    for (const key of ['http', 'tls', 'dns', 'websocket', 'smtp', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2']) assert.equal(saved[key], undefined, key);
+    for (const key of ['timeoutMs', 'retries', 'retryIntervalMs', 'upsideDown']) assert.equal(saved[key], m[key], key);
+    await text('Tailscale peer replied'); await text('Pending is never inverted and never recovers an outage.');
+    networkMonitors['tailscale-ping'] = saved;
+    return { targetPreserved: true, generationPreserved: true, noClientRun: saved.enabled === false };
+  });
+  await step('Tailscale conflict projection retains the exact target and ordinary settings', async () => {
+    const m = networkMonitors['tailscale-ping'];
+    const ctx = { groupMap: new Map(), role: 'admin', channels: { map: new Map() }, tags: { map: new Map() } };
+    const projected = Object.assign({}, ...f.monitorRows(ctx, false).map(row => row.project(m)));
+    assert.equal(projected.type, 'tailscale-ping'); assert.equal(projected.target, m.target);
+    const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...projected, revision: m.revision });
+    assert.equal(saved.status, 200, saved.text); assert.equal(saved.value.target, m.target);
+    assert.equal(saved.value.checkGeneration, m.checkGeneration);
+    networkMonitors['tailscale-ping'] = saved.value;
+    return { serverValidatedProjection: true, actualMultiHeadConflict: false };
   });
   await step('Browser: Steam key remains hidden in a revealed JSON preview and keep-current restores the original', async () => {
     const m = networkMonitors.steam;
@@ -552,6 +807,161 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     networkMonitors.pm2 = saved.value;
     return { serverValidatedProjection: true, bothDisplayModes: true, actualMultiHeadConflict: false };
   });
+  // Protocol 19 real browser. The monitor stays paused throughout, so no node connects to a browser service.
+  await step('Browser: real-browser fields keep the endpoint and token hidden, refuse a path on an HTTP discovery address before saving, and survive a rename', async () => {
+    const m = networkMonitors['real-browser'];
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await text('Canary doesn’t include or start a browser.'); await text('never someone’s everyday browser or profile');
+    assert.equal(await page.eval(`__field('Page URL').value`), m.target);
+    for (const label of ['Browser endpoint', 'Bearer token']) assert.equal(await page.eval(`__field(${J(label)}).type`), 'password', label);
+    assert.equal(await page.eval(`__field('Browser endpoint').value`), m.browser.endpoint);
+    assert.equal(await page.eval(`__field('Bearer token').value`), m.browser.bearerToken);
+    assert.equal(await page.eval(`__field('Wait after load').value`), String(m.browser.delayMs));
+    const shown = await page.eval('document.body.innerText');
+    for (const value of [m.browser.endpoint, 'review-browser-query-secret', m.browser.bearerToken]) assert.ok(!shown.includes(value), 'a private value is page text');
+    const puts = () => report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length, before = puts();
+    await fill('Browser endpoint', 'http://127.0.0.1:9/json/version'); await click('Save changes'); await text('remove the path and the query');
+    assert.equal(puts(), before, 'refused before any request');
+    await fill('Browser endpoint', m.browser.endpoint); await fill('Name', 'Review real browser renamed'); await click('Save changes');
+    await heading('Review real browser renamed');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(JSON.stringify(saved.browser), JSON.stringify(m.browser));
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    await text('Browser page loaded'); await text('set · hidden'); await text('Pending is never inverted and never recovers an outage.');
+    assert.ok(!(await page.eval('document.body.innerText')).includes('review-browser-query-secret'), 'facts hide the endpoint until revealed');
+    networkMonitors['real-browser'] = saved;
+    return { optionsPreserved: true, generationPreserved: true, refusedBeforeSave: true, noBrowserContact: saved.enabled === false };
+  });
+  await step('Browser: the browser endpoint and token are masked in the JSON preview until shown, and a masked copy is refused on import', async () => {
+    const m = networkMonitors['real-browser'], MASK = String.fromCodePoint(0x2022).repeat(3);
+    assert.ok(!JSON.stringify(f.masked(m)).includes('review-browser-query-secret'));
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await disclose('JSON (advanced)'); await text('The whole browser endpoint and its bearer token are masked too');
+    const preview = async () => JSON.parse(await page.eval(`document.querySelector('[aria-label="Monitor JSON preview"]').textContent`));
+    const masked = await preview();
+    assert.equal(masked.browser.endpoint, MASK); assert.equal(masked.browser.bearerToken, MASK);
+    assert.equal(masked.browser.delayMs, m.browser.delayMs); assert.equal(masked.browser.screenshot, true); assert.equal(masked.target, m.target);
+    await fill('Fill the form from JSON', JSON.stringify({ ...masked, name: 'Review real browser masked import' })); await click('Fill the form'); await text('browser.endpoint is a masked placeholder');
+    assert.equal(await page.eval(`__field('Name').value`), m.name, 'nothing was filled');
+    await click('Show credentials');
+    const revealed = await preview(); assert.deepEqual(revealed.browser, m.browser);
+    await fill('Fill the form from JSON', JSON.stringify({ ...revealed, name: 'Review real browser imported' })); await click('Fill the form');
+    assert.equal(await page.eval(`__field('Name').value`), 'Review real browser imported'); assert.equal(await page.eval(`__field('Browser endpoint').value`), m.browser.endpoint);
+    await click('Save changes'); await heading('Review real browser imported');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(JSON.stringify(saved.browser), JSON.stringify(m.browser));
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    networkMonitors['real-browser'] = saved;
+    return { maskedPreview: true, maskedImportRefused: true, revealedImportExact: true };
+  });
+  await step('Real-browser conflict projection retains the private options in both display modes', async () => {
+    const m = networkMonitors['real-browser'];
+    const ctx = { groupMap: new Map(), role: 'admin', channels: { map: new Map() }, tags: { map: new Map() } };
+    let projected;
+    for (const reveal of [false, true]) {
+      projected = Object.assign({}, ...f.monitorRows(ctx, reveal).map(row => row.project(m)));
+      assert.equal(JSON.stringify(projected.browser), JSON.stringify(m.browser)); assert.equal(projected.target, m.target);
+    }
+    const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...projected, revision: m.revision });
+    assert.equal(saved.status, 200, saved.text); assert.equal(JSON.stringify(saved.value.browser), JSON.stringify(m.browser));
+    assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+    networkMonitors['real-browser'] = saved.value;
+    return { serverValidatedProjection: true, bothDisplayModes: true, actualMultiHeadConflict: false };
+  });
+  // Protocol 19 GameDig. The monitor stays paused throughout, so no node contacts a query service or a game server.
+  await step('Browser: GameDig fields keep the service address and both tokens hidden, refuse a path before saving, name a port edit as a new check, and survive a rename', async () => {
+    const m = networkMonitors.gamedig;
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await text('Canary doesn’t include GameDig.'); await text('Canary hasn’t tested every game in this list.');
+    assert.equal(await page.eval(`__field('Game').value`), m.gamedig.game);
+    assert.equal(await page.eval(`__field('Game server address').value`), m.target);
+    assert.equal(await page.eval(`__field('Game port').value`), String(m.gamedig.port));
+    for (const label of ['Game token', 'Query service address', 'Query service token']) assert.equal(await page.eval(`__field(${J(label)}).type`), 'password', label);
+    assert.equal(await page.eval(`__field('Query service address').value`), m.gamedig.endpoint);
+    assert.equal(await page.eval(`__field('Query service token').value`), m.gamedig.bearerToken);
+    const shown = await page.eval('document.body.innerText');
+    for (const value of [m.gamedig.endpoint, m.gamedig.token, m.gamedig.bearerToken]) assert.ok(!shown.includes(value), 'a private value is page text');
+    await fill('Game port', String(m.gamedig.port + 1)); await text('Saving starts a new check generation because you changed the game, port, game token or query service');
+    await fill('Game port', String(m.gamedig.port));
+    const puts = () => report.requests.filter(r => r.method === 'PUT' && r.url === A.url + '/api/monitors/' + m.id).length, before = puts();
+    await fill('Query service address', `${m.gamedig.endpoint}/v1/query`); await click('Save changes'); await text('remove the path and the query');
+    assert.equal(puts(), before, 'refused before any request');
+    await fill('Query service address', m.gamedig.endpoint); await fill('Name', 'Review GameDig renamed'); await click('Save changes');
+    await heading('Review GameDig renamed');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(JSON.stringify(saved.gamedig), JSON.stringify(m.gamedig));
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    await text('Game server replied'); await text('set · hidden'); await text('Pending is never inverted and never recovers an outage.');
+    const facts = await page.eval('document.body.innerText');
+    for (const value of [m.gamedig.endpoint, m.gamedig.token, m.gamedig.bearerToken]) assert.ok(!facts.includes(value), 'facts hide the service address and tokens until revealed');
+    networkMonitors.gamedig = saved;
+    return { optionsPreserved: true, generationPreserved: true, refusedBeforeSave: true, portEditNamedNewCheck: true, noServiceContact: saved.enabled === false };
+  });
+  await step('Browser: the GameDig service address and both tokens are masked in the JSON preview until shown, and a masked copy is refused on import', async () => {
+    const m = networkMonitors.gamedig, MASK = String.fromCodePoint(0x2022).repeat(3);
+    const offline = JSON.stringify(f.masked(m));
+    for (const value of [m.gamedig.endpoint, m.gamedig.token, m.gamedig.bearerToken]) assert.ok(!offline.includes(value));
+    await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor');
+    await disclose('JSON (advanced)'); await text('The whole game query service address, its token and the game token are masked too');
+    const preview = async () => JSON.parse(await page.eval(`document.querySelector('[aria-label="Monitor JSON preview"]').textContent`));
+    const masked = await preview();
+    assert.equal(masked.gamedig.endpoint, MASK); assert.equal(masked.gamedig.bearerToken, MASK); assert.equal(masked.gamedig.token, MASK);
+    for (const key of ['game', 'port', 'givenPortOnly']) assert.equal(masked.gamedig[key], m.gamedig[key], key);
+    assert.equal(masked.target, m.target);
+    await fill('Fill the form from JSON', JSON.stringify({ ...masked, name: 'Review GameDig masked import' })); await click('Fill the form'); await text('gamedig.token is a masked placeholder');
+    assert.equal(await page.eval(`__field('Name').value`), m.name, 'nothing was filled');
+    await click('Show credentials');
+    const revealed = await preview(); assert.deepEqual(revealed.gamedig, m.gamedig);
+    await fill('Fill the form from JSON', JSON.stringify({ ...revealed, name: 'Review GameDig imported' })); await click('Fill the form');
+    assert.equal(await page.eval(`__field('Name').value`), 'Review GameDig imported'); assert.equal(await page.eval(`__field('Query service address').value`), m.gamedig.endpoint);
+    await click('Save changes'); await heading('Review GameDig imported');
+    const saved = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === m.id).monitor;
+    assert.equal(saved.target, m.target); assert.equal(JSON.stringify(saved.gamedig), JSON.stringify(m.gamedig));
+    assert.equal(saved.checkGeneration || saved.revision, m.checkGeneration || m.revision);
+    networkMonitors.gamedig = saved;
+    return { maskedPreview: true, maskedImportRefused: true, revealedImportExact: true };
+  });
+  await step('GameDig conflict projection retains the private options in both display modes', async () => {
+    const m = networkMonitors.gamedig;
+    const ctx = { groupMap: new Map(), role: 'admin', channels: { map: new Map() }, tags: { map: new Map() } };
+    let projected;
+    for (const reveal of [false, true]) {
+      projected = Object.assign({}, ...f.monitorRows(ctx, reveal).map(row => row.project(m)));
+      assert.equal(JSON.stringify(projected.gamedig), JSON.stringify(m.gamedig)); assert.equal(projected.target, m.target);
+    }
+    const saved = await api(A, `/api/monitors/${m.id}`, 'PUT', { ...projected, revision: m.revision });
+    assert.equal(saved.status, 200, saved.text); assert.equal(JSON.stringify(saved.value.gamedig), JSON.stringify(m.gamedig));
+    assert.equal(saved.value.checkGeneration || saved.value.revision, m.checkGeneration || m.revision);
+    networkMonitors.gamedig = saved.value;
+    return { serverValidatedProjection: true, bothDisplayModes: true, actualMultiHeadConflict: false };
+  });
+  await step('Screenshot: a paused monitor has none, the route takes no query, viewers are refused, and only editors’ pages ask', async () => {
+    const m = networkMonitors['real-browser'];
+    const none = await api(A, `/api/monitors/${m.id}/screenshot`); assert.equal(none.status, 404, none.text);
+    const query = await api(A, `/api/monitors/${m.id}/screenshot?full=1`); assert.equal(query.status, 400, query.text);
+    const other = await api(A, `/api/monitors/${networkMonitors.http.id}/screenshot`); assert.equal(other.status, 404, other.text);
+    const token = secret(); secrets.add(token);
+    const made = await api(A, '/api/accounts', 'POST', { name: `review-shot-viewer-${Date.now()}`, role: 'viewer', token }); assert.equal(made.status, 201, made.text);
+    const refused = await api(A, `/api/monitors/${m.id}/screenshot`, 'GET', undefined, token); assert.equal(refused.status, 403, refused.text);
+    // Every request to the route, CORS preflights included if the browser reports them; the page's own requests are GETs.
+    const shots = () => report.requests.filter(r => r.url.startsWith(`${A.url}/api/monitors/${m.id}/screenshot`));
+    const start = shots().length;
+    await nav(`#/monitors/${m.id}`); await heading(m.name); await text('No screenshot for the current check'); await text('never replicated to other nodes');
+    const asked = shots().slice(start).filter(r => r.method !== 'OPTIONS');
+    assert.ok(asked.length >= 1, 'the editor page asks for the screenshot');
+    assert.ok(asked.every(r => r.method === 'GET' && r.url === `${A.url}/api/monitors/${m.id}/screenshot` && r.authorization), 'plain GETs with the bearer, no query');
+    assert.equal(await page.eval('document.querySelectorAll("img.shot-img").length'), 0);
+    try {
+      await signIn({ ...A, token }, true);
+      const viewerStart = shots().length;
+      await nav(`#/monitors/${m.id}`); await heading(m.name); await text('Hidden from viewers'); await sleep(400);
+      assert.equal(shots().length, viewerStart, 'a viewer’s page never asks for a screenshot');
+      const page2 = await page.eval('document.body.innerText');
+      assert.ok(!page2.includes('No screenshot for the current check'), 'viewers get no screenshot card');
+      for (const value of [m.browser.endpoint, 'review-browser-query-secret', m.browser.bearerToken]) assert.ok(!page2.includes(value), 'a viewer sees a private value');
+    } finally { await signIn(A, true); }
+    return { noneIs404: true, queryRefused: true, viewerRefused: true, editorAsksPlainGet: asked.length, viewerAsksNothing: true };
+  });
   for (const [type, m] of Object.entries(monitors)) await step(`Browser: rename ${type} preserves stored service bytes`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'); const saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved); assert.deepEqual(saved.service, m.service); return { id: m.id, servicePreserved: true };
@@ -577,7 +987,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   for (const [type, m] of Object.entries(networkMonitors)) await step(`Browser: rename ${type} preserves full stored options`, async () => {
     await nav(`#/monitors/${m.id}/edit`); await heading('Edit monitor'); await fill('Name', m.name + ' browser'); await click('Save changes'); await heading(m.name + ' browser');
     const got = await api(A, '/api/monitors'), saved = got.value.find(v => v.monitor.id === m.id)?.monitor; assert.ok(saved);
-    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','pm2','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved[key], m[key], key);
+    for (const key of ['http','tls','dns','websocket','smtp','ping','manual','push','steam','pm2','browser','gamedig','expectedStatusCodes','retries','retryIntervalMs','upsideDown','webhookUrl']) assert.deepEqual(saved[key], m[key], key);
     if (type === 'push') assert.equal(saved.pushStartedAt, m.pushStartedAt);
     networkMonitors[type] = saved; return { id: m.id, optionsPreserved: true };
   });
@@ -677,11 +1087,230 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     }
     await nav('#/overview'); await heading('Overview'); return { unsafeUrlsRejected: 4 };
   });
+  const monitorList = async () => (await api(A, '/api/monitors')).value.map(v => v.monitor);
+  const creates = () => report.requests.filter(r => r.method === 'POST' && r.url === A.url + '/api/monitors').length;
+  await step('Browser: Clone opens a filled new-monitor form, creates nothing until Create, then a copy with its own ID', async () => {
+    const m = (await monitorList()).find(v => v.id === networkMonitors.http.id);
+    await nav(`#/monitors/${m.id}`); await heading(m.name);
+    const before = creates(), known = new Set((await monitorList()).map(v => v.id));
+    await click('Clone'); await heading('Copy monitor'); await text('Private connection settings are copied too.');
+    assert.equal(await page.eval('location.hash'), `#/monitors/${encodeURIComponent(m.id)}/clone`, 'only the source ID is in the address');
+    assert.equal(await page.eval(`__field('Name').value`), `${m.name} (copy)`);
+    assert.equal(await page.eval(`__field('URL').value`), m.target);
+    await sleep(300); assert.equal(creates(), before, 'nothing is created before Create monitor');
+    await click('Create monitor'); await heading(`${m.name} (copy)`);
+    assert.equal(creates(), before + 1);
+    const list = await monitorList(), copy = list.find(v => !known.has(v.id));
+    assert.ok(copy, 'one new monitor'); assert.equal(copy.name, `${m.name} (copy)`);
+    for (const key of ['type', 'target', 'intervalMs', 'timeoutMs', 'nodeIds', 'enabled', 'http', 'tls', 'expectedStatusCodes', 'retries', 'retryIntervalMs', 'upsideDown', 'webhookUrl', 'notificationIds', 'tags']) assert.deepEqual(copy[key], m[key], key);
+    assert.deepEqual(list.find(v => v.id === m.id), m, 'the source is unchanged');
+    return { newId: copy.id !== m.id, settingsCopied: true, sourceUnchanged: true, noCreateBeforeSave: true };
+  });
+  await step('Browser: a push copy gets a new hidden token in the form and on the node; the source keeps its own', async () => {
+    const m = (await monitorList()).find(v => v.id === networkMonitors.push.id);
+    const known = new Set((await monitorList()).map(v => v.id));
+    await nav(`#/monitors/${m.id}/clone`); await heading('Copy monitor'); await text('This copy has its own new push token');
+    const token = await page.eval(`__field('Push token').value`); secrets.add(token);
+    assert.match(token, /^[0-9a-f]{64}$/u); assert.notEqual(token, m.push.token);
+    assert.equal(await page.eval(`__field('Push token').type`), 'password');
+    assert.ok(!(await page.eval(`document.body.innerText + [...document.querySelectorAll('input,textarea')].map(e => e.value).join(' ')`)).includes(m.push.token), 'the source token is nowhere in the page');
+    await click('Create monitor'); await heading(`${m.name} (copy)`);
+    const list = await monitorList(), copy = list.find(v => !known.has(v.id));
+    assert.ok(copy); assert.equal(copy.push.token, token); assert.equal(copy.push.allowGet, m.push.allowGet);
+    assert.deepEqual(list.find(v => v.id === m.id), m, 'the source keeps its token and generation');
+    return { newTokenStored: true, sourceUnchanged: true };
+  });
+  await step('Browser: a real-browser copy keeps the endpoint and token hidden in its form and creates a paused copy with the same options', async () => {
+    const m = (await monitorList()).find(v => v.id === networkMonitors['real-browser'].id);
+    const known = new Set((await monitorList()).map(v => v.id));
+    await nav(`#/monitors/${m.id}/clone`); await heading('Copy monitor'); await text('browser service addresses come along');
+    assert.equal(await page.eval(`__field('Browser endpoint').type`), 'password');
+    assert.equal(await page.eval(`__field('Browser endpoint').value`), m.browser.endpoint);
+    assert.ok(!(await page.eval('document.body.innerText')).includes('review-browser-query-secret'), 'the copied endpoint is never page text');
+    await click('Create monitor'); await heading(`${m.name} (copy)`);
+    const list = await monitorList(), copy = list.find(v => !known.has(v.id));
+    assert.ok(copy); assert.equal(copy.enabled, false); assert.equal(copy.target, m.target);
+    assert.equal(JSON.stringify(copy.browser), JSON.stringify(m.browser));
+    assert.deepEqual(list.find(v => v.id === m.id), m, 'the source is unchanged');
+    return { optionsCopied: true, paused: true, sourceUnchanged: true };
+  });
+  await step('Browser: a GameDig copy keeps the service address and both tokens hidden in its form and creates a paused copy with the same options', async () => {
+    const m = (await monitorList()).find(v => v.id === networkMonitors.gamedig.id);
+    const known = new Set((await monitorList()).map(v => v.id));
+    await nav(`#/monitors/${m.id}/clone`); await heading('Copy monitor'); await text('game query service addresses');
+    for (const label of ['Game token', 'Query service address', 'Query service token']) assert.equal(await page.eval(`__field(${J(label)}).type`), 'password', label);
+    assert.equal(await page.eval(`__field('Query service address').value`), m.gamedig.endpoint);
+    assert.equal(await page.eval(`__field('Game').value`), m.gamedig.game);
+    const shown = await page.eval('document.body.innerText');
+    for (const value of [m.gamedig.endpoint, m.gamedig.token, m.gamedig.bearerToken]) assert.ok(!shown.includes(value), 'a copied private value is never page text');
+    await click('Create monitor'); await heading(`${m.name} (copy)`);
+    const list = await monitorList(), copy = list.find(v => !known.has(v.id));
+    assert.ok(copy); assert.equal(copy.enabled, false); assert.equal(copy.target, m.target);
+    assert.equal(JSON.stringify(copy.gamedig), JSON.stringify(m.gamedig));
+    assert.deepEqual(list.find(v => v.id === m.id), m, 'the source is unchanged');
+    return { optionsCopied: true, paused: true, sourceUnchanged: true };
+  });
+  // r5 (protocol 19) browser checks on the paused monitors the API + form (r5) step left behind.
+  await step('Browser (r5): SOA needs a resolver before saving; WebSocket offers and OAuth2 and TCP TLS show in their forms; a description is plain text', async () => {
+    const dns = networkMonitors.dns, ws = networkMonitors.websocket, tcp = networkMonitors.tcp;
+    await nav(`#/monitors/${dns.id}/edit`); await heading('Edit monitor');
+    await fill('Record type', 'SOA'); await fill('Resolver', ''); await click('Save changes'); await text('SOA checks ask one resolver directly');
+    assert.equal((await monitorList()).find(v => v.id === dns.id).revision, dns.revision, 'nothing was saved');
+    await nav(`#/monitors/${ws.id}/edit`); await heading('Edit monitor');
+    assert.equal(await page.eval(`__field('Subprotocols').value`), 'chat, v2');
+    await disclose('Headers, authentication and proxy'); await text('OAuth2 client credentials');
+    assert.equal(await page.eval(`__field('Client secret').type`), 'password');
+    assert.ok(!(await page.eval('document.body.innerText')).includes('review-ws-oauth-secret'), 'the client secret is never page text');
+    await fill('Name', `${ws.name} r5`); await click('Save changes'); await heading(`${ws.name} r5`);
+    const savedWs = (await monitorList()).find(v => v.id === ws.id);
+    assert.deepEqual(savedWs.websocket, ws.websocket, 'a rename keeps the grant and the offers'); networkMonitors.websocket = savedWs;
+    await text('the server must choose one of them');
+    await nav(`#/monitors/${tcp.id}`); await heading(tcp.name); await text('TLS 1.2+ handshake');
+    assert.equal(await page.eval(`document.querySelector('.mon-desc p')?.textContent`), tcp.description, 'the description, as written, with its line break');
+    await nav(`#/monitors/${tcp.id}/edit`); await heading('Edit monitor');
+    assert.equal(await page.eval(`[...document.querySelectorAll('label.check')].find(l => l.innerText.startsWith('Use TLS after connecting'))?.querySelector('input').checked`), true);
+    assert.equal(await page.eval(`__field('Description').value`), tcp.description);
+    return { soaNeedsResolver: true, wsOptionsKept: true, tcpTlsShown: true, descriptionPlain: true };
+  });
+  await step('Default channels (r5): an omitted list gets the enabled default; the new-monitor form preselects it and a clear opts out; Add to monitors adds it once at the shown revisions', async () => {
+    const made = await api(A, '/api/notification-channels', 'POST', { name: 'Review default channel', enabled: true, isDefault: true, config: { kind: 'webhook', webhook: { url: state.sink + '/hook-default', allowInsecureHTTP: true } } });
+    assert.equal(made.status, 201, made.text); const channel = made.value; assert.equal(channel.isDefault, true);
+    let detail;
+    try {
+      const implicit = await api(A, '/api/monitors', 'POST', base('manual', { name: 'Review default implicit' }));
+      assert.equal(implicit.status, 201, implicit.text); assert.deepEqual(implicit.value.notificationIds, [channel.id], 'the node picked its enabled default');
+      await nav('#/monitors/new'); await heading('New monitor');
+      const box = `[...document.querySelectorAll('.chanpick label')].find(l => l.innerText.includes('Review default channel'))?.querySelector('input')`;
+      // The channel list refreshes every 20 s, so the new channel can take that long to appear.
+      await until(() => page.eval(`${box}?.checked === true`), 'the default channel is preselected', 30000);
+      await text('Preselected: this node’s enabled default channels');
+      await fill('Name', 'Review default cleared'); await choose('Manual'); await choose('Active'); await choose('Review default channel');
+      assert.equal(await page.eval(`${box}.checked`), false);
+      await click('Create monitor'); await heading('Review default cleared');
+      const cleared = (await monitorList()).find(v => v.name === 'Review default cleared');
+      assert.ok(cleared); assert.equal(cleared.enabled, false); assert.equal(cleared.notificationIds, undefined, 'an explicit clear is respected: no default added');
+      const target = (await monitorList()).find(v => v.id === networkMonitors.ping.id);
+      await nav('#/notifications'); await heading('Notifications'); await click(`Add ${channel.name} to monitors`);
+      await text(`Add ${channel.name} to monitors`); await sleep(150);
+      assert.equal(await page.eval(`document.querySelectorAll('dialog[open] .apply-list input:checked:not(:disabled)').length`), 0, 'nothing is preselected');
+      await fill('Find monitors', target.name, 'dialog[open]'); await choose(target.name, 'dialog[open]');
+      await click('Add to 1 monitor', 'dialog[open]'); await text(`Added “${channel.name}” to 1 monitor`);
+      const after = (await monitorList()).find(v => v.id === target.id);
+      assert.deepEqual(after.notificationIds, [...(target.notificationIds ?? []), channel.id].sort());
+      assert.equal(after.checkGeneration || after.revision, target.checkGeneration || target.revision, 'adding a destination keeps the check generation');
+      const again = await api(A, `/api/notification-channels/${channel.id}/apply`, 'POST', { revision: channel.revision, monitors: [{ id: after.id, revision: after.revision }] });
+      assert.equal(again.status, 200, again.text); assert.deepEqual(again.value.changedIds, [], 'already there: zero changes');
+      const stale = await api(A, `/api/notification-channels/${channel.id}/apply`, 'POST', { revision: channel.revision, monitors: [{ id: cleared.id, revision: cleared.revision }, { id: after.id, revision: target.revision }] });
+      assert.equal(stale.status, 409, stale.text);
+      assert.equal((await monitorList()).find(v => v.id === cleared.id).notificationIds, undefined, 'a stale member refuses the whole batch');
+      networkMonitors.ping = after;
+      detail = { implicitDefault: true, explicitClear: true, appliedOnce: true, zeroChanges: true, staleBatchRefused: true };
+    } finally {
+      // Default off and disabled again, so later creates and monitors are unaffected; the unsaved test below still works.
+      const current = (await api(A, `/api/notification-channels/${channel.id}`)).value;
+      const off = await api(A, `/api/notification-channels/${channel.id}`, 'PUT', { name: current.name, enabled: false, config: current.config, revision: current.revision });
+      assert.equal(off.status, 200, off.text); assert.equal(off.value.isDefault, undefined);
+    }
+    return detail;
+  });
+  await step('Unsaved channel test (r5): Test these settings sends one loopback message with the form’s unsaved, disabled settings and saves nothing', async () => {
+    const channel = (await api(A, '/api/notification-channels')).value.find(v => v.channel.name === 'Review default channel').channel;
+    assert.equal(channel.enabled, false, 'the step above left the channel disabled');
+    // That step disabled the channel through the API after the dashboard last loaded its channel list (Add to monitors
+    // reloads it), and the list refreshes every 20 s. The edit form starts from the list, so it could open the enabled
+    // revision: the 2026-10-25 run then waited for the disabled sentence in vain. Open it once the list shows the stored
+    // revision, disabled, and check that the form shows exactly that before testing.
+    await nav('#/notifications'); await heading('Notifications');
+    const row = `[...document.querySelectorAll('.chan-list li')].find(li => li.querySelector('.t b')?.textContent === ${J(channel.name)})`;
+    await until(() => page.eval(`(r => Boolean(r) && r.querySelector('.rev')?.title === ${J(`Revision ${channel.revision}`)} && [...r.querySelectorAll('.tag')].some(t => t.textContent === 'disabled'))(${row})`), 'the channel list shows the stored, disabled revision', 30000);
+    await nav(`#/channels/${channel.id}/edit`); await heading('Edit');
+    assert.equal(await page.eval(`document.querySelector('main .vhead .sub .rev')?.title`), `Revision ${channel.revision}`, 'the form edits the stored revision');
+    const enabledBox = `(() => { const all = [...document.querySelectorAll('main label.check')].filter(l => l.querySelector('span')?.firstChild?.textContent === 'Enabled'); if (all.length !== 1) throw Error('Enabled matched ' + all.length); return all[0].querySelector('input'); })()`;
+    assert.equal(await page.eval(`${enabledBox}.checked`), false, 'the form starts from the stored channel: disabled');
+    assert.ok(!(await page.eval('document.body.innerText')).includes('while you were editing'), 'no newer revision is waiting');
+    const start = report.requests.length;
+    await fill('Webhook URL', state.sink + '/hook-preview-unsaved'); await click('Test these settings');
+    await text('Test these settings?'); await text('The channel stays disabled.'); await click('Send test', 'dialog[open]');
+    await text('Nothing was saved.');
+    await until(() => existsSync(join(runDir, 'sink.json')) && json(join(runDir, 'sink.json')).some(hit => hit.path === '/hook-preview-unsaved'), 'the unsaved test reached the loopback sink');
+    const after = (await api(A, `/api/notification-channels/${channel.id}`)).value;
+    assert.equal(after.revision, channel.revision); assert.equal(after.config.webhook.url, state.sink + '/hook-default'); assert.equal(after.enabled, false);
+    const posts = report.requests.slice(start).filter(r => r.method === 'POST' && r.url.includes('/api/notification-channels'));
+    assert.deepEqual(posts.map(r => new URL(r.url).pathname), ['/api/notification-channels/preview-test'], 'one preview request, no save');
+    const storage = await page.eval(`JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage })`);
+    assert.ok(!storage.includes('hook-preview-unsaved'), 'the unsaved settings never reach browser storage');
+    await nav('#/notifications'); await heading('Notifications');
+    return { previewSent: true, savedNothing: true };
+  });
+  await step('Status page presentation (r5): the form and node agree on appearance, address and feed; Markdown and the footer stay inert; the feed has announcements only', async () => {
+    const pageOf = async () => (await api(A, '/api/status-pages')).value.find(v => v.statusPage.slug === slug).statusPage;
+    let current = await pageOf();
+    const publicUrl = `${state.origin}/#/status/${slug}?node=${encodeURIComponent(A.url)}`;
+    const nul = String.fromCharCode(0);
+    const cases = [
+      [{ appearance: { theme: 'auto' } }, 'theme'], [{ appearance: { accentColor: 'red;}body{display:none' } }, 'accent'], [{ appearance: { logoUrl: 'http://127.0.0.1:9/logo.png' } }, 'http logo'],
+      [{ appearance: { logoUrl: 'https://images.canary-review.test/logo.png?track=1' } }, 'logo query'], [{ appearance: { refreshIntervalMs: 9999 } }, 'refresh'], [{ appearance: { footerText: `line${nul}break` } }, 'footer control'],
+      [{ rssEnabled: true }, 'feed without an address'], [{ publicUrl: 'javascript:alert(1)' }, 'unsafe address'], [{ publicUrl: 'https://user:pw@status.canary-review.test/' }, 'address with credentials'],
+      [{ appearance: { theme: 'dark', accentColor: '#aAbB09', refreshIntervalMs: 10000, markdown: true, footerText: 'Footer with [docs](https://docs.canary-review.test/) and [bad](javascript:alert(1)) and <script>globalThis.__reviewXss=2</script>' }, publicUrl, rssEnabled: true }, 'presentation'],
+    ];
+    for (const [patch, label] of cases) {
+      const errors = {}, candidate = { ...current, ...patch };
+      f.buildPresentation(undefined, f.presentationDraft(candidate), errors);
+      const formAccepts = !Object.keys(errors).length;
+      const { id, revision, updatedAt, deleted, ...input } = candidate;
+      const saved = await api(A, `/api/status-pages/${current.id}`, 'PUT', { ...input, revision: current.revision });
+      assert.ok(saved.status === 200 || saved.status === 400, `${label}: ${saved.status} ${saved.text}`);
+      assert.equal(saved.status === 200, formAccepts, `${label}: form ${formAccepts ? 'accepts' : `refuses (${Object.values(errors).join(' ')})`}, node answered ${saved.status}`);
+      if (saved.status === 200) current = saved.value;
+    }
+    const now = Date.now();
+    const noted = await api(A, `/api/status-pages/${current.id}`, 'PUT', { ...(({ id, revision, updatedAt, deleted, ...rest }) => rest)(current), revision: current.revision,
+      announcements: [{ id: 'review-note', title: 'Review announcement', message: '**Planned** work <img src=x onerror="globalThis.__reviewXss=3">', state: 'monitoring', pinned: true, createdAt: now - 1000, updatedAt: now }] });
+    assert.equal(noted.status, 200, noted.text); current = noted.value;
+    const feed = await fetch(`${A.url}/public/status/${slug}/rss.xml`, { redirect: 'error', signal: AbortSignal.timeout(15000) });
+    const xml = await feed.text();
+    assert.equal(feed.status, 200, xml); assert.equal(feed.headers.get('content-type'), 'application/rss+xml; charset=utf-8');
+    // The node HTML-escapes the message and XML-encodes the result, so the raw feed holds &amp;lt;img, never a tag.
+    assert.ok(xml.includes(`canary-status:${slug}:review-note`) && /&(?:amp;)?lt;img/u.test(xml) && !xml.includes('<img'), 'announcements only, markup escaped');
+    for (const value of [manualUp.id, manualUp.name, 'private manual diagnostics', A.token, current.id, current.revision]) assert.ok(!xml.includes(value), 'the feed carries no private value');
+    assert.equal((await fetch(`${A.url}/public/status/${slug}/rss.xml?x=1`, { redirect: 'error' })).status, 404, 'the feed takes no query');
+    const start = report.requests.length;
+    await nav(`#/status/${slug}?node=${encodeURIComponent(A.url)}`); await heading('Review public A'); await text('Review announcement');
+    assert.equal(await page.eval('globalThis.__reviewXss || 0'), 0); assert.equal(await page.eval('document.querySelector(".pub img")'), null);
+    assert.equal(await page.eval(`document.querySelector('.pub').style.getPropertyValue('--page-accent')`), '#aabb09');
+    if (await page.eval(`localStorage.getItem('uptime-canary.theme')`) === null) assert.equal(await page.eval('document.documentElement.dataset.mode'), 'dark', 'the page’s theme replaces the system setting');
+    const links = await page.eval(`[...document.querySelectorAll('.pub-foot a')].map(a => ({ href: a.getAttribute('href'), rel: a.rel, target: a.target, type: a.type }))`);
+    assert.deepEqual(links.filter(l => l.href.startsWith('https://docs.canary-review.test')), [{ href: 'https://docs.canary-review.test/', rel: 'noopener noreferrer nofollow', target: '_blank', type: '' }]);
+    assert.equal(links.some(l => /^javascript:/iu.test(l.href)), false);
+    assert.ok(links.some(l => l.href === `${A.url}/public/status/${slug}/rss.xml` && l.type === 'application/rss+xml'), 'the feed link');
+    const foot = await page.eval(`document.querySelector('.pub-foot').innerText`);
+    assert.ok(foot.includes('<script>globalThis.__reviewXss=2</script>') && foot.includes('[bad](javascript:alert(1))'), 'unsafe text stays text');
+    assert.equal(await page.eval(`document.querySelector('.pub-note strong')?.textContent`), 'Planned');
+    await text('refreshes every 10 s');
+    assert.equal(report.requests.slice(start).filter(r => r.url.includes('rss.xml') || r.url.includes('canary-review.test')).length, 0, 'the page fetches neither the feed nor linked hosts');
+    await nav(`#/status-pages/${current.id}/edit`); await heading('Edit');
+    assert.equal(await page.eval(`__field('Accent color').value`), '#aAbB09'); assert.equal(await page.eval(`__field('Public page address').value`), publicUrl);
+    await text(`${A.url}/public/status/${slug}/rss.xml`);
+    await fill('Logo image URL', 'http://127.0.0.1:9/logo.png'); await click('Save page'); await text('Use an https:// image address');
+    assert.equal((await pageOf()).revision, current.revision, 'nothing was saved');
+    assert.equal(report.requests.slice(start).filter(r => r.url.includes('127.0.0.1:9/')).length, 0, 'no logo was requested');
+    await nav('#/status-pages'); await heading('Status pages');
+    return { cases: cases.length, feedChecked: true, inert: true };
+  });
   await step('Viewer: API and UI hide monitor/channel/push credentials and disable editing', async () => {
     const token = secret(); secrets.add(token); const made = await api(A, '/api/accounts', 'POST', { name: `review-viewer-${Date.now()}`, role: 'viewer', token }); assert.equal(made.status, 201, made.text);
     const raw = await api(A, '/api/overview', 'GET', undefined, token); for (const value of ['review-password', 'review-hook-key', networkMonitors.push.push.token, networkMonitors.steam.steam.apiKey, 'private-body', 'private-header']) assert.ok(!raw.text.includes(value));
     // PM2 options are omitted for viewers; the admission step above stored other monitors with the same home.
     for (const value of [networkMonitors.pm2.pm2.home, networkMonitors.pm2.pm2.namespace, 'canary-review/.pm2']) assert.ok(!raw.text.includes(value), 'viewer received PM2 options');
+    // Protocol 19: viewers receive no browser options at all, so neither the endpoint (with its query credential) nor the token.
+    for (const value of ['review-browser-query-secret', 'review-browser-bearer-secret', '127.0.0.1:9/devtools']) assert.ok(!raw.text.includes(value), 'viewer received browser options');
+    assert.equal(raw.value.monitors.find(v => v.monitor.id === networkMonitors['real-browser'].id)?.monitor.browser, undefined, 'no browser object for viewers');
+    // Protocol 19 GameDig: viewers receive no gamedig object, so neither the service address nor either token.
+    for (const value of [networkMonitors.gamedig.gamedig.token, networkMonitors.gamedig.gamedig.bearerToken, 'review-game-admission-bearer-0123', 'game-query.canary-review.test']) assert.ok(!raw.text.includes(value), 'viewer received GameDig options');
+    assert.equal(raw.value.monitors.find(v => v.monitor.id === networkMonitors.gamedig.id)?.monitor.gamedig, undefined, 'no gamedig object for viewers');
+    // r5: a WebSocket check's OAuth2 grant is a credential like its bearer token; the description is viewer-readable metadata.
+    for (const value of ['review-ws-oauth-secret', 'review-ws-client']) assert.ok(!raw.text.includes(value), 'viewer received WebSocket OAuth2 credentials');
+    assert.equal(raw.value.monitors.find(v => v.monitor.id === networkMonitors.tcp.id)?.monitor.description, networkMonitors.tcp.description, 'viewers read the description');
     const c = await api(A, '/api/notification-channels', 'GET', undefined, token);
     for (const value of ['review-hook-key', 'review-smtp-password', 'review-slack-secret', 'review-telegram-token', '-1001234567890', 'review-topic', 'tk_review-ntfy-token', 'review-gotify-token', 'a'.repeat(30), 'u'.repeat(30)]) assert.ok(!c.text.includes(value), 'viewer received private channel configuration');
     await signIn({ ...A, token }, true); await nav(`#/monitors/${monitors.redis.id}`); await heading(monitors.redis.name); await text('Hidden from viewers');
@@ -689,8 +1318,24 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     assert.ok(!(await page.eval('document.body.innerText')).includes(networkMonitors.steam.steam.apiKey));
     await nav(`#/monitors/${networkMonitors.pm2.id}`); await heading(networkMonitors.pm2.name); await text('Hidden from viewers'); await text(networkMonitors.pm2.target);
     assert.ok(!(await page.eval('document.body.innerText')).includes(networkMonitors.pm2.pm2.home));
+    await nav(`#/monitors/${networkMonitors.gamedig.id}`); await heading(networkMonitors.gamedig.name); await text('Hidden from viewers'); await text(networkMonitors.gamedig.target);
+    const gameText = await page.eval('document.body.innerText');
+    for (const value of [networkMonitors.gamedig.gamedig.token, networkMonitors.gamedig.gamedig.bearerToken, networkMonitors.gamedig.gamedig.endpoint]) assert.ok(!gameText.includes(value), 'viewer page shows a GameDig private value');
     await nav('#/channels/new'); await text('Viewers can’t change channels');
     await signIn(A, true); return { redactedAtServer: true, formsReadOnly: true };
+  });
+  await step('Viewer: no Clone action, and the clone address shows no form and no copied value', async () => {
+    const token = secret(); secrets.add(token); const made = await api(A, '/api/accounts', 'POST', { name: `review-clone-viewer-${Date.now()}`, role: 'viewer', token }); assert.equal(made.status, 201, made.text);
+    const m = (await api(A, '/api/monitors')).value.find(v => v.monitor.id === networkMonitors.http.id).monitor;
+    try {
+      await signIn({ ...A, token }, true); await nav(`#/monitors/${m.id}`); await heading(m.name);
+      assert.equal(await page.eval(`[...document.querySelectorAll('a,button')].some(e => __vis(e) && __norm(e.innerText) === 'Clone')`), false, 'viewers see no Clone action');
+      await nav(`#/monitors/${m.id}/clone`); await text('Viewers can’t change monitors');
+      assert.equal(await page.eval(`document.querySelectorAll('main input, main textarea, main select').length`), 0, 'no form');
+      const shown = await page.eval(`document.body.innerText + [...document.querySelectorAll('input,textarea')].map(e => e.value).join(' ')`);
+      for (const value of ['review-password', 'private-body', 'private-header']) assert.ok(!shown.includes(value), 'viewer page shows a private value');
+    } finally { await signIn(A, true); }
+    return { cloneHidden: true, cloneRouteRefused: true };
   });
   if (args.includes('--public-availability')) {
     const { reviewPublishedAvailability } = await import('./public-availability-browser.mjs');

@@ -1,12 +1,14 @@
 /** Public management API contract. Runtime coordination types remain private to the node. */
 export * from './status.js';
 export * from './dashboard.js';
-export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam' | 'pm2';
+export * from './gamedig.js';
+export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam' | 'pm2' | 'tailscale-ping' | 'real-browser' | 'gamedig';
 export type ObservationState = 'up' | 'down' | 'unknown' | 'pending';
 export type Role = 'admin' | 'editor' | 'viewer';
 
 export interface MonitorInput {
   name: string;
+  description?: string;
   type: MonitorType;
   target: string;
   intervalMs: number;
@@ -44,9 +46,30 @@ export interface MonitorInput {
   globalping?: GlobalpingMonitorOptions;
   steam?: SteamMonitorOptions;
   pm2?: PM2MonitorOptions;
+  /** Dedicated browser service credentials are omitted for viewers. */
+  browser?: BrowserMonitorOptions;
+  gamedig?: GameDigMonitorOptions;
 }
 
 /** Local connection options are private and omitted from viewer/public projections. */
+/** Optional dedicated query service; endpoint and both credentials are private. */
+export interface GameDigMonitorOptions {
+  game: string; port?: number; givenPortOnly?: boolean; token?: string;
+  endpoint: string; bearerToken: string; allowInsecureHTTP?: boolean;
+}
+
+export interface BrowserMonitorOptions {
+  endpoint: string;
+  bearerToken?: string;
+  screenshot?: boolean;
+  delayMs?: number;
+}
+
+export interface BrowserScreenshot {
+  monitorId: string; nodeId: string; checkGeneration: string; checkedAt: number;
+  current: boolean; mimeType: 'image/png'; data: string;
+}
+
 export interface PM2MonitorOptions {
   transport: 'unix' | 'windows-pipe';
   home?: string;
@@ -131,8 +154,8 @@ export interface TLSMonitorOptions {
   minValidityDays?: number;
   ignoreVerification?: boolean;
 }
-export interface DNSMonitorOptions { recordType?: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'NS' | 'PTR'; server?: string; expected?: string[] }
-export interface WebSocketMonitorOptions extends RequestCredentials {}
+export interface DNSMonitorOptions { recordType?: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'NS' | 'PTR' | 'SRV' | 'SOA' | 'CAA'; server?: string; expected?: string[] }
+export interface WebSocketMonitorOptions extends RequestCredentials { oauth2?: HTTPMonitorOptions['oauth2']; subprotocols?: string[]; requireSubprotocol?: boolean }
 
 export interface Monitor extends MonitorInput {
   id: string;
@@ -365,7 +388,7 @@ export interface NotificationConfig {
   pushover?: { appToken: string; userKey: string; device?: string; priority?: number; sound?: string; retrySeconds?: number; expireSeconds?: number; baseURL?: string; allowInsecureHTTP?: boolean };
   templates?: { subject?: string; text?: string; html?: string };
 }
-export interface NotificationChannelInput { name: string; enabled: boolean; config: NotificationConfig }
+export interface NotificationChannelInput { name: string; enabled: boolean; config: NotificationConfig; isDefault?: boolean }
 export interface NotificationChannel extends NotificationChannelInput { id: string; revision: string; updatedAt: number; deleted?: boolean }
 export interface NotificationChannelView { channel: NotificationChannel; configConflict: boolean }
 export interface DeliveryAttemptView {

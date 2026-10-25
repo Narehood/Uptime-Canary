@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [node, web]
+        component: [node, web, game-query]
     permissions:
       contents: read
       packages: write
@@ -93,7 +93,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote both completed images
+      - name: Promote all completed images
         id: promote
         env:
           GH_TOKEN: ${{ github.token }}
@@ -104,16 +104,16 @@ jobs:
             exit 0
           fi
           prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
-          python3 -B scripts/publish-container-images.py --prefix "$prefix" --commit "$GITHUB_SHA"
-          echo "Initial publication may require the package owner to make both GHCR packages public before anonymous pulls work." >> "$GITHUB_STEP_SUMMARY"
-      - name: Verify both images pull without credentials
+          python3 -B scripts/publish-container-images.py --prefix "$prefix" --commit "$GITHUB_SHA" --with-game-query
+          echo "Initial publication may require the package owner to make each GHCR package public before anonymous pulls work." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify all images pull without credentials
         if: steps.promote.outputs.published == 'true'
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/canary-anonymous-docker
         run: |
           mkdir -m 700 "$DOCKER_CONFIG"
           prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
-          for component in node web; do
+          for component in node web game-query; do
             docker pull "$prefix-$component:latest"
             revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$prefix-$component:latest")"
             test "$revision" = "$GITHUB_SHA"

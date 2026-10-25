@@ -2,3 +2,5 @@
 # blob bytes, including existing LF or CRLF. Never rewrite them on checkout.
 # This disables automatic newline conversion, not text diffs or merges.
 * -text
+# Generated dependency notices retain upstream license and README whitespace.
+services/game-query/THIRD_PARTY_NOTICES.txt -whitespace

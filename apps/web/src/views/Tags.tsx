@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type FormEvent } from 'react';
-import type { Tag } from '@uptime-canary/shared';
+import type { Tag, TagInput } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure } from '../api';
 import { useCanary } from '../context';
 import { plural, shortRev } from '../format';
@@ -8,10 +8,20 @@ import { href } from '../router';
 import { Banner, Card, EmptyState, ErrorText, Modal, PageHead, ReadOnly, Rev } from '../ui/bits';
 import { Glyph, Icon } from '../ui/icons';
 import { TagPill, safeColor } from '../ui/tags';
+import { storedExtras } from '../writable';
 
 /** A few distinguishable starting colors. Any #rrggbb works; color is never the only label. */
 const PALETTE = ['#2a78d6', '#0ca30c', '#d03b3b', '#fab219', '#8a5cd1', '#1f9e9e', '#ec835a', '#6f6d68'];
 const HEX = /^#[0-9a-fA-F]{6}$/u;
+const TAG_KEYS = ['name', 'color'];
+
+/** The saved tag: name and color from the form, and every other key of the stored tag (a newer node's) as it was. */
+function tagInput(name: string, color: string, stored: Tag | undefined): TagInput {
+  return { name: name.trim(), color: color.toLowerCase(), ...storedExtras(stored, TAG_KEYS) };
+}
+
+/** The save model, for scripts/editor-preservation-pure.mjs. */
+export const tagFormModel = { tagInput };
 
 function TagEditorDialog({ tag, onClose }: { tag?: Tag; onClose: () => void }) {
   const { api, endpoint, tags, stillCurrent } = useCanary();
@@ -29,7 +39,7 @@ function TagEditorDialog({ tag, onClose }: { tag?: Tag; onClose: () => void }) {
     if (nameProblem || colorProblem || busy) return;
     setBusy(true); setError(null);
     try {
-      const input = { name: name.trim(), color: color.toLowerCase() };
+      const input = tagInput(name, color, tag);
       const saved = tag ? await api.updateTag(tag.id, { ...input, revision: tag.revision }) : await api.createTag(input);
       if (!stillCurrent()) return;
       notify(`${tag ? 'Saved' : 'Created'} tag “${saved.name}” on ${endpoint} (revision ${shortRev(saved.revision)}).`);

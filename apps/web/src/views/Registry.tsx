@@ -2,7 +2,10 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import type { NodeVerification, RegisteredNode } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure, isAbort } from '../api';
 import { useCanary } from '../context';
-import { credentialProblem, labelProblem, nodeAddressProblem, nodeStateInfo, registryOrder, registrySummary, SECTION_TITLES, shownNodeId } from '../dashboard';
+import {
+  canRecoverAccess, credentialProblem, editChanges, editFailure, labelProblem, nodeActions, nodeAddressProblem, nodeStateInfo, pendingOperation,
+  recoveryFailure, recoveryOutcome, recoveryProblem, registryOrder, registrySummary, rotationFailure, SECTION_TITLES, shownNodeId, type ChangeFailure,
+} from '../dashboard';
 import { ago, elapsed, plural } from '../format';
 import { pageOrigin } from '../gateway';
 import { useNow, useSummaryFocus } from '../hooks';
@@ -19,6 +22,10 @@ import { EndpointMark, Glyph, Icon } from '../ui/icons';
  * here sends a node address anywhere except to the dashboard itself, when an administrator verifies a new node.
  * The enrollment credential lives only in the Add node form's state and is cleared after each verification attempt,
  * on Back, on cancel and when the dialog closes. Verification tickets live only in memory; unused ones are discarded.
+ * Edit and Rotate access keep the registration (its ID, any selection of it and its public links). Rotation's optional
+ * recovery credential lives only in its dialog's state and is cleared as soon as it is sent, and when the dialog closes.
+ * Recover access finishes a pending access update through Retry's route, never with another rotation; its optional
+ * credential is handled the same way.
  */
 
 const period = (text: string): string => /[.!?]$/u.test(text) ? text : `${text}.`;
@@ -27,6 +34,9 @@ export function RegistryView({ home = false }: { home?: boolean }) {
   const { registry, admin, selection, connection } = useCanary();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<RegisteredNode | null>(null);
+  const [editing, setEditing] = useState<RegisteredNode | null>(null);
+  const [rotation, setRotation] = useState<RegisteredNode | null>(null);
+  const [recovering, setRecovering] = useState<RegisteredNode | null>(null);
   const nodes = registryOrder(registry.list ?? []);
   const summary = registrySummary(nodes);
   const add = (): void => setAdding(true);
@@ -59,7 +69,7 @@ export function RegistryView({ home = false }: { home?: boolean }) {
             <span className="small muted">As seen by this dashboard’s server{registry.error ? '. Couldn’t refresh just now' : ''}.</span>
           </div>
           <div className="nodes-grid">
-            {nodes.map(node => <NodeCard key={node.id} node={node} onRemove={setRemoving} />)}
+            {nodes.map(node => <NodeCard key={node.id} node={node} onRemove={setRemoving} onEdit={setEditing} onRotate={setRotation} onRecover={setRecovering} />)}
             {admin ? <button type="button" className="add-tile" onClick={add}><Icon name="plus" /><b>Add node</b><small>Its private address and an enrollment credential</small></button> : null}
           </div>
           <p className="foot-note">
@@ -71,6 +81,9 @@ export function RegistryView({ home = false }: { home?: boolean }) {
       {!home && selection && !connection.awaiting ? <PeersCard /> : null}
       {adding ? <AddNodeDialog onClose={() => setAdding(false)} /> : null}
       {removing ? <RemoveNodeDialog node={removing} onClose={() => setRemoving(null)} /> : null}
+      {editing ? <EditNodeDialog key={editing.id} node={editing} onClose={() => setEditing(null)} /> : null}
+      {rotation ? <RotateNodeDialog key={rotation.id} node={rotation} onClose={() => setRotation(null)} /> : null}
+      {recovering ? <RecoverAccessDialog key={recovering.id} node={recovering} onClose={() => setRecovering(null)} /> : null}
     </div>
   );
 }
@@ -112,15 +125,20 @@ function EmptyRegistry({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function NodeCard({ node, onRemove }: { node: RegisteredNode; onRemove: (node: RegisteredNode) => void }) {
-  const { admin, selection, select, api, registry, connection, stillCurrent } = useCanary();
+function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
+  node: RegisteredNode; onRemove: (node: RegisteredNode) => void; onEdit: (node: RegisteredNode) => void; onRotate: (node: RegisteredNode) => void;
+  onRecover: (node: RegisteredNode) => void;
+}) {
+  const { admin, selection, select, api, registry, connection, stillCurrent, refresh } = useCanary();
   const now = useNow(5000);
   const [busy, setBusy] = useState<null | 'check' | 'retry'>(null);
   const [error, setError] = useState<string | null>(null);
   const info = nodeStateInfo(node);
+  const actions = nodeActions(node, admin);
+  const recover = canRecoverAccess(node, admin);
   const viewing = selection?.id === node.id;
   const dashboardNow = now + (connection.issuerSkew ?? 0);
-  const unfinished = node.state === 'enrolling' || node.state === 'removing';
+  const unfinished = pendingOperation(node.state);
 
   const act = async (kind: 'check' | 'retry'): Promise<void> => {
     if (busy) return;
@@ -130,12 +148,18 @@ function NodeCard({ node, onRemove }: { node: RegisteredNode; onRemove: (node: R
       if (!stillCurrent()) return;
       registry.reload();
       if (kind === 'retry') {
+        // A finished retry makes the selected node readable again: read it now, not after the poll's back-off.
+        if (viewing && result && !pendingOperation(result.state)) refresh();
         notify(result === null ? `Removed ${node.label}. The node confirmed this dashboard’s access was revoked.`
-          : result.state === 'enrolling' || result.state === 'removing' ? `Retried ${node.label}, but it’s still unfinished. ${result.error ? period(result.error) : 'Try again when the node answers.'}`
+          : pendingOperation(result.state) ? `Retried ${node.label}, but it’s still unfinished. ${result.error ? period(result.error) : 'Try again when the node answers.'}`
+          : node.state === 'rotating' ? `Updated this dashboard’s access to ${node.label}. The node confirmed the new credentials; the old ones no longer work there.`
           : `${node.label} is ${nodeStateInfo(result).label.toLowerCase()}.`);
       }
     } catch (failure) {
-      if (stillCurrent()) setError(describeFailure(failure, { preferDetail: true }));
+      if (!stillCurrent()) return;
+      setError(describeFailure(failure, { preferDetail: true }));
+      // A failed attempt records its reason on the entry.
+      if (kind === 'retry') registry.reload();
     } finally {
       if (stillCurrent()) setBusy(null);
     }
@@ -162,13 +186,18 @@ function NodeCard({ node, onRemove }: { node: RegisteredNode; onRemove: (node: R
         {viewing
           ? <a className="btn sm primary" href={href('overview')}><Icon name="overview" />Its overview</a>
           : info.readable ? <button type="button" className="btn sm primary" onClick={() => { select(node); navigate(href('overview')); }} aria-label={`Open ${node.label}`}><Icon name="eye" />Open</button> : null}
-        {unfinished ? null : <button type="button" className="btn sm" onClick={() => { void act('check'); }} disabled={busy !== null}><Icon name="refresh" />{busy === 'check' ? 'Checking…' : 'Check now'}</button>}
-        {admin && unfinished ? <button type="button" className="btn sm" onClick={() => { void act('retry'); }} disabled={busy !== null}><Icon name="repeat" />{busy === 'retry' ? 'Retrying…' : node.state === 'enrolling' ? 'Retry enrollment' : 'Retry removal'}</button> : null}
-        {admin && !node.local && node.state !== 'removing' ? <button type="button" className="btn sm danger" onClick={() => onRemove(node)} disabled={busy !== null}><Icon name="trash" />Remove</button> : null}
+        {actions.check ? <button type="button" className="btn sm" onClick={() => { void act('check'); }} disabled={busy !== null}><Icon name="refresh" />{busy === 'check' ? 'Checking…' : 'Check now'}</button> : null}
+        {actions.retry ? <button type="button" className="btn sm" onClick={() => { void act('retry'); }} disabled={busy !== null}><Icon name="repeat" />{busy === 'retry' ? 'Retrying…' : actions.retry}</button> : null}
+        {recover ? <button type="button" className="btn sm" onClick={() => onRecover(node)} disabled={busy !== null} aria-label={`Recover access to ${node.label}`}><Icon name="key" />Recover access</button> : null}
+        {actions.edit ? <button type="button" className="btn sm" onClick={() => onEdit(node)} disabled={busy !== null} aria-label={`Edit ${node.label}`}><Icon name="edit" />Edit</button> : null}
+        {actions.rotate ? <button type="button" className="btn sm" onClick={() => onRotate(node)} disabled={busy !== null} aria-label={`Rotate access for ${node.label}`}><Icon name="key" />Rotate access</button> : null}
+        {actions.remove ? <button type="button" className="btn sm danger" onClick={() => onRemove(node)} disabled={busy !== null}><Icon name="trash" />Remove</button> : null}
       </div>
-      {node.local ? <p className="small muted">Set by this deployment’s configuration, so it can’t be removed here.</p> : null}
-      {admin && !node.local && node.state === 'credential-refused' ? <p className="small muted">To give it a new credential, remove it and add it again.</p> : null}
-      {!admin && unfinished ? <p className="small muted">An administrator can retry or remove it.</p> : null}
+      {node.local ? <p className="small muted">Set by this deployment’s configuration, so it can’t be removed here, and its address changes only there.</p> : null}
+      {admin && node.state === 'credential-refused' ? <p className="small muted">To give it new credentials, use Rotate access with a current administrator credential from the node.</p> : null}
+      {recover && node.error ? <p className="small muted">If the node stopped accepting the credential this update uses, Recover access finishes the same update with a current administrator credential from the node.</p> : null}
+      {admin && node.state === 'different-node' && actions.move ?<p className="small muted">If <span className="mono">{node.nodeId}</span> moved, edit this entry’s address. The dashboard’s server checks that the same node answers there before saving.</p> : null}
+      {!admin && unfinished ? <p className="small muted">{node.state === 'rotating' ? 'An administrator can retry it.' : 'An administrator can retry or remove it.'}</p> : null}
       {error ? <p className="small fwarn" role="alert"><Glyph tone="down" />{error}</p> : null}
     </article>
   );
@@ -305,7 +334,7 @@ function verifyFailure(error: unknown): Failure {
   }
   if (error.status === 401) return { title: 'Your sign-in to this dashboard ended', text: 'Sign in again, then add the node. Nothing was saved.' };
   if (error.status === 403) return { title: 'Only administrators add nodes', text };
-  if (error.status === 409 && /already/iu.test(detail)) return { title: 'Already on this dashboard', text: `${text} If the node moved, remove the old entry first.` };
+  if (error.status === 409 && /already/iu.test(detail)) return { title: 'Already on this dashboard', text: `${text} If the node moved, edit the existing entry’s address instead; that keeps its registration and public links.` };
   if (error.status === 409) return { title: 'This node can’t be added yet', text: `${text} Nothing was saved.` };
   if (error.status === 429) return { title: 'Too many verifications are waiting', text: `${text} Unused verifications expire after 2 minutes.` };
   return { title: 'Not verified', text: `${text} Nothing was saved.` };
@@ -512,6 +541,249 @@ function RemoveNodeDialog({ node, onClose }: { node: RegisteredNode; onClose: ()
         <button type="button" className="btn danger-solid" onClick={() => { void remove(); }} disabled={busy}><Icon name="trash" />{busy ? 'Removing…' : 'Remove node'}</button>
         <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
       </div>
+    </Modal>
+  );
+}
+
+// ----- Edit and Rotate access: administrators only. Both keep the registration, so its ID, any selection of it and its
+// public links stay. The list keeps showing (and refreshing) the saved entry while a dialog is open; neither dialog
+// changes what the list shows until the dashboard's server answers.
+
+/** Rename the entry, or follow the same node to a new address. Never a way to point it at another node. */
+export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode; onClose: () => void }) {
+  const { api, registry, stillCurrent } = useCanary();
+  const node = registry.map.get(opened.id) ?? opened;
+  const [label, setLabel] = useState(opened.label);
+  const [url, setUrl] = useState(opened.url ?? '');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ChangeFailure | null>(null);
+  const [summaryRef, failed] = useSummaryFocus();
+
+  // The bundled node's address belongs to the deployment; the server refuses to move it (409).
+  const movable = !node.local && opened.url !== undefined;
+  const pending = pendingOperation(node.state);
+  const changedMeanwhile = node.label !== opened.label || node.url !== opened.url;
+  const { input, moving, errors } = editChanges(opened, label, url, movable);
+  // Fields left as they were keep a newer saved value: an address-only edit doesn't undo a rename made meanwhile.
+  const body = input ? { ...input, label: label === opened.label ? node.label : input.label } : null;
+  const unchanged = !body && !errors.label && !errors.url;
+  const visible: { label?: string; url?: string } = show ? errors : {};
+
+  const save = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy || pending) return;
+    setShow(true); setFailure(null);
+    if (errors.label || errors.url) { failed(); return; }
+    if (!body) return;
+    setBusy(true);
+    try {
+      const saved = await api.editNode(opened.id, body);
+      if (!stillCurrent()) return;
+      registry.reload();
+      notify(moving
+        ? `${saved.label} is now read at ${saved.url ?? body.url}. The dashboard’s server confirmed it’s the same node, ${saved.nodeId}.`
+        : `Renamed to ${saved.label}. Every account on this dashboard sees the new name.`);
+      onClose();
+    } catch (error) {
+      if (isAbort(error) || !stillCurrent()) return;
+      const next = editFailure(error, node, moving);
+      if (next.reload) registry.reload();
+      setFailure(next);
+      failed();
+    } finally {
+      if (stillCurrent()) setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={<>Edit “{opened.label}”</>} onClose={onClose} busy={busy} wide>
+      <form className="connect-form" onSubmit={event => { void save(event); }} noValidate aria-busy={busy}>
+        <p className="sec">Every account on this dashboard sees these changes. The registration stays the same, with its ID, its public status links and anyone’s current view of it.</p>
+        {changedMeanwhile ? (
+          <Banner tone="info" title="This entry changed while the form was open">
+            It’s now “{node.label}”{node.url ? <> at <span className="mono">{node.url}</span></> : null}. Fields you didn’t edit here keep those newer values when you save.
+          </Banner>
+        ) : null}
+        {pending ? <Banner tone="warn" title={nodeStateInfo(node).label}>Another change to this node is running. Wait until it finishes, then save.</Banner> : null}
+        <ErrorSummary ref={summaryRef} title={failure ? failure.title : 'Check these fields'} errors={failure ? [] : Object.values(visible).filter(Boolean) as string[]}>
+          {failure ? <p>{failure.text}</p> : null}
+        </ErrorSummary>
+        <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={visible.label} maxLength={128} disabled={busy} autoFocus
+          hint="Only this dashboard’s name for it. The node keeps its own ID and name." />
+        {movable ? (
+          <TextField label="Node address" type="url" inputMode="url" mono value={url} onChange={setUrl} error={visible.url} disabled={busy} placeholder="http://100.79.12.4:3100"
+            hint={<>Change it only when <span className="mono">{opened.nodeId}</span> itself moved. Before saving, the dashboard’s server checks that the node answering there is the same one and accepts all three of this dashboard’s access credentials. It can’t point this entry at a different node; add that one as its own node.</>} />
+        ) : (
+          <>
+            <dl className="kv"><dt>Address</dt><dd className="mono">{node.url ?? 'Not shown'}</dd></dl>
+            <p className="small muted">This deployment’s settings manage the bundled node’s address, so it changes there, not here. You can still rename it.</p>
+          </>
+        )}
+        {moving ? <p className="small muted">The dashboard’s server contacts the new address when you save. Renaming alone works even while the node isn’t answering.</p> : null}
+        {moving && body?.url?.startsWith('http:') ? <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use HTTPS, or a network that encrypts it, such as NetBird or Tailscale.</p> : null}
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={busy || pending || unchanged}><Icon name="check" />{busy ? (moving ? 'Checking the new address…' : 'Saving…') : 'Save changes'}</button>
+          </span>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Replace the three role credentials this dashboard uses on the node. Nothing else on the node changes, and the
+ * dashboard sign-in is untouched. The optional credential is an administrator on this same node, for when the node no
+ * longer accepts the dashboard's own; it is sent once and this page forgets it before the answer arrives.
+ */
+export function RotateNodeDialog({ node: opened, onClose }: { node: RegisteredNode; onClose: () => void }) {
+  const { api, registry, selection, stillCurrent, refresh } = useCanary();
+  const node = registry.map.get(opened.id) ?? opened;
+  const [token, setToken] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ChangeFailure | null>(null);
+  const [summaryRef, failed] = useSummaryFocus();
+  const problem = recoveryProblem(token);
+  const pending = pendingOperation(node.state);
+
+  const rotate = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy || pending) return;
+    setShow(true); setFailure(null);
+    if (problem) { failed(); return; }
+    const recovery = token;
+    // Sent once, whatever the answer: the page lets go of it before the request leaves.
+    setToken(''); setShow(false);
+    setBusy(true);
+    try {
+      const result = await api.rotateNode(opened.id, recovery || undefined);
+      if (!stillCurrent()) return;
+      registry.reload();
+      const unconfirmed = pendingOperation(result.state);
+      // The selected node answers again at once instead of after the poll's back-off.
+      if (selection?.id === opened.id && !unconfirmed) refresh();
+      notify(unconfirmed
+        ? `The new credentials for ${result.label} are saved, but the node hasn’t confirmed them yet. It shows as “Updating node access”; the dashboard’s server keeps retrying, and its card has Retry and Recover access.`
+        : `Rotated this dashboard’s access to ${result.label}. The node confirmed the new credentials; the old ones no longer work there.`);
+      onClose();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const next = rotationFailure(error, node, recovery !== '');
+      if (next.reload) registry.reload();
+      setFailure(next);
+      failed();
+    } finally {
+      if (stillCurrent()) setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={<>Rotate access for “{node.label}”?</>} onClose={onClose} busy={busy} wide>
+      <form className="connect-form" onSubmit={event => { void rotate(event); }} noValidate aria-busy={busy}>
+        <p>The dashboard’s server makes new credentials for the three accounts it uses on <span className="mono">{node.nodeId}</span> (administrator, editor and viewer) and has the node swap them in. The old credentials, and any node sessions made with them, stop working there.</p>
+        <p className="modal-note">Nothing else changes: the node keeps its ID, its own accounts, peers, cluster secret, monitors and history, and you stay signed in here. Until the node confirms, this dashboard doesn’t read it and shows it as “Updating node access”; the node keeps monitoring and alerting on its own. The new credentials are saved, encrypted, before the node is asked, so if its answer is lost, a retry finishes this same change.</p>
+        {node.local ? <p className="small muted">This replaces only this dashboard’s own access to the bundled node. The administrator token in this deployment’s settings is separate and stays as it is.</p> : null}
+        {node.state === 'credential-refused' ? (
+          <Banner tone="warn" title="The node refuses this dashboard’s current credentials">
+            Paste a current administrator credential from <span className="mono">{node.nodeId}</span> below. Without one, the node may refuse the new credentials too, and the update then stays unfinished.
+          </Banner>
+        ) : null}
+        {pending ? <Banner tone="warn" title={nodeStateInfo(node).label}>Another change to this node is running. Wait until it finishes.</Banner> : null}
+        <ErrorSummary ref={summaryRef} title={failure ? failure.title : 'Check this field'} errors={failure || !show || !problem ? [] : [problem]}>
+          {failure ? <p>{failure.text}</p> : null}
+        </ErrorSummary>
+        <SecretField label="Node administrator credential" optional value={token} onChange={setToken} error={show ? problem : undefined} disabled={busy}
+          hint="Only needed when the node no longer accepts this dashboard’s credentials. It must be an administrator on this same node, such as its admin account token. The dashboard’s server checks it there first and keeps it only until the node confirms; this page forgets it as soon as it’s sent." />
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={busy || pending}><Icon name="key" />{busy ? 'Rotating…' : 'Rotate access'}</button>
+          </span>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Finish a pending access update: the same saved credentials, never another set. The optional credential is an
+ * administrator on this same node, for when it stopped accepting the one the saved update uses, for example because it
+ * was revoked there after the update was saved. It goes once through Retry's route, and this page forgets it before the
+ * answer arrives. The entry, its selection and the dashboard sign-in stay as they are; only the list is reloaded.
+ */
+export function RecoverAccessDialog({ node: opened, onClose }: { node: RegisteredNode; onClose: () => void }) {
+  const { api, registry, selection, select, stillCurrent, refresh } = useCanary();
+  const node = registry.map.get(opened.id) ?? opened;
+  const [token, setToken] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ChangeFailure | null>(null);
+  const [summaryRef, failed] = useSummaryFocus();
+  const problem = recoveryProblem(token);
+  // The list keeps refreshing while this is open: the update may finish, or the entry may start being removed.
+  const updating = node.state === 'rotating';
+  const info = nodeStateInfo(node);
+
+  const finish = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy || !updating) return;
+    setShow(true); setFailure(null);
+    if (problem) { failed(); return; }
+    const recovery = token;
+    // Sent once, whatever the answer: the page lets go of it before the request leaves.
+    setToken(''); setShow(false);
+    setBusy(true);
+    try {
+      const result = await api.retryNode(opened.id, recovery || undefined);
+      if (!stillCurrent()) return;
+      const outcome = recoveryOutcome(node, result, recovery !== '');
+      notify(outcome.text);
+      onClose();
+      if (result === null && selection?.id === opened.id) select(null);
+      else registry.reload();
+      // A confirmed update makes the selected node readable again: read it now, not after the poll's back-off.
+      if (result && outcome.finished && selection?.id === opened.id) refresh();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const next = recoveryFailure(error, node, recovery !== '');
+      if (next.reload) registry.reload();
+      setFailure(next);
+      failed();
+    } finally {
+      if (stillCurrent()) setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={<>Recover access to “{node.label}”</>} onClose={onClose} busy={busy} wide>
+      <form className="connect-form" onSubmit={event => { void finish(event); }} noValidate aria-busy={busy}>
+        <p>This finishes the access update the dashboard’s server already saved for <span className="mono">{node.nodeId}</span>: the same new credentials for the three accounts it uses there (administrator, editor and viewer). It doesn’t make another set. Nothing else changes: the node keeps its ID, its own accounts, peers, monitors and history, and you stay signed in here.</p>
+        <p className="modal-note">Add a credential when the node stopped accepting the one this update uses, for example because it was revoked there after the update was saved. The dashboard’s server first checks it on the node without changing anything, and checks that the three accounts this dashboard uses there still exist; it doesn’t recreate missing ones. Only then does it keep the credential, encrypted, with the saved update until the node confirms. Left empty, this retries with what the server already has, like Retry.</p>
+        {node.local ? <p className="small muted">This finishes only this dashboard’s own access to the bundled node. The administrator token in this deployment’s settings is separate and stays as it is.</p> : null}
+        {updating && node.error ? <p className="small muted">Last attempt: {period(node.error)}</p> : null}
+        {updating ? null : pendingOperation(node.state)
+          ? <Banner tone="warn" title={info.label}>This entry isn’t updating its access any more, so there’s nothing to finish here. The node list shows what’s running now.</Banner>
+          : <Banner tone="info" title="There’s nothing left to finish">The update isn’t pending any more; the node list shows “{info.label}” now. No credential is needed.</Banner>}
+        <ErrorSummary ref={summaryRef} title={failure ? failure.title : 'Check this field'} errors={failure || !show || !problem ? [] : [problem]}>
+          {failure ? <p>{failure.text}</p> : null}
+        </ErrorSummary>
+        {updating ? (
+          <SecretField label="Node administrator credential" optional value={token} onChange={setToken} error={show ? problem : undefined} disabled={busy}
+            hint="From this same node, such as its admin account token. It goes only to the dashboard’s server, in this one request; this page forgets it as soon as it’s sent." />
+        ) : null}
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>{updating ? 'Cancel' : 'Close'}</button>
+            {updating ? <button type="submit" className="btn primary" disabled={busy}><Icon name="check" />{busy ? 'Finishing…' : 'Finish update'}</button> : null}
+          </span>
+        </div>
+      </form>
     </Modal>
   );
 }

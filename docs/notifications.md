@@ -1,12 +1,16 @@
 # Notification channels
 
-The working protocol-13 runtime supports reusable Discord, SMTP, Mailgun, Brevo,
+The runtime supports reusable Discord, SMTP, Mailgun, Brevo,
 Mailchimp Transactional (Mandrill), JSON webhook, Slack, Telegram, ntfy, Gotify
 and Pushover channels. Channel configuration is
 replicated with explicit revision conflicts and deletion tombstones. Account
 credentials, browser sessions and delivery attempts remain local to each node.
 
-`MonitorInput.notificationIds` selects up to 16 channels. `webhookUrl` remains
+`MonitorInput.notificationIds` selects up to 16 channels. In protocol 19,
+omitting it on a new monitor without a legacy webhook selects the enabled
+channels marked `isDefault`. An explicit empty array selects none. Existing
+monitors are unchanged. Conflicting or causally incomplete enabled defaults
+fail closed with 409; more than sixteen defaults requires an explicit list. `webhookUrl` remains
 available for existing configurations. Each email recipient is a separate
 delivery destination, with its own receipt, retry deadline and stable attempt
 identity. Acceptance for one destination never completes another destination.
@@ -29,6 +33,16 @@ names, provider types and outcomes; provider configuration is redacted.
   resolutions return 409.
 - `POST /api/notification-channels/:id/test` accepts `{revision}` and returns
   `{attempts: DeliveryAttemptView[]}` (202). The channel must be enabled.
+- `POST /api/notification-channels/preview-test` accepts the complete channel
+  input, including disabled or unsaved settings, and returns
+  `{preview:true,attempts:DeliveryAttemptView[]}` (202). It does not save the
+  channel or create an incident or receipt. The ordinary two-worker admission
+  and five-second test throttle still apply.
+- `POST /api/notification-channels/:id/apply` accepts
+  `{revision,monitors:[{id,revision}]}` for one to 200 monitors. It adds the
+  channel while retaining existing destinations, in one transaction. Any
+  stale/conflicting member or destination-limit failure rejects the entire
+  batch. It returns `{changedIds:[...]}` and keeps each check generation.
 - `GET /api/notification-deliveries?limit=200&monitorId=...&incidentId=...`
   returns outcomes known to this node, newest attempts first. Filters are optional;
   `limit` is 1–1000.

@@ -1,7 +1,6 @@
 # Standalone active checks
 
-Integration contract (implementation in this directory only; standard library,
-Go 1.27.3):
+Integration contract (Go 1.27.3, with the pinned x/net DNS codec for SOA/CAA):
 
 ```go
 func Validate(Config) error
@@ -58,14 +57,14 @@ body. Proxy URLs allow HTTP or HTTPS, without userinfo, query, or fragment;
 environment proxy use is off by default. Private targets are intentionally
 allowed for uptime monitoring; the parent must restrict who can create checks.
 
-TLS options (HTTPS, TLS, WSS, or encrypted SMTP): `ServerName`, additive `CAPEM`,
+TLS options (HTTPS, TLS, TCP with an explicit TLS object, WSS, or encrypted SMTP): `ServerName`, additive `CAPEM`,
 paired `ClientCertPEM`/`ClientKeyPEM`, `MinValidity time.Duration`, and explicit
 `IgnoreVerification`. TLS 1.2 is the minimum. IgnoreVerification disables chain
 and hostname verification; certificate validity dates and MinValidity still
 apply, and Certificate.Verified is false. No PEM, key, subject name, or remote
 error text appears in results. Certificates for each HTTPS redirect are checked.
 
-DNS options: `RecordType` (A, AAAA, CNAME, MX, TXT, NS, PTR), optional `Server`
+DNS options: `RecordType` (A, AAAA, CNAME, MX, TXT, NS, PTR, SRV, SOA, CAA), optional `Server`
 (literal IP:port, including bracketed IPv6), optional `Expected []string`.
 No expectations means at least one answer; otherwise all expected records must
 be present, allowing extra answers. IPs are canonicalized; DNS names ignore case
@@ -75,12 +74,26 @@ TCP, and caller deadlines. Go's resolver follows system hosts/search precedence;
 IP literals or hosts-file answers which bypass DNS return down rather than
 claiming DNS availability. CNAME uses Go's canonical-name lookup, which can
 return the input's canonical name when address records exist without an alias.
-DNS TTL, DNSSEC, and arbitrary RR types are not exposed.
+SRV expectations are `priority weight port target`. SOA expectations are
+`primary mailbox serial refresh retry expire minimum`; integers are unsigned
+32-bit values. CAA expectations are `flags tag "value"`; the value is a JSON
+string, or unquoted text, normalized to the quoted form. SOA and CAA require an
+explicit resolver: they send a bounded DNS query, validate transaction/question
+and answer ownership, follow at most eight in-message aliases and retry a
+truncated UDP answer over TCP within the original deadline. They never choose
+a public resolver implicitly. DNSSEC and arbitrary RR types are not exposed.
 
-WebSocket options: headers, basic/bearer auth, and the same explicit proxy options.
+WebSocket options: headers, basic/bearer or OAuth2 client-credentials auth, and
+the same explicit proxy options. OAuth2 uses the HTTP token contract and
+separate token-endpoint trust; WSS is required unless plain HTTP is explicitly
+allowed. Each check obtains a new token, without sending target headers or its
+TLS client certificate to the authorization service.
 The check requires an RFC 6455 HTTP/1.1 upgrade and a matching response to a
 random, masked protocol ping. It answers server pings while awaiting the pong.
-It negotiates no compression or subprotocol, follows no redirects, and sends no
+`subprotocols` offers at most 16 distinct HTTP tokens of 128 bytes each.
+`requireSubprotocol` requires the server to select one of them. An absent
+selection is otherwise permitted; an unoffered or multiple selection fails.
+It negotiates no compression, follows no redirects, and sends no
 application messages. Incoming application frames are discarded within bounds.
 
 SMTP options: `TLSMode` = `plain` (default), `implicit`, or `starttls`. The check

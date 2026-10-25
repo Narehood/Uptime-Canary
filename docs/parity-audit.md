@@ -1,6 +1,58 @@
 # Uptime Kuma parity audit
 
-## Current implementation note, 2026-10-23
+## Completion implementation checkpoint, 2026-10-25
+
+This section supersedes the implementation labels in the dated inventories
+below. The pinned Kuma 2.5.6 comparison and the independent Go/SQLite HA goal
+remain unchanged. New implementation is not accepted merely because its
+component checks pass; the completion PR must retain complete native,
+container, race, architecture, process, recovery and review gates.
+
+The protocol-19 candidate has 32 Canary monitor families. Kuma's separate
+keyword and JSON-query forms are HTTP options, and its Group monitor is
+represented by Canary's Groups resource. The three added specialist profiles
+are Tailscale client ping, actual remote Chromium navigation, and the separate
+GameDig 5.3.3 query service with its pinned 358-ID catalogue. The catalogue is
+not evidence that all 358 games were exercised. PM2, system-service and Steam
+retain their existing contracts and exact platform prerequisites.
+
+The candidate also adds DNS SRV/SOA/CAA, WebSocket OAuth2 and subprotocol
+negotiation, optional TCP TLS, monitor descriptions and cloning, safe resource
+round trips, default notification selection and atomic apply-to-existing,
+unsaved channel tests, status-page branding/refresh/safe Markdown/default-off
+RSS, and dashboard registry rename/address maintenance and delegated credential
+rotation. The Go dashboard still owns its accounts and one shared node list;
+private node connections originate at that server.
+
+The agreed first-release provider priority remains Discord, SMTP, Mailgun,
+Brevo and Mailchimp Transactional; all are native adapters among Canary's
+11 providers. SMS remains deferred. This does not claim the 108-provider Kuma
+catalogue or every option in each provider. Generic webhooks and the optional
+GameDig service each count as one integration, not an adapter for every API or
+game listed upstream.
+
+Known option differences remain explicit: NTLM, saved proxy profiles/SOCKS,
+domain-registration expiry, Kafka AWS authentication, arbitrary browser steps,
+raw status CSS, managed custom-domain routing, email/webhook subscriptions and
+additional provider-specific extras are not implemented by this candidate.
+Status pages accept an operator-supplied public URL but do not configure DNS,
+TLS or reverse proxies. These rows remain partial in the comparison. Unsafe
+WebSocket accept-header bypass is not offered. Retained causal-history growth
+and the documented fixed-membership/capacity limits are operating constraints,
+not a claim of unlimited retention or global exactly-once delivery.
+
+Windows evidence includes focused and full changed-package checks, actual
+private Chromium and GameDig process exercises, and static editor checkpoints.
+Every result applies only to its recorded source. Final local Windows source
+`54e5dd23...` passes three workspace type checks, 260 pure groups and 205/205
+dashboard browser checks. Native Linux actual browser and PM2 interoperability,
+extracted-package upgrade, current ordinary proofs, Alpine/race, arm64 and image
+publication still need the completion head's own evidence. No tagged release or completed release
+validation is claimed by this inventory. See [browser](browser-monitors.md),
+[Tailscale](tailscale-monitors.md), [GameDig](game-server-monitors.md),
+[upgrades](upgrades.md) and [shipping progress](shipping-progress.md).
+
+## Historical implementation note, 2026-10-23
 
 The comparison below is the original researched baseline. Its `Gap` and
 `in progress` cells are historical. This current inventory supersedes those

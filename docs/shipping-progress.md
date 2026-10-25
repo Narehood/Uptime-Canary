@@ -1,5 +1,119 @@
 # Shipping progress
 
+## Protocol-19 completion candidate, 2026-10-25
+
+The accepted dashboard-first workflow and public image delivery were merged
+through PR #11 as `103f5c45f64d788f02df0a6393ac2b3fdbd42f0b`. Its prior
+hosted checks and anonymous image pulls remain evidence for that source. They
+do not validate the changes described here. The dated records below retain
+their original failing and passing scopes.
+
+The completion branch adds Tailscale, remote Chromium and GameDig profiles,
+network options, editor preservation and cloning, status presentation and RSS,
+notification convenience actions, and node-registry maintenance. The
+[updated inventory](parity-audit.md) distinguishes implemented profiles from
+remaining option differences. The independent node/SQLite/HA objective and
+all existing capacity, freshness, retained-obligation and quietness assertions
+remain unchanged. The ordinary process catalogue grows from 22 to 23; actual
+Chromium interoperability is a separate native package gate.
+
+Local Windows results are scoped checkpoints. Actual sandboxed Chromium passed
+on unchanged source `508cf11f...`, with no remaining browser contexts or owned
+processes; GameDig's production process proof used `8baa707f...`. All node Go
+packages passed locally. The later full `canary` package and vet run includes
+the pending-rotation recovery repair; concurrent frontend edits changed those
+runs' global fingerprints, so neither is unchanged combined-source acceptance.
+All 23 ordinary process proofs also passed on their earlier built executable;
+the final extracted packages must rerun them. The final local static and
+dashboard checkpoint uses unchanged source
+`54e5dd238356f111b061678f8973e88263798779aab40a0f3761c7d22705e5f6`:
+three workspace type checks, 260 pure groups and 205/205 browser checks pass.
+The browser run includes a production dashboard build, proxy authentication,
+all fourteen account/registry flows and desktop/narrow layout controls, with
+zero page exceptions or blocked requests. Its executable SHA-256 is
+`4ba106bc533688695c9d8de63a0fc7967433a98020e0ab71ee4cfccb85598a24`.
+Static/browser guarded durations were 17.750/233.313 seconds; sampled scratch
+peaks were 1,357,708/139,759,912 bytes, each cleaned to zero.
+The screenshot provenance regression first failed on `3a0a7d8f...` and then
+passed with the original assertion retained; old captures without a stored
+observer are not assigned invented provenance. The release-tooling checkpoint
+`138f0574...` passed all eleven serialized tooling/notice command groups on
+unchanged Windows source. None of these results substitutes for the final
+head's complete release validation.
+
+The earlier full local dashboard browser run on unchanged source `a84236ef...` passed
+203 of 205 checks, with zero page exceptions or blocked requests. All fourteen
+dashboard account/registry flows passed, including address maintenance,
+lost-answer credential rotation and pending-update recovery. Its two original
+failures remain preserved: cloning changed an omitted repeat setting to zero,
+and the unsaved-channel test opened a form before its disabled setting was
+fresh. The form now preserves omission; the test waits for the saved revision
+and verifies the disabled state before opening its preview. Both original
+assertions pass in the final 205-check run; neither was waived.
+
+Hosted acceptance must include Linux amd64 and arm64 extracted executables,
+all ordinary process proofs, actual PM2 and sandboxed Chromium, Alpine node,
+web, proof and race jobs, current dashboard browser coverage and review. The
+published protocol-18 Linux amd64 image supplies the real baseline for the
+new coordinated-upgrade gate; it is not a rebuilt historical source overlay.
+Both metadata and unsupported-platform refusal controls pass locally, but the
+actual upgrade needs native Linux execution. Publication remains a later
+step from approved main source. The user explicitly requires approval before
+merging the completion PR; no completion merge or tagged release is authorized.
+
+PR #12 opened at `d9a75b3`; its README follow-up is `67fcb59`. The first native
+Linux amd64 job stopped before compilation because optional-service notice
+generation used native path ordering: Windows placed `component.json` before
+mixed-case README names, whereas Linux did the reverse. The repair defines
+case-sensitive relative-filename order and retains every text and file hash in
+all 61 locked notice sets. Both original ordering regressions were reproduced
+locally before the repair; four new attribution controls, three existing
+embedded-attribution controls and both generated-notice checks then passed on
+unchanged Windows source `70323263...` in 7.016 guarded seconds, with scratch
+cleaned to zero. This is a tooling repair, not a native runtime pass. The new
+head must rerun the complete hosted gates. CodeRabbit skipped the initial
+review because 178 selected files exceeded its 100-file limit and it reported
+insufficient usage capacity; no automated source approval is claimed.
+
+On `bf825b4`, native Linux amd64 passed the repaired notice gate, native adapter
+suites, all 23 extracted-executable process proofs, Alpine help, actual PM2 and
+its supervisor-SIGKILL cleanup. The job then failed before Chromium became
+ready: Ubuntu AppArmor denied its user-namespace sandbox. The launcher repair
+loads and removes a temporary profile for only the guarded fixture executable;
+it does not disable global user-namespace restrictions or Chromium's sandbox.
+A second regression exposed cleanup signalling an already-empty namespace;
+that failure was reproduced before a narrow repair which still checks waitable
+children and the final process inventory. Fourteen browser launcher controls
+and the PM2 launcher suite pass locally on Windows source `8a277292...` (two
+pre-existing Linux-only PM2 controls are skipped on Windows). These are mocked
+policy/refusal and cleanup checks, not a Linux runtime pass. Actual browser,
+supervisor cleanup and the published-baseline upgrade remain required gates.
+
+Head `fe14b52` then passed all 23 native Linux amd64 process proofs, actual PM2
+and actual sandboxed HeadlessChrome 156.0.8078.4 against extracted executable
+`30af4e82...`. The temporary profile was removed and normal/SIGKILL browser
+cleanup left zero processes. The job failed later in the two-case published
+upgrade gate: the dashboard/account case passed, while the cluster case's
+quiet assertion expected two webhooks instead of the correctly deduplicated
+one, before any upgrade. The fixture correction uses one down and one recovery
+acceptance, preserves the complete quiet windows and adds explicit retained
+receipt-ID checks across upgrades and restart. Proof type-check and both
+metadata/unsupported-host controls pass locally on source `56c67031...`; live
+execution of the corrected upgrade and the final head's other gates remain
+required. This does not turn that earlier failed job into acceptance.
+
+The Alpine parent-race job on `9cd68ba` reported ten warnings, all from the
+screenshot-provenance test calling the internal monitor writer without the
+node mutex while its scheduler and peer loops were running. The fixture now
+creates the monitor through the public API's locked path and keeps those
+background loops and every provenance assertion. Both focused screenshot and
+legacy-migration tests pass without race instrumentation on unchanged Windows
+source `2ee42581...` (1.522 seconds of Go tests, 106.406 guarded seconds with
+compilation; scratch cleaned to zero). A local native race compiler is absent;
+the complete Alpine race gate must verify the new head. Its original warning
+stacks and failing result remain recorded, and no race filter or worker limit
+was changed.
+
 ## PM2 work resumed after the review and capacity merges, 2026-10-24
 
 PR #6 merged as `d4cc56d`; PR #7 merged as `020bc4b` after exact-head
@@ -274,7 +388,11 @@ Protocol 15 requires coordinated peer upgrades; main remains protocol 14.
   preserve original failures and operating limits. This is development work,
   not a release or complete near-parity claim.
 
-### Release gates still open
+### Historical protocol-16 release gates
+
+This checklist records the protocol-16 checkpoint below. Later merged evidence
+and the protocol-19 candidate inventory at the top supersede its implementation
+labels; it is retained to preserve that checkpoint's original scope.
 
 1. Integrate the reviewed feature stack without losing its exact-source
    evidence, and complete the new protocol-16 Linux/Alpine/race/native gates.

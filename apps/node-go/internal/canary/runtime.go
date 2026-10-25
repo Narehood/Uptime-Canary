@@ -273,6 +273,15 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 			if m.Type == "pm2" {
 				return PM2Probe(ctx, m)
 			}
+			if m.Type == "gamedig" {
+				return GameDigProbe(ctx, m)
+			}
+			if m.Type == "real-browser" {
+				return BrowserProbe(ctx, m)
+			}
+			if m.Type == "tailscale-ping" {
+				return TailscaleProbe(ctx, m)
+			}
 			if m.Type == "steam" {
 				return SteamProbe(ctx, m)
 			}
@@ -649,6 +658,9 @@ func (n *Node) tick() {
 			tx, err := n.store.db.Begin()
 			if err == nil {
 				err = put(tx, "samples", key, sample)
+				if err == nil {
+					err = saveBrowserScreenshot(tx, monitor, sample, r.Screenshot)
+				}
 				if err == nil {
 					err = put(tx, "probePolicies", monitor.ID, policy)
 				}

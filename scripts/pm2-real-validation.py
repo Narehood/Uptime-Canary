@@ -91,7 +91,12 @@ def reap_namespace():
     """Signal only this private namespace; the caller and PID 1 are excluded."""
     if not namespace_supervisor():
         raise RuntimeError('Refusing cleanup outside the private PID namespace')
-    os.kill(-1, signal.SIGKILL)
+    try:
+        os.kill(-1, signal.SIGKILL)
+    except ProcessLookupError:
+        # An already-empty namespace has no signal target. Still drain waitpid
+        # below; callers also verify the final namespace process inventory.
+        pass
     count = 0
     until = time.monotonic() + 5
     while True:

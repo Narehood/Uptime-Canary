@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { DeliveryAttemptView, EmailAddress, NotificationChannel, NotificationChannelInput, NotificationConfig, NotificationProvider } from '@uptime-canary/shared';
-import { ApiFailure, describeFailure, jsonBytes } from '../api';
+import { ApiFailure, describeFailure, isAbort, jsonBytes } from '../api';
 import { useCanary } from '../context';
 import { ago, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
 import { useResource } from '../hooks';
@@ -11,6 +11,7 @@ import { Banner, Card, Chip, EmptyState, ErrorText, FilterChips, Modal, PageHead
 import { CheckField, Disclosure, ErrorSummary, SecretField, Seg, TextAreaField, TextField } from '../ui/forms';
 import { Glyph, Icon, type IconName } from '../ui/icons';
 import type { Tone } from '../model';
+import { storedExtras } from '../writable';
 import { MessagingFields } from './MessagingFields';
 
 // ---------- providers
@@ -273,6 +274,193 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
   );
 }
 
+/** Outcomes that won't change any more for a one-shot test attempt (tests have no automatic retries). */
+const SETTLED = new Set(['accepted', 'failed', 'cancelled', 'unknown', 'unavailable']);
+const PREVIEW_POLL_MS = 1500;
+const PREVIEW_WAIT_MS = 30_000;
+
+/**
+ * Sends one real test with the form's current settings, saved or not, enabled or not (protocol 19's preview test). The
+ * settings go only in that request: nothing is saved, stored in the browser or logged. Outcomes come from this node's
+ * delivery attempts, read by their IDs until they settle or 30 seconds pass. The node allows one test batch at a time, at
+ * least 5 seconds apart, shared with saved channels' tests.
+ */
+function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput; onClose: () => void }) {
+  const { api, endpoint, stillCurrent } = useCanary();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState<DeliveryAttemptView[] | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const stop = useRef<AbortController | null>(null);
+  useEffect(() => () => stop.current?.abort(), []);
+  const kind = input.config.kind;
+  const recipients = PROVIDER.get(kind)?.email ? input.config.recipients?.length ?? 0 : 1;
+  const emergency = kind === 'pushover' && input.config.pushover?.priority === 2 ? input.config.pushover : undefined;
+  const follow = (ids: string[]): void => {
+    const controller = new AbortController();
+    stop.current = controller;
+    const until = Date.now() + PREVIEW_WAIT_MS;
+    setWaiting(true);
+    const poll = async (): Promise<void> => {
+      if (controller.signal.aborted) return;
+      try {
+        const all = await api.deliveries({ limit: 200 }, controller.signal);
+        if (controller.signal.aborted || !stillCurrent()) return;
+        const mine = ids.map(id => all.find(attempt => attempt.id === id)).filter((attempt): attempt is DeliveryAttemptView => Boolean(attempt));
+        if (mine.length) setAttempts(previous => ids.map(id => mine.find(attempt => attempt.id === id) ?? previous?.find(attempt => attempt.id === id)).filter((attempt): attempt is DeliveryAttemptView => Boolean(attempt)));
+        if (mine.length === ids.length && mine.every(attempt => SETTLED.has(attempt.state))) { setWaiting(false); return; }
+      } catch (failure) {
+        if (controller.signal.aborted || isAbort(failure)) return;
+      }
+      if (Date.now() >= until) { setWaiting(false); return; }
+      setTimeout(() => { void poll(); }, PREVIEW_POLL_MS);
+    };
+    setTimeout(() => { void poll(); }, PREVIEW_POLL_MS);
+  };
+  const send = async (): Promise<void> => {
+    setBusy(true); setError(null);
+    try {
+      const response = await api.previewChannelTest(input);
+      if (!stillCurrent()) return;
+      setAttempts(response.attempts);
+      follow(response.attempts.map(attempt => attempt.id).filter(id => typeof id === 'string'));
+    } catch (failure) {
+      if (!stillCurrent()) return;
+      setError(describeFailure(failure, { preferDetail: true }));
+    } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Test these settings?" onClose={onClose} busy={busy}>
+      {attempts ? (
+        <>
+          <p role="status"><Glyph tone="up" /> {endpoint} queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
+          {attempts.length ? (
+            <ul className="preview-out">
+              {attempts.map(attempt => {
+                const state = attemptState(attempt.state);
+                return (
+                  <li key={attempt.id}>
+                    <ProviderIcon kind={attempt.provider} />
+                    <span className="grow">{providerLabel(attempt.provider)}{attempt.httpStatus ? <span className="muted small"> · HTTP {attempt.httpStatus}</span> : null}
+                      {errorText(attempt.errorCode) ? <span className="muted small"> · {errorText(attempt.errorCode)}</span> : null}</span>
+                    <Chip tone={state.tone} label={state.label} />
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          <p className="muted small">{waiting ? 'Waiting for the outcome…' : 'Accepted means the provider acknowledged the message, not that it reached an inbox, chat or device.'} These attempts are listed under Delivery attempts too.</p>
+          <div className="row-wrap modal-acts"><button type="button" className="btn" onClick={onClose}>Close</button></div>
+        </>
+      ) : (
+        <>
+          <p>
+            This sends a <b>real message</b> from <span className="mono">{endpoint}</span> to {recipients === 1 ? 'the destination' : `all ${recipients} recipients`} in the form, through {providerLabel(kind)}, with the settings as they are now, saved or not. {input.enabled ? '' : 'The channel stays disabled. '}
+            Nothing is saved, and no monitor, incident or receipt is created.
+          </p>
+          {emergency ? <p className="fwarn"><Glyph tone="warn" />Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</p> : null}
+          <p className="muted small">A node sends one test batch at a time, at least 5 seconds apart, shared with saved channels’ tests.</p>
+          {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Test not sent</b><p>{error}</p></div></div> : null}
+          <div className="row-wrap modal-acts">
+            <button type="button" className="btn primary" onClick={() => { void send(); }} disabled={busy}><Icon name="send" />{busy ? 'Queuing…' : 'Send test'}</button>
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/** At most this many monitors in one application batch (the node's limit, also its monitor cap). */
+const APPLY_MAX = 200;
+
+/**
+ * Adds one enabled channel to monitors the user picks, never all of them silently (protocol 19). The node applies the
+ * whole batch at the revisions shown or nothing: a stale or conflicting monitor, a changed channel or a monitor that
+ * already has 16 channels refuses it, and the list is reloaded. Monitors keep their other destinations, and nothing
+ * about what is checked changes.
+ */
+function ApplyDialog({ channelId, onClose }: { channelId: string; onClose: () => void }) {
+  const { api, endpoint, channels, overview, refresh, stillCurrent } = useCanary();
+  const formId = useId();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [opened] = useState(() => channels.map.get(channelId)?.channel.revision);
+  const view = channels.map.get(channelId);
+  const channel = view?.channel;
+  const rows = [...overview.monitors].filter(entry => !entry.monitor.deleted).sort((a, b) => a.monitor.name.localeCompare(b.monitor.name)).map(entry => {
+    const ids = entry.monitor.notificationIds ?? [];
+    const has = ids.includes(channelId);
+    const full = !has && ids.length >= 16;
+    return { entry, has, full, blocked: has || full || entry.configConflict };
+  });
+  const q = query.trim().toLowerCase();
+  const shown = rows.filter(row => !q || `${row.entry.monitor.name} ${row.entry.monitor.type} ${row.entry.monitor.target}`.toLowerCase().includes(q));
+  const picked = selected.filter(id => rows.some(row => row.entry.monitor.id === id && !row.blocked));
+  const toggle = (id: string, on: boolean): void => setSelected(list => on ? (list.includes(id) ? list : [...list, id]) : list.filter(other => other !== id));
+  const selectShown = (): void => setSelected(list => [...new Set([...list, ...shown.filter(row => !row.blocked).map(row => row.entry.monitor.id)])].slice(0, APPLY_MAX));
+  const apply = async (): Promise<void> => {
+    if (!channel || !picked.length) return;
+    setBusy(true); setError(null);
+    try {
+      const monitors = picked.map(id => rows.find(row => row.entry.monitor.id === id)!.entry.monitor);
+      const { changedIds } = await api.applyChannel(channel.id, channel.revision, monitors);
+      if (!stillCurrent()) return;
+      notify(changedIds.length
+        ? `Added “${channel.name}” to ${plural(changedIds.length, 'monitor')} on ${endpoint}. Peers pick it up when they next sync.`
+        : `No monitor changed: the selected monitors already had “${channel.name}”.`);
+      refresh(); channels.reload();
+      onClose();
+    } catch (failure) {
+      if (!stillCurrent()) return;
+      if (failure instanceof ApiFailure && failure.status === 409) {
+        setError(`Nothing was changed. ${describeFailure(failure, { preferDetail: true })} The list has been reloaded: review the selection and try again.`);
+        refresh(); channels.reload();
+      } else setError(describeFailure(failure, { preferDetail: true }));
+    } finally { setBusy(false); }
+  };
+  if (!channel) {
+    return <Modal title="Add a channel to monitors" onClose={onClose}><p>{endpoint} no longer lists this channel.</p><div className="row-wrap modal-acts"><button type="button" className="btn" onClick={onClose}>Close</button></div></Modal>;
+  }
+  return (
+    <Modal title={`Add ${channel.name} to monitors`} onClose={onClose} busy={busy} wide>
+      <p>Choose the monitors that should also alert through <b>{channel.name}</b> ({providerLabel(channel.config.kind)}). Each keeps its other channels. Nothing about what’s checked changes, so open incidents continue.</p>
+      {opened && channel.revision !== opened ? <p className="small fwarn"><Glyph tone="warn" />This channel was edited since you opened this. Check its destination before adding it.</p> : null}
+      {!channel.enabled ? <p className="small fwarn"><Glyph tone="warn" />This channel is disabled. Enable it before adding it to monitors.</p> : null}
+      {view?.configConflict ? <p className="small fwarn"><Glyph tone="warn" />This channel has a configuration conflict. Resolve it first.</p> : null}
+      <div className="fld">
+        <label htmlFor={`${formId}-q`}>Find monitors <span className="muted">(optional)</span></label>
+        <input id={`${formId}-q`} type="search" value={query} onChange={event => setQuery(event.target.value)} autoComplete="off" spellCheck={false} />
+      </div>
+      <div className="row-wrap pick-acts">
+        <button type="button" className="linkbtn" onClick={selectShown} disabled={busy}>Select every monitor shown</button>
+        <span aria-hidden="true" className="muted">·</span>
+        <button type="button" className="linkbtn" onClick={() => setSelected([])} disabled={busy || !selected.length}>Clear</button>
+        <span className="muted small">{picked.length} selected, at most {APPLY_MAX}</span>
+      </div>
+      <fieldset className="picklist apply-list" disabled={busy}>
+        <legend className="vh">Monitors</legend>
+        {shown.length ? shown.map(row => (
+          <label key={row.entry.monitor.id} className={row.blocked ? 'off' : undefined}>
+            <input type="checkbox" checked={row.has || picked.includes(row.entry.monitor.id)} disabled={row.blocked} onChange={event => toggle(row.entry.monitor.id, event.target.checked)} />
+            <span><b>{row.entry.monitor.name}</b> <span className="muted small">{row.has ? 'already has it' : row.full ? 'already has 16 channels' : row.entry.configConflict ? 'configuration conflict' : `${plural(row.entry.monitor.notificationIds?.length ?? 0, 'channel')}`}</span></span>
+          </label>
+        )) : <p className="muted small">{rows.length ? 'No monitor matches.' : `${endpoint} has no monitors yet.`}</p>}
+      </fieldset>
+      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Not added</b><p>{error}</p></div></div> : null}
+      <div className="row-wrap modal-acts">
+        <button type="button" className="btn primary" onClick={() => { void apply(); }} disabled={busy || !picked.length || picked.length > APPLY_MAX || !channel.enabled || Boolean(view?.configConflict)}>
+          <Icon name="plus" />{busy ? 'Adding…' : picked.length ? `Add to ${plural(picked.length, 'monitor')}` : 'Add to monitors'}
+        </button>
+        <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+      </div>
+      <p className="muted small">The node adds it to all of them at once at the revisions listed here, or to none if any changed meanwhile. New monitors pick up default channels on their own; this changes existing ones only when you ask.</p>
+    </Modal>
+  );
+}
+
 function DeleteChannelDialog({ channel, users, onClose }: { channel: NotificationChannel; users: number; onClose: () => void }) {
   const { api, endpoint, channels, stillCurrent } = useCanary();
   const [busy, setBusy] = useState(false);
@@ -321,6 +509,7 @@ export function ChannelsView() {
   const { channels, editable, endpoint, overview, search, role } = useCanary();
   const [testing, setTesting] = useState<NotificationChannel | null>(null);
   const [deleting, setDeleting] = useState<NotificationChannel | null>(null);
+  const [applying, setApplying] = useState<string | null>(null);
   const q = search.trim().toLowerCase();
   const users = useMemo(() => {
     const counts = new Map<string, number>();
@@ -358,6 +547,7 @@ export function ChannelsView() {
                         <b>{c.name}</b>
                         <span className="muted small">{providerLabel(c.config.kind)}</span>
                         {c.enabled ? null : <Tag>disabled</Tag>}
+                        {c.isDefault ? <Tag icon="plus">{c.enabled ? 'default for new monitors' : 'default, but disabled'}</Tag> : null}
                         {view.configConflict ? <a href={href('config')} className="nowrap small"><Glyph tone="serious" /> conflict</a> : null}
                       </div>
                       <div className="m">
@@ -369,6 +559,7 @@ export function ChannelsView() {
                     {editable ? (
                       <div className="acts">
                         <button type="button" className="btn sm" onClick={() => setTesting(c)} disabled={view.configConflict || !c.enabled} data-tip={c.enabled ? 'Send one real test message' : 'Enable the channel to test it'}><Icon name="send" />Test</button>
+                        <button type="button" className="btn sm" onClick={() => setApplying(c.id)} disabled={view.configConflict || !c.enabled} data-tip={c.enabled ? 'Choose existing monitors to add it to' : 'Enable the channel to add it to monitors'} aria-label={`Add ${c.name} to monitors`}><Icon name="plus" />Add to monitors</button>
                         <a className={`btn sm${view.configConflict ? ' is-disabled' : ''}`} href={view.configConflict ? undefined : href('channels', c.id, 'edit')} aria-disabled={view.configConflict || undefined}><Icon name="edit" />Edit</a>
                         <button type="button" className="btn sm danger" onClick={() => setDeleting(c)} disabled={view.configConflict} aria-label={`Delete ${c.name}`}><Icon name="trash" /></button>
                       </div>
@@ -384,6 +575,7 @@ export function ChannelsView() {
           )}
       </Card>
       {testing ? <TestDialog channel={testing} onClose={() => setTesting(null)} /> : null}
+      {applying ? <ApplyDialog channelId={applying} onClose={() => setApplying(null)} /> : null}
       {deleting ? <DeleteChannelDialog channel={deleting} users={users.get(deleting.id) ?? 0} onClose={() => setDeleting(null)} /> : null}
     </div>
   );
@@ -397,6 +589,8 @@ let recipientKey = 0;
 interface ChannelDraft extends MessagingDraft {
   name: string;
   enabled: boolean;
+  /** Protocol 19: preselected for new monitors while enabled. Never applied to existing monitors by itself. */
+  isDefault: boolean;
   kind: Kind;
   discordUrl: string;
   hookUrl: string; hookBearer: string; hookInsecure: boolean;
@@ -414,6 +608,7 @@ function channelDraft(channel: NotificationChannel | undefined): ChannelDraft {
   return {
     name: channel?.name ?? '',
     enabled: channel?.enabled ?? true,
+    isDefault: channel?.isDefault === true,
     kind: c?.kind ?? 'discord',
     discordUrl: c?.kind === 'discord' ? c.webhook?.url ?? '' : '',
     hookUrl: c?.kind === 'webhook' ? c.webhook?.url ?? '' : '', hookBearer: c?.kind === 'webhook' ? c.webhook?.bearerToken ?? '' : '', hookInsecure: Boolean(c?.kind === 'webhook' && c.webhook?.allowInsecureHTTP),
@@ -441,6 +636,8 @@ const DISCORD = /^https:\/\/(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/api\/(?:v
 
 /** Config keys this form models; anything else from a newer node is carried through unchanged. */
 const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun', 'brevo', 'mandrill', 'webhook', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'templates']);
+/** Channel keys this form writes. Other stored keys belong to the channel, not its provider, so they survive a provider change. */
+const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault'];
 
 function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
   const errors: Partial<Record<CField, string>> = {};
@@ -550,7 +747,8 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
   }
   if (Object.keys(templates).length) config.templates = templates;
   if (Object.keys(errors).length) return { errors };
-  const input: NotificationChannelInput = { name, enabled: draft.enabled, config };
+  // `isDefault` is written only when on, as Go's omitempty encoding stores it, so an unchanged channel saves as before.
+  const input: NotificationChannelInput = { name, enabled: draft.enabled, config, ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) };
   if (jsonBytes(input) > 250_000) return { errors: { size: 'This channel is larger than nodes accept. Shorten the templates.' } };
   return { input, errors };
 }
@@ -585,6 +783,7 @@ function ChannelFormBody({ id }: { id?: string }) {
   const [attempts, setAttempts] = useState(0);
   const [templatesOpen, setTemplatesOpen] = useState(Boolean(initial.subject || initial.text || initial.html));
   const [apiOpen, setApiOpen] = useState(Boolean(initial.mailgunBase || initial.brevoBase || initial.mandrillBase || initial.tgBase || initial.poBase));
+  const [previewing, setPreviewing] = useState<NotificationChannelInput | null>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const formId = useId();
   // The stored version as a draft, to tell a new destination from a credential rotation.
@@ -635,6 +834,17 @@ function ChannelFormBody({ id }: { id?: string }) {
     } finally { setSaving(false); }
   };
   const loadLatest = (): void => { if (current) { setDraft(channelDraft(current)); setBase(current); setFailure(null); setShowErrors(false); } };
+  // A test of the form as it is: only complete, valid settings are sent, and the dialog holds them in memory alone.
+  const testSettings = (): void => {
+    setShowErrors(true); setFailure(null);
+    if (!input) {
+      if (errors.templates) setTemplatesOpen(true);
+      if (errors.baseUrl) setApiOpen(true);
+      setAttempts(n => n + 1);
+      return;
+    }
+    setPreviewing(input);
+  };
   const errorList = Object.entries(visible).map(([field, message]) => `${CFIELD_LABEL[field as CField]}: ${message}`);
   const updateRecipient = (key: number, change: Partial<Recipient>): void => set('recipients', draft.recipients.map(row => row.key === key ? { ...row, ...change } : row));
 
@@ -656,6 +866,8 @@ function ChannelFormBody({ id }: { id?: string }) {
           <h3 className="fsec full">Channel</h3>
           <TextField label="Name" value={draft.name} onChange={value => set('name', value)} error={visible.name} hint="Shown when picking channels for monitors" maxLength={128} autoFocus={!current} disabled={saving} />
           <CheckField full={false} label="Enabled" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Disabled channels receive nothing; owed alerts resume if you enable it during an outage." />
+          <CheckField full={false} label="Default for new monitors" checked={draft.isDefault} onChange={value => set('isDefault', value)} disabled={saving}
+            hint={draft.isDefault && !draft.enabled ? 'Only while enabled: a disabled default isn’t preselected.' : 'Preselected on every new monitor while enabled; each one can still clear it. Existing monitors change only when you add it to them from the channel list.'} />
           <fieldset className="fld full types-f" disabled={saving}>
             <legend>Provider</legend>
             {PROVIDER_GROUPS.map(group => (
@@ -776,11 +988,13 @@ function ChannelFormBody({ id }: { id?: string }) {
           {visible.size ? <div className="full"><ErrorText id={`${formId}-size`}>{visible.size}</ErrorText></div> : null}
           <div className="full form-acts">
             <button type="submit" className="btn primary" disabled={saving || conflicted}><Icon name={current ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current ? 'Save changes' : 'Create channel'}</button>
+            <button type="button" className="btn" disabled={saving} onClick={testSettings}><Icon name="send" />Test these settings</button>
             <a className="btn" href={href('notifications')}>Cancel</a>
-            {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : <span className="muted small">Saving sends nothing. Use Test on the channel list to send one message.</span>}
+            {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : <span className="muted small">Saving sends nothing. Test these settings sends one message with what’s in the form, without saving it.</span>}
           </div>
         </form>
       </Card>
+      {previewing ? <PreviewTestDialog input={previewing} onClose={() => setPreviewing(null)} /> : null}
     </div>
   );
 }

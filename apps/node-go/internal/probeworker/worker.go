@@ -10,6 +10,7 @@ import (
 	"uptime-canary/apps/node-go/internal/probeworker/process"
 	"uptime-canary/apps/node-go/internal/services"
 	"uptime-canary/apps/node-go/internal/systemservice"
+	"uptime-canary/apps/node-go/internal/tailscalemonitor"
 )
 
 // Dispatch runs before CLI parsing, database access, or listener startup.
@@ -36,6 +37,10 @@ func Dispatch(args []string) (handled bool, exitCode int) {
 			}
 			if header.Type == pm2monitor.Type {
 				selected = pm2monitor.WorkerHandler()
+				return selected.Validate(b)
+			}
+			if header.Type == tailscalemonitor.Type {
+				selected = tailscalemonitor.WorkerHandler()
 				return selected.Validate(b)
 			}
 			d := json.NewDecoder(bytes.NewReader(b))

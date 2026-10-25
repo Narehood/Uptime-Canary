@@ -25,7 +25,7 @@ func sameCheck(a, b MonitorInput) bool {
 		(a.Type != "push" || a.IntervalMs == b.IntervalMs) && equalJSON(a.Push, b.Push) &&
 		a.Enabled == b.Enabled && slices.Equal(a.NodeIDs, b.NodeIDs) &&
 		slices.Equal(a.ExpectedStatusCodes, b.ExpectedStatusCodes) && a.UpsideDown == b.UpsideDown && a.Retries == b.Retries &&
-		equalJSON(a.HTTP, b.HTTP) && equalJSON(a.TLS, b.TLS) && equalJSON(a.DNS, b.DNS) && equalJSON(a.WebSocket, b.WebSocket) && equalJSON(a.SMTP, b.SMTP) && equalJSON(a.Service, b.Service) && equalJSON(a.Ping, b.Ping) && equalJSON(a.Globalping, b.Globalping) && equalJSON(a.Steam, b.Steam) && equalJSON(a.PM2, b.PM2)
+		equalJSON(a.HTTP, b.HTTP) && equalJSON(a.TLS, b.TLS) && equalJSON(a.DNS, b.DNS) && equalJSON(a.WebSocket, b.WebSocket) && equalJSON(a.SMTP, b.SMTP) && equalJSON(a.Service, b.Service) && equalJSON(a.Ping, b.Ping) && equalJSON(a.Globalping, b.Globalping) && equalJSON(a.Steam, b.Steam) && equalJSON(a.PM2, b.PM2) && equalJSON(a.Browser, b.Browser) && equalJSON(a.GameDig, b.GameDig)
 }
 
 // Only a unique, causally later head can retire an old generation. A conflict

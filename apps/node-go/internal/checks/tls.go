@@ -80,7 +80,7 @@ func checkConnection(ctx context.Context, c Config) Result {
 		return down("TCP connection failed")
 	}
 	defer bindConnection(ctx, conn)()
-	if c.Type == TCP {
+	if c.Type == TCP && c.TLS == nil {
 		return up("TCP connection established")
 	}
 	o := tlsOptions(c)

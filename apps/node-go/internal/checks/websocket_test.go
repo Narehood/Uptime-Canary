@@ -60,6 +60,15 @@ func fixtureWebSocketHandler(t *testing.T, mode string) http.HandlerFunc {
 			accept = "invalid"
 		}
 		extra := ""
+		if mode == "negotiated" {
+			if r.Header.Get("Sec-WebSocket-Protocol") != "chat, v2" {
+				t.Error("configured offers missing from handshake")
+			}
+			extra = "Sec-WebSocket-Protocol: chat\r\n"
+		}
+		if mode == "duplicate-protocol" {
+			extra = "Sec-WebSocket-Protocol: chat\r\nSec-WebSocket-Protocol: v2\r\n"
+		}
 		if mode == "subprotocol" {
 			extra = "Sec-WebSocket-Protocol: unexpected\r\n"
 		}

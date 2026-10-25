@@ -305,6 +305,12 @@ func (n *Node) apiLocked(r *http.Request, a account, b []byte) (int, any, error)
 			if err != nil {
 				return 0, nil, err
 			}
+			if input.NotificationIDs == nil && input.WebhookURL == "" {
+				input.NotificationIDs, err = n.defaultChannelIDs()
+				if err != nil {
+					return 0, nil, err
+				}
+			}
 			id := newID()
 			if err = n.validateReferences(&Monitor{MonitorInput: input, ID: id}, nil); err != nil {
 				return 0, nil, err
@@ -376,6 +382,9 @@ func (n *Node) apiLocked(r *http.Request, a account, b []byte) (int, any, error)
 		}
 		if len(heads) == 1 {
 			deleted = heads[0].Monitor.Deleted
+		}
+		if action == "screenshot" && method == "GET" {
+			return n.browserScreenshotAPI(id, a.Role, r.URL.RawQuery)
 		}
 		if action == "history" && method == "GET" {
 			history, err := n.localHistory(id, r.URL.Query())

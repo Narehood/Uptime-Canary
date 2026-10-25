@@ -7,6 +7,8 @@ export type Route =
   | { name: 'monitor-new' }
   | { name: 'monitor'; id: string }
   | { name: 'monitor-edit'; id: string }
+  /** A new monitor starting from a copy of `id`. Only the source's ID is in the URL, never a copied setting. */
+  | { name: 'monitor-clone'; id: string }
   | { name: 'tags' }
   | { name: 'groups' }
   | { name: 'group-new' }
@@ -56,6 +58,7 @@ export function parseRoute(hash: string): Route {
       if (id === 'new' && !action) return { name: 'monitor-new' };
       if (!action) return { name: 'monitor', id };
       if (action === 'edit' && parts.length === 3) return { name: 'monitor-edit', id };
+      if (action === 'clone' && parts.length === 3) return { name: 'monitor-clone', id };
       break;
     case 'groups':
       if (!id) return { name: 'groups' };
@@ -119,7 +122,7 @@ export function useRoute(): Route {
 /** Top-level section for rail highlighting. */
 export function sectionOf(route: Route): string {
   switch (route.name) {
-    case 'monitor': case 'monitor-new': case 'monitor-edit': case 'tags': return 'monitors';
+    case 'monitor': case 'monitor-new': case 'monitor-edit': case 'monitor-clone': case 'tags': return 'monitors';
     case 'group-new': case 'group-edit': return 'groups';
     case 'deliveries': case 'receipts': case 'channel-new': case 'channel-edit': return 'notifications';
     case 'maintenance-new': case 'maintenance-edit': return 'maintenance';

@@ -43,7 +43,7 @@ func Validate(c Config) error {
 		if err := validateAddress(c.Target, false); err != nil {
 			return err
 		}
-		secure = c.Type == TLS
+		secure = c.Type == TLS || c.Type == TCP && c.TLS != nil
 		if c.Type == SMTP {
 			mode := smtpMode(c)
 			if mode != "plain" && mode != "implicit" && mode != "starttls" {
@@ -54,8 +54,11 @@ func Validate(c Config) error {
 	case DNS:
 		o := dnsOptions(c)
 		rt := dnsType(o)
-		if rt != "A" && rt != "AAAA" && rt != "CNAME" && rt != "MX" && rt != "TXT" && rt != "NS" && rt != "PTR" {
+		if rt != "A" && rt != "AAAA" && rt != "CNAME" && rt != "MX" && rt != "TXT" && rt != "NS" && rt != "PTR" && rt != "SRV" && rt != "SOA" && rt != "CAA" {
 			return invalid("DNS record type is unsupported")
+		}
+		if (rt == "SOA" || rt == "CAA") && o.Server == "" {
+			return invalid("SOA and CAA checks require an explicit DNS server")
 		}
 		if rt == "PTR" {
 			if net.ParseIP(c.Target) == nil {
@@ -89,8 +92,21 @@ func Validate(c Config) error {
 		}
 		secure = u.Scheme == "wss"
 		o := wsOptions(c)
-		if err := validateRequestOptions(o.Headers, o.BasicAuth, o.BearerToken, o.ProxyURL, o.UseEnvironmentProxy); err != nil {
+		if err := validateHTTP(HTTPConfig{Headers: o.Headers, BasicAuth: o.BasicAuth, BearerToken: o.BearerToken, ProxyURL: o.ProxyURL, UseEnvironmentProxy: o.UseEnvironmentProxy, OAuth2: o.OAuth2}); err != nil {
 			return err
+		}
+		if o.OAuth2 != nil && !o.OAuth2.AllowInsecureHTTP && !secure {
+			return invalid("OAuth2 requires WSS unless insecure HTTP is explicitly enabled")
+		}
+		if len(o.Subprotocols) > 16 || o.RequireSubprotocol && len(o.Subprotocols) == 0 {
+			return invalid("WebSocket subprotocol selection is invalid")
+		}
+		protocols := map[string]bool{}
+		for _, protocol := range o.Subprotocols {
+			if len(protocol) > 128 || !validToken(protocol) || protocols[protocol] {
+				return invalid("WebSocket subprotocol is invalid or duplicated")
+			}
+			protocols[protocol] = true
 		}
 	default:
 		return invalid("check type is unsupported")

@@ -45,7 +45,7 @@ func (d *Dashboard) poll(ctx context.Context) {
 						d.mu.Lock()
 						row := d.registry[id]
 						d.mu.Unlock()
-						if row.State == "enrolling" || row.State == "removing" {
+						if dashboardOperationPending(row.State) {
 							_, _ = d.finishEnrollment(op, id)
 						} else {
 							_, _ = d.checkNode(op, id)
@@ -180,7 +180,7 @@ func (d *Dashboard) identifyLocal(ctx context.Context, row registeredNodeRecord,
 func (d *Dashboard) adoptLocalIdentity(ctx context.Context, placeholder registeredNodeRecord, id string, identity Identity) (registeredNodeRecord, dashboardNodeSecrets, error) {
 	d.mu.Lock()
 	row, ok := d.registry[id]
-	if !ok || row.NodeID != identity.ID || d.busy[id] || row.State == "enrolling" || row.State == "removing" {
+	if !ok || row.NodeID != identity.ID || d.busy[id] || dashboardOperationPending(row.State) {
 		d.mu.Unlock()
 		return placeholder, dashboardNodeSecrets{}, fail(409, "Finish the existing node operation before local enrollment")
 	}

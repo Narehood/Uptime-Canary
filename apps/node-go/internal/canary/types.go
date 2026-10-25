@@ -5,7 +5,9 @@ import (
 	"context"
 	"net/http"
 	"time"
+	"uptime-canary/apps/node-go/internal/browsermonitor"
 	"uptime-canary/apps/node-go/internal/checks"
+	"uptime-canary/apps/node-go/internal/gamedigmonitor"
 	"uptime-canary/apps/node-go/internal/heartbeat"
 	"uptime-canary/apps/node-go/internal/pm2monitor"
 	"uptime-canary/apps/node-go/internal/rollup"
@@ -15,6 +17,7 @@ import (
 
 type MonitorInput struct {
 	Name                string                    `json:"name"`
+	Description         string                    `json:"description,omitempty"`
 	Type                string                    `json:"type"`
 	Target              string                    `json:"target"`
 	IntervalMs          int64                     `json:"intervalMs"`
@@ -42,10 +45,14 @@ type MonitorInput struct {
 	Globalping          *GlobalpingMonitorOptions `json:"globalping,omitempty"`
 	Steam               *SteamMonitorOptions      `json:"steam,omitempty"`
 	PM2                 *PM2MonitorOptions        `json:"pm2,omitempty"`
+	Browser             *BrowserMonitorOptions    `json:"browser,omitempty"`
+	GameDig             *GameDigMonitorOptions    `json:"gamedig,omitempty"`
 }
 
 type SteamMonitorOptions = steam.Options
 type PM2MonitorOptions = pm2monitor.Options
+type BrowserMonitorOptions = browsermonitor.Options
+type GameDigMonitorOptions = gamedigmonitor.Options
 
 type PushMonitorOptions struct {
 	Token    string `json:"token"`
@@ -343,6 +350,7 @@ type ProbeResult struct {
 	LatencyAvailable *bool
 	Message          string
 	StatusCode       int
+	Screenshot       []byte
 	Certificate      *checks.CertificateSummary
 }
 type Doer interface {

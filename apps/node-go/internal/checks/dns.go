@@ -49,6 +49,8 @@ func canonicalRecord(recordType, s string) (string, bool) {
 		return strconv.FormatUint(priority, 10) + " " + strings.ToLower(strings.TrimSuffix(parts[1], ".")), true
 	case "TXT":
 		return s, true
+	case "SRV", "SOA", "CAA":
+		return canonicalExtendedRecord(recordType, s)
 	default:
 		if !validDNSName(s) {
 			return "", false
@@ -117,6 +119,15 @@ func checkDNS(ctx context.Context, c Config) Result {
 		}
 	case "PTR":
 		records, err = resolver.LookupAddr(ctx, c.Target)
+	case "SRV":
+		var values []*net.SRV
+		_, values, err = resolver.LookupSRV(ctx, "", "", c.Target)
+		for _, value := range values {
+			records = append(records, fmt.Sprintf("%d %d %d %s", value.Priority, value.Weight, value.Port, value.Target))
+		}
+	case "SOA", "CAA":
+		records, err = extendedDNS(ctx, c.Target, rt, o.Server)
+		queried.Store(err == nil)
 	}
 	if err != nil {
 		return down("DNS lookup failed")

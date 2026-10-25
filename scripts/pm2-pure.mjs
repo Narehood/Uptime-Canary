@@ -36,25 +36,32 @@ const EARLIER = ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp', 'glob
 const HOME = '/var/lib/canary/.pm2';
 const STORED = { transport: 'unix', home: HOME, namespace: 'Review NS' };
 
-check('catalogue: 29 unique types, the 28 earlier ones in their order, pm2 after system-service in the local category', () => {
+// Protocol 19 explicitly adds the Tailscale peer ping after PM2 as a third local type (validation.go: a typed target
+// with no options), so the count and local-category expectations move from 29 and two types to 30 and three.
+// Protocol 19 also explicitly adds the real browser right after HTTP in the web category (validation.go: an HTTP(S)
+// typed target with `browser` options), so the count moves from 30 to 31; it is filtered out of the earlier order too.
+// Protocol 19 also explicitly adds GameDig right after Steam among game servers (validation.go: a `gamedig` options
+// object), so the count moves from 31 to 32; it is filtered out of the earlier order too and the local types don't change.
+check('catalogue: 32 unique types, the 28 earlier ones in their order, pm2 after system-service in the local category, then protocol-19 Tailscale, real browser and GameDig', () => {
   const types = checks.CHECK_TYPES.map(entry => entry.type);
-  assert.equal(types.length, 29);
-  assert.equal(new Set(types).size, 29);
-  assert.deepEqual(types.filter(type => type !== 'pm2'), EARLIER);
+  assert.equal(types.length, 32);
+  assert.equal(new Set(types).size, 32);
+  assert.deepEqual(types.filter(type => type !== 'pm2' && type !== 'tailscale-ping' && type !== 'real-browser' && type !== 'gamedig'), EARLIER);
   assert.equal(types.indexOf('pm2'), types.indexOf('system-service') + 1);
   const entry = checks.checkType('pm2');
   assert.equal(entry.label, 'PM2 process');
   assert.equal(entry.short, 'pm2');
   assert.equal(entry.category, 'local');
-  assert.deepEqual(checks.CHECK_TYPES.filter(other => other.category === 'local').map(other => other.type), ['system-service', 'pm2']);
+  assert.deepEqual(checks.CHECK_TYPES.filter(other => other.category === 'local').map(other => other.type), ['system-service', 'pm2', 'tailscale-ping']);
   assert.equal(entry.targetLabel, undefined, 'the PM2 section owns its process-name field');
   assert.equal(checks.typeLabel('pm2'), 'PM2 process');
   assert.equal(Object.keys(specs.SERVICE_PROTOCOL).length, 16);
 });
 
-check('typed-target sets unchanged; pm2 is not a service protocol and gets no TLS options', () => {
+check('typed-target sets: network types unchanged, protocol 19 adds tailscale-ping and then real-browser; pm2 is not a service protocol and gets no TLS options', () => {
   assert.deepEqual([...checks.NETWORK_TYPES], ['http', 'ping', 'tcp', 'tls', 'dns', 'websocket', 'smtp']);
-  assert.deepEqual([...checks.TYPED_TARGET_TYPES], [...checks.NETWORK_TYPES, 'system-service']);
+  assert.deepEqual([...checks.TYPED_TARGET_TYPES].filter(type => type !== 'real-browser'), [...checks.NETWORK_TYPES, 'system-service', 'tailscale-ping']);
+  assert.equal([...checks.TYPED_TARGET_TYPES].at(-1), 'real-browser');
   assert.equal(checks.isServiceType('pm2'), false);
   assert.equal(checks.tlsApplies('pm2', 'api', undefined), false);
 });

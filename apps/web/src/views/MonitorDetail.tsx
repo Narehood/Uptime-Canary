@@ -2,20 +2,24 @@ import { useId, useMemo, useState, type ReactNode } from 'react';
 import type { DeliveryAttemptView, LocalAvailabilityHistory, LocalHistoryStatistics, MonitorView, Observation } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure } from '../api';
 import { DAY, allowedSteps, autoStep, duration, pct, planAvailability, stepText, type AvailabilityPlan } from '../availability';
+import { BROWSER_PENDING } from '../browser';
 import { checkFacts, inputOf, typeLabel } from '../checks';
 import { useCanary } from '../context';
 import { nodeStateInfo, registryOrder } from '../dashboard';
 import { ago, elapsed, hasLatency, latency, latencyOf, maskedUrl, percent, plural, shortRev, span } from '../format';
+import { GAMEDIG_PENDING } from '../gamedig';
 import { useResource } from '../hooks';
 import { candidateOrder, observationFor, outOfView, stateTone, stateWord, type Assessment } from '../model';
 import { notify } from '../notices';
 import { POLL_MS } from '../session';
+import { TAILSCALE_PENDING } from '../tailscale';
 import { href, navigate } from '../router';
 import { Banner, Card, CopyButton, EmptyState, Modal, PageHead, ReadOnly, Rev, StateChip, Time, TypeTag } from '../ui/bits';
 import { AvailabilityChart, HistoryStrip, LatencyChart } from '../ui/charts';
 import { CandidateOrder, Seg } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
 import { MonitorTags } from '../ui/tags';
+import { BrowserScreenshotCard } from './BrowserScreenshot';
 import { DeliveryTable, ProviderIcon, providerLabel } from './Channels';
 import { IncidentRow, ReceiptList, SuppressionLine } from './Incidents';
 import { MaintenanceTag } from './Maintenance';
@@ -49,6 +53,52 @@ function interpretation(view: MonitorView, a: Assessment): ReactNode {
         {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
       </>;
       case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the node got no definite answer from its PM2 daemon (none running at that connection; a daemon run by another account, or on Windows a pipe whose present owner or permissions don’t fit; no permission; a connection its system doesn’t use, or a system other than Linux and Windows; another PM2 version; an unreadable answer; a state it doesn’t know; busy or failed check workers; or no answer within the timeout). Pending is neither up nor down and never sends a recovery.</>;
+      default: break;
+    }
+  }
+  // A Tailscale check runs each node's own client over its own tailnet path: a split is about those nodes, not the peer alone.
+  if (view.monitor.type === 'tailscale-ping') {
+    switch (a.kind) {
+      case 'everywhere': return view.monitor.upsideDown
+        ? 'Failing on every assigned node. The result is inverted, so each node’s Tailscale client got a reply from the peer.'
+        : a.total === 1
+        ? <>Failing on {ids(a.failing)}, the only node assigned: its Tailscale client confirmed that the peer didn’t answer its ping.</>
+        : 'Failing on every assigned node: each one’s Tailscale client confirmed that the peer didn’t answer its ping. The peer is most likely offline or off the tailnet.';
+      case 'partial': return <>
+        Failing on {ids(a.failing)}{a.passing.length ? <> but passing on {ids(a.passing)}</> : null}. Each node pings through its own client and its own path across the tailnet, so the nodes differ in how they reach the peer.
+        {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
+      </>;
+      case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the node got no definite answer: {TAILSCALE_PENDING}. Pending is neither up nor down and never sends a recovery.</>;
+      default: break;
+    }
+  }
+  // Each node drives the browser service its endpoint reaches, so the page loads from that service's network, not the node's.
+  if (view.monitor.type === 'real-browser') {
+    switch (a.kind) {
+      case 'everywhere': return a.total === 1
+        ? <>Failing on {ids(a.failing)}, the only node assigned: the page didn’t load in the browser service it reaches.</>
+        : 'Failing on every assigned node: the page didn’t load in the browser service each one reaches. Where they share one service, the page loads from that service’s network for all of them, so this says as much about that path as about the site.';
+      case 'partial': return <>
+        Failing on {ids(a.failing)}{a.passing.length ? <> but passing on {ids(a.passing)}</> : null}. Each node drives the browser service its endpoint reaches, so a split points to different services or to how the nodes reach them, as well as to the site.
+        {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
+      </>;
+      case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the node got no definite answer: {BROWSER_PENDING}. Pending is neither up nor down and never sends a recovery.</>;
+      default: break;
+    }
+  }
+  // Each node asks the GameDig query service its address reaches, and that service queries the game server from its own network.
+  if (view.monitor.type === 'gamedig') {
+    switch (a.kind) {
+      case 'everywhere': return view.monitor.upsideDown
+        ? 'Failing on every assigned node. The result is inverted, so the game server replied to each node’s query.'
+        : a.total === 1
+        ? <>Failing on {ids(a.failing)}, the only node assigned: GameDig, in the query service it reaches, reported that its query of the game server failed.</>
+        : 'Failing on every assigned node: GameDig, in the query service each one reaches, reported that its query of the game server failed. Where they share one service, it queried from the same network for all of them, so this says as much about that path as about the server.';
+      case 'partial': return <>
+        Failing on {ids(a.failing)}{a.passing.length ? <> but passing on {ids(a.passing)}</> : null}. Each node asks the query service its address reaches, and that service queries the game server from its own network, so a split points to different services or to how they reach the server, as well as to the server.
+        {a.unknown.length ? <> {ids(a.unknown)} {a.unknown.length === 1 ? 'has' : 'have'} no fresh result.</> : null} Any fresh failure opens an incident.
+      </>;
+      case 'pending': return <>Pending from {ids(a.pending)}: a retry in progress, or the node got no definite answer: {GAMEDIG_PENDING}. Pending is neither up nor down and never sends a recovery.</>;
       default: break;
     }
   }
@@ -281,6 +331,8 @@ function HistoryCard({ view }: { view: MonitorView }) {
   );
   const samples = useMemo(() => [...(history.data?.samples ?? [])].sort((a, b) => a.checkedAt - b.checkedAt), [history.data]);
   const measured = samples.filter(s => s.state === 'up' && hasLatency(s));
+  // A real-browser check's latency is the page-load time, never a single round trip.
+  const pageLoad = view.monitor.type === 'real-browser';
 
   if (!runsHere) {
     const elsewhere = candidateOrder(view.monitor.nodeIds).filter(id => nodeMap.get(id)?.url);
@@ -371,11 +423,11 @@ function HistoryCard({ view }: { view: MonitorView }) {
                 </div>
               ) : (
                 <div className="chart-block">
-                  <h3 className="mini-h">Response time</h3>
+                  <h3 className="mini-h">{pageLoad ? 'Page-load time' : 'Response time'}</h3>
                   {measured.length
-                    ? <LatencyChart samples={samples} now={overview.now} label={`Response time measured by ${endpoint} over ${samples.length} checks; ${measured.length} with a measured round trip`} />
-                    : <p className="muted">No measured round trips in this range, so there’s nothing to plot. Manual, system service and PM2 checks, Steam checks without a measured echo, and unavailable ICMP replies have no latency.</p>}
-                  <div className="legend"><span><i className="sw line" />Response time (measured, successful checks)</span><span><i className="sw band" />Failed checks</span></div>
+                    ? <LatencyChart samples={samples} now={overview.now} label={pageLoad ? `Page-load time measured by ${endpoint} over ${samples.length} checks; ${measured.length} loaded pages` : `Response time measured by ${endpoint} over ${samples.length} checks; ${measured.length} with a measured round trip`} />
+                    : <p className="muted">{pageLoad ? 'No loaded pages in this range, so there’s nothing to plot.' : 'No measured round trips in this range, so there’s nothing to plot. Manual, system service and PM2 checks, Steam checks without a measured echo, and unavailable ICMP replies have no latency.'}</p>}
+                  <div className="legend"><span><i className="sw line" />{pageLoad ? 'Page-load time, until network idle (successful checks)' : 'Response time (measured, successful checks)'}</span><span><i className="sw band" />Failed checks</span></div>
                 </div>
               )}
             </>
@@ -394,7 +446,7 @@ function Facts({ view }: { view: MonitorView }) {
   const group = m.groupId ? groupMap.get(m.groupId) : undefined;
   const dependency = group?.group.outageMonitorId ? monitorMap.get(group.group.outageMonitorId)?.monitor : undefined;
   const facts = checkFacts(m, { viewer, reveal });
-  const hasSecrets = !viewer && Boolean(m.webhookUrl || m.http?.headers || m.http?.body || m.http?.proxyUrl || m.websocket?.headers || m.websocket?.proxyUrl || m.service || m.globalping?.token || m.globalping?.http?.headers || m.globalping?.apiUrl || m.steam?.apiUrl || m.pm2?.home);
+  const hasSecrets = !viewer && Boolean(m.webhookUrl || m.http?.headers || m.http?.body || m.http?.proxyUrl || m.websocket?.headers || m.websocket?.proxyUrl || m.websocket?.oauth2?.tokenUrl || m.service || m.globalping?.token || m.globalping?.http?.headers || m.globalping?.apiUrl || m.steam?.apiUrl || m.pm2?.home || m.browser?.endpoint || m.browser?.bearerToken || m.gamedig?.endpoint || m.gamedig?.bearerToken || m.gamedig?.token);
   return (
     <>
       <dl className="kv">
@@ -540,6 +592,8 @@ export function MonitorDetailView({ id }: { id: string }) {
         actions={editable ? (
           <>
             <a className={`btn${view.configConflict ? ' is-disabled' : ''}`} href={view.configConflict ? undefined : href('monitors', m.id, 'edit')} aria-disabled={view.configConflict || undefined}><Icon name="edit" />Edit</a>
+            <a className={`btn${view.configConflict ? ' is-disabled' : ''}`} href={view.configConflict ? undefined : href('monitors', m.id, 'clone')} aria-disabled={view.configConflict || undefined}
+              title="Open a new monitor form filled with a copy of every setting, private ones included. Nothing is created until you save it."><Icon name="copy" />Clone</a>
             <button type="button" className="btn" onClick={() => { void togglePause(); }} disabled={busy || view.configConflict}><Icon name={m.enabled ? 'pause' : 'play'} />{busy ? 'Saving…' : m.enabled ? 'Pause' : 'Resume'}</button>
             <button type="button" className="btn danger" onClick={() => setConfirmDelete(true)} disabled={busy || view.configConflict}><Icon name="trash" />Delete</button>
           </>
@@ -548,7 +602,7 @@ export function MonitorDetailView({ id }: { id: string }) {
       {error ? <Banner tone="down" role="alert" title="Not saved">{error}</Banner> : null}
       {view.configConflict ? (
         <Banner tone="warn" title="Configuration conflict" actions={<a className="btn sm" href={href('config')}><Icon name="merge" />Review and resolve</a>}>
-          Nodes accepted different edits while they couldn’t reach each other. Editing, pausing and deleting wait until someone picks the version to keep.
+          Nodes accepted different edits while they couldn’t reach each other. Editing, copying, pausing and deleting wait until someone picks the version to keep.
         </Banner>
       ) : null}
       {view.maintenanceIds?.length ? (
@@ -561,6 +615,10 @@ export function MonitorDetailView({ id }: { id: string }) {
           <SuppressionLine groupId={view.suppressedByGroupId} reason={view.suppressionReason} />
         </Banner>
       ) : null}
+      {typeof m.description === 'string' && m.description.trim() ? (
+        // Private notes, shown as plain text with their line breaks. Never published or sent in notifications.
+        <section className="mon-desc" aria-label="Description"><p>{m.description}</p></section>
+      ) : null}
       <div className="g2">
         <div className="vstack">
           <Card title="Now, by location" hint={<>Latest result from each assigned node, as known to <span className="mono">{endpoint}</span></>}>
@@ -568,6 +626,7 @@ export function MonitorDetailView({ id }: { id: string }) {
             <LocationTable view={view} />
           </Card>
           {m.type === 'manual' && editable ? <ManualControl key={m.revision} view={view} /> : null}
+          {m.type === 'real-browser' && m.browser?.screenshot === true && editable ? <BrowserScreenshotCard view={view} /> : null}
           <HistoryCard view={view} />
         </div>
         <div className="vstack">

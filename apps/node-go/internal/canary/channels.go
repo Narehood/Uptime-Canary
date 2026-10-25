@@ -10,9 +10,10 @@ import (
 )
 
 type ChannelInput struct {
-	Name    string                  `json:"name"`
-	Enabled bool                    `json:"enabled"`
-	Config  providerDelivery.Config `json:"config"`
+	Name      string                  `json:"name"`
+	Enabled   bool                    `json:"enabled"`
+	Config    providerDelivery.Config `json:"config"`
+	IsDefault bool                    `json:"isDefault,omitempty"`
 }
 
 type Channel struct {
@@ -30,12 +31,15 @@ type ChannelView struct {
 
 func parseChannel(b []byte) (ChannelInput, error) {
 	var in ChannelInput
-	raw, err := jsonObject(b)
+	raw, err := strictResourceObject(b, "name", "enabled", "config", "id", "revision", "revisions", "updatedAt", "deleted", "isDefault")
 	if err != nil || required(raw, "name", "enabled", "config") != nil {
 		return in, fail(400, "Channel requires name, enabled and config")
 	}
 	if json.Unmarshal(raw["name"], &in.Name) != nil || json.Unmarshal(raw["enabled"], &in.Enabled) != nil || validText(in.Name, "channel name", 128) != nil {
 		return in, fail(400, "Invalid channel name or enabled flag")
+	}
+	if raw["isDefault"] != nil && json.Unmarshal(raw["isDefault"], &in.IsDefault) != nil {
+		return in, fail(400, "Invalid default channel flag")
 	}
 	d := json.NewDecoder(bytes.NewReader(raw["config"]))
 	d.DisallowUnknownFields()
@@ -77,6 +81,16 @@ func (n *Node) channelViews(role string) []ChannelView {
 
 func (n *Node) channelAPI(r *http.Request, a account, b []byte) (int, any, error) {
 	path, method := r.URL.Path, r.Method
+	if path == "/api/notification-channels/preview-test" && method == "POST" {
+		if a.Role == "viewer" {
+			return 0, nil, fail(403, "Insufficient permissions")
+		}
+		in, err := parseChannel(b)
+		if err != nil {
+			return 0, nil, err
+		}
+		return n.queueChannelTest(Channel{ChannelInput: in, ID: "preview-" + newID(), Revision: newID()}, true)
+	}
 	if path == "/api/notification-channels" {
 		if method == "GET" {
 			return 200, n.channelViews(a.Role), nil
@@ -122,6 +136,9 @@ func (n *Node) channelAPI(r *http.Request, a account, b []byte) (int, any, error
 	}
 	if method == "POST" && action == "test" {
 		return n.startChannelTest(id, b)
+	}
+	if method == "POST" && action == "apply" {
+		return n.applyChannel(id, b)
 	}
 	if !(action == "resolve" && method == "POST" || action == "" && (method == "PUT" || method == "DELETE")) {
 		return 0, nil, fail(404, "Not found")

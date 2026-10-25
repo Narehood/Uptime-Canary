@@ -149,11 +149,17 @@ def main():
     parser.add_argument("--full-proofs", action="store_true", help="Run every ordinary process proof on the extracted native executable")
     parser.add_argument("--alpine-help", action="store_true", help="Also execute extracted CLI help in a pre-pulled restricted Alpine container")
     parser.add_argument("--pm2-interop", action="store_true", help="Require offline actual PM2 interoperability on native hosted Linux")
+    parser.add_argument("--browser-interop", action="store_true", help="Require sandboxed actual Chromium acceptance on native hosted Linux")
+    parser.add_argument("--coordinated-upgrade", action="store_true", help="Require upgrade from the pinned public protocol18 Linux amd64 executable")
     args = parser.parse_args()
     native = execution_policy(args.target, native_target(platform.system(), platform.machine()),
                               args.require_native, args.full_proofs, args.alpine_help)
     if args.pm2_interop and (not native or not args.target.startswith("linux-")):
         raise ValueError("PM2 interoperability requires native Linux")
+    if args.browser_interop and (not native or not args.target.startswith("linux-")):
+        raise ValueError("Browser interoperability requires native Linux")
+    if args.coordinated_upgrade and (not native or args.target != "linux-amd64"):
+        raise ValueError("Published-baseline upgrade requires native Linux amd64")
     clean_checkout(args.commit)
     args.version = packager.version_value(args.version)
     output = guarded_output("release-package")
@@ -251,6 +257,26 @@ def main():
             report["pm2Interop"] = json.loads((ROOT / ".canary/pm2-real-current.json").read_text())
             if not report["pm2Interop"]["passed"] or report["pm2Interop"]["binarySha256"] != result["binarySha256"]:
                 raise ValueError("Actual PM2 acceptance did not cover the extracted executable")
+            # Reclaim only the completed, declared PM2 fixture before the next
+            # fixture's download. Keep its compact retained evidence above.
+            fixture = ROOT / '.canary/work/current/outputs/pmi'
+            if fixture.resolve() != fixture or not fixture.is_relative_to(output.parent):
+                raise ValueError('Refusing an unowned PM2 fixture cleanup target')
+            shutil.rmtree(fixture)
+        if args.browser_interop:
+            run("actual-browser-interop", [sys.executable, "-B", "scripts/browser-linux-validation.py", "--binary", str(extracted)], 360)
+            report["browserInterop"] = json.loads((ROOT / ".canary/browser-linux-current.json").read_text())
+            if not report["browserInterop"]["passed"] or report["browserInterop"]["binarySha256"] != result["binarySha256"]:
+                raise ValueError("Actual browser acceptance did not cover the extracted executable")
+            fixture = ROOT / '.canary/work/current/outputs/bri'
+            if fixture.resolve() != fixture or not fixture.is_relative_to(output.parent):
+                raise ValueError('Refusing an unowned browser fixture cleanup target')
+            shutil.rmtree(fixture)
+        if args.coordinated_upgrade:
+            run("published-baseline-upgrade", [sys.executable, "-B", "scripts/coordinated-upgrade-validation.py", "--binary", str(extracted)], 360)
+            report["coordinatedUpgrade"] = json.loads((ROOT / ".canary/coordinated-upgrade-current.json").read_text())
+            if not report["coordinatedUpgrade"]["passed"] or report["coordinatedUpgrade"]["binarySha256"] != result["binarySha256"]:
+                raise ValueError("Published-baseline upgrade did not cover the extracted executable")
         if packager.digest_file(extracted)[0] != result["binarySha256"]:
             raise ValueError("Extracted executable changed during validation")
         clean_checkout(args.commit)

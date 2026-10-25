@@ -1,9 +1,9 @@
 # Dashboard account and node enrollment contract
 
-Status: accepted user workflow, 2026-10-24; local Windows integration passed;
-hosted platform gates and matching image publication remain required.
-The current uncommitted gateway work is transport groundwork, not completion of
-this control-plane model. No release or migration acceptance is claimed here.
+Status: the dashboard-first shared-registry workflow was accepted and merged
+in PR #11 at `103f5c4`. The protocol-19 completion candidate adds registry
+maintenance and credential rotation; its focused Windows checks do not
+establish current hosted, image, platform or release acceptance.
 
 ## User workflow
 
@@ -156,7 +156,9 @@ a monitoring node. Auth status additionally returns `dashboard: true`.
 | `DELETE /api/dashboard/verify/{ticket}` | Discard a verification. Expiration also discards it. |
 | `POST /api/dashboard/nodes` `{ticket}` | 201 registered node after durable enrollment. An ambiguous or interrupted enrollment remains visible as `enrolling`, with retry/removal actions. |
 | `POST /api/dashboard/nodes/{id}/check` | Recheck node identity and reachability; return registered node. Any dashboard role may read/check. |
-| `POST /api/dashboard/nodes/{id}/retry` | Admin retries unfinished enrollment or removal. |
+| `PATCH /api/dashboard/nodes/{id}` `{label,url?}` | Admin renames a row, including offline nodes; a changed address must prove the same node and every saved role credential. Registration IDs and public links stay stable. The active bundled address is deployment-managed. |
+| `POST /api/dashboard/nodes/{id}/rotate` `{token?}` | Admin replaces all three delegated role credentials. An optional current node-admin credential supports recovery. Returns 200, or 202 `rotating` until confirmation. |
+| `POST /api/dashboard/nodes/{id}/retry` `{token?}` | Admin retries unfinished enrollment, credential rotation or removal. A supplied recovery credential applies only to an existing `rotating` journal; returns 202 if saved but not yet confirmed. |
 | `DELETE /api/dashboard/nodes/{id}` | 204 after confirmed remote revocation, otherwise 202 `removing`; a bundled node is protected while its address still matches current deployment settings. An unproved placeholder has no remote credentials to revoke. |
 
 Monitoring requests use the ordinary `/api/overview`, monitors, channels, groups,
@@ -170,6 +172,23 @@ Unknown node registrations are 404. Upstream credential rejection is 502 with
 a fixed node error, never 401 (which would falsely log out the dashboard).
 Public status needs an explicit saved registration selector and receives no
 management bearer; peer/internal and node account APIs are not forwarded.
+
+Enrollment, registry edits, credential rotation and removal are
+administrator-only. Rotation requires a node advertising
+`dashboardCredentialRotation`; older nodes must be upgraded first. The server
+journals the encrypted new role bundle and recovery credential before the
+node atomically changes its existing role accounts. Old tokens and sessions
+are revoked. A lost reply retries idempotently using the old/recovery or new
+administrator credential. The `rotating` state survives restart; Retry and
+background checks finish it. No node identity, cluster token, monitor or
+registration ID is replaced, and the browser receives no role credential.
+Before starting rotation, the server checks current administrator authority
+and all three existing role accounts. A known refusal or missing delegation
+does not create a pending update. If authority is revoked after that check,
+an administrator can submit a current node-admin credential with Retry to
+finish the same saved bundle. It is encrypted durably before another mutation
+is attempted, and cleared after confirmation. Missing or revoked role accounts
+are not recreated by rotation; recover the node's consistent retained state.
 
 Enrollment and removal are administrator-only. Provisioning uses one atomic
 node-side role bundle, journaled in the dashboard before network I/O, so retries

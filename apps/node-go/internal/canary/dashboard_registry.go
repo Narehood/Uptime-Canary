@@ -42,7 +42,13 @@ type registeredNodeRecord struct {
 
 type dashboardNodeSecrets struct {
 	dashboardRoleTokens
+	// Bootstrap while enrolling, or the previous/recovery administrator
+	// credential while rotating. Cleared after role verification succeeds.
 	EnrollmentToken string `json:"enrollmentToken,omitempty"`
+}
+
+func dashboardOperationPending(state string) bool {
+	return state == "enrolling" || state == "removing" || state == "rotating"
 }
 
 type nodeVerification struct {
@@ -127,7 +133,7 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 		return nil, errors.New("Cannot load dashboard node registry")
 	}
 	for id, row := range loaded {
-		if id != row.ID || row.NodeID == "" || !slices.Contains([]string{"enrolling", "removing", "starting", "answering", "not-answering", "credential-refused", "different-node"}, row.State) {
+		if id != row.ID || row.NodeID == "" || !slices.Contains([]string{"enrolling", "removing", "rotating", "starting", "answering", "not-answering", "credential-refused", "different-node"}, row.State) {
 			return nil, errors.New("Invalid dashboard registry record")
 		}
 		if row.Unproved && (!row.Local || row.NodeID != "pending" || (row.State != "enrolling" && row.State != "removing")) {
@@ -140,7 +146,7 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 		if _, e = d.openSecrets(row); e != nil {
 			return nil, errors.New("Cannot decrypt saved node credentials; restore the matching dashboard key")
 		}
-		if row.State != "enrolling" && row.State != "removing" {
+		if !dashboardOperationPending(row.State) {
 			row.State = "starting"
 			row.Error = ""
 		}

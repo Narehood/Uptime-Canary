@@ -29,6 +29,15 @@ export interface StatusPageAnnouncement {
   pinned: boolean;
 }
 
+export interface StatusPageAppearance {
+  theme?: 'system' | 'light' | 'dark';
+  accentColor?: string;
+  logoUrl?: string;
+  footerText?: string;
+  refreshIntervalMs?: number;
+  markdown?: boolean;
+}
+
 export interface StatusPageInput {
   slug: string;
   title: string;
@@ -36,6 +45,9 @@ export interface StatusPageInput {
   enabled: boolean;
   groups: StatusPageGroup[];
   announcements: StatusPageAnnouncement[];
+  appearance?: StatusPageAppearance;
+  publicUrl?: string;
+  rssEnabled?: boolean;
 }
 
 export interface StatusPage extends StatusPageInput {
@@ -97,4 +109,7 @@ export interface PublicStatusPage {
   generatedAt: number;
   groups: PublicStatusGroup[];
   announcements: StatusPageAnnouncement[];
+  appearance?: StatusPageAppearance;
+  publicUrl?: string;
+  rssEnabled?: boolean;
 }
