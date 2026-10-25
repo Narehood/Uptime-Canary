@@ -5,17 +5,20 @@ offline in fresh PID/network namespaces after dropping privileges. Chromium's
 sandbox remains enabled. No host browser, profile or network service is used.
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
+import re
 import shutil
 import stat
 import subprocess
 import sys
 import time
+import uuid
 from urllib.request import ProxyHandler, build_opener
 import zipfile
 
@@ -26,6 +29,68 @@ VERSION = '156.0.8078.4'
 PROVENANCE = 'https://github.com/microsoft/playwright/blob/cfe490d941f992655948eee8fd4fd94e1c4234bf/packages/playwright-core/src/server/registry/index.ts'
 MAX_DOWNLOAD = 128 * 1024 * 1024
 MAX_UNPACKED = 300 * 1024 * 1024
+
+
+def apparmor_source(binary, name, root):
+    """One literal fixture executable; never a wildcard or user-supplied rule."""
+    if (not re.fullmatch(r'canary-browser-[0-9a-f]{32}', name)
+            or not re.fullmatch(r'/[A-Za-z0-9/_.-]+', root)
+            or str(PurePosixPath(root)) != root or '..' in PurePosixPath(root).parts or '//' in root):
+        raise ValueError('Invalid private browser AppArmor identity')
+    base = root + '/.canary/work/current/outputs/bri/'
+    allowed = {base + folder + '/chrome-headless-shell'
+               for folder in ('chrome-headless-shell-linux64', 'chrome-headless-shell-linux-arm64')}
+    if binary not in allowed:
+        raise ValueError('Refusing a non-fixture AppArmor attachment')
+    # Chromium's documented Ubuntu userns profile, narrowed to this exact
+    # executable instead of a build-directory glob. No system file is written.
+    return ('abi <abi/4.0>,\nprofile ' + name + ' "' + binary + '" flags=(unconfined) {\n  userns,\n}\n').encode('ascii')
+
+
+@contextmanager
+def loaded_apparmor_profile(source, info):
+    command = ['/usr/bin/sudo', '-n', '/usr/sbin/apparmor_parser', '-K']
+    cleanup = False
+    info.update(loaded=False, removed=False)
+    try:
+        try:
+            subprocess.run([*command, '-a'], input=source, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.PIPE, check=True, timeout=15)
+        except subprocess.TimeoutExpired:
+            # A timed-out add may have committed. The generated name is unique;
+            # attempt removal before reporting the ambiguous load as a failure.
+            cleanup = True
+            raise
+        cleanup = True
+        info['loaded'] = True
+        yield
+    finally:
+        if cleanup:
+            subprocess.run([*command, '-R'], input=source, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.PIPE, check=True, timeout=15)
+            info['removed'] = True
+
+
+@contextmanager
+def browser_apparmor(chrome, report):
+    if (sys.platform != 'linux' or os.environ.get('GITHUB_ACTIONS') != 'true' or os.geteuid() == 0
+            or Path(os.environ.get('GITHUB_WORKSPACE', '')).resolve() != ROOT
+            or not (ROOT / '.canary/bounded-validation.lock').is_file()
+            or chrome.resolve(strict=True) != chrome):
+        raise RuntimeError('Private browser AppArmor admission failed')
+    name = 'canary-browser-' + uuid.uuid4().hex
+    source = apparmor_source(str(chrome), name, str(ROOT))
+    enabled = Path('/sys/module/apparmor/parameters/enabled')
+    if not enabled.is_file() or enabled.read_text().strip() == 'N':
+        report['apparmor'] = {'required': False, 'globalUsernsRestrictionsDisabled': False}
+        yield
+        return
+    if enabled.read_text().strip() != 'Y' or not Path('/usr/sbin/apparmor_parser').is_file():
+        raise RuntimeError('AppArmor fixture prerequisite unavailable')
+    info = report['apparmor'] = {'required': True, 'profile': name, 'exactBinaryOnly': True,
+                                'globalUsernsRestrictionsDisabled': False}
+    with loaded_apparmor_profile(source, info):
+        yield
 
 
 def extract_fixture(archive, output, folder):
@@ -147,54 +212,56 @@ def main():
               'binarySha256': hashlib.sha256(args.binary.read_bytes()).hexdigest()}
     try:
         chrome, report['fixture'] = fixture(output)
-        # Fixed system code runs privileged. Both system supervisors retain
-        # credentials/PDEATHSIG; repository code starts only after setpriv.
-        shim = '"/usr/sbin/ip" link set lo up && exec "/usr/bin/setpriv" "$@"'
-        command = ['/usr/bin/sudo', '-n', '/usr/bin/unshare', '--net', '--pid', '--fork', '--kill-child', '--mount-proc',
-                   '--', '/usr/bin/unshare', '--fork', '--kill-child', '--', '/bin/sh', '-c', shim, 'canary-browser-namespace',
-                   '--reuid=' + str(os.getuid()), '--regid=' + str(os.getgid()), '--clear-groups',
-                   '--inh-caps=-all', '--ambient-caps=-all', '--bounding-set=-all', '--no-new-privs',
-                   '/usr/bin/python3', '-B', str(Path(__file__).resolve()), '--offline', str(output),
-                   '--uid', str(os.getuid()), '--gid', str(os.getgid()), '--parent-network', os.readlink('/proc/self/ns/net'),
-                   '--binary', str(args.binary.resolve()), '--chrome', str(chrome), '--node', shutil.which('node')]
-        subprocess.run(command, cwd=ROOT, stdin=subprocess.DEVNULL, check=True, timeout=200)
-        report['runtime'] = json.loads((ROOT / '.canary/browser-real-current.json').read_text())
-        report['cleanup'] = json.loads((output / 'reaped.json').read_text())
-        if not report['runtime']['passed'] or report['cleanup']['remainingProcesses']:
-            raise RuntimeError('Actual browser runtime failed')
-        profile = ROOT / '.canary/work/current/outputs/browser-real'
-        if profile.resolve() != profile or not profile.is_relative_to(output.parent):
-            raise RuntimeError('Refusing an unowned profile cleanup target')
-        shutil.rmtree(profile)
-        control = command[:2] + ['/usr/bin/timeout', '--foreground', '--signal=KILL', '30s'] + command[2:] + ['--control']
-        start = time.monotonic()
-        killed = subprocess.run(control, cwd=ROOT, stdin=subprocess.DEVNULL, timeout=45)
-        witness = json.loads((output / 'control-ready.json').read_text())
-        if killed.returncode != 137 or time.monotonic() - start < 29 or witness.get('ready') is not True:
-            raise RuntimeError('Supervisor SIGKILL did not reach a ready private browser')
-        reaped = 0
-        until = time.monotonic() + 5
-        while True:
-            try:
-                pid, _ = os.waitpid(-1, os.WNOHANG)
-            except ChildProcessError:
-                break
-            if pid:
-                reaped += 1
-            elif time.monotonic() > until:
-                raise RuntimeError('Browser supervisor left unreaped children')
-            else:
-                time.sleep(0.01)
-        for entry in Path('/proc').iterdir():
-            if not entry.name.isdecimal():
-                continue
-            try:
-                if os.readlink(entry / 'ns/pid') == witness['namespace']:
-                    raise RuntimeError('Supervisor death left a private browser process')
-            except (FileNotFoundError, PermissionError):
-                continue
-        report['supervisorSIGKILL'] = {'passed': True, 'actualBrowserReady': True,
-                                      'adoptedChildrenReaped': reaped, 'remainingProcesses': 0}
+        with browser_apparmor(chrome, report):
+            # Fixed system code runs privileged. Both system supervisors retain
+            # credentials/PDEATHSIG; repository code starts only after setpriv.
+            shim = '"/usr/sbin/ip" link set lo up && exec "/usr/bin/setpriv" "$@"'
+            command = ['/usr/bin/sudo', '-n', '/usr/bin/unshare', '--net', '--pid', '--fork', '--kill-child', '--mount-proc',
+                       '--', '/usr/bin/unshare', '--fork', '--kill-child', '--', '/bin/sh', '-c', shim, 'canary-browser-namespace',
+                       '--reuid=' + str(os.getuid()), '--regid=' + str(os.getgid()), '--clear-groups',
+                       '--inh-caps=-all', '--ambient-caps=-all', '--bounding-set=-all', '--no-new-privs',
+                       '/usr/bin/python3', '-B', str(Path(__file__).resolve()), '--offline', str(output),
+                       '--uid', str(os.getuid()), '--gid', str(os.getgid()), '--parent-network', os.readlink('/proc/self/ns/net'),
+                       '--binary', str(args.binary.resolve()), '--chrome', str(chrome), '--node', shutil.which('node')]
+            subprocess.run(command, cwd=ROOT, stdin=subprocess.DEVNULL, check=True, timeout=200)
+            report['runtime'] = json.loads((ROOT / '.canary/browser-real-current.json').read_text())
+            report['cleanup'] = json.loads((output / 'reaped.json').read_text())
+            if not report['runtime']['passed'] or report['cleanup']['remainingProcesses']:
+                raise RuntimeError('Actual browser runtime failed')
+            profile = ROOT / '.canary/work/current/outputs/browser-real'
+            if profile.resolve() != profile or not profile.is_relative_to(output.parent):
+                raise RuntimeError('Refusing an unowned profile cleanup target')
+            shutil.rmtree(profile)
+            control = command[:2] + ['/usr/bin/timeout', '--foreground', '--signal=KILL', '30s'] + command[2:] + ['--control']
+            start = time.monotonic()
+            killed = subprocess.run(control, cwd=ROOT, stdin=subprocess.DEVNULL, timeout=45)
+            witness = json.loads((output / 'control-ready.json').read_text())
+            if killed.returncode != 137 or time.monotonic() - start < 29 or witness.get('ready') is not True:
+                raise RuntimeError('Supervisor SIGKILL did not reach a ready private browser')
+            reaped = 0
+            until = time.monotonic() + 5
+            while True:
+                try:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid:
+                    reaped += 1
+                elif time.monotonic() > until:
+                    raise RuntimeError('Browser supervisor left unreaped children')
+                else:
+                    time.sleep(0.01)
+            for entry in Path('/proc').iterdir():
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    if os.readlink(entry / 'ns/pid') == witness['namespace']:
+                        raise RuntimeError('Supervisor death left a private browser process')
+                except (FileNotFoundError, PermissionError):
+                    continue
+            report['supervisorSIGKILL'] = {'passed': True, 'actualBrowserReady': True,
+                                          'adoptedChildrenReaped': reaped, 'remainingProcesses': 0}
+        # Profile removal must succeed before the overall gate can pass.
         report['passed'] = True
     finally:
         retain_summary('browser-linux', report)

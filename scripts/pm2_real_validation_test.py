@@ -6,8 +6,9 @@ import importlib.util
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('pm2_real_validation', Path(__file__).with_name('pm2-real-validation.py'))
 launcher = importlib.util.module_from_spec(spec)
@@ -42,6 +43,22 @@ class PM2NamespaceRefusalTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'private PID namespace'):
                 launcher.reap_namespace()
             kill.assert_not_called()
+
+    def test_cleanup_empty_namespace_still_confirms_no_waitable_children(self):
+        system = SimpleNamespace(kill=Mock(side_effect=ProcessLookupError()),
+                                 waitpid=Mock(side_effect=ChildProcessError()), WNOHANG=1)
+        with patch.object(launcher, 'namespace_supervisor', return_value=True), patch.object(launcher, 'os', system), \
+                patch.object(launcher, 'signal', SimpleNamespace(SIGKILL=9)):
+            self.assertEqual(launcher.reap_namespace(), 0)
+            system.kill.assert_called_once_with(-1, 9)
+            system.waitpid.assert_called_once_with(-1, 1)
+
+    def test_cleanup_never_suppresses_permission_failures(self):
+        system = SimpleNamespace(kill=Mock(side_effect=PermissionError()), waitpid=Mock(), WNOHANG=1)
+        with patch.object(launcher, 'namespace_supervisor', return_value=True), patch.object(launcher, 'os', system), \
+                patch.object(launcher, 'signal', SimpleNamespace(SIGKILL=9)), self.assertRaises(PermissionError):
+            launcher.reap_namespace()
+        system.waitpid.assert_not_called()
 
     def test_runtime_refuses_ordinary_process_before_import_or_cleanup(self):
         with patch.object(launcher, 'namespace_supervisor', return_value=False), patch.object(launcher.subprocess, 'run') as run:

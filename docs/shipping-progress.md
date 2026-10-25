@@ -75,6 +75,20 @@ head must rerun the complete hosted gates. CodeRabbit skipped the initial
 review because 178 selected files exceeded its 100-file limit and it reported
 insufficient usage capacity; no automated source approval is claimed.
 
+On `bf825b4`, native Linux amd64 passed the repaired notice gate, native adapter
+suites, all 23 extracted-executable process proofs, Alpine help, actual PM2 and
+its supervisor-SIGKILL cleanup. The job then failed before Chromium became
+ready: Ubuntu AppArmor denied its user-namespace sandbox. The launcher repair
+loads and removes a temporary profile for only the guarded fixture executable;
+it does not disable global user-namespace restrictions or Chromium's sandbox.
+A second regression exposed cleanup signalling an already-empty namespace;
+that failure was reproduced before a narrow repair which still checks waitable
+children and the final process inventory. Fourteen browser launcher controls
+and the PM2 launcher suite pass locally on Windows source `8a277292...` (two
+pre-existing Linux-only PM2 controls are skipped on Windows). These are mocked
+policy/refusal and cleanup checks, not a Linux runtime pass. Actual browser,
+supervisor cleanup and the published-baseline upgrade remain required gates.
+
 ## PM2 work resumed after the review and capacity merges, 2026-10-24
 
 PR #6 merged as `d4cc56d`; PR #7 merged as `020bc4b` after exact-head

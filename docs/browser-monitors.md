@@ -124,3 +124,12 @@ download and single profile stay inside guarded scratch and are removed.
 Missing sandbox/namespace prerequisites fail the gate; they do not justify
 disabling the sandbox. Linux execution, other browser versions, Alpine/arm64
 deployment and complete release acceptance need their stated platform evidence.
+
+Ubuntu's AppArmor user-namespace restriction requires a profile for downloaded
+Chromium builds. The hosted fixture loads a temporary profile attached only to
+the exact executable in guarded scratch, then removes it after the normal run
+and supervisor-death control. It uses no profile/cache file or global sysctl
+change. A refused profile load or failed removal fails the gate. This follows
+[Chromium's documented per-executable approach](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md),
+with a literal attachment instead of a directory wildcard. Actual Linux
+interop and policy cleanup must pass on the candidate source before acceptance.
