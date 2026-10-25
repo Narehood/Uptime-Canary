@@ -1,6 +1,6 @@
 # Uptime Kuma parity audit
 
-## Completion implementation checkpoint, 2026-10-25
+## Merged protocol-19 implementation checkpoint, 2026-10-25
 
 This section supersedes the implementation labels in the dated inventories
 below. The pinned Kuma 2.5.6 comparison and the independent Go/SQLite HA goal
@@ -8,7 +8,7 @@ remain unchanged. New implementation is not accepted merely because its
 component checks pass; the completion PR must retain complete native,
 container, race, architecture, process, recovery and review gates.
 
-The protocol-19 candidate has 32 Canary monitor families. Kuma's separate
+Protocol 19 has 32 Canary monitor families. Kuma's separate
 keyword and JSON-query forms are HTTP options, and its Group monitor is
 represented by Canary's Groups resource. The three added specialist profiles
 are Tailscale client ping, actual remote Chromium navigation, and the separate
@@ -16,7 +16,7 @@ GameDig 5.3.3 query service with its pinned 358-ID catalogue. The catalogue is
 not evidence that all 358 games were exercised. PM2, system-service and Steam
 retain their existing contracts and exact platform prerequisites.
 
-The candidate also adds DNS SRV/SOA/CAA, WebSocket OAuth2 and subprotocol
+Protocol 19 also adds DNS SRV/SOA/CAA, WebSocket OAuth2 and subprotocol
 negotiation, optional TCP TLS, monitor descriptions and cloning, safe resource
 round trips, default notification selection and atomic apply-to-existing,
 unsaved channel tests, status-page branding/refresh/safe Markdown/default-off
@@ -34,23 +34,21 @@ game listed upstream.
 Known option differences remain explicit: NTLM, saved proxy profiles/SOCKS,
 domain-registration expiry, Kafka AWS authentication, arbitrary browser steps,
 raw status CSS, managed custom-domain routing, email/webhook subscriptions and
-additional provider-specific extras are not implemented by this candidate.
+additional provider-specific extras are not implemented at this checkpoint.
 Status pages accept an operator-supplied public URL but do not configure DNS,
 TLS or reverse proxies. These rows remain partial in the comparison. Unsafe
 WebSocket accept-header bypass is not offered. Retained causal-history growth
 and the documented fixed-membership/capacity limits are operating constraints,
 not a claim of unlimited retention or global exactly-once delivery.
 
-Windows evidence includes focused and full changed-package checks, actual
-private Chromium and GameDig process exercises, and static editor checkpoints.
-Every result applies only to its recorded source. Final local Windows source
-`54e5dd23...` passes three workspace type checks, 260 pure groups and 205/205
-dashboard browser checks. Native Linux actual browser and PM2 interoperability,
-extracted-package upgrade, current ordinary proofs, Alpine/race, arm64 and image
-publication still need the completion head's own evidence. No tagged release or completed release
-validation is claimed by this inventory. See [browser](browser-monitors.md),
-[Tailscale](tailscale-monitors.md), [GameDig](game-server-monitors.md),
-[upgrades](upgrades.md) and [shipping progress](shipping-progress.md).
+PR #12 merged as `34442cc` after all native, Alpine, race, actual Linux PM2
+and Chromium, published-baseline upgrade and image-build gates passed on head
+`75866ec`. All three Linux amd64 images were then published and verified for
+anonymous pulls. The local 205/205 dashboard checkpoint retains its earlier
+exact source. CodeRabbit skipped review because of file and usage limits.
+See [the current checkpoint](shipping-progress.md#published-protocol-19-checkpoint-2026-10-25)
+and [historical validation](validation-history.md). This is not a tagged
+release or proof that every remaining parity option is implemented.
 
 ## Historical implementation note, 2026-10-23
 

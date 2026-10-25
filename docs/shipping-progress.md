@@ -1,6 +1,37 @@
 # Shipping progress
 
-## Protocol-19 completion candidate, 2026-10-25
+## Published protocol-19 checkpoint, 2026-10-25
+
+[PR #12](https://github.com/Narehood/Uptime-Canary/pull/12) merged with the
+owner's approval as `34442cc040f2b00f17ba45b3a6bfb338d0552b14`, whose tree
+matches tested head `75866ec`. The complete native package workflow
+[40174744842](https://github.com/Narehood/Uptime-Canary/actions/runs/40174744842)
+passed on Windows amd64, Linux amd64 and Linux arm64, with 23/23 process proofs
+per extracted executable. Actual PM2 and sandboxed Chromium passed on both
+Linux architectures, including normal and SIGKILL zero-process cleanup;
+both published-baseline upgrade cases passed on Linux amd64.
+
+Container workflow [40174744843](https://github.com/Narehood/Uptime-Canary/actions/runs/40174744843)
+passed node, web, proof and race jobs, with 23/23 process proofs and actual
+combined/separate Compose checks. All 747 entries in each of four source
+manifests matched exact Git blobs. Race results were 1,140 core and 1,555
+engine/parent passing events with zero warnings; production worker children
+remain uninstrumented. Source fingerprint v3:
+`2ee42581da90fc01bdb1e9ac5034b3e64a11730ebaff8aa2f7530920591b127c`.
+
+All three images published in
+[40187171737](https://github.com/Narehood/Uptime-Canary/actions/runs/40187171737)
+passed credential-free pulls and independent anonymous manifest/revision
+checks. They are Linux amd64 development images, not a tagged release.
+CodeRabbit skipped source review for file and usage limits; no automated source
+approval is claimed. Live Tailscale and Windows PM2 remain unverified. An
+operator confirmed NetBird routing after removing the separate API target,
+which does not establish every network or policy. Remaining option differences
+and release work stay explicit in the parity inventory and README.
+
+Earlier records below keep their original source, failure and platform scope.
+
+## Historical protocol-19 implementation and repair records, 2026-10-25
 
 The accepted dashboard-first workflow and public image delivery were merged
 through PR #11 as `103f5c45f64d788f02df0a6393ac2b3fdbd42f0b`. Its prior
