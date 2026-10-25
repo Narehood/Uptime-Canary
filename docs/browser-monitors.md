@@ -133,3 +133,11 @@ change. A refused profile load or failed removal fails the gate. This follows
 [Chromium's documented per-executable approach](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md),
 with a literal attachment instead of a directory wildcard. Actual Linux
 interop and policy cleanup must pass on the candidate source before acceptance.
+
+On PR #12 head `fe14b52`, the extracted Linux amd64 executable passed actual
+HeadlessChrome 156.0.8078.4 interoperability, including JavaScript, fresh-context
+cookies, private captures and zero remaining contexts. The AppArmor profile
+loaded and was removed successfully; normal cleanup and the supervisor-SIGKILL
+control left zero processes. That package job failed later in the separate
+upgrade fixture, so this is browser-component evidence for that exact source,
+not whole-job, arm64 or release acceptance.

@@ -89,6 +89,19 @@ pre-existing Linux-only PM2 controls are skipped on Windows). These are mocked
 policy/refusal and cleanup checks, not a Linux runtime pass. Actual browser,
 supervisor cleanup and the published-baseline upgrade remain required gates.
 
+Head `fe14b52` then passed all 23 native Linux amd64 process proofs, actual PM2
+and actual sandboxed HeadlessChrome 156.0.8078.4 against extracted executable
+`30af4e82...`. The temporary profile was removed and normal/SIGKILL browser
+cleanup left zero processes. The job failed later in the two-case published
+upgrade gate: the dashboard/account case passed, while the cluster case's
+quiet assertion expected two webhooks instead of the correctly deduplicated
+one, before any upgrade. The fixture correction uses one down and one recovery
+acceptance, preserves the complete quiet windows and adds explicit retained
+receipt-ID checks across upgrades and restart. Proof type-check and both
+metadata/unsupported-host controls pass locally on source `56c67031...`; live
+execution of the corrected upgrade and the final head's other gates remain
+required. This does not turn that earlier failed job into acceptance.
+
 ## PM2 work resumed after the review and capacity merges, 2026-10-24
 
 PR #6 merged as `d4cc56d`; PR #7 merged as `020bc4b` after exact-head

@@ -29,10 +29,28 @@ test('published protocol18 state survives mixed refusal, coordinated upgrade and
   await cluster.wait('old observers converge and retain an accepted outage', async () =>
     (await cluster.overviews()).every(o => o.monitors.find(v => v.monitor.id === monitor.id)?.state === 'down') &&
     cluster.alerts().some(event => event.monitorId === monitor.id && event.kind === 'down'));
-  await cluster.quiet('accepted legacy delivery converges', 2);
+  // quiet's second argument is a webhook count, not a duration or node count.
+  // As in ha.test.ts and monitor-edits.test.ts, connected peers share one
+  // accepted down delivery and later one recovery. Keep QUIET_MS unchanged.
+  await cluster.quiet('accepted legacy delivery converges', 1);
   const accepted = cluster.alerts().filter(event => event.monitorId === monitor.id);
-  assert.ok(accepted.length > 0 && accepted.every(event => event.kind === 'down'));
+  assert.equal(accepted.length, 1, 'connected legacy peers deliver one outage, not one per observer');
+  assert.ok(accepted.every(event => event.kind === 'down'));
   const acceptedKeys = new Set(accepted.map(event => event.event.idempotencyKey));
+  let acceptedReceiptId: string | undefined;
+  await cluster.wait('accepted legacy receipt converges before stopping an observer', async () => {
+    const overviews = await cluster.overviews();
+    const receipt = overviews[0]!.notifications.find(value => value.monitorId === monitor.id &&
+      value.kind === 'down' && value.nodeId === accepted[0]!.nodeId);
+    if (!receipt?.id || !overviews.every(value => value.notifications.some(item => item.id === receipt.id))) return false;
+    acceptedReceiptId = receipt.id;
+    return true;
+  });
+  assert.ok(acceptedReceiptId);
+  async function retainedReceipt(label: string) {
+    await cluster.wait(label, async () => (await cluster.overviews()).every(overview =>
+      overview.notifications.some(receipt => receipt.id === acceptedReceiptId && receipt.monitorId === monitor.id && receipt.kind === 'down')));
+  }
 
   async function sequence(node: NodeProcess, peer: NodeProcess, protocol: number) {
     const response = await cluster.api<{ protocol: number; observations: { nodeId: string; sequence: number }[] }>(node, '/internal/snapshot', {
@@ -78,18 +96,21 @@ test('published protocol18 state survives mixed refusal, coordinated upgrade and
         fresh?.monitor.description === 'Protocol19 metadata' && fresh.monitor.enabled === false;
     }));
   await channelsReplicated(cluster, [channel]);
-  await cluster.quiet('upgrade cannot resend already accepted keys', 2);
+  await retainedReceipt('upgraded observers retain the original accepted receipt');
+  await cluster.quiet('upgrade cannot resend already accepted keys', 1);
   assert.deepEqual(new Set(cluster.alerts().filter(event => event.monitorId === monitor.id).map(event => event.event.idempotencyKey)), acceptedKeys);
   await cluster.stop(a);
   await cluster.start(a);
   await cluster.wait('second current restart advances persisted sequence', () => sequence(a, b, 19).then(value => value > after));
+  await retainedReceipt('the original receipt survives another current-version restart');
   assert.equal((await cluster.api(a, '/api/overview', { token: viewer })).status, 200);
   const updated = await cluster.api<Monitor>(a, '/api/monitors/' + monitor.id, { method: 'PUT', body: {
     ...input, revision: monitor.revision, manual: { state: 'up', message: 'Private recovery' },
   } });
   assert.equal(updated.status, 200, updated.text);
   await cluster.wait('retained legacy outage receives its recovery', () => cluster.alerts().some(event => event.monitorId === monitor.id && event.kind === 'recovery'));
-  await cluster.quiet('coordinated upgrade settles with no old resend', 4);
+  await cluster.quiet('coordinated upgrade settles with no old resend', 2);
+  await retainedReceipt('recovery does not erase the accepted legacy receipt');
   const events = cluster.alerts().filter(event => event.monitorId === monitor.id);
   assert.deepEqual(new Set(events.filter(event => event.kind === 'down').map(event => event.event.idempotencyKey)), acceptedKeys);
   assert.equal(events.filter(event => event.kind === 'recovery').length, 1);

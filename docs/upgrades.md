@@ -110,3 +110,13 @@ completes rotation without signing the dashboard out or losing its monitor.
 The metadata and unsupported-host controls run without Docker. They do not
 establish that the actual published-baseline upgrade has passed; that result
 must be recorded from the native Linux gate on the exact candidate source.
+
+The first hosted attempt on PR #12 head `fe14b52` passed the dashboard/account
+upgrade case, but the cluster case stopped before its first upgrade. Its
+`quiet` call confused the expected webhook count with the two observer nodes:
+the published baseline correctly delivered one outage alert. The corrected
+fixture requires one outage and one recovery, as the existing connected-HA
+proof does, keeps the same quiet duration, and additionally verifies the
+original receipt ID before and after both upgrades and another restart. The
+original failed result remains recorded; both complete cases must pass on the
+new candidate head before upgrade acceptance.

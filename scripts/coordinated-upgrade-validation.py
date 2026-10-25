@@ -93,10 +93,10 @@ def main():
         if len(result.stdout) + len(result.stderr) > 128 << 10:
             raise ValueError('Upgrade proof output exceeds its bound')
         print(result.stdout.decode('utf-8', errors='replace'), flush=True)
-        report['counts'] = tap_counts(result.stdout.decode('utf-8', errors='replace'))
         report['proofExitCode'] = result.returncode
         if result.returncode:
             raise ValueError('Published-baseline upgrade proof failed')
+        report['counts'] = tap_counts(result.stdout.decode('utf-8', errors='replace'))
         if hashlib.sha256(binary.read_bytes()).hexdigest() != report['binarySha256']:
             raise ValueError('Current executable changed during upgrade validation')
         if hashlib.sha256(baseline.read_bytes()).hexdigest() != report['baselineBinarySha256']:
