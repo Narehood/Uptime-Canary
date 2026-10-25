@@ -203,4 +203,3 @@ The dashboard server has its own two volumes and never opens a node's: `canary-d
 | `SSL_CERT_FILE`, `SSL_CERT_DIR` | system trust | CA certificates for private HTTPS services and peers |
 
 </details>
-
