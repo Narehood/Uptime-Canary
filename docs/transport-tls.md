@@ -20,7 +20,9 @@ directory, outside SQLite backups. Keep the same node ID and identity volume.
 An exact SHA-256 certificate fingerprint is an explicit trust anchor. Clients
 check the certificate and its validity before sending a bearer credential. There
 is no accept-any-certificate setting, HTTP fallback, or automatic remote trust
-change. An empty fingerprint on HTTPS uses normal CA and hostname validation.
+change. An empty fingerprint on HTTPS uses normal CA and hostname validation,
+with TLS 1.2 compatibility for CA-trusted proxies. Native pinned connections
+still require TLS 1.3.
 Self-signed certificates need their fingerprint even when the address changes.
 
 ## New direct node

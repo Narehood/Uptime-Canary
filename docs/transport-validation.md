@@ -75,6 +75,33 @@ Scratch returned to zero. This checks configuration parsing only: it uses no
 Docker daemon, image pull or deployment, and reads no local environment file.
 Application sources are unchanged from the earlier checkpoints.
 
+## Review follow-up
+
+Two review findings reproduced on unchanged v3 source
+`e5a0371141587b1fd87a86ca50af0d4f0968054be7f9627bb1c527fae81ab888`:
+a valid Discord URL with an invalid template returned the URL error, and an
+unpinned client could not connect to a CA-trusted TLS 1.2 proxy. The fixes
+separate template validation and retain TLS 1.2 only for ordinary CA trust.
+Native pinned connections still require TLS 1.3. Regressions retain the URL
+error for an invalid URL, require HTTP 400 for invalid templates, and check
+trusted CA success, untrusted CA/hostname refusal and pinned downgrade refusal
+before any HTTP credential is sent.
+
+The owner explicitly accepted activation of previously unused Discord text as
+a pre-release breaking change. No opt-in flag, template clearing or other
+migration behavior was added. Existing template and delivery assertions stay
+unchanged; a newly proposed migration-compatibility test was removed because
+its expected behavior was explicitly declined.
+
+On unchanged v3 source
+`5f87e992c7d00c2934df04dd5fd980e0a2a915f1b1e587edb7ecdc1195a6aac2`,
+the affected TLS, native TLS, channel and notification-template tests passed
+(nodetls 0.785 s; canary 3.748 s), followed by vet of both packages, in 74.609
+guarded seconds. All 60 onboarding/template pure groups then passed in 4.312
+guarded seconds on the same source. Existing assertions were retained. Scratch
+returned to zero and storage stayed within budget. The earlier complete browser
+and process results keep their original source scope.
+
 ## What is exercised
 
 - Real native TLS handshakes, retained keys, wrong pins before any HTTP

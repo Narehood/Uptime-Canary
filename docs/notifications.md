@@ -22,6 +22,10 @@ node's substitution rules. Email HTML is shown as escaped source, never executed
 inside the preview. Webhook channels still send the JSON event and ignore message
 templates. Their unused templates cannot fail a JSON webhook's delivery.
 
+Protocol 20 also activates nonempty Discord templates stored by earlier builds.
+There is no automatic clearing or separate migration opt-in; this is an
+intentional pre-release compatibility change.
+
 The editor checks the selected node's advertised peer protocol. Older or
 unidentified nodes retain the original six substitutions and fixed Discord
 message. Newly entered protocol-20 substitutions cannot be saved or tested on

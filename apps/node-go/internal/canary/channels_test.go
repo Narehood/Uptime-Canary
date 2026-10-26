@@ -28,6 +28,34 @@ func hookChannel(name, target string) ChannelInput {
 	return ChannelInput{Name: name, Enabled: true, Config: providerDelivery.Config{Kind: providerDelivery.Webhook, Webhook: providerDelivery.WebhookConfig{URL: target, BearerToken: "fixture-only-bearer", AllowInsecureHTTP: true}}}
 }
 
+func TestChannelDiscordTemplateErrorsIdentifyTheTemplate(t *testing.T) {
+	for _, templates := range []providerDelivery.Templates{
+		{Subject: "line one\nline two"},
+		{Subject: strings.Repeat("x", 513)},
+		{Text: strings.Repeat("x", providerDelivery.MaxBodyBytes+1)},
+	} {
+		data, err := json.Marshal(ChannelInput{Name: "Discord", Enabled: true, Config: providerDelivery.Config{
+			Kind: "discord", Webhook: providerDelivery.WebhookConfig{URL: discordFixtureURL}, Templates: templates,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = parseChannel(data)
+		if err == nil || !strings.Contains(err.Error(), "Discord message templates") || strings.Contains(err.Error(), "webhook URL") {
+			t.Fatalf("valid URL with an invalid template got the wrong error: %v", err)
+		}
+		if failure, ok := err.(*apiError); !ok || failure.Status != 400 {
+			t.Fatal("template validation no longer returns HTTP 400", err)
+		}
+	}
+	data, _ := json.Marshal(ChannelInput{Name: "Discord", Enabled: true, Config: providerDelivery.Config{
+		Kind: "discord", Webhook: providerDelivery.WebhookConfig{URL: "https://invalid.example.test"}, Templates: providerDelivery.Templates{Subject: "bad\nsubject"},
+	}})
+	if _, err := parseChannel(data); err == nil || !strings.Contains(err.Error(), "Discord webhook URL") {
+		t.Fatal("invalid webhook no longer reports the URL error", err)
+	}
+}
+
 func TestChannelReplicationConflictsTombstonesAndViewerRedaction(t *testing.T) {
 	c := cluster(t, []string{"a", "b"}, nil)
 	a, b := c.nodes[0], c.nodes[1]

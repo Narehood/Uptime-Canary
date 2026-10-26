@@ -118,8 +118,11 @@ func Client(fingerprint string) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	config := &tls.Config{MinVersion: tls.VersionTLS13}
+	// Ordinary CA trust retains compatibility with TLS 1.2 proxies. Native
+	// pinned connections still require TLS 1.3 and the exact verified leaf.
+	config := &tls.Config{MinVersion: tls.VersionTLS12}
 	if pin != "" {
+		config.MinVersion = tls.VersionTLS13
 		// Go's default verifier cannot use a not-yet-received leaf as its root.
 		// VerifyConnection completely replaces it with the explicit pin verifier.
 		config.InsecureSkipVerify = true

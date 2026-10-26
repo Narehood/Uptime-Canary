@@ -95,6 +95,58 @@ func TestPinnedTLSAuthenticatesBeforeSendingCredentialsAndRefusesDowngrade(t *te
 	}
 }
 
+func TestUnpinnedCATrustRetainsTLS12Compatibility(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.TLS.Version != tls.VersionTLS12 {
+			t.Error("fixture did not negotiate TLS1.2")
+		}
+		w.WriteHeader(204)
+	}))
+	server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12}
+	server.StartTLS()
+	defer server.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	for _, tc := range []struct {
+		name, pin, serverName string
+		trust, ok             bool
+	}{
+		{"trusted-ca", "", "", true, true},
+		{"untrusted-ca", "", "", false, false},
+		{"wrong-hostname", "", "not-the-server.test", true, false},
+		{"pinned-requires-tls13", CertificateFingerprint(server.Certificate()), "", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config, err := Client(tc.pin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.trust {
+				config.RootCAs = roots
+			}
+			config.ServerName = tc.serverName
+			transport := &http.Transport{TLSClientConfig: config}
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: time.Second}
+			before := calls.Load()
+			request, _ := http.NewRequest("GET", server.URL, nil)
+			request.Header.Set("Authorization", "Bearer private-fixture-credential")
+			response, err := client.Do(request)
+			if response != nil {
+				response.Body.Close()
+			}
+			if (err == nil) != tc.ok || !tc.ok && calls.Load() != before {
+				t.Fatalf("TLS compatibility or authentication boundary changed: want success=%v, err=%v", tc.ok, err)
+			}
+			if tc.pin == "" && (config.InsecureSkipVerify || config.VerifyConnection != nil) {
+				t.Fatal("ordinary CA and hostname verification was replaced")
+			}
+		})
+	}
+}
+
 func TestFingerprintNeverFallsBackAndCertificateConstraintsRemainEnforced(t *testing.T) {
 	for _, pin := range []string{"x", strings.Repeat("a", 63), strings.Repeat("g", 64), " " + strings.Repeat("a", 64), strings.Repeat("a:", 32)} {
 		if _, err := Client(pin); err == nil {
