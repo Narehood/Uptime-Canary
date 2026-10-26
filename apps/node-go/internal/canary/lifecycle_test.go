@@ -136,7 +136,9 @@ func TestMonitorMetadataEditsPreserveDeliveredOutageAcrossPeersAndRestart(t *tes
 
 	// Deliver an actual authenticated old config/incident/sample page after a
 	// group-only edit, while the other peer still knows only the old revision.
-	c.split([]string{"a"}, []string{"b"})
+	if err := splitLifecyclePeers(c, []string{"a"}, []string{"b"}); err != nil {
+		t.Fatal(err)
+	}
 	m.GroupID = g2.ID
 	m = editMonitor(t, a, m)
 	if checkGeneration(m) != originalRevision {
@@ -315,7 +317,9 @@ func TestMonitorConflictResolutionPreservesOnlySharedCheckGeneration(t *testing.
 				return r.count("down") == 1 && len(getOverview(t, b).Notifications) == 1 && currentLifecycleState(t, c, m, "down")
 			})
 			original := getOverview(t, a).Incidents[0]
-			c.split([]string{"a"}, []string{"b"})
+			if err := splitLifecyclePeers(c, []string{"a"}, []string{"b"}); err != nil {
+				t.Fatal(err)
+			}
 			left, right := m, m
 			left.Name, right.Name = "Left", "Right"
 			if semantic {

@@ -180,6 +180,38 @@ The matching native ARM64 run is still required. This fixture fix does not
 clear the earlier 64-monitor process-proof recovery failure or establish
 Alpine race acceptance; those gates were not reached in this failed job.
 
+## Lifecycle partition-fixture follow-up
+
+The [Alpine race job on `105250d`](https://github.com/Narehood/Uptime-Canary/actions/runs/40335375003/job/121615407815)
+passed the earlier metadata-edit/restart recovery test. It reported zero
+data-race warnings, but the semantic conflict-resolution case failed with HTTP
+409 while editing the original revision. The test transport's partition flag
+refused new requests without draining already admitted exchanges: an older
+request could return newly edited configuration after the supposed partition,
+correctly making the other editor's revision stale.
+
+A controlled pending-page regression reproduced the premature partition return
+on Windows amd64, v3 source
+`cfbff30a2c4a3f505c99b67f44ba832f2edd09cd87b53c09ab32bcd83a6caf7f`.
+The two affected lifecycle fixtures now finish pre-partition sync rounds before
+starting edits. The drain has its own eight-second bound; every original
+assertion and condition deadline remains unchanged. No application behavior,
+revision check or edit retry changes. The regression holds a validated peer
+page, requires the partition setup to wait, and confirms that the original
+merge completes before edits are allowed.
+
+On unchanged v3 source
+`7cfc1fc83e62c3ca2b4e5dc6068d754cc3e586389e2202fbece02fcd76739bf8`,
+twenty repetitions each of the new pending-page regression and both affected
+lifecycle tests passed on Windows amd64, followed by core-package vet
+(Go tests 78.299 s; 148.093 guarded seconds). Scratch returned to zero and
+storage stayed within budget. These are non-race checks; matching Alpine race
+acceptance remains required.
+
+Separately, the native Linux amd64 package job on `105250d` passed, including
+the original published protocol-18 executable upgrade gate. That result keeps
+its exact source/platform scope and does not clear ARM64 or Alpine race gates.
+
 ## What is exercised
 
 - Real native TLS handshakes, retained keys, wrong pins before any HTTP
