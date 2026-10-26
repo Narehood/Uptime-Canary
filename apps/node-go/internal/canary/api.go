@@ -272,6 +272,9 @@ func (n *Node) apiLocked(r *http.Request, a account, b []byte) (int, any, error)
 		return 0, nil, fail(503, "Runtime unavailable")
 	}
 	path, method := r.URL.Path, r.Method
+	if strings.HasPrefix(path, "/api/fleet-placements/") {
+		return n.fleetPlacementAPI(r, a, b)
+	}
 	if path == "/api/tags" || strings.HasPrefix(path, "/api/tags/") {
 		return n.tagAPI(r, a, b)
 	}
