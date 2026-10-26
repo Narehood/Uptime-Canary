@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -78,6 +79,8 @@ type Node struct {
 	fault                                          error
 	server                                         *http.Server
 	url                                            string
+	tlsFingerprint                                 string
+	peerTLSClients                                 map[string]*http.Client
 	ctx                                            context.Context
 	cancel                                         context.CancelFunc
 	wg                                             sync.WaitGroup
@@ -219,6 +222,12 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 		if p.URL, err = baseURL(p.URL, "peer URL"); err != nil {
 			return nil, err
 		}
+		if o.TLSMode == "auto" && len(p.URL) >= 7 && p.URL[:7] == "http://" {
+			return nil, errors.New("Native TLS nodes require HTTPS peer addresses; migrate peer URLs and trust together")
+		}
+		if p.TLSFingerprint, err = validateTLSOrigin(p.URL, p.TLSFingerprint); err != nil {
+			return nil, err
+		}
 		if p.Name != "" {
 			if err = validText(p.Name, "peer name", 128); err != nil {
 				return nil, err
@@ -265,6 +274,17 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 	}
 	if n.peerClient == nil {
 		n.peerClient = n.client
+	}
+	n.peerTLSClients = map[string]*http.Client{}
+	for _, peer := range validated {
+		if peer.TLSFingerprint != "" {
+			base := newHTTPClient()
+			client, err := pinnedHTTPClient(base, base.Transport.(*http.Transport), peer.TLSFingerprint)
+			if err != nil {
+				return nil, err
+			}
+			n.peerTLSClients[peer.ID] = client
+		}
 	}
 	if n.probe == nil {
 		n.probe = func(ctx context.Context, m Monitor) ProbeResult {
@@ -416,6 +436,10 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 	n.ctx, n.cancel = context.WithCancel(context.Background())
 	n.peerProgress = map[string]syncProgress{}
 	n.server = &http.Server{Handler: n, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 32 * 1024, BaseContext: func(net.Listener) context.Context { return n.ctx }}
+	if err = n.prepareTLS(o.TLSMode); err != nil {
+		n.cancel()
+		return nil, err
+	}
 	if err = n.prepareConnector(o); err != nil {
 		n.cancel()
 		return nil, err
@@ -442,7 +466,12 @@ func (n *Node) Start() error {
 	if host == "::" {
 		host = "::1"
 	}
-	n.url = "http://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
+	scheme := "http://"
+	if n.server.TLSConfig != nil {
+		scheme = "https://"
+		listener = tls.NewListener(listener, n.server.TLSConfig)
+	}
+	n.url = scheme + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
 	n.started = true
 	if n.connector != nil {
 		n.launchLocked(func() { n.connector.run(n.ctx, n) })
@@ -489,6 +518,9 @@ func (n *Node) Stop() error {
 	}
 	if c, ok := n.peerClient.(interface{ CloseIdleConnections() }); ok {
 		c.CloseIdleConnections()
+	}
+	for _, client := range n.peerTLSClients {
+		client.CloseIdleConnections()
 	}
 	close(n.stopDone)
 	return err

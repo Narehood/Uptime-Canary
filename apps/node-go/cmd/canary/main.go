@@ -49,6 +49,9 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "Uptime-Canary: Invalid startup configuration:", err)
 		return 1
 	}
+	if fingerprint := node.TLSFingerprint(); fingerprint != "" {
+		fmt.Fprintln(os.Stdout, "Node TLS certificate fingerprint:", fingerprint)
+	}
 	if err = node.Start(); err != nil {
 		_ = node.Stop()
 		fmt.Fprintln(os.Stderr, "Uptime-Canary: Listener failed to start")

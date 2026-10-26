@@ -108,13 +108,8 @@ func dnsFixtureResponse(query []byte, truncate bool) []byte {
 
 func fixtureDNS(t *testing.T, truncateUDP, drop bool) (string, *atomic.Int32, <-chan struct{}) {
 	t.Helper()
-	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
+	udp, tcp, err := dnsFixtureSockets(net.Listen, net.ListenPacket)
 	if err != nil {
-		t.Fatal(err)
-	}
-	tcp, err := net.Listen("tcp", udp.LocalAddr().String())
-	if err != nil {
-		udp.Close()
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup

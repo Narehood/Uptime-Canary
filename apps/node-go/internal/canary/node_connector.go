@@ -13,12 +13,14 @@ import (
 	"time"
 	"uptime-canary/apps/node-go/internal/jsonshape"
 	"uptime-canary/apps/node-go/internal/nodeconnection"
+	"uptime-canary/apps/node-go/internal/nodetls"
 )
 
 type nodeConnectionIdentity struct {
 	Version        int    `json:"version"`
 	NodeID         string `json:"nodeId"`
 	Origin         string `json:"origin"`
+	TLSFingerprint string `json:"tlsFingerprint,omitempty"`
 	RegistrationID string `json:"registrationId,omitempty"`
 	Secret         string `json:"secret"`
 }
@@ -58,13 +60,17 @@ func (n *Node) prepareConnector(o Options) error {
 	if n.store.origin == nil {
 		return errors.New("Node connections require a retained identity directory")
 	}
-	c := &nodeConnector{identity: nodeConnectionIdentity{Version: 1, NodeID: n.ID, Origin: origin}}
+	pin, err := validateTLSOrigin(origin, o.DashboardTLSFingerprint)
+	if err != nil {
+		return err
+	}
+	c := &nodeConnector{identity: nodeConnectionIdentity{Version: 1, NodeID: n.ID, Origin: origin, TLSFingerprint: pin}}
 	c.saved, err = n.store.origin.ConnectionState()
 	if err != nil {
 		return err
 	}
 	if c.saved != nil {
-		if connectionDecode(c.saved, &c.identity) != nil || c.identity.Version != 1 || c.identity.NodeID != n.ID || c.identity.Origin != origin || !nodeconnection.Identifier(c.identity.Secret, 64) || c.identity.RegistrationID != "" && !nodeconnection.Identifier(c.identity.RegistrationID, 32) {
+		if connectionDecode(c.saved, &c.identity) != nil || c.identity.Version != 1 || c.identity.NodeID != n.ID || c.identity.Origin != origin || c.identity.TLSFingerprint != pin || !nodeconnection.Identifier(c.identity.Secret, 64) || c.identity.RegistrationID != "" && !nodeconnection.Identifier(c.identity.RegistrationID, 32) {
 			return errors.New("Retained node connection identity does not match this node and dashboard")
 		}
 	} else {
@@ -100,6 +106,10 @@ func (n *Node) prepareConnector(o Options) error {
 	c.transport = &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 20 * time.Second, MaxIdleConns: 4, MaxIdleConnsPerHost: 4, MaxConnsPerHost: 4,
 		IdleConnTimeout: 30 * time.Second, MaxResponseHeaderBytes: 32 * 1024, DisableCompression: true}
+	c.transport.TLSClientConfig, err = nodetls.Client(pin)
+	if err != nil {
+		return err
+	}
 	c.client = &http.Client{Transport: c.transport, Timeout: 22 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	c.fingerprint = digest(c.identity.Secret)
 	n.connector = c

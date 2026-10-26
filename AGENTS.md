@@ -31,9 +31,11 @@ that goal or describe component checks as a complete release validation.
 - Never delete `.canary/browser-auth-proof/run-ZgaV8S`; an earlier cleanup
   approval rejected that artifact. Application databases, backups and retained
   identity state are also outside generated-file cleanup scope.
-- Opus 5.5 xhigh owns frontend/visual work under `apps/web`, `design`, README,
-  `docs/design.md`, `docs/assets`, and the existing `badges_svg.go` renderer.
-  Root owns core integration, shared types, modules and release validation.
+- Opus 5.5 xhigh owns graphical work: layout, styling, visual previews and
+  graphics under `apps/web`, `design`, `docs/assets`, and `badges_svg.go`.
+  Per the user's clarification, Codex/root owns non-visual frontend logic,
+  API helpers, tests, README/design prose and other documentation, as well as
+  core integration, shared types, modules and release validation.
 - State exact source and platform limitations. Preserve original failing
   regressions; change an expectation only when the accepted behavior changes
   explicitly and reference evidence supports the new expectation.

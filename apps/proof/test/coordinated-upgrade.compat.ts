@@ -74,7 +74,10 @@ test('published protocol18 state survives mixed refusal, coordinated upgrade and
   await cluster.wait('mixed live peers refuse both exchange directions', () =>
     [[a.id, b.id], [b.id, a.id]].every(([from, to]) => cluster.exchanges.some(exchange =>
       !exchanges.has(exchange) && exchange.from === from && exchange.to === to && exchange.status === 400)));
-  const after = await sequence(a, b, 19);
+  // wire_pages.go advanced the current snapshot format to protocol 20.
+  // The Linux upgrade gate rejected the stale protocol-19 probe with HTTP 400;
+  // keep the original published baseline at 18 and all retention checks intact.
+  const after = await sequence(a, b, 20);
   assert.ok(after > before && after >= 65537, 'retained sequence reservation must advance');
   assert.equal((await cluster.api(a, '/api/overview', { token: viewer })).status, 200);
   assert.equal((await cluster.api(a, '/api/monitors', { method: 'POST', body: {}, token: viewer })).status, 403);
@@ -101,7 +104,7 @@ test('published protocol18 state survives mixed refusal, coordinated upgrade and
   assert.deepEqual(new Set(cluster.alerts().filter(event => event.monitorId === monitor.id).map(event => event.event.idempotencyKey)), acceptedKeys);
   await cluster.stop(a);
   await cluster.start(a);
-  await cluster.wait('second current restart advances persisted sequence', () => sequence(a, b, 19).then(value => value > after));
+  await cluster.wait('second current restart advances persisted sequence', () => sequence(a, b, 20).then(value => value > after));
   await retainedReceipt('the original receipt survives another current-version restart');
   assert.equal((await cluster.api(a, '/api/overview', { token: viewer })).status, 200);
   const updated = await cluster.api<Monitor>(a, '/api/monitors/' + monitor.id, { method: 'PUT', body: {
@@ -153,7 +156,7 @@ test('published dashboard accounts and encrypted node registration survive serve
     const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CANARY_') && key !== 'NODE_OPTIONS'));
     dashboard = spawn(executable, ['dashboard'], { cwd: cluster.directory, stdio: 'ignore', env: {
       ...environment, CANARY_DASHBOARD_DATA: data, CANARY_DASHBOARD_IDENTITY: identity, CANARY_DASHBOARD_ASSETS: assets,
-      CANARY_DASHBOARD_HOST: '127.0.0.1', CANARY_DASHBOARD_PORT: String(port), CANARY_DASHBOARD_ORIGINS: base,
+      CANARY_DASHBOARD_HOST: '127.0.0.1', CANARY_DASHBOARD_PORT: String(port), CANARY_DASHBOARD_ORIGINS: base, CANARY_UPDATE_CHECKS: 'false',
       CANARY_LOCAL_NODE_URL: node.url, CANARY_LOCAL_NODE_TOKEN: node.adminToken,
     } });
     dashboard.on('error', () => {});

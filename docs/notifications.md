@@ -6,6 +6,73 @@ and Pushover channels. Channel configuration is
 replicated with explicit revision conflicts and deletion tombstones. Account
 credentials, browser sessions and delivery attempts remain local to each node.
 
+## Message presets and previews (protocol 20)
+
+The channel editor offers **Built-in**, **Compact** and **Detailed** message
+presets, with Down, Still down, Recovery and Test sample previews. Choosing a
+preset is explicit; replacing custom wording asks first, and Undo remains
+available until the next edit. Changing provider never applies a preset or
+overwrites custom text. Previewing uses local sample data and sends nothing.
+The existing **Test these settings** action is a separate, confirmed real send.
+
+For Discord, protocol 20 adds custom plain messages and an explicit **Card**
+layout (`webhook.embed`). The card uses event colors and a UTC event timestamp.
+The frame in the dashboard is an illustration; its rendered text follows the
+node's substitution rules. Email HTML is shown as escaped source, never executed
+inside the preview. Webhook channels still send the JSON event and ignore message
+templates. Their unused templates cannot fail a JSON webhook's delivery.
+
+Protocol 20 also activates nonempty Discord templates stored by earlier builds.
+There is no automatic clearing or separate migration opt-in; this is an
+intentional pre-release compatibility change.
+
+The editor checks the selected node's advertised peer protocol. Older or
+unidentified nodes retain the original six substitutions and fixed Discord
+message. Newly entered protocol-20 substitutions cannot be saved or tested on
+them; stored settings are preserved. Upgrade the cluster together before using
+the additions. The dashboard does not claim every other node already supports
+the selected node's format.
+
+| Placeholder | Value |
+| --- | --- |
+| `{{event_kind}}` | `down`, `repeat`, `recovery` or `test` |
+| `{{monitor_name}}` | Monitor name; `Notification test` for a test |
+| `{{monitor_id}}` | Monitor ID |
+| `{{incident_id}}` | Incident ID |
+| `{{observations_summary}}` | Existing per-node ID, state and message lines, unchanged |
+| `{{idempotency_key}}` | Stable attempt ID across retries |
+| `{{status}}` | `DOWN`, `STILL DOWN`, `UP` or `TEST` |
+| `{{monitor_type}}` | Check type |
+| `{{monitor_target}}` | Safe target: web scheme/host/port only, or a supported network host/port; empty when no safe form exists |
+| `{{opened_at}}` | Outage opening time, UTC RFC 3339 |
+| `{{resolved_at}}` | Recovery time, only for recovery events |
+| `{{downtime}}` | Recovery duration, such as `7m 12s`; first two nonzero units, floored to seconds |
+| `{{node_results}}` | Per-node result lines, with rounded milliseconds when latency is available |
+| `{{sender_node}}` | Sending node's name |
+
+Only the first six placeholders exist before protocol 20. Substitution happens
+once: a monitor name containing `{{status}}` does not become template source.
+Unknown or spaced forms such as `{{ monitor_name }}` are sent literally. The
+editor warns about look-alike tokens. There are no conditionals, so a Detailed
+preset's recovery-only lines are empty on an outage. Tests leave monitor type,
+target, incident times, downtime and result lines empty; they do not invent an
+outage or expose another monitor's settings.
+
+The safe target omits URL credentials, paths, queries and fragments. Database
+DSNs, push tokens and private browser/GameDig service addresses are never used
+as that value. Check messages are still the messages produced by your checks;
+use trusted notification destinations for them. Monitor descriptions are not
+automatically included.
+
+Custom Discord values have Markdown punctuation escaped; template-authored
+formatting remains. All mentions are disabled. Plain title plus text must fit
+2,000 UTF-16 units; a card title must fit 256 and its description 4,096. An
+oversized custom result records `invalid_message` instead of being shortened.
+Each empty card template falls back independently to built-in wording. Empty
+templates with Card off preserve the previous fixed Discord payload exactly.
+Generic webhook payloads and legacy per-monitor webhook URLs also retain their
+existing wire format.
+
 `MonitorInput.notificationIds` selects up to 16 channels. In protocol 19,
 omitting it on a new monitor without a legacy webhook selects the enabled
 channels marked `isDefault`. An explicit empty array selects none. Existing

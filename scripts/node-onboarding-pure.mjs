@@ -23,6 +23,17 @@
 // create can only be stopped; and Review offers nothing once the invitation is gone. The browser review drives the
 // pending create and the token binding in a real page. After R6: a new node's Docker and Compose start commands are one
 // && list, so a failed chmod, pull or volume create starts nothing.
+// TLS r1 (.canary/transport-tls-contract.md, shared DTOs with tlsFingerprint and connectionTlsFingerprint): a new node
+// the dashboard reaches at an https:// address serves TLS itself (CANARY_TLS_MODE=auto) and is verified with the
+// certificate fingerprint from its own log; plain http:// stays as before; a running node's steps never set a TLS mode;
+// an invitation's dashboard certificate pin becomes CANARY_DASHBOARD_TLS_FINGERPRINT; the direct forms send a
+// fingerprint only when one is entered, and only for HTTPS; certificate refusals read as such, never as a sent credential.
+// TLS r2 (the same contract, .canary/update-notice-contract.md and .canary/update-ui-contract-feedback.md): CanaryApi.updates
+// and checkUpdates are one GET and one POST to the dashboard itself, without a node selection or body; the overview keeps a
+// node's reported build only with a whole peer protocol from 1 to 10000 (alert templates need 20), and assumes none
+// otherwise; a Linux VM's unit adds CAP_NET_BIND_SERVICE only for a port below 1024, while Docker and Compose steps stay
+// as they were; a portless address means 443 and the suggestion shows :3100; container steps name tls-info, and moving a
+// plain HTTP node to TLS names tls-init with CANARY_TLS_MODE=off kept until the switch.
 // Uses exported functions with a stand-in fetch and stand-in `location`/`document`, renders the dialog pieces and
 // RegistryView to static markup (effects never run), and reads sources as text: no network, browser, build, copy,
 // scratch or output files. It doesn't prove the browser, the Go server or a node; the browser review in
@@ -236,13 +247,22 @@ await check('quoting: shell, Compose YAML and systemd values read back as exactl
   }
 });
 
-await check('a new node’s address: plain HTTP on its own port; an IP is published on that address only, a host name everywhere', () => {
+await check('a new node’s address: HTTPS by default, or plain HTTP, on its own port; an IP is published on that address only, a host name everywhere', () => {
   assert.deepEqual(onboarding.directTarget(' http://100.79.12.4:3100 '), { url: 'http://100.79.12.4:3100', host: '100.79.12.4', listen: '100.79.12.4', port: 3100, allInterfaces: false });
   assert.deepEqual(onboarding.directTarget('http://[fd00::1]:3100/'), { url: 'http://[fd00::1]:3100', host: '[fd00::1]', listen: 'fd00::1', port: 3100, allInterfaces: false });
   assert.deepEqual(onboarding.directTarget('http://canary-b.lan:8080'), { url: 'http://canary-b.lan:8080', host: '0.0.0.0', listen: '0.0.0.0', port: 8080, allInterfaces: true });
   assert.equal(onboarding.directTarget('http://10.0.0.5').port, 80);
-  assert.match(onboarding.directTarget('https://10.0.0.5:3100'), /TLS proxy/u);
-  for (const bad of ['http://u:p@10.0.0.5:3100', 'http://10.0.0.5:3100/api', 'http://10.0.0.5:3100?x=1', 'http://10.0.0.5:3100#x', '10.0.0.5:3100', '']) assert.equal(typeof onboarding.directTarget(bad), 'string', bad);
+  // Accepted behavior change (TLS r1, .canary/transport-tls-contract.md: "Generated NEW-node instructions should select
+  // auto"). Until now a node served only plain HTTP, so this expected https:// to be refused with "put a TLS proxy in
+  // front". The node now serves TLS 1.3 itself with CANARY_TLS_MODE=auto (transport_tls.go prepareTLS; runtime.go Start
+  // wraps the listener in tls.NewListener), so https:// is the wizard's suggested address and gives the same target
+  // shape, with 443 as its default port. Plain http:// keeps every expectation above.
+  assert.deepEqual(onboarding.directTarget('https://10.0.0.5:3100'), { url: 'https://10.0.0.5:3100', host: '10.0.0.5', listen: '10.0.0.5', port: 3100, allInterfaces: false });
+  assert.equal(onboarding.directTarget('https://10.0.0.5').port, 443);
+  assert.deepEqual([onboarding.directTls(onboarding.directTarget('https://10.0.0.5:3100')), onboarding.directTls(onboarding.directTarget('http://10.0.0.5:3100'))], [true, false]);
+  assert.match(onboarding.directTarget('ftp://10.0.0.5:3100'), /Use an https:\/\/ address, like https:\/\/100\.79\.12\.4:3100/u);
+  for (const bad of ['http://u:p@10.0.0.5:3100', 'http://10.0.0.5:3100/api', 'http://10.0.0.5:3100?x=1', 'http://10.0.0.5:3100#x', '10.0.0.5:3100', '',
+    'https://u:p@10.0.0.5:3100', 'https://10.0.0.5:3100/api', 'ftp://10.0.0.5:3100']) assert.equal(typeof onboarding.directTarget(bad), 'string', bad);
 });
 
 const combos = [
@@ -896,7 +916,10 @@ await check('sources: no storage, console, page address or navigation in the wiz
   const registry = read('src/views/Registry.tsx');
   assert.match(registry, /useState<AddPlan>\(\{ fresh: false, link: 'direct' \}\)/u, 'the running-node form is the default');
   assert.match(registry, /if \(!plan\.fresh && plan\.link === 'direct'\) body = <DirectAddForm onClose=\{onClose\} onBusy=\{hold\} onStage=\{lock\} \/>;/u);
-  assert.match(registry, /api\.verifyNode\(\{ label, url, token: sent \}, controller\.signal\);\n\s+setToken\(''\);/u, 'a pasted credential is still cleared after each verification');
+  // Accepted change (TLS r1): the verification also passes the optional TLS certificate fingerprint field. api.verifyNode
+  // leaves it out of the body when it's empty (the TLS API group below pins that body), and the pasted credential is
+  // still cleared on the line right after.
+  assert.match(registry, /api\.verifyNode\(\{ label, url, token: sent, tlsFingerprint: pin \}, controller\.signal\);\n\s+setToken\(''\);/u, 'a pasted credential is still cleared after each verification');
   assert.match(registry, /discardVerification/u);
 });
 
@@ -1223,6 +1246,642 @@ await check('a pending create can only be stopped: no choices, Close or Escape u
   assert.match(review, /if \(busy \|\| gone\) return;/u, 'confirming does nothing then');
   assert.match(review, /\{gone\n\s+\? <Banner tone="warn" title="This invitation is no longer on this dashboard">It may have been cancelled meanwhile\. Nothing was added\.<\/Banner>\n\s+: current\.state === 'connected'/u, 'gone comes before any confirmation');
   assert.match(review, /\{rejecting && !gone \? null : <div className="modal-foot">/u, 'and Close stays');
+});
+
+// ----- TLS r1 (.canary/transport-tls-contract.md). Two expectations above changed, each with its reason: https:// for a
+// new node, and the verifyNode call in Registry.tsx. Every group below is new.
+
+const NODE_PIN = '0123456789abcdef'.repeat(4);
+const OTHER_PIN = 'fedcba9876543210'.repeat(4);
+const DASH_PIN = '5a'.repeat(32);
+const colons = pin => pin.match(/../gu).join(':');
+const shape = blocks => blocks.map(block => [block.key, block.kind, block.file, block.secret, block.title]);
+const tlsSetting = line => /^\s*CANARY_TLS_MODE\s*[=:]/u.test(line);
+
+await check('TLS: a new node the dashboard reaches at an https:// address serves TLS itself on every platform, and its steps say where the fingerprint is; plain http:// is as before', () => {
+  // The Go facts the steps describe, read from the source so a changed rule fails here.
+  const main = readFileSync(resolve(root, 'apps/node-go/cmd/canary/main.go'), 'utf8');
+  const cli = readFileSync(resolve(root, 'apps/node-go/internal/canary/cli.go'), 'utf8');
+  const transport = readFileSync(resolve(root, 'apps/node-go/internal/canary/transport_tls.go'), 'utf8');
+  const nodetls = readFileSync(resolve(root, 'apps/node-go/internal/nodetls/tls.go'), 'utf8');
+  assert.equal(onboarding.TLS_LOG_LINE, 'Node TLS certificate fingerprint:');
+  assert.ok(main.includes(`fmt.Fprintln(os.Stdout, "${onboarding.TLS_LOG_LINE}", fingerprint)`), 'the line the node logs');
+  assert.ok(cli.includes('get("CANARY_TLS_MODE")'), 'the setting the node reads');
+  assert.ok(transport.includes('"CANARY_TLS_MODE must be auto or off"'), 'auto is the value it accepts');
+  assert.ok(transport.includes('"Retained TLS identity is missing; restore the original identity volume"'), 'a lost identity stops it from starting');
+  assert.match(nodetls, /AddDate\(10,\s*0,\s*0\)/u, 'ten years');
+  assert.match(nodetls, /MinVersion:\s*tls\.VersionTLS13/u, 'TLS 1.3');
+  const https = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100') };
+  const settingLine = { docker: 'CANARY_TLS_MODE=auto', compose: '      CANARY_TLS_MODE: auto', portainer: '      CANARY_TLS_MODE: auto', vm: 'CANARY_TLS_MODE="auto"' };
+  const settingBlock = { docker: 'env', compose: 'yaml', portainer: 'yaml', vm: 'env' };
+  for (const { value: platform } of onboarding.PLATFORMS) {
+    const where = `https, ${platform}`;
+    const res = onboarding.resourceName(https.nodeId);
+    const logs = { docker: `docker logs ${res}`, compose: `docker compose --env-file ${res}.env logs node`, portainer: 'the container’s log in Portainer', vm: `journalctl -u ${res}` }[platform];
+    const masked = onboarding.setupGuide({ ...https, platform }, false);
+    const real = onboarding.setupGuide({ ...https, platform }, true);
+    const plain = onboarding.setupGuide({ ...combos[0].setup, platform }, true);
+    assert.deepEqual(shape(real), shape(plain), `${where}: the same steps as plain HTTP`);
+    assert.deepEqual(shape(masked), shape(real), where);
+    const preview = masked.map(block => block.text).join('\n');
+    for (const value of [ADMIN, CLUSTER]) {
+      assert.ok(!preview.includes(value), `${where}: the preview shows a private value`);
+      assert.ok(real.some(block => block.secret && block.text.includes(value)), `${where}: a private value is missing from the settings`);
+    }
+    real.forEach((block, index) => {
+      if (!block.secret) assert.equal(masked[index].text, block.text, `${where}: ${block.key} isn’t private, so it isn’t masked`);
+      assert.doesNotMatch(block.text, FORBIDDEN, `${where}: ${block.key}`);
+      assert.ok(!block.text.includes(PAGE), `${where}: this page’s own address never appears`);
+    });
+    // One TLS setting, in the block the node reads its settings from, shown in the preview: it isn't private.
+    assert.deepEqual(real.flatMap(block => block.text.split('\n').filter(tlsSetting).map(line => [block.key, line])), [[settingBlock[platform], settingLine[platform]]], where);
+    assert.ok(masked.find(block => block.key === settingBlock[platform]).text.split('\n').includes(settingLine[platform]), `${where}: the preview shows it`);
+    assert.doesNotMatch(real.map(block => block.text).join('\n'), /CANARY_DASHBOARD_|TLS_FINGERPRINT/u, `${where}: no connection setting or pin for a node the dashboard dials`);
+    assert.deepEqual(plain.flatMap(block => block.text.split('\n').filter(tlsSetting)), [], `${where}: plain HTTP sets no TLS mode`);
+    assert.doesNotMatch(plain.map(block => `${block.title}\n${block.text}`).join('\n'), /Node TLS certificate fingerprint|CANARY_TLS_MODE/u, `${where}: nor mentions one`);
+    // What the node runs or installs is the same; only its settings and the notes differ.
+    for (const key of ['run', 'up', 'unit', 'install', 'build', 'stack', 'native']) assert.equal(real.find(block => block.key === key)?.text, plain.find(block => block.key === key)?.text, `${where}: ${key} unchanged`);
+    if (platform === 'docker') {
+      const env = real.find(block => block.key === 'env').text.split('\n');
+      assert.equal(env.indexOf('CANARY_TLS_MODE=auto'), env.indexOf('CANARY_PEERS=[]') + 1, where);
+      assert.ok(real.find(block => block.key === 'run').text.includes('  -p 100.79.12.4:3100:3100 \\'), `${where}: the same published port`);
+    }
+    if (platform === 'compose' || platform === 'portainer') {
+      const yaml = real.find(block => block.key === 'yaml').text.split('\n');
+      assert.equal(yaml.indexOf('      CANARY_TLS_MODE: auto'), yaml.indexOf('      CANARY_IDENTITY_DIRECTORY: /identity') + 1, where);
+      assert.ok(yaml.includes('      - "100.79.12.4:3100:3100"'), where);
+    }
+    if (platform === 'vm') {
+      const env = real.find(block => block.key === 'env').text.split('\n');
+      assert.ok(env.includes('CANARY_HOST="100.79.12.4"'), `${where}: listens where the dashboard dials`);
+      assert.equal(env.indexOf('CANARY_TLS_MODE="auto"'), env.indexOf('CANARY_PORT="3100"') + 1, where);
+    }
+    // Where the fingerprint is, how to copy it, what it isn't, and what keeps the certificate.
+    const note = real.find(block => block.key === (platform === 'portainer' ? 'deploy' : 'started')).text;
+    const place = platform === 'vm' ? 'directory' : 'volume';
+    for (const part of [
+      `It serves HTTPS itself (CANARY_TLS_MODE=auto), with a certificate it makes when it first starts, valid for ten years and kept in its identity ${place}.`,
+      `Its log (${logs}) then shows a line that starts with “Node TLS certificate fingerprint:”.`,
+      'Copy the 64 characters after it from that log yourself, where you see the node’s own output, such as your own terminal on its host, rather than from a message or page someone else could change.',
+      'The fingerprint isn’t secret, and it isn’t the “Node connection fingerprint” of nodes that connect to this dashboard.',
+      `Keep the identity ${place}: with its data but without it, the node refuses to start rather than make another certificate.`,
+      'Then choose Next and enter the fingerprint',
+    ]) assert.ok(note.includes(part), `${where}: ${part}`);
+    if (platform !== 'portainer') assert.match(note, /accepting only that certificate, with the administrator token made here, and you confirm adding it\./u, where);
+  }
+});
+
+await check('TLS: an invitation’s dashboard certificate pin becomes CANARY_DASHBOARD_TLS_FINGERPRINT on every platform, for new and running nodes, and stays after pairing; without one nothing changes', () => {
+  const connector = readFileSync(resolve(root, 'apps/node-go/internal/canary/node_connector.go'), 'utf8');
+  const cli = readFileSync(resolve(root, 'apps/node-go/internal/canary/cli.go'), 'utf8');
+  assert.ok(cli.includes('get("CANARY_DASHBOARD_TLS_FINGERPRINT")'), 'the setting the node reads');
+  assert.ok(connector.includes('validateTLSOrigin(origin, o.DashboardTLSFingerprint)'), 'checked with the connection address');
+  assert.ok(connector.includes('c.identity.TLSFingerprint != pin'), 'saved with the connection identity: another pin later stops it from starting');
+  const token = '${CANARY_DASHBOARD_ENROLL_TOKEN:-}';
+  const changed = {
+    new: { docker: ['env', 'after'], compose: ['yaml', 'after'], portainer: ['yaml', 'after'], vm: ['env', 'after'] },
+    running: { docker: ['keep', 'env', 'recreate', 'after'], compose: ['keep', 'yaml', 'list', 'after'], portainer: ['keep', 'yaml', 'list', 'after'], vm: ['keep', 'env', 'after'] },
+  };
+  for (const [kind, base] of [['new', combos[1].setup], ['running', combos[2].setup]]) for (const { value: platform } of onboarding.PLATFORMS) {
+    const where = `${kind} node, ${platform}`;
+    const setup = { ...base, outbound: { ...base.outbound, tlsFingerprint: DASH_PIN } };
+    const masked = onboarding.setupGuide({ ...setup, platform }, false);
+    const real = onboarding.setupGuide({ ...setup, platform }, true);
+    const unpinned = onboarding.setupGuide({ ...base, platform }, true);
+    assert.deepEqual(shape(real), shape(unpinned), `${where}: the same steps`);
+    const preview = masked.map(block => block.text).join('\n');
+    for (const value of privateOf(setup)) {
+      assert.ok(!preview.includes(value), `${where}: the preview shows a private value`);
+      assert.ok(real.some(block => block.secret && block.text.includes(value)), `${where}: a private value is missing`);
+    }
+    assert.ok(preview.includes(DASH_PIN), `${where}: the pin isn’t private, so the preview shows it`);
+    real.forEach(block => assert.doesNotMatch(block.text, FORBIDDEN, `${where}: ${block.key}`));
+    // Only the blocks that hold the settings or speak of them change.
+    real.forEach((block, index) => { if (!changed[kind][platform].includes(block.key)) assert.equal(block.text, unpinned[index].text, `${where}: ${block.key} unchanged`); });
+    const step = key => real.find(block => block.key === key).text;
+    const consecutive = (text, lines) => {
+      const all = text.split('\n');
+      const at = all.indexOf(lines[0]);
+      assert.ok(at >= 0, `${where}: ${lines[0]}`);
+      assert.deepEqual(all.slice(at, at + lines.length), lines, `${where}: in this order`);
+    };
+    if (kind === 'new') {
+      if (platform === 'docker') consecutive(step('env'), [`CANARY_DASHBOARD_URL=${CONNECT}`, `CANARY_DASHBOARD_TLS_FINGERPRINT=${DASH_PIN}`, `CANARY_DASHBOARD_ENROLL_TOKEN=${INVITE_TOKEN}`]);
+      if (platform === 'compose' || platform === 'portainer') {
+        consecutive(step('yaml'), [`      CANARY_DASHBOARD_URL: '${CONNECT}'`, `      CANARY_DASHBOARD_TLS_FINGERPRINT: '${DASH_PIN}'`, `      CANARY_DASHBOARD_ENROLL_TOKEN: ${token}`]);
+        assert.equal(composeValue(/^ {6}CANARY_DASHBOARD_TLS_FINGERPRINT: (.*)$/mu.exec(step('yaml'))[1]), DASH_PIN);
+      }
+      if (platform === 'vm') {
+        consecutive(step('env'), [`CANARY_DASHBOARD_URL="${CONNECT}"`, `CANARY_DASHBOARD_TLS_FINGERPRINT="${DASH_PIN}"`, `CANARY_DASHBOARD_ENROLL_TOKEN="${INVITE_TOKEN}"`]);
+        assert.equal(systemdValue(/^CANARY_DASHBOARD_TLS_FINGERPRINT=(.*)$/mu.exec(step('env'))[1]), DASH_PIN);
+      }
+    } else {
+      assert.ok(step('keep').includes('remove CANARY_DASHBOARD_URL, CANARY_DASHBOARD_TLS_FINGERPRINT and CANARY_DASHBOARD_ENROLL_TOKEN again and start it as before'), `${where}: the undo names all three`);
+      if (platform === 'docker') {
+        assert.equal(step('env'), `CANARY_DASHBOARD_URL=${CONNECT}\nCANARY_DASHBOARD_TLS_FINGERPRINT=${DASH_PIN}\nCANARY_DASHBOARD_ENROLL_TOKEN=${INVITE_TOKEN}\n`, where);
+        assert.ok(step('recreate').startsWith('Put all three lines in the node\'s env file, replacing any it has already,'), where);
+      }
+      if (platform === 'compose' || platform === 'portainer') {
+        assert.equal(step('yaml'), `      CANARY_DASHBOARD_URL: '${CONNECT}'\n      CANARY_DASHBOARD_TLS_FINGERPRINT: '${DASH_PIN}'\n      CANARY_DASHBOARD_ENROLL_TOKEN: ${token}\n`, where);
+        assert.ok(step('list').endsWith(`In a list of - KEY=value entries, add - CANARY_DASHBOARD_URL=${CONNECT}, - CANARY_DASHBOARD_TLS_FINGERPRINT=${DASH_PIN}, and - CANARY_DASHBOARD_ENROLL_TOKEN=${token} instead.`), `${where}: ${step('list')}`);
+      }
+      if (platform === 'vm') assert.equal(step('env'), `CANARY_DASHBOARD_URL="${CONNECT}"\nCANARY_DASHBOARD_TLS_FINGERPRINT="${DASH_PIN}"\nCANARY_DASHBOARD_ENROLL_TOKEN="${INVITE_TOKEN}"\n`, where);
+      const keys = real.filter(block => block.secret).flatMap(block => block.text.split('\n').filter(Boolean).map(line => line.split('=')[0]));
+      assert.ok(keys.every(key => ['CANARY_DASHBOARD_URL', 'CANARY_DASHBOARD_TLS_FINGERPRINT', 'CANARY_DASHBOARD_ENROLL_TOKEN'].includes(key)), `${where}: ${keys}`);
+    }
+    const after = step('after');
+    assert.ok(after.startsWith('Remove CANARY_DASHBOARD_ENROLL_TOKEN from the node\'s settings; it works only once.'), where);
+    assert.ok(after.endsWith(' Keep CANARY_DASHBOARD_URL and CANARY_DASHBOARD_TLS_FINGERPRINT as they are: the node saved both with that credential, and refuses to start if either one changes.'), `${where}: ${after}`);
+    // A node that connects out keeps its own TLS mode, new or running.
+    assert.deepEqual(real.flatMap(block => block.text.split('\n').filter(tlsSetting)), [], `${where}: no TLS mode`);
+    // Without a pin, nothing about one.
+    assert.doesNotMatch(unpinned.map(block => block.text).join('\n'), /TLS_FINGERPRINT|Keep CANARY_DASHBOARD_URL and/u, `${where}: unpinned`);
+  }
+  // Anything but 64 lowercase hexadecimal characters is refused before any text is made ('' means none).
+  for (const bad of ['A'.repeat(64), 'abc', `${DASH_PIN}\n`, `${DASH_PIN} `, 'g'.repeat(64), colons(DASH_PIN), `${DASH_PIN}0`]) {
+    for (const base of [combos[1].setup, combos[2].setup]) for (const { value: platform } of onboarding.PLATFORMS) {
+      assert.throws(() => onboarding.setupGuide({ ...base, outbound: { ...base.outbound, tlsFingerprint: bad }, platform }, false), /certificate fingerprint this page can’t use/u, `${platform}: ${JSON.stringify(bad)}`);
+    }
+  }
+  assert.deepEqual(shape(onboarding.setupGuide({ ...combos[1].setup, outbound: { ...combos[1].setup.outbound, tlsFingerprint: '' }, platform: 'docker' }, true)), shape(onboarding.setupGuide({ ...combos[1].setup, platform: 'docker' }, true)));
+});
+
+await check('TLS API: fingerprints are read strictly, sent only when entered and only for HTTPS, and come back only as 64 lowercase hexadecimal characters', async () => {
+  on();
+  // Go's rule: a complete SHA-256 hash in hex, lowercased; nothing else, and only with an https:// address.
+  const nodetls = readFileSync(resolve(root, 'apps/node-go/internal/nodetls/tls.go'), 'utf8');
+  const transport = readFileSync(resolve(root, 'apps/node-go/internal/canary/transport_tls.go'), 'utf8');
+  assert.match(nodetls, /hex\.DecodeString\(value\)/u);
+  assert.match(nodetls, /len\(decoded\) != sha256\.Size/u);
+  assert.match(nodetls, /strings\.ToLower\(value\)/u);
+  assert.ok(transport.includes('"Use a complete 64-character SHA256 TLS certificate fingerprint"') && transport.includes('"A TLS fingerprint requires an HTTPS address"'));
+  const value = api.tlsFingerprintValue;
+  for (const [entered, expected] of [['', ''], ['   ', ''], [NODE_PIN, NODE_PIN], [NODE_PIN.toUpperCase(), NODE_PIN], [` ${NODE_PIN}\n`, NODE_PIN], [colons(NODE_PIN), NODE_PIN], [colons(NODE_PIN).toUpperCase(), NODE_PIN]]) {
+    assert.equal(value(entered), expected, JSON.stringify(entered));
+  }
+  for (const bad of [NODE_PIN.slice(1), `${NODE_PIN}0`, `g${NODE_PIN.slice(1)}`, `SHA256:${NODE_PIN}`, `${NODE_PIN.slice(0, 32)} ${NODE_PIN.slice(32)}`, colons(NODE_PIN).slice(3), colons(NODE_PIN).replace(/:/gu, '-'), `sha256 Fingerprint=${colons(NODE_PIN)}`]) {
+    assert.equal(value(bad), null, bad);
+  }
+  const client = new api.CanaryApi(PAGE, TOKEN);
+  const verification = extra => json(200, { ticket: 'verify-ticket-0123456789', expiresAt: 1_120_000, node: { id: 'canary-b', name: 'Canary B' }, label: 'Rack B', url: 'https://100.79.12.4:3100', plainHttp: false, ...extra });
+  const input = { label: ' Rack B ', url: 'https://100.79.12.4:3100/', token: ADMIN };
+  let got;
+  // Without a fingerprint the body is exactly { label, url, token }, as before.
+  for (const extra of [{}, { tlsFingerprint: '' }, { tlsFingerprint: '  ' }]) {
+    const sent = await record(async () => { got = await client.verifyNode({ ...input, ...extra }); }, () => verification({}));
+    assert.deepEqual(JSON.parse(sent[0].init.body), { label: 'Rack B', url: 'https://100.79.12.4:3100', token: ADMIN }, JSON.stringify(extra));
+    assert.ok(!('tlsFingerprint' in got), 'none read back');
+  }
+  const pinned = await record(async () => { got = await client.verifyNode({ ...input, tlsFingerprint: colons(NODE_PIN).toUpperCase() }); }, () => verification({ tlsFingerprint: NODE_PIN.toUpperCase() }));
+  assert.deepEqual(JSON.parse(pinned[0].init.body), { label: 'Rack B', url: 'https://100.79.12.4:3100', token: ADMIN, tlsFingerprint: NODE_PIN }, 'the form Go accepts');
+  assert.equal(got.tlsFingerprint, NODE_PIN, 'read back lowercase');
+  assert.ok(!('tlsFingerprint' in api.normalizeVerification({ ticket: 'x', expiresAt: 1, node: { id: 'n' }, label: 'L', url: 'https://n:3100', tlsFingerprint: 'not-a-pin' })), 'a broken one is dropped, so the form sees a mismatch');
+  // Refused before anything leaves the page: a fingerprint for plain HTTP, or one that isn't a fingerprint.
+  const refused = await record(async () => {
+    assert.match((await rejection(client.verifyNode({ ...input, url: 'http://100.79.12.4:3100', tlsFingerprint: NODE_PIN }))).message, /needs an https:\/\/ address/u);
+    assert.equal((await rejection(client.verifyNode({ ...input, tlsFingerprint: 'abc' }))).message, api.TLS_FINGERPRINT_FORMAT);
+    assert.equal((await rejection(client.editNode(REG, { label: 'Rack B', tlsFingerprint: 'abc' }))).message, api.TLS_FINGERPRINT_FORMAT);
+  });
+  assert.equal(refused.length, 0, 'no request');
+  // Editing: the fingerprint only when given; '' clears it.
+  const saved = () => json(200, { ...ENTRY, url: 'https://100.79.12.4:3100', tlsFingerprint: NODE_PIN });
+  const edits = await record(async () => {
+    got = await client.editNode(REG, { label: 'Rack B', tlsFingerprint: NODE_PIN.toUpperCase() });
+    await client.editNode(REG, { label: 'Rack B', tlsFingerprint: '' });
+    await client.editNode(REG, { label: 'Rack B' });
+    await client.editNode(REG, { label: 'Rack B', url: 'https://100.79.12.9:3100', tlsFingerprint: OTHER_PIN });
+  }, saved);
+  assert.deepEqual(edits.map(call => [call.init.method, JSON.parse(call.init.body)]), [
+    ['PATCH', { label: 'Rack B', tlsFingerprint: NODE_PIN }], ['PATCH', { label: 'Rack B', tlsFingerprint: '' }], ['PATCH', { label: 'Rack B' }],
+    ['PATCH', { label: 'Rack B', url: 'https://100.79.12.9:3100', tlsFingerprint: OTHER_PIN }],
+  ]);
+  assert.equal(got.tlsFingerprint, NODE_PIN);
+  // Registry entries: administrators get it with the address; viewers and editors get neither, and nothing is made up.
+  assert.equal(api.normalizeRegisteredNode({ ...ENTRY, tlsFingerprint: NODE_PIN.toUpperCase() }).tlsFingerprint, NODE_PIN);
+  for (const bad of ['', 'abc', 7, null, colons(NODE_PIN)]) assert.ok(!('tlsFingerprint' in api.normalizeRegisteredNode({ ...ENTRY, tlsFingerprint: bad })), JSON.stringify(bad));
+  assert.deepEqual(Object.keys(api.normalizeRegisteredNode({ ...ENTRY, url: undefined })).sort(), ['id', 'label', 'lastReadAt', 'local', 'monitorCount', 'nodeId', 'nodeName', 'state'], 'a viewer’s entry');
+  // Capabilities: the listener's own pin only with a usable address; a broken one turns the outbound choice off.
+  const caps = extra => api.normalizeOnboarding({ ...CAPS, ...extra });
+  assert.deepEqual(caps({ connectionTlsFingerprint: DASH_PIN.toUpperCase() }), { ...CAPS, connectionTlsFingerprint: DASH_PIN });
+  for (const none of ['', null, undefined]) assert.deepEqual(caps({ connectionTlsFingerprint: none }), CAPS, String(none));
+  for (const bad of ['nope', 7, colons(DASH_PIN)]) {
+    const seen = caps({ connectionTlsFingerprint: bad });
+    assert.deepEqual([seen.outboundEnabled, 'connectionUrl' in seen, 'connectionTlsFingerprint' in seen], [false, false, false], String(bad));
+  }
+  assert.ok(!('connectionTlsFingerprint' in caps({ outboundEnabled: false, connectionUrl: undefined, connectionTlsFingerprint: DASH_PIN })), 'no pin without an address');
+  // Invitations: bound to the pin like the address; a broken one makes the invitation unreadable.
+  assert.equal(api.normalizeInvitation({ ...WAITING, connectionTlsFingerprint: DASH_PIN }).connectionTlsFingerprint, DASH_PIN);
+  assert.ok(!('connectionTlsFingerprint' in api.normalizeInvitation({ ...WAITING, connectionTlsFingerprint: '' })));
+  assert.ok(!('connectionTlsFingerprint' in api.normalizeInvitation(WAITING)), 'without one, as before');
+  for (const bad of ['nope', 7, `${DASH_PIN}0`]) assert.throws(() => api.normalizeInvitation({ ...WAITING, connectionTlsFingerprint: bad }), /could not read/u, String(bad));
+  const created = api.normalizeInvitationCreated({ ...WAITING, connectionTlsFingerprint: DASH_PIN, token: INVITE_TOKEN });
+  assert.deepEqual([created.connectionTlsFingerprint, created.token], [DASH_PIN, INVITE_TOKEN]);
+  // The JSON names in Go's handlers, and the server's own redaction for viewers and editors.
+  const goHttp = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_http.go'), 'utf8');
+  const goEdit = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_registry_edit.go'), 'utf8');
+  const goRegistry = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_registry.go'), 'utf8');
+  const goInvitations = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_invitations.go'), 'utf8');
+  assert.ok(goHttp.includes('dashboardJSON(b, &in, "label", "url", "token", "tlsFingerprint")'), 'verify takes tlsFingerprint');
+  assert.ok(goEdit.includes('dashboardJSON(raw, &input, "label", "url", "tlsFingerprint")'), 'edit takes tlsFingerprint');
+  assert.match(goEdit, /TLSFingerprint\s+\*string\s+`json:"tlsFingerprint"`/u, 'left out keeps the saved one; "" replaces it');
+  assert.match(goRegistry, /TLSFingerprint\s+string\s+`json:"tlsFingerprint,omitempty"`/u);
+  assert.ok(goRegistry.includes('v.TLSFingerprint = ""'), 'viewers and editors get no pin');
+  assert.ok(goInvitations.includes('json:"connectionTlsFingerprint,omitempty"') && goInvitations.includes('out["connectionTlsFingerprint"] = d.connectionTLSFingerprint'));
+  // The created invitation keeps its pin once the token is taken out.
+  const withoutToken = /const withoutToken = \(\{ ([^}]*) \}: NodeInvitationCreated\): NodeInvitation =>\n\s+\(\{ ([^\n]*) \}\);/u.exec(read('src/views/NodeWizard.tsx'));
+  assert.ok(withoutToken, 'withoutToken');
+  assert.ok(withoutToken[1].split(', ').includes('connectionTlsFingerprint') && withoutToken[2].includes('...(connectionTlsFingerprint ? { connectionTlsFingerprint } : {})'), withoutToken[0]);
+  assert.match(read('src/views/NodeWizard.tsx'), /outbound: \{ connectionUrl: current\.connectionUrl, token, \.\.\.\(current\.connectionTlsFingerprint \? \{ tlsFingerprint: current\.connectionTlsFingerprint \} : \{\}\) \}/u, 'the settings use the invitation’s own pin');
+});
+
+await check('TLS rules and failures: empty means ordinary certificate checks, a fingerprint needs HTTPS, a new node needs one; certificate refusals read as such and never claim a credential went out', () => {
+  on();
+  const pinned = { ...ENTRY, url: 'https://100.79.12.4:3100', tlsFingerprint: NODE_PIN };
+  assert.equal(dashboard.tlsFingerprintProblem('', 'https://n.example.test'), undefined, 'empty: ordinary checks');
+  assert.match(dashboard.tlsFingerprintProblem('', 'https://n.example.test', true), /^Enter the fingerprint from the new node’s log\./u);
+  assert.equal(dashboard.tlsFingerprintProblem(colons(NODE_PIN), 'https://n.example.test', true), undefined);
+  assert.match(dashboard.tlsFingerprintProblem(NODE_PIN, 'http://n.example.test:3100'), /needs an https:\/\/ address\. Clear it to use plain HTTP\./u);
+  assert.equal(dashboard.tlsFingerprintProblem(NODE_PIN, 'not an address'), undefined, 'the address field reports its own problem');
+  assert.equal(dashboard.tlsFingerprintProblem('abc', 'https://n.example.test'), api.TLS_FINGERPRINT_FORMAT);
+  assert.deepEqual(dashboard.tlsFingerprintEdit(pinned, NODE_PIN.toUpperCase(), pinned.url), { value: NODE_PIN, changed: false }, 'the same one in capitals');
+  assert.deepEqual(dashboard.tlsFingerprintEdit(pinned, '', pinned.url), { value: '', changed: true }, 'cleared');
+  assert.deepEqual(dashboard.tlsFingerprintEdit(pinned, OTHER_PIN, pinned.url), { value: OTHER_PIN, changed: true }, 'replaced');
+  assert.deepEqual(dashboard.tlsFingerprintEdit(ENTRY, '', ENTRY.url), { value: '', changed: false });
+  assert.deepEqual(dashboard.tlsFingerprintEdit(ENTRY, NODE_PIN, 'https://100.79.12.4:3100'), { value: NODE_PIN, changed: true });
+  const toHttp = dashboard.tlsFingerprintEdit(pinned, NODE_PIN, 'http://100.79.12.9:3100');
+  assert.deepEqual([toHttp.value, toHttp.changed], [NODE_PIN, false]);
+  assert.match(toHttp.error, /needs an https:\/\/ address/u, 'a plain HTTP move clears it explicitly');
+  assert.deepEqual(dashboard.tlsFingerprintEdit(pinned, 'zz', pinned.url), { value: '', changed: false, error: api.TLS_FINGERPRINT_FORMAT });
+  // Go's general connection failure names the certificate too, so only its explicit refusals count as one.
+  const registry = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_registry.go'), 'utf8');
+  const nodetls = readFileSync(resolve(root, 'apps/node-go/internal/nodetls/tls.go'), 'utf8');
+  const generic = 'Cannot reach this node from the dashboard server; check its address, certificate and permissions';
+  assert.ok(registry.includes(`fail(502, "${generic}")`) && registry.includes('fail(502, "Cannot authenticate the node certificate")'), 'Go’s 502 wording');
+  assert.ok(nodetls.includes('errors.New("Cannot authenticate the Canary TLS certificate")'));
+  for (const detail of ['Cannot authenticate the node certificate', 'Cannot authenticate the Canary TLS certificate', 'Node TLS certificate does not match the saved fingerprint', 'TLS fingerprint mismatch']) assert.equal(dashboard.certificateRefused(detail), true, detail);
+  for (const detail of [generic, 'Cannot reach this node from the dashboard server', 'Node credential was refused', 'Different node at this address', '']) assert.equal(dashboard.certificateRefused(detail), false, detail);
+  const fail = (status, detail) => new api.ApiFailure(status, `HTTP ${status}`, detail);
+  const edit = (detail, node, moving, pinChanged) => dashboard.editFailure(fail(502, detail), node, moving, pinChanged);
+  const explicit = edit('Cannot authenticate the node certificate', pinned, false, true);
+  assert.equal(explicit.title, 'The node’s certificate wasn’t accepted');
+  assert.equal(explicit.text, 'Cannot authenticate the node certificate. Check the fingerprint against the line “Node TLS certificate fingerprint:” in the node’s own log. The dashboard’s server sent the node no credential, so the entry stays as it was. Nothing was changed.');
+  assert.match(edit('Cannot authenticate the node certificate', pinned, true, false).text, /The new address has to present the certificate this entry already accepts\./u);
+  const unreachable = edit(generic, pinned, false, true);
+  assert.equal(unreachable.title, 'The dashboard’s server couldn’t check the node with that certificate');
+  assert.ok(unreachable.text.endsWith('Your browser wasn’t involved, so it doesn’t matter whether this computer can reach it. A certificate that doesn’t match the fingerprint entered here ends the check too, before any credential is sent. Nothing was changed.'), unreachable.text);
+  assert.ok(edit(generic, pinned, true, false).text.endsWith('This entry accepts only the certificate with its saved fingerprint, at the new address too. Nothing was changed.'));
+  // Without any fingerprint, the move wording is exactly what it was.
+  assert.deepEqual([edit(generic, ENTRY, true).title, edit(generic, ENTRY, true).text], ['The dashboard’s server couldn’t check the new address', `${generic}. Your browser wasn’t involved, so it doesn’t matter whether this computer can reach it. Nothing was changed.`]);
+  assert.equal(edit('Different node at this address', pinned, false, true).title, 'A different node answers at this address');
+  assert.equal(edit('Node credential was refused', pinned, false, true).title, 'The node doesn’t accept this dashboard’s access');
+  assert.equal(edit('Node credential was refused', pinned, true, false).title, 'This address doesn’t accept this dashboard’s access');
+  assert.equal(edit('Cannot authenticate the node certificate', pinned, false, false).title, 'Not saved', 'a rename never contacts the node');
+  // Verification.
+  const verify = (detail, generated, trust) => registryView.verifyFailure(fail(502, detail), generated, trust);
+  const refusedPin = verify('Cannot authenticate the node certificate', false, 'pinned');
+  assert.deepEqual([refusedPin.title, refusedPin.text], ['The node’s certificate wasn’t accepted', 'Cannot authenticate the node certificate. Copy the fingerprint again from the line “Node TLS certificate fingerprint:” in the node’s own log, and check the address. The dashboard’s server sent the node no credential. Nothing was saved.']);
+  assert.match(verify(generic, true, 'pinned').text, /With a fingerprint, the dashboard’s server accepts only that certificate: a node that presents another one ends here too, before any credential is sent\. Nothing was saved\.$/u);
+  assert.match(verify(generic, false, 'ca').text, /A node with a self-signed certificate of its own, such as one started with CANARY_TLS_MODE=auto, needs its certificate fingerprint here\. Nothing was saved\.$/u);
+  for (const trust of ['none', undefined]) {
+    const plain = verify(generic, false, trust);
+    assert.deepEqual([plain.title, plain.text], ['The dashboard’s server couldn’t verify this node', `${generic}. Your browser wasn’t involved, so it doesn’t matter whether this computer can reach the address. Nothing was saved.`], 'plain HTTP wording as before');
+  }
+  assert.equal(verify('Node credential was refused', true, 'pinned').title, 'The node refused its new administrator token', 'a refused token is still that');
+});
+
+await check('TLS views: new-node steps point to the fingerprint in the node’s log; the direct form asks for it only for HTTPS and is unchanged otherwise; pins show to administrators only', () => {
+  on();
+  reached.length = 0;
+  const label = markup => [...markup.matchAll(/<label\b[^>]*>([^<]*)<\/label>/gu)].map(found => found[1]);
+  const field = (markup, name) => {
+    const at = markup.indexOf(`>${name}</label>`);
+    if (at < 0) return null;
+    const tag = /<input\b[^>]*>/u.exec(markup.slice(at))?.[0];
+    return tag ? attributes(tag) : null;
+  };
+  // A new node at an https:// address.
+  const draft = { label: 'Office', nodeId: 'canary-office', address: 'https://100.79.12.4:3100', platform: 'docker' };
+  const deploy = props => within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, { draft, onDraft: noop, secrets: SECRETS, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop, ...props }));
+  const tls = deploy({});
+  for (const value of PRIVATE) assert.ok(!tls.includes(value));
+  assert.ok(text(tls).includes('HTTPS: the node serves TLS 1.3 itself (CANARY_TLS_MODE=auto) with a self-signed certificate it makes when it first starts, valid for ten years. No certificate authority vouches for it, so the next step asks for its fingerprint, from the line “Node TLS certificate fingerprint:” in the node’s log.'), text(tls));
+  assert.doesNotMatch(text(tls), /Plain HTTP/u);
+  assert.match(text(tls), /CANARY_TLS_MODE=auto.*-p 100\.79\.12\.4:3100:3100.*Next: verify the node/u);
+  assert.equal(field(tls, 'Address the dashboard’s server will use').get('placeholder'), 'https://100.79.12.4:3100', 'HTTPS is the suggested form');
+  assert.match(text(deploy({ draft: { ...draft, address: 'http://100.79.12.4:3100' } })), /Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary\./u);
+  // The direct form, for a running node: no fingerprint field until the address is HTTPS.
+  const form = props => within('admin', [ENTRY], React.createElement(registryView.DirectAddForm, { onClose: noop, onBusy: noop, onStage: noop, ...props }));
+  const FIELD = 'TLS certificate fingerprint';
+  for (const url of ['', 'http://100.79.12.4:3100']) {
+    const markup = form({ initialUrl: url });
+    assert.deepEqual(label(markup), ['Name on this dashboard', 'Node address', 'Enrollment credential'], `${JSON.stringify(url)}: the form as before`);
+  }
+  const running = form({ initialUrl: 'https://canary-b.example.test' });
+  assert.deepEqual(label(running), ['Name on this dashboard', 'Node address', FIELD, 'Enrollment credential']);
+  const pinField = field(running, FIELD);
+  assert.deepEqual([pinField.get('value'), pinField.get('autocomplete'), pinField.get('type'), pinField.get('placeholder')], ['', 'off', 'text', 'Empty: checked against trusted certificate authorities']);
+  for (const part of ['it never accepts just any certificate', 'Adding the node doesn’t change its own TLS setting.', 'Copy the 64 characters after “Node TLS certificate fingerprint:” from the node’s own log',
+    'It isn’t secret, and it isn’t the “Node connection fingerprint” of a node that connects to this dashboard.']) assert.ok(text(running).includes(part), part);
+  assert.equal(tags(running, 'input').map(attributes).filter(found => found.get('type') === 'password').length, 1, 'still one credential field');
+  // A new node's last step: the fingerprint is required, and its token never reaches the markup.
+  const fresh = form({ credential: ADMIN, expectedId: 'canary-office', initialLabel: 'Office', initialUrl: 'https://100.79.12.4:3100', pinRequired: true, onBack: noop });
+  assert.deepEqual(label(fresh), ['Name on this dashboard', 'Node address', FIELD]);
+  assert.equal(field(fresh, FIELD).get('placeholder'), '64 hexadecimal characters from the node’s log');
+  assert.ok(text(fresh).includes('with the administrator token made for it; your browser doesn’t. Verifying changes nothing on the node. It accepts only the certificate with the fingerprint below, and sends the token only once that certificate checks out.'), text(fresh));
+  assert.ok(!fresh.includes(ADMIN));
+  const freshPlain = form({ credential: ADMIN, expectedId: 'canary-office', initialLabel: 'Office', initialUrl: 'http://100.79.12.4:3100', onBack: noop });
+  assert.deepEqual(label(freshPlain), ['Name on this dashboard', 'Node address'], 'a plain HTTP new node as before');
+  assert.doesNotMatch(text(freshPlain), /It accepts only the certificate/u);
+  // Node cards: the pin for administrators (shortened; Edit shows all of it), and the hint when it may have changed.
+  const pinnedEntry = { ...ENTRY, url: 'https://100.79.12.4:3100', tlsFingerprint: NODE_PIN };
+  const short = `${NODE_PIN.slice(0, 12)}…${NODE_PIN.slice(-12)}`;
+  const admin = within('admin', [pinnedEntry, OUTBOUND], React.createElement(registryView.RegistryView));
+  assert.ok(text(card(admin, ENTRY.id)).includes(`TLS certificate ${short} · pinned`), text(card(admin, ENTRY.id)));
+  assert.doesNotMatch(text(card(admin, OUTBOUND.id)), /TLS certificate/u);
+  assert.match(text(card(within('admin', [{ ...pinnedEntry, state: 'not-answering' }], React.createElement(registryView.RegistryView)), ENTRY.id)), /If the node’s certificate was replaced, enter the new fingerprint with Edit/u);
+  assert.doesNotMatch(text(within('admin', [ENTRY], React.createElement(registryView.RegistryView))), /TLS certificate|certificate was replaced/u, 'nothing new without a pin');
+  for (const role of ['viewer', 'editor']) {
+    const markup = within(role, [pinnedEntry].map(({ url: _address, tlsFingerprint: _pin, ...node }) => node), React.createElement(registryView.RegistryView));
+    assert.doesNotMatch(markup, new RegExp(`TLS certificate|${NODE_PIN.slice(0, 12)}`, 'u'), role);
+  }
+  // Edit: the full pin, and a field to change it for HTTPS; plain HTTP entries keep their two fields and get the
+  // migration note; the bundled node's pin is the deployment's.
+  const edit = node => within('admin', [node], React.createElement(registryView.EditNodeDialog, { node, onClose: noop }));
+  const editPinned = edit(pinnedEntry);
+  assert.deepEqual(label(editPinned), ['Name on this dashboard', 'Node address', FIELD]);
+  assert.equal(field(editPinned, FIELD).get('value'), NODE_PIN);
+  assert.ok(text(editPinned).includes('Change it only when the node’s certificate was replaced.') && text(editPinned).includes('it never accepts just any certificate'), text(editPinned));
+  const submit = markup => attributes(tags(markup, 'button').find(tag => attributes(tag).get('type') === 'submit'));
+  assert.ok(submit(editPinned).has('disabled'), 'nothing changed yet');
+  assert.equal(field(edit({ ...ENTRY, url: 'https://100.79.12.4:3100' }), FIELD).get('value'), '', 'an HTTPS entry without a pin');
+  const editPlain = edit(ENTRY);
+  assert.deepEqual(label(editPlain), ['Name on this dashboard', 'Node address']);
+  assert.ok(text(editPlain).includes('To have this node encrypt its own connections, start it with CANARY_TLS_MODE=auto: it then serves only HTTPS. At the same time, change its peers’ CANARY_PEERS entries for it to its https:// address with its fingerprint, and enter both here.'), text(editPlain));
+  const local = { ...ENTRY, id: 'a'.repeat(32), local: true, url: 'https://canary-node:3100', tlsFingerprint: NODE_PIN };
+  const editLocal = edit(local);
+  assert.deepEqual(label(editLocal), ['Name on this dashboard']);
+  assert.ok(text(editLocal).includes(`TLS certificate ${NODE_PIN}`) && text(editLocal).includes('This deployment’s settings manage the bundled node’s address and its certificate fingerprint, so it changes there, not here.'), text(editLocal));
+  assert.deepEqual(label(edit(OUTBOUND)), ['Name on this dashboard'], 'an outbound entry has neither');
+  // Outbound: the dashboard's own certificate pin, when its listener terminates TLS, with what it is and isn't.
+  const server = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_server.go'), 'utf8');
+  assert.ok(server.includes(`fmt.Fprintln(log, "${wizard.DASHBOARD_TLS_LOG_LINE}", connectionPin)`), 'the line the dashboard logs');
+  const outbound = capabilities => text(within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    fresh: true, onboarding: resource(capabilities), secrets: SECRETS, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
+    onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
+  })));
+  const withPin = outbound({ ...CAPS, connectionTlsFingerprint: DASH_PIN });
+  for (const part of [`Its certificate fingerprint ${DASH_PIN}`, 'pin exactly that certificate with CANARY_DASHBOARD_TLS_FINGERPRINT', 'first compare it with the line “Dashboard connection TLS certificate fingerprint:” in the dashboard server’s own log.',
+    'It names the dashboard’s certificate: it isn’t the node’s connection fingerprint you compare when the node connects.']) assert.ok(withPin.includes(part), part);
+  const withoutPin = outbound(CAPS);
+  assert.ok(withoutPin.includes('Set by this dashboard’s deployment. The node must reach it over HTTPS and trust its certificate; nothing here turns certificate checks off.'), 'as before');
+  assert.doesNotMatch(withoutPin, /certificate fingerprint|CANARY_DASHBOARD_TLS_FINGERPRINT/u);
+  assert.deepEqual(reached, [], 'rendering asks the API nothing');
+});
+
+// ----- TLS r2 (.canary/transport-tls-contract.md, .canary/update-notice-contract.md and
+// .canary/update-ui-contract-feedback.md). No earlier expectation changed; every group below is new.
+
+const OVERVIEW = { node: { id: 'canary-b', name: 'Canary B' }, now: 1_000_000, monitors: [], nodes: [], incidents: [], notifications: [], user: { name: 'review', role: 'admin' } };
+const BUILD = { name: 'Uptime-Canary', version: 'v0.20.0', moduleVersion: '(devel)', goVersion: 'go1.27.0', os: 'linux', arch: 'amd64', sourceCommit: 'ab'.repeat(20), imageRevision: 'cd'.repeat(20), imageBuiltAt: '2026-10-25T00:00:00Z', modified: false, peerProtocol: 20 };
+const UPDATES = { enabled: true, intervalHours: 6, state: 'ok', checkedAt: 900_000, nextCheckAt: 1_900_000, images: [{ component: 'dashboard', label: 'Dashboard', image: 'ghcr.io/narehood/uptime-canary-web', status: 'unknown' }], extra: 'passed on' };
+
+await check('TLS r2 updates API: updates is one GET and checkUpdates one POST, both to the dashboard itself with the sign-in, never with a node selection or a body; answers and refusals pass on as sent', async () => {
+  // Root's routes (dashboard_updates.go): GET answers from the cache; POST takes no body or query, and answers 202, 409 or 429.
+  const go = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_updates.go'), 'utf8');
+  assert.match(go, /r\.URL\.Path\s*==\s*"\/api\/dashboard\/updates"\s*&&\s*r\.Method\s*==\s*"GET"/u);
+  assert.match(go, /r\.URL\.Path\s*==\s*"\/api\/dashboard\/updates\/check"\s*&&\s*r\.Method\s*==\s*"POST"/u);
+  assert.ok(go.includes('"Update checks do not accept a request body"') && go.includes('"Update checks do not accept query parameters"'));
+  // Measure the same refusal status/message after gofmt; whitespace is not API behavior.
+  assert.match(go, /fail\(409,\s*"An update check is already running"\)/u, 'its running refusal');
+  assert.match(go, /fail\(429,/u, 'its cooldown refusal');
+  on();
+  try {
+    const client = new api.CanaryApi(PAGE, TOKEN).withRegisteredNode(REG);
+    let cached, scheduled;
+    const sent = await record(async () => { cached = await client.updates(); scheduled = await client.checkUpdates(); },
+      (url, init) => init.method === 'POST' ? json(202, { ...UPDATES, state: 'checking' }) : json(200, UPDATES));
+    assert.deepEqual(sent.map(call => `${call.init.method} ${call.url}`), [`GET ${PAGE}/api/dashboard/updates`, `POST ${PAGE}/api/dashboard/updates/check`], 'one request each');
+    for (const call of sent) {
+      assert.deepEqual([header(call, 'authorization'), header(call, HEADER), header(call, 'content-type'), call.init.body], [`Bearer ${TOKEN}`, null, null, undefined], call.url);
+      assert.deepEqual([call.init.redirect, call.init.credentials, call.init.cache, call.init.referrerPolicy], ['error', 'same-origin', 'no-store', 'no-referrer'], call.url);
+    }
+    assert.deepEqual(cached, UPDATES, 'passed on as sent: updates.ts readUpdateStatus reads it');
+    assert.deepEqual(scheduled, { ...UPDATES, state: 'checking' });
+    // A refusal is a failure with the server's own words, and nothing is sent again.
+    for (const [status, detail] of [[409, 'An update check is already running'], [429, 'Update checks are cached; wait at least fifteen minutes between manual checks'], [403, 'Insufficient permissions'], [404, 'Not found']]) {
+      let failure;
+      const once = await record(async () => { failure = await rejection(client.checkUpdates()); }, () => json(status, { error: detail }));
+      assert.equal(once.length, 1, `${status}: never retried`);
+      assert.ok(failure instanceof api.ApiFailure, String(status));
+      assert.deepEqual([failure.status, failure.detail], [status, detail]);
+    }
+    const absent = await rejection(record(() => client.updates(), () => json(404, { error: 'Not found' })));
+    assert.equal(absent.status, 404, 'a dashboard without the route: the notice hides itself');
+    // Both through own(), as the contract and the update notice ask.
+    const source = read('src/api.ts');
+    for (const [name, line] of [['updates', 'return this.own<unknown>(\'/api/dashboard/updates\', \'GET\', undefined, signal);'], ['checkUpdates', 'return this.own<unknown>(\'/api/dashboard/updates/check\', \'POST\', undefined, signal);']]) {
+      const start = source.indexOf(`\n  async ${name}(signal?: AbortSignal): Promise<unknown> {\n`);
+      assert.ok(start > 0, `CanaryApi.${name}(signal?)`);
+      assert.deepEqual(source.slice(start, source.indexOf('\n  }\n', start + 1)).trim().split('\n').slice(1).map(text => text.trim()), [line], name);
+    }
+  } finally {
+    off();
+  }
+});
+
+await check('TLS r2 build: the overview keeps a node’s reported build only with a whole peer protocol from 1 to 10000, and only its known fields; missing or broken, it’s left out and no protocol is assumed', async () => {
+  const { templateCapability, TEMPLATE_PROTOCOL } = await load('src/alertTemplates.ts');
+  // Go's identity (build_identity.go), in a node's overview (types.go, views.go), and the shared type.
+  const go = file => readFileSync(resolve(root, 'apps/node-go/internal/canary', file), 'utf8');
+  const identity = go('build_identity.go');
+  const shared = readFileSync(resolve(root, 'packages/shared/src/index.ts'), 'utf8');
+  const goNames = [...identity.matchAll(/json:"(\w+)/gu)].map(found => found[1]);
+  const sharedNames = [.../export interface BinaryIdentity \{([^}]*)\}/u.exec(shared)[1].matchAll(/^\s*(\w+)\??:/gmu)].map(found => found[1]);
+  assert.deepEqual(sharedNames, goNames, 'the shared type has Go’s fields');
+  assert.deepEqual(Object.keys(api.normalizeBuild(BUILD)).sort(), [...goNames].sort(), 'a complete build keeps each of them');
+  assert.match(go('types.go'), /Build\s+\*BinaryIdentity\s+`json:"build,omitempty"`/u);
+  assert.ok(go('views.go').includes('Build: Ptr(LocalBinaryIdentity())'), 'a node reports its own');
+  assert.ok(identity.includes('len(revision) == 40') && identity.includes('len(value) != 40'), 'Go writes 40-digit commits');
+  const protocol = Number(/const peerProtocol = (\d+)/u.exec(go('wire_pages.go'))?.[1]);
+  assert.ok(protocol >= TEMPLATE_PROTOCOL && protocol <= api.MAX_PEER_PROTOCOL, `peerProtocol ${protocol}`);
+  const overview = build => api.normalizeOverview(build === undefined ? OVERVIEW : { ...OVERVIEW, build });
+  // Valid: kept with its known fields only, so the selected node's channels offer protocol 20's templates.
+  const kept = overview({ ...BUILD, extra: 'dropped', token: 'never-kept' });
+  assert.deepEqual(kept.build, BUILD);
+  assert.deepEqual(templateCapability(kept.build), { level: 'enhanced', protocol: 20 });
+  // Missing, as from an older node: the overview as before, and the six-placeholder grammar.
+  const older = overview(undefined);
+  assert.deepEqual(older, OVERVIEW);
+  assert.deepEqual(templateCapability(older.build), { level: 'legacy' });
+  // Broken: left out entirely; protocol 20 is never assumed.
+  const { peerProtocol: _protocol, ...unnumbered } = BUILD;
+  for (const bad of [unnumbered, ...['20', 20.5, 0, -20, 10_001, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53, true, null].map(peerProtocol => ({ ...BUILD, peerProtocol })), null, 'Uptime-Canary', 20, [BUILD], []]) {
+    const seen = overview(bad);
+    assert.ok(!('build' in seen), JSON.stringify(bad));
+    assert.deepEqual(templateCapability(seen.build), { level: 'legacy' }, `${JSON.stringify(bad)}: no protocol`);
+  }
+  for (const edge of [1, 19, 10_000]) assert.equal(overview({ ...BUILD, peerProtocol: edge }).build.peerProtocol, edge);
+  assert.deepEqual(templateCapability(overview({ ...BUILD, peerProtocol: 19 }).build), { level: 'legacy', protocol: 19 });
+  // Known fields, read safely: text cleaned and bounded, commits only in Go's form, `modified` only beside a commit.
+  const nul = String.fromCharCode(0);
+  const odd = overview({ name: `Uptime${nul}Canary`, version: 'v'.repeat(300), moduleVersion: 7, goVersion: null, os: 'linux\n', arch: ['amd64'], sourceCommit: 'AB'.repeat(20), imageRevision: 'abc1234', modified: 'false', peerProtocol: 20 }).build;
+  assert.deepEqual(odd, { name: 'Uptime Canary', version: 'v'.repeat(128), moduleVersion: '', goVersion: '', os: 'linux', arch: '', sourceCommit: 'ab'.repeat(20), modified: null, peerProtocol: 20 });
+  const unsure = overview({ ...BUILD, sourceCommit: 'not-a-commit', modified: true }).build;
+  assert.deepEqual(['sourceCommit' in unsure, unsure.modified], [false, null], 'no commit: modification unknown, never clean or changed');
+  assert.equal(overview({ ...BUILD, modified: true }).build.modified, true);
+  // Through the API: the selected node's build comes through the dashboard; the dashboard's own overview has none.
+  on();
+  try {
+    let seen;
+    const through = await record(async () => { seen = await new api.CanaryApi(PAGE, TOKEN).withRegisteredNode(REG).overview(); }, () => json(200, { ...OVERVIEW, build: BUILD }));
+    assert.deepEqual([through.length, header(through[0], HEADER)], [1, REG]);
+    assert.deepEqual(seen.build, BUILD, 'the selected node’s build');
+    await record(async () => { seen = await new api.CanaryApi(PAGE, TOKEN).overview(); }, () => json(200, { ...OVERVIEW, node: { id: 'dashboard', name: 'Dashboard' }, build: BUILD }));
+    assert.ok(!('build' in seen), 'the dashboard’s own overview stands for no node, so it carries no node’s build');
+  } finally {
+    off();
+  }
+  const own = /out := Overview\{Node: Identity\{"dashboard", "Dashboard"\}[^\n]*/u.exec(go('dashboard_http.go'))?.[0];
+  assert.ok(own && !own.includes('Build'), 'Go sends none there either');
+  let direct;
+  await record(async () => { direct = await new api.CanaryApi(PAGE, TOKEN).overview(); }, () => json(200, { ...OVERVIEW, build: BUILD }));
+  assert.deepEqual(direct.build, BUILD, 'a node signed in to directly');
+});
+
+await check('TLS r2 low ports: a Linux VM unit adds CAP_NET_BIND_SERVICE only for a port below 1024 and keeps its unprivileged dynamic user; Docker and Compose steps don’t change; a portless address means 443 and the suggestion shows :3100', () => {
+  assert.ok(readFileSync(resolve(root, 'apps/node-go/internal/canary/cli.go'), 'utf8').includes('get("CANARY_PORT")'), 'a VM node listens on CANARY_PORT itself');
+  const unitOf = blocks => blocks.find(block => block.key === 'unit').text;
+  const vm = address => onboarding.setupGuide({ ...combos[0].setup, direct: onboarding.directTarget(address), platform: 'vm' }, true);
+  const r1 = unitOf(guides.find(guide => guide.platform === 'vm' && guide.setup === combos[0].setup).real);
+  const HIGH = ['AmbientCapabilities=CAP_NET_RAW', 'CapabilityBoundingSet=CAP_NET_RAW'];
+  const LOW = ['AmbientCapabilities=CAP_NET_RAW CAP_NET_BIND_SERVICE', 'CapabilityBoundingSet=CAP_NET_RAW CAP_NET_BIND_SERVICE'];
+  assert.ok(HIGH.every(line => r1.split('\n').includes(line)), 'r1’s unit, on port 3100');
+  for (const [address, port] of [['https://100.79.12.4', 443], ['https://100.79.12.4:443', 443], ['http://100.79.12.4', 80], ['https://100.79.12.4:1023', 1023], ['https://100.79.12.4:1', 1], ['https://canary-b.lan', 443], ['https://[fd00::1]', 443]]) {
+    const blocks = vm(address);
+    const unit = unitOf(blocks).split('\n');
+    const comment = `# CANARY_PORT ${port} is below 1024: CAP_NET_BIND_SERVICE lets this service's own unprivileged user listen on it.`;
+    const at = unit.indexOf(comment);
+    assert.ok(at > 0, `${address}: the unit says why`);
+    assert.deepEqual(unit.slice(at + 1, at + 3), LOW, address);
+    // Otherwise r1's unit line for line: the same dynamic user, no User= or root, nothing else added or dropped.
+    assert.deepEqual(unit.filter(line => line !== comment).map(line => LOW.includes(line) ? HIGH[LOW.indexOf(line)] : line), r1.split('\n'), address);
+    assert.ok(unit.includes('DynamicUser=yes') && unit.includes('NoNewPrivileges=yes'), address);
+    assert.doesNotMatch(unit.join('\n'), /^(?:User|Group|SupplementaryGroups)=|\broot\b|CAP_SYS_|CAP_NET_ADMIN/mu, address);
+    assert.ok(blocks.find(block => block.key === 'env').text.split('\n').includes(`CANARY_PORT="${port}"`), `${address}: the node listens there itself`);
+  }
+  for (const address of ['https://100.79.12.4:1024', 'https://100.79.12.4:3100', 'http://100.79.12.4:8080', 'https://100.79.12.4:65535']) assert.equal(unitOf(vm(address)), r1, `${address}: r1’s unit`);
+  assert.equal(unitOf(onboarding.setupGuide({ ...combos[1].setup, platform: 'vm' }, true)), r1, 'a node that connects out listens on 3100 locally');
+  assert.deepEqual([0, 1, 80, 443, 1023, 1024, 3100, 65535].map(onboarding.lowPort), [false, true, true, true, true, false, false, false]);
+  // Docker publishes the port itself: host port 443 to the node's 3100, and nothing else differs.
+  const at443 = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4') };
+  const at3100 = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100') };
+  for (const platform of ['docker', 'compose', 'portainer']) {
+    const low = onboarding.setupGuide({ ...at443, platform }, true);
+    const high = onboarding.setupGuide({ ...at3100, platform }, true);
+    assert.deepEqual(shape(low), shape(high), platform);
+    const all = low.map(block => block.text).join('\n');
+    assert.ok(all.includes(platform === 'docker' ? '  -p 100.79.12.4:443:3100 \\' : '      - "100.79.12.4:443:3100"'), `${platform}: host port 443`);
+    low.forEach((block, index) => assert.equal(block.text.replaceAll('100.79.12.4:443:3100', '100.79.12.4:3100:3100'), high[index].text, `${platform}: ${block.key} differs only in the published port`));
+    assert.doesNotMatch(all, /NET_BIND_SERVICE/u, platform);
+  }
+  // A portless address keeps its meaning (443, or 80), never a silent 3100; the note says so with the :3100 form.
+  assert.equal(onboarding.CANARY_PORT, 3100);
+  assert.deepEqual(onboarding.directTarget('https://100.79.12.4'), { url: 'https://100.79.12.4', host: '100.79.12.4', listen: '100.79.12.4', port: 443, allInterfaces: false });
+  const note = (address, platform = 'docker') => onboarding.schemePortNote(onboarding.directTarget(address), platform);
+  assert.equal(note('https://100.79.12.4'), 'Without a port, https:// means port 443, so the commands publish port 443. To use Uptime Canary’s own port instead, enter https://100.79.12.4:3100.');
+  assert.equal(note('https://100.79.12.4:443'), note('https://100.79.12.4'), 'an explicit :443 is the same address');
+  assert.equal(note('https://100.79.12.4', 'vm'), 'Without a port, https:// means port 443, so the node listens on 443, which its service unit allows with CAP_NET_BIND_SERVICE, as it does for any port below 1024. To use Uptime Canary’s own port instead, enter https://100.79.12.4:3100.');
+  assert.equal(note('http://canary-b.lan', 'compose'), 'Without a port, http:// means port 80, so the commands publish port 80. To use Uptime Canary’s own port instead, enter http://canary-b.lan:3100.');
+  assert.match(note('https://[fd00::1]'), /enter https:\/\/\[fd00::1\]:3100\.$/u);
+  for (const named of ['https://100.79.12.4:3100', 'https://100.79.12.4:8443', 'http://100.79.12.4:3100', 'https://100.79.12.4:1023']) assert.equal(note(named), null, named);
+  for (const problem of ['nonsense', 'ftp://10.0.0.5:3100', 'https://10.0.0.5:3100/api']) assert.match(onboarding.directTarget(problem), /like https:\/\/100\.79\.12\.4:3100/u, problem);
+  // Rendered: the note beside the publish note, on each platform's terms; none for an address with its port.
+  on();
+  try {
+    reached.length = 0;
+    const draft = { label: 'Office', nodeId: 'canary-office', address: 'https://100.79.12.4', platform: 'docker' };
+    const deploy = change => text(within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, { draft: { ...draft, ...change }, onDraft: noop, secrets: SECRETS, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop })));
+    const docker = deploy({});
+    assert.ok(docker.includes(note('https://100.79.12.4')) && docker.includes('The commands publish port 443 on 100.79.12.4 only') && docker.includes('-p 100.79.12.4:443:3100'), docker);
+    const onVm = deploy({ platform: 'vm' });
+    assert.ok(onVm.includes(note('https://100.79.12.4', 'vm')) && onVm.includes('AmbientCapabilities=CAP_NET_RAW CAP_NET_BIND_SERVICE'), onVm);
+    for (const address of ['https://100.79.12.4:3100', 'http://100.79.12.4:3100']) assert.doesNotMatch(deploy({ address }), /Without a port/u, address);
+    assert.deepEqual(reached, [], 'rendering asks the API nothing');
+  } finally {
+    off();
+  }
+});
+
+await check('TLS r2 tls-info and tls-init: container steps say how to print the certificate again as the node’s own user, a VM’s don’t; moving a plain HTTP node to TLS keeps CANARY_TLS_MODE=off until the switch', () => {
+  const go = file => readFileSync(resolve(root, 'apps/node-go/internal', file), 'utf8');
+  const cli = go('canary/cli.go');
+  const health = go('canary/tls_health.go');
+  const transport = go('canary/transport_tls.go');
+  assert.match(cli, /args\[0\] == "tls-info"/u, 'tls-info is a node command');
+  assert.match(health, /"fingerprint":\s*nodetls\.CertificateFingerprint\(leaf\)/u, 'it prints the fingerprint');
+  assert.match(cli, /"tls-init"/u, 'tls-init is a node command: root wires InitializeTLS into RunCLI');
+  assert.match(health, /func InitializeTLS\(/u);
+  assert.match(health, /options\.TLSMode\s*=\s*"off"/u, 'it serves nothing while it makes the certificate');
+  // Same inherited-TLS behavior; gofmt places this branch on multiple lines.
+  assert.match(transport, /if retained\s*\{\s*mode = "auto"\s*\}/u, 'an empty setting with a kept certificate means auto');
+  assert.match(transport, /mode == "" \|\| mode == "off"/u, 'off stays plain HTTP');
+  assert.ok(go('origin/connection_linux.go').includes('stat.Uid != uint32(os.Geteuid())'), 'the identity files must belong to the user reading them, so a VM gets no command');
+  // The image's command and user, when this runs with the repository (the web image's build has no Dockerfile.node).
+  const imagePath = resolve(root, 'Dockerfile.node');
+  if (existsSync(imagePath)) {
+    const image = readFileSync(imagePath, 'utf8');
+    assert.ok(image.includes('COPY --from=build /out/canary /usr/local/bin/canary') && /^USER canary$/mu.test(image), 'canary, run as the image’s own user');
+  }
+  const https = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100') };
+  const res = onboarding.resourceName(https.nodeId);
+  const later = command => `Later, ${command} on its host prints it again, with the certificate and its expiry date, and changes nothing.`;
+  const info = { docker: later(`docker exec ${res} canary tls-info`), compose: later(`docker compose --env-file ${res}.env exec node canary tls-info`) };
+  const words = blocks => blocks.map(block => `${block.title}\n${block.text}`).join('\n');
+  for (const { value: platform } of onboarding.PLATFORMS) {
+    const blocks = onboarding.setupGuide({ ...https, platform }, true);
+    if (info[platform]) {
+      const started = blocks.find(block => block.key === 'started').text;
+      const at = started.indexOf(info[platform]);
+      assert.ok(at > started.indexOf('someone else could change.') && at < started.indexOf('The fingerprint isn’t secret'), `${platform}: after the log, before what it isn’t: ${started}`);
+      assert.equal((words(blocks).match(/tls-info/gu) ?? []).length, 1, `${platform}: once`);
+    } else {
+      assert.doesNotMatch(words(blocks), /tls-info|tls-init/u, platform);
+    }
+    for (const combo of combos) assert.doesNotMatch(words(onboarding.setupGuide({ ...combo.setup, platform }, true)), /tls-info|tls-init/u, `${combo.name}, ${platform}`);
+  }
+  // The registry's forms.
+  on();
+  try {
+    reached.length = 0;
+    const edit = node => text(within('admin', [node], React.createElement(registryView.EditNodeDialog, { node, onClose: noop })));
+    const plain = edit(ENTRY);
+    let at = -1;
+    for (const part of [
+      'To have this node encrypt its own connections, start it with CANARY_TLS_MODE=auto: it then serves only HTTPS.',
+      'and enter both here.',
+      'To read the fingerprint before that, first set CANARY_TLS_MODE=off in its settings: once a node has its certificate, leaving the setting empty starts it with HTTPS.',
+      'Then stop it and run its tls-init command once with those settings, its data and the same user, such as canary tls-init in a one-off container of its image with its volumes: that makes its ten-year certificate and prints the fingerprint, without serving, checks or alerts.',
+      'Start it again as before; it stays on plain HTTP until you set auto.',
+      'Nothing on this page changes the node’s settings.',
+    ]) {
+      const next = plain.indexOf(part);
+      assert.ok(next > at, `in this order: ${part}`);
+      at = next;
+    }
+    for (const node of [{ ...ENTRY, url: 'https://100.79.12.4:3100', tlsFingerprint: NODE_PIN }, { ...ENTRY, url: 'https://100.79.12.4:3100' }, OUTBOUND]) {
+      assert.doesNotMatch(edit(node), /tls-init|CANARY_TLS_MODE=off/u, node.url ?? node.connection);
+    }
+    const form = props => text(within('admin', [ENTRY], React.createElement(registryView.DirectAddForm, { onClose: noop, onBusy: noop, onStage: noop, ...props })));
+    for (const shown of [form({ initialUrl: 'https://canary-b.example.test' }), form({ credential: ADMIN, expectedId: 'canary-office', initialLabel: 'Office', initialUrl: 'https://100.79.12.4:3100', pinRequired: true, onBack: noop })]) {
+      const log = shown.indexOf('Copy the 64 characters after “Node TLS certificate fingerprint:” from the node’s own log');
+      const command = shown.indexOf('A node in a container also prints it with canary tls-info run inside it, such as with docker exec.');
+      assert.ok(log >= 0 && command > log, shown);
+    }
+    assert.doesNotMatch(form({ initialUrl: 'http://100.79.12.4:3100' }), /tls-info/u, 'no fingerprint field, no help for it');
+    assert.deepEqual(reached, [], 'rendering asks the API nothing');
+  } finally {
+    off();
+  }
 });
 
 await check('nothing private reached the console or browser storage', () => {

@@ -109,6 +109,10 @@ func (d *Dashboard) currentActor(r *http.Request, actor AccountView, admin bool)
 
 func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, actor AccountView) {
 	p := r.URL.Path
+	if p == "/api/dashboard/updates" || strings.HasPrefix(p, "/api/dashboard/updates/") {
+		d.updateRequest(w, r, actor)
+		return
+	}
 	if p == "/api/dashboard/onboarding" || p == "/api/dashboard/invitations" || strings.HasPrefix(p, "/api/dashboard/invitations/") {
 		d.invitationRequest(w, r, actor)
 		return
@@ -188,18 +192,22 @@ func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, acto
 func (d *Dashboard) verifyNode(w http.ResponseWriter, r *http.Request, actor AccountView) {
 	b, err := readBounded(r.Body, 4096)
 	var in struct {
-		Label string `json:"label"`
-		URL   string `json:"url"`
-		Token string `json:"token"`
+		Label          string `json:"label"`
+		URL            string `json:"url"`
+		Token          string `json:"token"`
+		TLSFingerprint string `json:"tlsFingerprint"`
 	}
 	if err == nil {
-		err = dashboardJSON(b, &in, "label", "url", "token")
+		err = dashboardJSON(b, &in, "label", "url", "token", "tlsFingerprint")
 	}
 	if err == nil {
 		err = validText(in.Label, "node label", 128)
 	}
 	if err == nil {
 		in.URL, err = dashboardNodeURL(in.URL)
+	}
+	if err == nil {
+		in.TLSFingerprint, err = validateTLSOrigin(in.URL, in.TLSFingerprint)
 	}
 	if err == nil {
 		err = tokenValue(in.Token)
@@ -218,7 +226,7 @@ func (d *Dashboard) verifyNode(w http.ResponseWriter, r *http.Request, actor Acc
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	row := registeredNodeRecord{RegisteredNode: RegisteredNode{URL: in.URL}}
+	row := registeredNodeRecord{RegisteredNode: RegisteredNode{URL: in.URL, TLSFingerprint: in.TLSFingerprint}}
 	if err = d.nodeActor(ctx, row, in.Token, "admin"); err != nil {
 		errorReply(w, err)
 		return
@@ -274,7 +282,7 @@ func (d *Dashboard) verifyNode(w http.ResponseWriter, r *http.Request, actor Acc
 		errorReply(w, err)
 		return
 	}
-	v := nodeVerification{Ticket: ticket, ExpiresAt: now + 120000, Node: view.Node, Label: in.Label, URL: in.URL, PlainHTTP: strings.HasPrefix(in.URL, "http:"), actorID: actor.ID, bearerHash: digest(bearer(r)), token: in.Token}
+	v := nodeVerification{Ticket: ticket, ExpiresAt: now + 120000, Node: view.Node, Label: in.Label, URL: in.URL, PlainHTTP: strings.HasPrefix(in.URL, "http:"), TLSFingerprint: in.TLSFingerprint, actorID: actor.ID, bearerHash: digest(bearer(r)), token: in.Token}
 	d.tickets[ticket] = v
 	reply(w, 200, v)
 }
@@ -302,7 +310,7 @@ func (d *Dashboard) addNode(w http.ResponseWriter, r *http.Request, actor Accoun
 		errorReply(w, fail(409, "Node verification expired; verify again"))
 		return
 	}
-	row := registeredNodeRecord{RegisteredNode: RegisteredNode{ID: strings.ReplaceAll(newID(), "-", ""), Label: v.Label, NodeID: v.Node.ID, NodeName: v.Node.Name, URL: v.URL, State: "enrolling"}}
+	row := registeredNodeRecord{RegisteredNode: RegisteredNode{ID: strings.ReplaceAll(newID(), "-", ""), Label: v.Label, NodeID: v.Node.ID, NodeName: v.Node.Name, URL: v.URL, TLSFingerprint: v.TLSFingerprint, State: "enrolling"}}
 	secret := dashboardNodeSecrets{dashboardRoleTokens: dashboardRoleTokens{NodeID: row.NodeID}, EnrollmentToken: v.token}
 	for _, role := range dashboardRoles {
 		token, e := randomCredential(32)
@@ -542,6 +550,7 @@ func (d *Dashboard) checkNode(ctx context.Context, id string) (registeredNodeRec
 		}
 	} else {
 		current.State, current.Error, current.NodeName, current.LastReadAt = "answering", "", view.Node.Name, time.Now().UnixMilli()
+		current.build = view.Build
 		count := len(view.Monitors)
 		current.MonitorCount = &count
 	}

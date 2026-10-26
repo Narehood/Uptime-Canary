@@ -1,0 +1,67 @@
+/* Software update notices (views/Updates.tsx). Loaded with the control-plane feature; colours are styles.css tokens. */
+
+/* Topbar entry: the same icon button as the theme switch, with a count while something can be updated. */
+.upd-btn { position: relative; }
+.upd-btn .upd-n {
+  position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--accent-btn); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  box-shadow: 0 0 0 2px var(--page); font-variant-numeric: tabular-nums;
+}
+.upd-btn.has { color: var(--accent-text); }
+
+/* The notice stays quiet: a neutral info banner with an accent edge, never a warning colour. */
+.upd-banner > .banner { box-shadow: inset 4px 0 0 var(--accent); }
+.upd-banner .btn .ic { width: 15px; height: 15px; }
+
+/* Details */
+.upd-sum { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+.upd-sum b { font-size: 15px; font-weight: 650; }
+.upd-sum span { color: var(--text-2); font-size: 13px; }
+.upd-stale { display: flex; gap: 8px; align-items: flex-start; margin: 0; background: var(--warning-wash); border-radius: 9px; padding: 8px 10px; font-size: 13px; }
+.upd-stale > .g { margin-top: 2px; }
+.upd-when dd { font-variant-numeric: tabular-nums; }
+.upd-sec h3 { font-size: 13px; font-weight: 650; color: var(--text-2); margin: 0 0 6px; }
+.upd-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.upd-row { border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); min-width: 0; }
+.upd-row.k-available { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.upd-row-h { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; }
+.upd-name { display: flex; flex-direction: column; min-width: 0; }
+.upd-name b { font-size: 14px; overflow-wrap: anywhere; }
+.upd-name .muted { font-size: 12px; overflow-wrap: anywhere; }
+.upd-commits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin: 0; font-size: 13px; }
+.upd-commits dt { color: var(--text-3); font-size: 12px; }
+.upd-commits dd { margin: 0; overflow-wrap: anywhere; }
+.upd-commits .upd-local { display: block; font-size: 12px; }
+.upd-why { margin: 0; color: var(--text-2); font-size: 13px; }
+.upd-row a, .upd-links a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; min-height: 24px; }
+.upd-row a .ic, .upd-links a .ic { width: 14px; height: 14px; flex: none; }
+.upd-link { align-self: flex-start; }
+
+/* Status chips: shape and words carry the meaning; an update is accent, not a warning. */
+.chip.upd-chip > .upd-ic { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-btn); color: #fff; flex: none; }
+.chip.upd-chip > .upd-ic .ic { width: 12px; height: 12px; }
+.chip.upd-chip.k-available { background: var(--accent-wash); }
+.chip.upd-chip.k-current { background: var(--good-wash); }
+.chip.upd-chip.k-unavailable { background: var(--warning-wash); }
+.chip.upd-chip.k-ahead > .upd-ic { background: var(--surface-3); color: var(--text-1); }
+
+.upd-how ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
+.upd-limit { margin: 10px 0 0; font-size: 13px; color: var(--text-2); background: var(--surface-2); border-radius: 9px; padding: 8px 10px; }
+.upd-limit b { color: var(--text-1); }
+.upd-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 10px 0 0; }
+.upd-act { margin: 0; font-size: 13px; color: var(--text-2); flex: 1 1 16ch; min-width: 0; }
+.upd-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
+/* Narrow shells: the entry sits on the freshness row, under the search field, so the node picker keeps its width. */
+@container app (max-width: 699px) {
+  .upd-btn { order: 6; }
+  .upd-commits { grid-template-columns: minmax(0, 1fr); }
+  .upd-acts { width: 100%; }
+  .upd-acts .btn { flex: 1; justify-content: center; }
+}
+
+@media (forced-colors: active) {
+  .upd-btn .upd-n { forced-color-adjust: none; background: Highlight; color: HighlightText; box-shadow: none; }
+  .upd-row, .upd-chip { border: 1px solid CanvasText; }
+  .upd-row.k-available { outline: 2px solid Highlight; }
+}

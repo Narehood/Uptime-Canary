@@ -492,7 +492,11 @@ func (n *Node) exchangePage(p Peer) bool {
 	req.Header.Set("Authorization", "Bearer "+n.clusterToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Canary-Node-Id", n.ID)
-	resp, err := n.peerClient.Do(req)
+	client := n.peerClient
+	if pinned := n.peerTLSClients[p.ID]; pinned != nil {
+		client = pinned
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}

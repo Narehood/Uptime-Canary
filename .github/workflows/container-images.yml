@@ -50,6 +50,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary-${COMPONENT}"
           echo "name=$image" >> "$GITHUB_OUTPUT"
           echo "tag=$image:sha-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
@@ -62,6 +63,9 @@ jobs:
         with:
           context: .
           file: Dockerfile.${{ matrix.component }}
+          build-args: |
+            CANARY_BUILD_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
+            CANARY_BUILD_CREATED=${{ steps.image.outputs.created }}
           platforms: linux/amd64
           pull: true
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
@@ -70,6 +74,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.created=${{ steps.image.outputs.created }}
 
   publish:
     name: Publish matching latest images

@@ -2,6 +2,7 @@ package canary
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -188,7 +189,27 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 	}
 	defer accounts.Close()
 	connectionURL := env("CANARY_DASHBOARD_CONNECTION_URL")
-	d, err := NewDashboard(DashboardOptions{Accounts: accounts, Key: key, CORSOrigins: origins, LocalNodeURL: env("CANARY_LOCAL_NODE_URL"), LocalNodeToken: env("CANARY_LOCAL_NODE_TOKEN"), ConnectionURL: connectionURL, ConnectionEnabled: connectionURL != "", NodeImageTag: value("CANARY_DASHBOARD_NODE_IMAGE_TAG", "latest")})
+	var connectionTLS *tls.Config
+	var connectionPin string
+	connectionMode := env("CANARY_DASHBOARD_CONNECTION_TLS_MODE")
+	if connectionMode != "" && connectionMode != "off" {
+		if connectionMode != "auto" || connectionURL == "" {
+			return errors.New("Native connection TLS requires auto mode and an HTTPS connection URL")
+		}
+		connectionTLS, connectionPin, err = accounts.node.retainedTLS()
+		if err != nil {
+			return err
+		}
+	}
+	updateChecks := true
+	if value := env("CANARY_UPDATE_CHECKS"); value != "" {
+		var parseErr error
+		updateChecks, parseErr = strconv.ParseBool(value)
+		if parseErr != nil {
+			return errors.New("Invalid CANARY_UPDATE_CHECKS")
+		}
+	}
+	d, err := NewDashboard(DashboardOptions{CheckUpdates: updateChecks, Accounts: accounts, Key: key, CORSOrigins: origins, LocalNodeURL: env("CANARY_LOCAL_NODE_URL"), LocalNodeToken: env("CANARY_LOCAL_NODE_TOKEN"), LocalNodeTLSFingerprint: env("CANARY_LOCAL_NODE_TLS_FINGERPRINT"), ConnectionTLSFingerprint: connectionPin, ConnectionURL: connectionURL, ConnectionEnabled: connectionURL != "", NodeImageTag: value("CANARY_DASHBOARD_NODE_IMAGE_TAG", "latest")})
 	if err != nil {
 		return err
 	}
@@ -219,6 +240,10 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 			return errors.New("Dashboard node connection listener failed to start")
 		}
 		defer connectionListener.Close()
+		if connectionTLS != nil {
+			connectionListener = tls.NewListener(connectionListener, connectionTLS)
+			fmt.Fprintln(log, "Dashboard connection TLS certificate fingerprint:", connectionPin)
+		}
 		listeners = append(listeners, connectionListener)
 		servers = append(servers, &http.Server{Handler: d.ConnectionHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024})
 	}

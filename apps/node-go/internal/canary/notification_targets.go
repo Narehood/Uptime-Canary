@@ -140,19 +140,37 @@ func receiptsForTarget(receipts []Receipt, id string) []Receipt {
 }
 
 func (n *Node) deliverToTarget(ctx context.Context, t notificationTarget, body []byte, a attempt) notificationDeliveryResult {
-	if t.ChannelID == "" || t.Provider == "discord" {
+	if t.ChannelID == "" {
+		return deliverNotification(ctx, n.client, t.URL, body, a.ID, n.now())
+	}
+	if t.Provider == "discord" && !discordConfigured(t.Config) {
 		return deliverNotification(ctx, n.client, t.URL, body, a.ID, n.now())
 	}
 	var payload struct {
-		Monitor      Identity      `json:"monitor"`
-		Observations []Observation `json:"observations"`
+		TemplateFacts providerDelivery.Message `json:"templateFacts"`
+		DiscordLegacy json.RawMessage          `json:"discordLegacy"`
+		EventTime     string                   `json:"eventTime"`
+		Monitor       Identity                 `json:"monitor"`
+		Observations  []Observation            `json:"observations"`
 	}
-	_ = json.Unmarshal(body, &payload)
+	if json.Unmarshal(body, &payload) != nil {
+		return notificationDeliveryResult{ErrorCode: "invalid_message"}
+	}
+	if t.Provider == "discord" {
+		formatted, err := formatDiscordTemplates(t.Config, payload.TemplateFacts, payload.DiscordLegacy, payload.EventTime)
+		if err != nil {
+			return notificationDeliveryResult{ErrorCode: "invalid_message"}
+		}
+		return deliverNotification(ctx, n.client, t.URL, formatted, a.ID, n.now())
+	}
 	lines := []string{}
 	for _, o := range payload.Observations {
 		lines = append(lines, o.NodeID+": "+o.State+" - "+o.Message)
 	}
 	message := providerDelivery.Message{EventKind: a.Kind, MonitorName: payload.Monitor.Name, MonitorID: a.MonitorID, IncidentID: a.IncidentID, ObservationsSummary: strings.Join(lines, "\n"), IdempotencyKey: a.ID}
+	if payload.TemplateFacts.EventKind != "" {
+		message = payload.TemplateFacts
+	}
 	if t.Config.Kind == providerDelivery.Webhook {
 		message.APIBody = body
 	}

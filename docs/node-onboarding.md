@@ -1,9 +1,10 @@
 # Guided node onboarding and one-way VPN connections
 
-This feature is under development on `feature/node-onboarding`. Use matching
-dashboard and node builds containing it; an existing published image does not
-gain the connector from a stack variable. This page describes the implementation
-contract, not a completed release or a live NetBird/Tailscale acceptance result.
+Guided onboarding was merged through PR #14 as `358ede0`. The protocol-20
+candidate adds native self-signed TLS and explicit certificate pins. Use
+matching dashboard and node builds containing the selected mode; an older
+image does not gain it from a stack variable. This guide is not a completed
+release or a live NetBird/Tailscale acceptance result.
 
 The dashboard can manage a node in either direction:
 
@@ -28,9 +29,10 @@ browser service's `/api/` path from its sign-in proxy.
 For example, if nodes can reach the dashboard host at `172.16.99.101`, but the
 dashboard cannot initiate requests back to them, route a trusted name such as
 `canary-connect.example.net` to that address. The name and certificate must be
-usable from each node. The literal IP also works if the certificate is trusted
-and explicitly covers that IP. Canary refuses plain HTTP, redirects, and invalid
-certificates on this connection; there is no skip-verification switch.
+usable from each node. With ordinary CA trust, a literal IP needs a certificate
+that explicitly covers that IP. The native TLS alternative below authenticates
+an exact independently checked certificate fingerprint. Canary refuses plain
+HTTP, redirects and invalid certificates; there is no skip-verification switch.
 
 Add these variables to the **dashboard** stack:
 
@@ -49,6 +51,24 @@ HTTP hop belongs on your trusted private host/network. The proxy must forward
 allow a long poll to wait at least 25 seconds. It must not log request bodies or
 credentials. Its TLS certificate must chain to a CA trusted by the node's Go
 runtime; install a private CA in the node's trust store if needed.
+
+Alternatively, terminate TLS directly in the dedicated listener with a retained
+ten-year certificate:
+
+```dotenv
+CANARY_DASHBOARD_CONNECTION_URL=https://172.16.99.101:18348
+CANARY_DASHBOARD_CONNECTION_TLS_MODE=auto
+CANARY_CONNECT_BIND_ADDRESS=172.16.99.101
+CANARY_CONNECT_PORT=18348
+```
+
+This mode needs no HTTPS-terminating proxy for that port. The wizard displays
+the dashboard's certificate hash, to compare with its own log, and includes it
+as `CANARY_DASHBOARD_TLS_FINGERPRINT` in the node settings. Keep that pin after
+pairing. Leave native TLS off when the reverse proxy terminates HTTPS with a
+different trusted certificate. See [encrypted transport](transport-tls.md) for
+trust, migration and renewal; certificate fingerprints are distinct from the
+node connection fingerprint compared during first-pair confirmation.
 
 The connection listener exposes only `/connect/v1/enroll`, `/connect/v1/open`,
 `/connect/v1/poll`, `/connect/v1/result`, and a basic `/healthz`. It serves no

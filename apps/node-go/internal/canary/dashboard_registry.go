@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,8 @@ import (
 	"sync"
 	"time"
 	"uptime-canary/apps/node-go/internal/nodeconnection"
+	"uptime-canary/apps/node-go/internal/nodetls"
+	"uptime-canary/apps/node-go/internal/updatecheck"
 )
 
 type RegisteredNode struct {
@@ -33,6 +36,7 @@ type RegisteredNode struct {
 	Error           string `json:"error,omitempty"`
 	Connection      string `json:"connection,omitempty"`
 	LastConnectedAt int64  `json:"lastConnectedAt,omitempty"`
+	TLSFingerprint  string `json:"tlsFingerprint,omitempty"`
 }
 
 type registeredNodeRecord struct {
@@ -40,7 +44,8 @@ type registeredNodeRecord struct {
 	// Authenticated against ID, URL and proved node identity; never public JSON.
 	Credentials string `json:"credentials"`
 	// Distinguish an undiscovered placeholder from a real node named pending.
-	Unproved            bool   `json:"unproved,omitempty"`
+	Unproved            bool `json:"unproved,omitempty"`
+	build               *BinaryIdentity
 	ConnectionHash      string `json:"connectionHash,omitempty"`
 	InvitationExpiresAt int64  `json:"invitationExpiresAt,omitempty"`
 }
@@ -57,52 +62,62 @@ func dashboardOperationPending(state string) bool {
 }
 
 type nodeVerification struct {
-	Ticket     string   `json:"ticket"`
-	ExpiresAt  int64    `json:"expiresAt"`
-	Node       Identity `json:"node"`
-	Label      string   `json:"label"`
-	URL        string   `json:"url"`
-	PlainHTTP  bool     `json:"plainHttp"`
-	actorID    string
-	bearerHash string
-	token      string
+	Ticket         string   `json:"ticket"`
+	ExpiresAt      int64    `json:"expiresAt"`
+	Node           Identity `json:"node"`
+	Label          string   `json:"label"`
+	URL            string   `json:"url"`
+	PlainHTTP      bool     `json:"plainHttp"`
+	TLSFingerprint string   `json:"tlsFingerprint,omitempty"`
+	actorID        string
+	bearerHash     string
+	token          string
 }
 
 type DashboardOptions struct {
-	Accounts *DashboardAccounts
+	CheckUpdates bool
+	UpdateClient updatecheck.Doer
+	Accounts     *DashboardAccounts
 	// Retain outside database backups. A missing/wrong key is a startup error.
-	Key               []byte
-	CORSOrigins       []string
-	LocalNodeURL      string
-	LocalNodeToken    string
-	ConnectionURL     string
-	ConnectionEnabled bool
-	NodeImageTag      string
+	Key                      []byte
+	CORSOrigins              []string
+	LocalNodeURL             string
+	LocalNodeToken           string
+	LocalNodeTLSFingerprint  string
+	ConnectionTLSFingerprint string
+	ConnectionURL            string
+	ConnectionEnabled        bool
+	NodeImageTag             string
 }
 
 type Dashboard struct {
-	accounts              *DashboardAccounts
-	mu                    sync.Mutex
-	registry              map[string]registeredNodeRecord
-	tickets               map[string]nodeVerification
-	busy                  map[string]bool
-	box                   cipher.AEAD
-	client                *http.Client
-	transport             *http.Transport
-	networkSlots          chan struct{}
-	origins               []string
-	localURL              string
-	localToken            string
-	start                 sync.Once
-	done                  chan struct{}
-	connections           *nodeconnection.Hub
-	invitations           map[string]nodeInvitationRecord
-	connectionURL         string
-	connectionEnabled     bool
-	nodeImageTag          string
-	connectionSlots       chan struct{}
-	connectionResultSlots chan struct{}
-	nodeCallSlots         map[string]chan struct{}
+	updates                  *dashboardUpdates
+	accounts                 *DashboardAccounts
+	mu                       sync.Mutex
+	registry                 map[string]registeredNodeRecord
+	tickets                  map[string]nodeVerification
+	busy                     map[string]bool
+	box                      cipher.AEAD
+	client                   *http.Client
+	transport                *http.Transport
+	networkSlots             chan struct{}
+	origins                  []string
+	localURL                 string
+	localToken               string
+	localTLSFingerprint      string
+	connectionTLSFingerprint string
+	tlsMu                    sync.Mutex
+	tlsClients               map[string]*http.Client
+	start                    sync.Once
+	done                     chan struct{}
+	connections              *nodeconnection.Hub
+	invitations              map[string]nodeInvitationRecord
+	connectionURL            string
+	connectionEnabled        bool
+	nodeImageTag             string
+	connectionSlots          chan struct{}
+	connectionResultSlots    chan struct{}
+	nodeCallSlots            map[string]chan struct{}
 }
 
 func NewDashboard(o DashboardOptions) (*Dashboard, error) {
@@ -123,6 +138,7 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 	d := &Dashboard{accounts: o.Accounts, registry: map[string]registeredNodeRecord{}, tickets: map[string]nodeVerification{}, busy: map[string]bool{}, box: box,
 		transport: transport, client: &http.Client{Transport: transport, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		networkSlots: make(chan struct{}, 8), origins: slices.Clone(o.CORSOrigins), done: make(chan struct{})}
+	d.tlsClients = map[string]*http.Client{}
 	d.connections, d.invitations = nodeconnection.NewHub(), make(map[string]nodeInvitationRecord)
 	d.connectionSlots, d.connectionResultSlots = make(chan struct{}, 96), make(chan struct{}, 8)
 	d.connectionEnabled, d.nodeImageTag = o.ConnectionEnabled, o.NodeImageTag
@@ -135,10 +151,18 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 			return nil, err
 		}
 	}
+	d.connectionTLSFingerprint, err = validateTLSOrigin(d.connectionURL, o.ConnectionTLSFingerprint)
+	if err != nil {
+		return nil, err
+	}
 	if o.LocalNodeURL != "" {
 		d.localURL, err = dashboardNodeURL(o.LocalNodeURL)
 		if err != nil || tokenValue(o.LocalNodeToken) != nil {
 			return nil, errors.New("Local node auto-enrollment requires a valid private origin and admin token")
+		}
+		d.localTLSFingerprint, err = validateTLSOrigin(d.localURL, o.LocalNodeTLSFingerprint)
+		if err != nil {
+			return nil, err
 		}
 		d.localToken = o.LocalNodeToken
 	}
@@ -177,6 +201,9 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 				return nil, errors.New("Invalid saved dashboard node address")
 			}
 		}
+		if row.TLSFingerprint, err = validateTLSOrigin(row.URL, row.TLSFingerprint); err != nil {
+			return nil, errors.New("Invalid saved node TLS trust")
+		}
 		if _, e := d.openSecrets(row); e != nil {
 			return nil, errors.New("Cannot decrypt saved node credentials; restore the matching dashboard key")
 		}
@@ -189,14 +216,26 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 	if err = d.loadInvitations(); err != nil {
 		return nil, err
 	}
+	d.updates, err = newDashboardUpdates(d, o.CheckUpdates, o.UpdateClient)
+	if err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
 func (d *Dashboard) Close() {
+	if d.updates != nil {
+		d.updates.client.Close()
+	}
 	if d.connections != nil {
 		d.connections.Close()
 	}
 	d.transport.CloseIdleConnections()
+	d.tlsMu.Lock()
+	for _, client := range d.tlsClients {
+		client.CloseIdleConnections()
+	}
+	d.tlsMu.Unlock()
 }
 
 func dashboardNodeURL(raw string) (string, error) {
@@ -222,7 +261,11 @@ func registryAAD(row registeredNodeRecord) []byte {
 	if row.Connection == "outbound" {
 		return []byte("canary-dashboard-outbound-v1\x00" + row.ID + "\x00" + row.NodeID + "\x00" + row.ConnectionHash)
 	}
-	return []byte("canary-dashboard-v1\x00" + row.ID + "\x00" + row.NodeID + "\x00" + row.URL)
+	aad := "canary-dashboard-v1\x00" + row.ID + "\x00" + row.NodeID + "\x00" + row.URL
+	if row.TLSFingerprint != "" {
+		aad += "\x00tls:" + row.TLSFingerprint
+	}
+	return []byte(aad)
 }
 
 func (d *Dashboard) sealSecrets(row registeredNodeRecord, secret dashboardNodeSecrets) (string, error) {
@@ -298,6 +341,7 @@ func (d *Dashboard) publicNode(row registeredNodeRecord, role string) Registered
 	v.Local = row.Local && d.localURL != "" && row.URL == d.localURL
 	if role != "admin" {
 		v.URL = ""
+		v.TLSFingerprint = ""
 	}
 	return v
 }
@@ -353,8 +397,16 @@ func (d *Dashboard) nodeCall(ctx context.Context, row registeredNodeRecord, auth
 	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := d.client.Do(req)
+	client, err := d.tlsClient(row.TLSFingerprint)
 	if err != nil {
+		return nil, nil, fail(502, "Cannot authenticate the node certificate")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		var certificateError *tls.CertificateVerificationError
+		if errors.Is(err, nodetls.ErrCertificate) || errors.As(err, &certificateError) {
+			return nil, nil, fail(502, "Cannot authenticate the node certificate; verify its fingerprint and validity")
+		}
 		return nil, nil, fail(502, "Cannot reach this node from the dashboard server; check its address, certificate and permissions")
 	}
 	defer resp.Body.Close()

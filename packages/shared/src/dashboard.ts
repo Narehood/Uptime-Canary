@@ -17,6 +17,8 @@ export interface RegisteredNode {
   connection?: 'direct' | 'outbound';
   /** Transport activity, not an observation or proof that monitoring is healthy. */
   lastConnectedAt?: number;
+  /** Administrator-only certificate trust anchor for a direct HTTPS node. */
+  tlsFingerprint?: string;
 }
 
 export interface NodeVerification {
@@ -26,16 +28,19 @@ export interface NodeVerification {
   label: string;
   url: string;
   plainHttp: boolean;
+  tlsFingerprint?: string;
 }
 
 export interface DashboardOwnerInput { name: string; password: string; code: string }
-export interface NodeVerificationInput { label: string; url: string; token: string }
+export interface NodeVerificationInput { label: string; url: string; token: string; tlsFingerprint?: string }
 export const DASHBOARD_ROLES: readonly Role[] = ['admin', 'editor', 'viewer'];
 
 /** Admin-only wizard configuration; the browser never contacts connectionUrl. */
 export interface NodeOnboardingCapabilities {
   outboundEnabled: boolean;
   connectionUrl?: string;
+  /** Present only when the dedicated listener itself terminates native TLS. */
+  connectionTlsFingerprint?: string;
   connectionProtocol: 1;
   imageTag: string;
   containerPlatforms: string[];
@@ -50,6 +55,7 @@ export interface NodeInvitation {
   label: string;
   nodeId: string;
   connectionUrl: string;
+  connectionTlsFingerprint?: string;
   expiresAt: number;
   state: 'waiting' | 'connected' | 'confirmed' | 'expired';
   registrationId?: string;

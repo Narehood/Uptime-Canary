@@ -16,6 +16,8 @@ services:
       CANARY_ADMIN_TOKEN: ${CANARY_ADMIN_TOKEN:?Set a unique random admin token}
       CANARY_CLUSTER_TOKEN: ${CANARY_CLUSTER_TOKEN:?Set a separate random cluster token}
       CANARY_PEERS: ${CANARY_PEERS:-[]}
+      # Empty keeps legacy HTTP, or inherits a retained native certificate.
+      CANARY_TLS_MODE: ${CANARY_TLS_MODE:-}
       CANARY_CORS_ORIGINS: ${CANARY_CORS_ORIGINS:?Set the browser dashboard origin}
       CANARY_HOST: 0.0.0.0
       CANARY_PORT: "3100"
@@ -52,6 +54,9 @@ services:
       CANARY_LOCAL_NODE_TOKEN: ${CANARY_ADMIN_TOKEN:?Set a unique random admin token}
       CANARY_DASHBOARD_ORIGINS: ${CANARY_CORS_ORIGINS:?Set the browser dashboard origin}
       CANARY_DASHBOARD_CONNECTION_URL: ${CANARY_DASHBOARD_CONNECTION_URL:-}
+      CANARY_DASHBOARD_CONNECTION_TLS_MODE: ${CANARY_DASHBOARD_CONNECTION_TLS_MODE:-}
+      CANARY_LOCAL_NODE_TLS_FINGERPRINT: ${CANARY_LOCAL_NODE_TLS_FINGERPRINT:-}
+      CANARY_UPDATE_CHECKS: ${CANARY_UPDATE_CHECKS:-true}
       CANARY_DASHBOARD_NODE_IMAGE_TAG: ${CANARY_IMAGE_TAG:-latest}
     volumes:
       - canary-dashboard-data:/data

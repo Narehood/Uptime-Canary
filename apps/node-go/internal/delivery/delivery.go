@@ -84,6 +84,7 @@ type WebhookConfig struct {
 	URL               string `json:"url"`
 	BearerToken       string `json:"bearerToken,omitempty"`
 	AllowInsecureHTTP bool   `json:"allowInsecureHTTP,omitempty"`
+	Embed             bool   `json:"embed,omitempty"`
 }
 
 type Templates struct {
@@ -117,6 +118,14 @@ type Message struct {
 	IncidentID          string          `json:"incidentId,omitempty"`
 	ObservationsSummary string          `json:"observationsSummary,omitempty"`
 	IdempotencyKey      string          `json:"idempotencyKey,omitempty"`
+	Status              string          `json:"status,omitempty"`
+	MonitorType         string          `json:"monitorType,omitempty"`
+	MonitorTarget       string          `json:"monitorTarget,omitempty"`
+	OpenedAt            string          `json:"openedAt,omitempty"`
+	ResolvedAt          string          `json:"resolvedAt,omitempty"`
+	Downtime            string          `json:"downtime,omitempty"`
+	NodeResults         string          `json:"nodeResults,omitempty"`
+	SenderNode          string          `json:"senderNode,omitempty"`
 	Subject             string          `json:"subject,omitempty"`
 	Text                string          `json:"text,omitempty"`
 	HTML                string          `json:"html,omitempty"`

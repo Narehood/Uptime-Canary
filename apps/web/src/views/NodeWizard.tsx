@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { directTarget, imageReference, nodeIdProblem, PLATFORMS, secretsFor, setupGuide, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { directTarget, directTls, imageReference, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -230,6 +230,8 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
   const errors = { label: labelProblem(draft.label), nodeId: nodeIdProblem(draft.nodeId, taken), address: typeof target === 'string' ? target : undefined };
   const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
   const ready = typeof target !== 'string' && !errors.label && !errors.nodeId;
+  // An address without a port means 443 (or 80), which the steps then use: said, with the address on port 3100.
+  const portNote = typeof target === 'string' ? null : schemePortNote(target, draft.platform);
   const set = (change: Partial<NewNodeDraft>): void => onDraft({ ...draft, ...change });
 
   const next = (event: FormEvent): void => {
@@ -251,14 +253,17 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
       <TextField label="Node ID" mono value={draft.nodeId} onChange={nodeId => set({ nodeId })} error={live(draft.nodeId, errors.nodeId)} maxLength={128} placeholder="canary-office"
         hint="New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID." />
       <TextField label="Address the dashboard’s server will use" type="url" inputMode="url" mono value={draft.address} onChange={address => set({ address })} error={live(draft.address, errors.address)}
-        placeholder="http://100.79.12.4:3100" hint="The host’s IP on a network the dashboard’s server reaches, such as its LAN or NetBird address, and the port to publish." />
+        placeholder="https://100.79.12.4:3100" hint="The host’s IP on a network the dashboard’s server reaches, such as its LAN or NetBird address, and the port to publish. With https:// the node encrypts the connection itself; use http:// only on a network that encrypts it already." />
       {typeof target !== 'string' && ready && pair ? (
         <>
           <ImageLine capabilities={capabilities} />
           {target.allInterfaces
             ? <p className="small fwarn"><Glyph tone="warn" />A host name can’t be published on one address, so the commands publish port {target.port} on every address of the host. Limit who reaches it with the host’s firewall.</p>
             : <p className="small muted">The commands publish port {target.port} on {target.listen} only, so it must be an address of this host itself. If the dashboard’s server reaches the host through NAT or a port forward, put the host’s own address, which the forward points to, in the publish line (CANARY_HOST on a VM). If the address belongs to a VPN that starts after Docker, Docker can’t publish on it at boot; then publish on 0.0.0.0 and limit it with the firewall.</p>}
-          <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use an address on a network that encrypts it, such as NetBird or Tailscale.</p>
+          {portNote ? <p className="small muted">{portNote}</p> : null}
+          {directTls(target)
+            ? <p className="small muted"><Icon name="lock" className="inline" />HTTPS: the node serves TLS 1.3 itself (CANARY_TLS_MODE=auto) with a self-signed certificate it makes when it first starts, valid for ten years. No certificate authority vouches for it, so the next step asks for its fingerprint, from the line “{TLS_LOG_LINE}” in the node’s log. The dashboard’s server then accepts only that certificate, and sends the node no credential until it checks out.</p>
+            : <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use an address on a network that encrypts it, such as NetBird or Tailscale.</p>}
           <TokensNote nodeId={draft.nodeId} earlier={earlier} />
           <SetupGuide setup={{ nodeId: draft.nodeId, name: draft.label, imageTag: capabilities.imageTag, secrets: pair, direct: target }} platform={draft.platform}
             onPlatform={platform => set({ platform })} onHandled={() => onUse(draft.nodeId)} />
@@ -280,8 +285,25 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
 
 // ----- a node that reaches this dashboard: invitation, settings, first-pair confirmation
 
-const withoutToken = ({ id, label, nodeId, connectionUrl, expiresAt, state, registrationId, node }: NodeInvitationCreated): NodeInvitation =>
-  ({ id, label, nodeId, connectionUrl, expiresAt, state, ...(registrationId ? { registrationId } : {}), ...(node ? { node } : {}) });
+const withoutToken = ({ id, label, nodeId, connectionUrl, connectionTlsFingerprint, expiresAt, state, registrationId, node }: NodeInvitationCreated): NodeInvitation =>
+  ({ id, label, nodeId, connectionUrl, ...(connectionTlsFingerprint ? { connectionTlsFingerprint } : {}), expiresAt, state, ...(registrationId ? { registrationId } : {}), ...(node ? { node } : {}) });
+
+/** The line the dashboard's server logs when its node-connection listener serves its own certificate (dashboard_server.go). */
+export const DASHBOARD_TLS_LOG_LINE = 'Dashboard connection TLS certificate fingerprint:';
+
+/**
+ * The dashboard's own node-connection certificate, when its listener terminates TLS itself: the settings pin it on the
+ * node with CANARY_DASHBOARD_TLS_FINGERPRINT. It's the dashboard's certificate, not the node's, and not the connection
+ * fingerprint compared when the node connects. Without it, the node checks the address's certificate as usual.
+ */
+function ConnectionTrust({ pin }: { pin?: string }) {
+  if (!pin) return <p className="small muted">Set by this dashboard’s deployment. The node must reach it over HTTPS and trust its certificate; nothing here turns certificate checks off.</p>;
+  return (
+    <p className="small muted">
+      Set by this dashboard’s deployment, whose server serves this address with a certificate of its own. The node’s settings below pin exactly that certificate with CANARY_DASHBOARD_TLS_FINGERPRINT, so it connects only to this dashboard; nothing here turns certificate checks off. This page got the fingerprint from this dashboard’s server over your sign-in. If you reached this page over a network you don’t trust, first compare it with the line “{DASHBOARD_TLS_LOG_LINE}” in the dashboard server’s own log. It names the dashboard’s certificate: it isn’t the node’s connection fingerprint you compare when the node connects.
+    </p>
+  );
+}
 
 /** What the connected node proved: its ID, name, version and the fingerprint of its connection credential. */
 export function PairingFacts({ invitation }: { invitation: NodeInvitation }) {
@@ -507,8 +529,11 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
     return (
       <form className="connect-form" onSubmit={event => { void create(event); }} noValidate aria-busy={busy === 'create'}>
         <p className="sec">{fresh ? 'The new node' : 'The node'} opens an HTTPS connection to this dashboard’s node-connection address and keeps it open; this dashboard never dials it. No inbound port or firewall opening is needed on the node.</p>
-        <dl className="kv"><dt>Node-connection address</dt><dd className="mono">{capabilities.connectionUrl}</dd></dl>
-        <p className="small muted">Set by this dashboard’s deployment. The node must reach it over HTTPS and trust its certificate; nothing here turns certificate checks off.</p>
+        <dl className="kv">
+          <dt>Node-connection address</dt><dd className="mono">{capabilities.connectionUrl}</dd>
+          {capabilities.connectionTlsFingerprint ? <><dt>Its certificate fingerprint</dt><dd className="mono">{capabilities.connectionTlsFingerprint}</dd></> : null}
+        </dl>
+        <ConnectionTrust pin={capabilities.connectionTlsFingerprint} />
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
         <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
           hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
@@ -558,6 +583,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
       <dl className="kv">
         <dt>Name on this dashboard</dt><dd>{current.label}</dd>
         <dt>Node-connection address</dt><dd className="mono">{current.connectionUrl}</dd>
+        {current.connectionTlsFingerprint ? <><dt>Its certificate fingerprint</dt><dd className="mono">{current.connectionTlsFingerprint}</dd></> : null}
       </dl>
       {token && current.state !== 'confirmed' ? (fresh && !pair
         ? <Banner tone="down" title="No settings without the new node’s tokens">{NO_TOKENS} This invitation’s token stays here until the dialog closes; cancel the invitation if you won’t use it.</Banner>
@@ -565,7 +591,9 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
           <>
             <ImageLine capabilities={capabilities} />
             {fresh ? <TokensNote nodeId={current.nodeId} earlier={earlier} /> : null}
-            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: pair, outbound: { connectionUrl: current.connectionUrl, token } }}
+            {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
+            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: pair,
+              outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}
               platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); if (fresh) onUse(current.nodeId); }} />
           </>
         )) : null}

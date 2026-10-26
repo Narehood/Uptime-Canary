@@ -15,6 +15,8 @@ services:
       CANARY_ADMIN_TOKEN: ${CANARY_ADMIN_TOKEN:?Set a unique random admin token}
       CANARY_CLUSTER_TOKEN: ${CANARY_CLUSTER_TOKEN:?Set a separate random cluster token}
       CANARY_PEERS: ${CANARY_PEERS:-[]}
+      # Empty keeps legacy HTTP, or inherits a retained native certificate.
+      CANARY_TLS_MODE: ${CANARY_TLS_MODE:-}
       CANARY_CORS_ORIGINS: ${CANARY_CORS_ORIGINS:?Set the browser dashboard origin}
       CANARY_HOST: 0.0.0.0
       CANARY_PORT: "3100"

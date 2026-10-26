@@ -3,11 +3,17 @@ package canary
 import (
 	"runtime"
 	"runtime/debug"
+	"time"
 )
 
 // releaseVersion is optional linker-supplied release metadata. An ordinary Go
 // build reports its actual module version instead of inventing a release tag.
 var releaseVersion string
+
+// containerRevision is publisher-provided source metadata, separate from Go
+// VCS provenance. It never turns an unknown modification state into clean.
+var containerRevision string
+var containerBuiltAt string
 
 // BinaryIdentity describes this executable, never a database or remote node.
 // Modified is nil when complete Git provenance is unavailable.
@@ -19,6 +25,8 @@ type BinaryIdentity struct {
 	OS            string `json:"os"`
 	Arch          string `json:"arch"`
 	SourceCommit  string `json:"sourceCommit,omitempty"`
+	ImageRevision string `json:"imageRevision,omitempty"`
+	ImageBuiltAt  string `json:"imageBuiltAt,omitempty"`
 	Modified      *bool  `json:"modified"`
 	PeerProtocol  int    `json:"peerProtocol"`
 }
@@ -26,7 +34,26 @@ type BinaryIdentity struct {
 // LocalBinaryIdentity needs neither environment credentials nor node startup.
 func LocalBinaryIdentity() BinaryIdentity {
 	info, ok := debug.ReadBuildInfo()
-	return binaryIdentity(info, ok, releaseVersion)
+	result := binaryIdentity(info, ok, releaseVersion)
+	if validImageRevision(containerRevision) {
+		result.ImageRevision = containerRevision
+		if created, err := time.Parse(time.RFC3339, containerBuiltAt); err == nil && len(containerBuiltAt) <= 40 && created.UnixMilli() > 0 {
+			result.ImageBuiltAt = created.UTC().Format(time.RFC3339)
+		}
+	}
+	return result
+}
+
+func validImageRevision(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func binaryIdentity(info *debug.BuildInfo, ok bool, label string) BinaryIdentity {
