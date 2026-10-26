@@ -5,6 +5,7 @@ COPY packages ./packages
 COPY apps ./apps
 COPY deploy ./deploy
 COPY Dockerfile.web ./Dockerfile.web
+COPY docs/node-onboarding.md ./docs/node-onboarding.md
 COPY services/game-query/server.mjs ./services/game-query/server.mjs
 COPY scripts/public-availability-pure.mjs scripts/proxy-auth-pure.mjs scripts/node-login-copy-pure.mjs scripts/dashboard-gateway-pure.mjs scripts/dashboard-control-plane-pure.mjs scripts/push-commands-pure.mjs scripts/frontend-review-pure.mjs scripts/editor-preservation-pure.mjs scripts/monitor-clone-pure.mjs scripts/tailscale-pure.mjs scripts/browser-pure.mjs scripts/gamedig-pure.mjs scripts/steam-pure.mjs scripts/system-service-pure.mjs scripts/pm2-pure.mjs scripts/network-options-pure.mjs scripts/status-presentation-pure.mjs scripts/channel-defaults-pure.mjs scripts/registry-maintenance-pure.mjs scripts/node-onboarding-pure.mjs scripts/node-setup-fields-pure.mjs scripts/alert-templates-pure.mjs scripts/update-notice-pure.mjs scripts/cdp-interception.mjs scripts/cdp-interception-test.mjs scripts/tls-fixture.mjs scripts/tls-fixture-test.mjs ./scripts/
 RUN npm ci --ignore-scripts --no-audit --no-fund \
