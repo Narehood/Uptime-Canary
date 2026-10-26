@@ -37,8 +37,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Check promotion failure controls
-        run: python3 -B scripts/publish_container_images_test.py
+      - name: Check promotion failure and admission controls
+        run: |
+          python3 -B scripts/publish_container_images_test.py
+          python3 -B scripts/container_publication_gate_test.py
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Image identity
@@ -75,51 +77,3 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
-
-  publish:
-    name: Publish matching latest images
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: images
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout promotion helper
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote all completed images
-        id: promote
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          if [[ "$current" != "$GITHUB_SHA" ]]; then
-            echo "main advanced; retaining commit images without moving latest." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
-          python3 -B scripts/publish-container-images.py --prefix "$prefix" --commit "$GITHUB_SHA" --with-game-query
-          echo "Initial publication may require the package owner to make each GHCR package public before anonymous pulls work." >> "$GITHUB_STEP_SUMMARY"
-      - name: Verify all images pull without credentials
-        if: steps.promote.outputs.published == 'true'
-        env:
-          DOCKER_CONFIG: ${{ runner.temp }}/canary-anonymous-docker
-        run: |
-          mkdir -m 700 "$DOCKER_CONFIG"
-          prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
-          for component in node web game-query; do
-            docker pull "$prefix-$component:latest"
-            revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$prefix-$component:latest")"
-            test "$revision" = "$GITHUB_SHA"
-          done

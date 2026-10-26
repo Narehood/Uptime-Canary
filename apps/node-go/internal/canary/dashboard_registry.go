@@ -6,7 +6,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,7 +18,6 @@ import (
 	"sync"
 	"time"
 	"uptime-canary/apps/node-go/internal/nodeconnection"
-	"uptime-canary/apps/node-go/internal/nodetls"
 	"uptime-canary/apps/node-go/internal/updatecheck"
 )
 
@@ -403,11 +401,7 @@ func (d *Dashboard) nodeCall(ctx context.Context, row registeredNodeRecord, auth
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		var certificateError *tls.CertificateVerificationError
-		if errors.Is(err, nodetls.ErrCertificate) || errors.As(err, &certificateError) {
-			return nil, nil, fail(502, "Cannot authenticate the node certificate; verify its fingerprint and validity")
-		}
-		return nil, nil, fail(502, "Cannot reach this node from the dashboard server; check its address, certificate and permissions")
+		return nil, nil, dashboardNodeConnectionError(err)
 	}
 	defer resp.Body.Close()
 	if row.NodeID != "" && resp.Header.Get("X-Canary-Node-Id") != row.NodeID {

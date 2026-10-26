@@ -1516,7 +1516,10 @@ await check('TLS rules and failures: empty means ordinary certificate checks, a 
   const registry = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_registry.go'), 'utf8');
   const nodetls = readFileSync(resolve(root, 'apps/node-go/internal/nodetls/tls.go'), 'utf8');
   const generic = 'Cannot reach this node from the dashboard server; check its address, certificate and permissions';
-  assert.ok(registry.includes(`fail(502, "${generic}")`) && registry.includes('fail(502, "Cannot authenticate the node certificate")'), 'Go’s 502 wording');
+  // The transport classifier moved to its own Go helper without changing these generic/certificate refusals.
+  // Keep the original exact 502 wording and also require nodeCall to use that classifier.
+  const transportErrors = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_connection_errors.go'), 'utf8');
+  assert.ok(registry.includes('dashboardNodeConnectionError(err)') && transportErrors.includes(`fail(502, "${generic}")`) && registry.includes('fail(502, "Cannot authenticate the node certificate")'), 'Go’s 502 wording');
   assert.ok(nodetls.includes('errors.New("Cannot authenticate the Canary TLS certificate")'));
   for (const detail of ['Cannot authenticate the node certificate', 'Cannot authenticate the Canary TLS certificate', 'Node TLS certificate does not match the saved fingerprint', 'TLS fingerprint mismatch']) assert.equal(dashboard.certificateRefused(detail), true, detail);
   for (const detail of [generic, 'Cannot reach this node from the dashboard server', 'Node credential was refused', 'Different node at this address', '']) assert.equal(dashboard.certificateRefused(detail), false, detail);

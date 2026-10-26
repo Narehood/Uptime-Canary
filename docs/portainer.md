@@ -57,18 +57,27 @@ they use:
 
 GitHub Actions builds the existing Dockerfiles. Pull requests build without
 publishing. Pushes to `main`, or a manual **Container images** run on `main`,
-publish `sha-<full commit>` tags and advance `latest` after both images build
-successfully. A run for an older commit does not advance `latest` after `main`
-has moved. These development tags do not imply a tagged release or release
+publish `sha-<full commit>` tags for the node, dashboard and optional game-query
+service as their builds finish. The separate promotion workflow advances
+`latest` only after the three image builds, four Alpine phases (including proof
+and race), and three native package targets pass on the exact current `main`
+commit. Pending, failed, cancelled, missing or skipped required jobs block
+promotion. Workflow completion events check once without polling or rerunning
+validation; a manual promotion dispatch on `main` can recheck existing results.
+A run for an older commit does not advance `latest` after `main` has moved.
+For a documentation-only commit whose validation workflows were skipped, run
+the image and both validation workflows explicitly on `main` if new images are
+needed. The manual promotion action only rechecks results; it starts no tests.
+These development tags do not imply a tagged release or release
 approval. A commit tag identifies its source; pin an image digest when you
 need its exact bytes to remain fixed across a rebuild.
 
 Pending publishing runs queue rather than replacing one another. Before
-promoting `latest`, the publisher captures both previous digests. If a write
+promoting `latest`, the publisher captures the three previous digests. If a write
 fails, it attempts to restore every attempted tag, including a timed-out write
 that might have committed. A rollback failure leaves the job failed and
 requires repair. First publication has no previous tag to restore; a failed
-bootstrap remains incomplete. Updating two registry packages is not atomic:
+bootstrap remains incomplete. Updating three registry packages is not atomic:
 use matching commit tags or digests when a deployment requires a fixed pair.
 
 For a matching node/dashboard source revision, set `CANARY_IMAGE_TAG` to
@@ -321,6 +330,41 @@ the host daemon, service manager or PM2 socket. Access and account prerequisites
 must be provisioned explicitly; a container does not gain them merely by being
 on the same machine. See [Tailscale](tailscale-monitors.md),
 [system services](system-services.md) and [PM2](pm2-monitors.md).
+
+## Diagnose a node connection failure
+
+The startup log reports the actual socket binding. `0.0.0.0` or `[::]` means
+all interfaces; it is not an address to enter in the dashboard. The separate
+connectable loopback URL used internally does not restrict that listener.
+Earlier builds printed `127.0.0.1` even for a wildcard binding.
+
+For containers, check both settings: `CANARY_HOST=0.0.0.0` inside the node, and
+Docker's host-side port mapping. Repository templates default the published
+host address to `127.0.0.1`; a remote dashboard or peer needs a reachable private
+interface instead. Wizard-generated stacks already publish on the address you
+entered. That address must belong to the Docker host. Publishing a port does
+not create a VPN route or grant access through VPN policies and firewalls.
+
+The direct connection mode requires the dashboard container to reach the node.
+If only the node can reach the dashboard, configure the dedicated
+[node-initiated connection endpoint](node-onboarding.md) instead.
+
+When Portainer's console will not open, use SSH or a host terminal on the machine
+running the dashboard. Find its container with `docker ps`, then replace
+`DASHBOARD_CONTAINER` and `NODE_HOST_IP` below:
+
+```sh
+docker exec DASHBOARD_CONTAINER wget -S -T 5 -O /dev/null https://NODE_HOST_IP:3100/healthz
+```
+
+This sends no credentials and tests from the dashboard's network namespace.
+A self-signed certificate error demonstrates network and TLS reachability but
+does not verify that the expected node answered. Compare its TLS fingerprint
+with the node's own log before enrollment. Timeouts suggest a route or filtering
+problem; connection refusal suggests a closed/rejected port or listener. An
+HTTP response to an HTTPS request indicates a scheme/TLS mismatch. The dashboard
+reports those categories without returning raw private URLs or transport errors.
+Do not disable certificate verification for authenticated requests.
 
 ## Scope and references
 
