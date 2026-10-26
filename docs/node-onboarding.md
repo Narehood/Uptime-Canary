@@ -90,8 +90,13 @@ reached by the dashboard server, never the dashboard's own address. The next
 verification step keeps that URL.
 
 **Publish or listen address on the node host** is a separate setting. Its
-default, `0.0.0.0`, publishes the port on all IPv4 interfaces; use the host's
-firewall to restrict access. To bind one interface, enter an IP actually owned
+default, `0.0.0.0`, publishes the port on all IPv4 interfaces. Docker-published
+traffic can bypass ordinary host INPUT/UFW rules. Choose an explicit host IP
+to limit exposed interfaces, and use Docker-aware filtering to restrict who
+can connect (for example, `DOCKER-USER` with Docker's iptables backend; use
+the corresponding filtering for its nftables backend). Native VM listeners
+use the host's normal firewall. See [Docker's firewall guidance](https://docs.docker.com/engine/network/packet-filtering-firewalls/).
+To bind one interface, enter an IP actually owned
 by the Docker or VM host. A VPN or NAT destination address may belong to another
 machine and must not be used as the local binding. Inside a container,
 `CANARY_HOST` remains `0.0.0.0`; the separate setting controls Docker's host-side

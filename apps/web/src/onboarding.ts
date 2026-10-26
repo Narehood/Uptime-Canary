@@ -227,6 +227,13 @@ export const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'vm', label: 'Linux VM' },
 ];
 
+/** Published Docker traffic can bypass INPUT/UFW; native listeners use the host's normal firewall path. */
+export function bindingAccessNote(platform: Platform): string {
+  return platform === 'vm'
+    ? 'Use the host’s firewall so that only the dashboard’s server reaches that port.'
+    : 'Docker-published traffic can bypass host INPUT/UFW rules. An explicit bind address limits exposed interfaces; use Docker-aware filtering to limit who can connect, such as DOCKER-USER with Docker’s iptables backend.';
+}
+
 export interface NodeSetup {
   platform: Platform;
   nodeId: string;

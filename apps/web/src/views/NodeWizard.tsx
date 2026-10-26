@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -276,13 +276,13 @@ function BindingNote({ target, platform }: { target: DirectTarget; platform: Pla
     const family = target.host.startsWith('[') ? 'IPv6' : 'IPv4';
     return (
       <p className="small fwarn"><Glyph tone="warn" />
-        <span>The commands publish port {target.port} on every {family} interface of the node host ({target.listen}). {where}{vm ? ' A wildcard listener on a Linux VM may accept the other IP version too.' : ''} Use the host’s firewall so that only the dashboard’s server reaches that port.</span>
+        <span>The commands publish port {target.port} on every {family} interface of the node host ({target.listen}). {where}{vm ? ' A wildcard listener on a Linux VM may accept the other IP version too.' : ''} {bindingAccessNote(platform)}</span>
       </p>
     );
   }
   return (
     <p className="small muted">
-      The commands publish port {target.port} on {target.listen} only, so the node host itself must have that address. {where} If it belongs to a VPN that comes up after {vm ? 'the service' : 'Docker'} starts, the port can’t open on it at boot; then use 0.0.0.0 and limit it with the host’s firewall.
+      The commands publish port {target.port} on {target.listen} only, so the node host itself must have that address. {where} If it belongs to a VPN that comes up after {vm ? 'the service' : 'Docker'} starts, the port can’t open on it at boot; then use 0.0.0.0. {bindingAccessNote(platform)}
     </p>
   );
 }
@@ -327,7 +327,7 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
       <TextField label="Node URL" type="url" inputMode="url" mono value={draft.address} onChange={address => set({ address })} error={live(draft.address, errors.address)}
         placeholder="https://100.79.12.4:3100" hint="The new node’s address as the dashboard’s server reaches it, such as the node host’s LAN, NetBird or Tailscale IP, with the port the steps publish. It’s never this dashboard’s own address. Verify uses this URL unchanged; it doesn’t choose which address Docker or the node binds to. With https:// the node encrypts the connection itself; use http:// only on a network that encrypts it already." />
       <TextField label="Publish or listen address on the node host" mono value={draft.bindAddress ?? '0.0.0.0'} onChange={bindAddress => set({ bindAddress })} error={live(draft.bindAddress ?? '0.0.0.0', errors.bindAddress)}
-        placeholder="0.0.0.0" maxLength={64} hint="Separate from the Node URL. 0.0.0.0, the default, means all of the host’s IPv4 interfaces. To accept connections on one interface only, enter an IP address the Docker or VM host itself has, or :: for all IPv6 interfaces. Not a VPN, NAT or port-forward address that belongs to another machine, and no URL, host name or port." />
+        placeholder="0.0.0.0" maxLength={64} hint={`Separate from the Node URL. 0.0.0.0, the default, means all of the host’s IPv4 interfaces. To accept connections on one interface only, enter an IP address the Docker or VM host itself has, or :: for all IPv6 interfaces. Not a VPN, NAT or port-forward address that belongs to another machine, and no URL, host name or port. ${bindingAccessNote(draft.platform)}`} />
       {typeof target !== 'string' && ready && pair ? (
         <>
           <ImageLine capabilities={capabilities} />

@@ -127,5 +127,23 @@ await check('copy controls take a raw row value and only report handling after a
   assert.ok(/onCopied=\{variable\.secret \? onHandled : undefined\}/u.test(view), 'only successful private copies count as handling the secret');
   assert.doesNotMatch(source('apps/web/src/onboarding.ts'), /localStorage|sessionStorage|fetch\(/u);
 });
+await check('Docker filtering guidance differs from native VM firewall guidance and keeps default IPv4 explicit', () => {
+  for (const platform of ['docker', 'compose', 'portainer', 'vm']) {
+    const markup = renderToStaticMarkup(React.createElement(wizard.NewNodeDeploy, { draft: { label: 'Office', nodeId: 'DOCKER02', address: 'https://100.99.98.102:3100', platform }, onDraft: noop, secrets, onboarding: { data: { imageTag: 'latest', containerPlatforms: ['linux/amd64'], nativeDownloadAvailable: false }, loading: false, reload: noop }, taken: { nodes: [], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop }));
+    // Compare visible words: renderToStaticMarkup need not emit React's hydration comment separators.
+    const words = markup.replace(/<!--[\s\S]*?-->/gu, '').replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ');
+    const advice = onboarding.bindingAccessNote(platform);
+    if (platform === 'vm') {
+      assert.ok(advice.includes('host’s firewall') && !advice.includes('DOCKER-USER'));
+      assert.ok(!markup.includes('INPUT/UFW'), 'native listener must not inherit the Docker warning');
+    } else {
+      assert.ok(markup.includes('INPUT/UFW') && markup.includes('DOCKER-USER') && markup.includes('iptables backend'));
+      assert.ok(words.includes('every IPv4 interface'), 'default Docker mapping is explicitly IPv4');
+      assert.ok(!words.includes('every IPv6 interface'), 'no default IPv6 exposure claim');
+    }
+  }
+  const guide = source('docs/node-onboarding.md');
+  assert.ok(guide.includes('INPUT/UFW') && guide.includes('DOCKER-USER') && guide.includes('nftables backend'));
+});
 scope.unregister();
 process.exitCode = failures ? 1 : 0;
