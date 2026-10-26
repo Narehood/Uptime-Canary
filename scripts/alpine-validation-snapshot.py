@@ -13,6 +13,7 @@ ROOT_FILES = (
     "Dockerfile.node", "Dockerfile.web", "Dockerfile.game-query", ".dockerignore", ".gitattributes", "compose.yaml",
     "go.mod", "go.sum", "package.json", "package-lock.json", "tsconfig.base.json",
     "apps/proof/package.json",
+    "docs/node-onboarding.md",
     "LICENSE", "THIRD_PARTY_NOTICES.txt", "third-party-manifest.json",
     "scripts/worker-race-validation.py",
     "scripts/validation_paths.py",
