@@ -102,6 +102,32 @@ guarded seconds on the same source. Existing assertions were retained. Scratch
 returned to zero and storage stayed within budget. The earlier complete browser
 and process results keep their original source scope.
 
+## Hosted upgrade-fixture follow-up
+
+The native Linux amd64 job on PR head
+`f162d7a6127bca9a0e2322afacacfb4c63574464`
+[failed at the published-baseline upgrade gate](https://github.com/Narehood/Uptime-Canary/actions/runs/40324419680/job/121577563951).
+Its 25/25 regular process proofs, actual PM2 and sandboxed Chromium checks had
+passed. The separate upgrade of dashboard accounts and the encrypted node
+registry also passed. The retained-state upgrade test failed because its first
+current-node snapshot probe still sent protocol 19: the protocol-20 node
+correctly returned HTTP 400, "Invalid peer snapshot".
+
+Both current-node probes now send protocol 20. The original published baseline
+still uses protocol 18; mixed-version refusal, persisted sequences, retained
+configuration/accounts/receipts and the no-duplicate-alert assertions are
+unchanged. This is a fixture correction, with no application change.
+
+On unchanged v3 source
+`15ebd398af39b794eab81ba36fb05b5850f065737f6c05b5650695897ed1d255`,
+the proof workspace typecheck, both upgrade-runner control tests and three
+existing Go snapshot/protocol tests passed on Windows amd64 in 66.375 guarded
+seconds (Go package 1.462 s). The Go controls reject every earlier protocol,
+including 19, before merging configuration and accept the current protocol.
+Scratch returned to zero and storage stayed within budget. The actual published
+Linux executable upgrade requires the hosted Linux amd64 rerun; these local
+checks do not replace that gate or establish release acceptance.
+
 ## What is exercised
 
 - Real native TLS handshakes, retained keys, wrong pins before any HTTP
