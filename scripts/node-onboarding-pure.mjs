@@ -247,26 +247,29 @@ await check('quoting: shell, Compose YAML and systemd values read back as exactl
   }
 });
 
-await check('a new node’s address: HTTPS by default, or plain HTTP, on its own port; an IP is published on that address only, a host name everywhere', () => {
-  assert.deepEqual(onboarding.directTarget(' http://100.79.12.4:3100 '), { url: 'http://100.79.12.4:3100', host: '100.79.12.4', listen: '100.79.12.4', port: 3100, allInterfaces: false });
-  assert.deepEqual(onboarding.directTarget('http://[fd00::1]:3100/'), { url: 'http://[fd00::1]:3100', host: '[fd00::1]', listen: 'fd00::1', port: 3100, allInterfaces: false });
+// Accepted behavior change (user's2026-10-26report): the URL never selects the host binding.
+// Prior IP-specific cases below now supply that binding explicitly, preserving their exact output regressions.
+// node-setup-fields-pure covers default wildcard bindings and different remote/local IPs on every platform.
+await check('a new node’s address: HTTPS or HTTP on its own port; explicit local IP bindings stay separate from the URL', () => {
+  assert.deepEqual(onboarding.directTarget(' http://100.79.12.4:3100 ', '100.79.12.4'), { url: 'http://100.79.12.4:3100', host: '100.79.12.4', listen: '100.79.12.4', port: 3100, allInterfaces: false });
+  assert.deepEqual(onboarding.directTarget('http://[fd00::1]:3100/', 'fd00::1'), { url: 'http://[fd00::1]:3100', host: '[fd00::1]', listen: 'fd00::1', port: 3100, allInterfaces: false });
   assert.deepEqual(onboarding.directTarget('http://canary-b.lan:8080'), { url: 'http://canary-b.lan:8080', host: '0.0.0.0', listen: '0.0.0.0', port: 8080, allInterfaces: true });
-  assert.equal(onboarding.directTarget('http://10.0.0.5').port, 80);
+  assert.equal(onboarding.directTarget('http://10.0.0.5', '10.0.0.5').port, 80);
   // Accepted behavior change (TLS r1, .canary/transport-tls-contract.md: "Generated NEW-node instructions should select
   // auto"). Until now a node served only plain HTTP, so this expected https:// to be refused with "put a TLS proxy in
   // front". The node now serves TLS 1.3 itself with CANARY_TLS_MODE=auto (transport_tls.go prepareTLS; runtime.go Start
   // wraps the listener in tls.NewListener), so https:// is the wizard's suggested address and gives the same target
   // shape, with 443 as its default port. Plain http:// keeps every expectation above.
-  assert.deepEqual(onboarding.directTarget('https://10.0.0.5:3100'), { url: 'https://10.0.0.5:3100', host: '10.0.0.5', listen: '10.0.0.5', port: 3100, allInterfaces: false });
-  assert.equal(onboarding.directTarget('https://10.0.0.5').port, 443);
-  assert.deepEqual([onboarding.directTls(onboarding.directTarget('https://10.0.0.5:3100')), onboarding.directTls(onboarding.directTarget('http://10.0.0.5:3100'))], [true, false]);
+  assert.deepEqual(onboarding.directTarget('https://10.0.0.5:3100', '10.0.0.5'), { url: 'https://10.0.0.5:3100', host: '10.0.0.5', listen: '10.0.0.5', port: 3100, allInterfaces: false });
+  assert.equal(onboarding.directTarget('https://10.0.0.5', '10.0.0.5').port, 443);
+  assert.deepEqual([onboarding.directTls(onboarding.directTarget('https://10.0.0.5:3100', '10.0.0.5')), onboarding.directTls(onboarding.directTarget('http://10.0.0.5:3100', '10.0.0.5'))], [true, false]);
   assert.match(onboarding.directTarget('ftp://10.0.0.5:3100'), /Use an https:\/\/ address, like https:\/\/100\.79\.12\.4:3100/u);
   for (const bad of ['http://u:p@10.0.0.5:3100', 'http://10.0.0.5:3100/api', 'http://10.0.0.5:3100?x=1', 'http://10.0.0.5:3100#x', '10.0.0.5:3100', '',
     'https://u:p@10.0.0.5:3100', 'https://10.0.0.5:3100/api', 'ftp://10.0.0.5:3100']) assert.equal(typeof onboarding.directTarget(bad), 'string', bad);
 });
 
 const combos = [
-  { name: 'new node, the dashboard reaches it', setup: { nodeId: 'canary-office', name: 'Office', imageTag: CAPS.imageTag, secrets: SECRETS, direct: onboarding.directTarget('http://100.79.12.4:3100') } },
+  { name: 'new node, the dashboard reaches it', setup: { nodeId: 'canary-office', name: 'Office', imageTag: CAPS.imageTag, secrets: SECRETS, direct: onboarding.directTarget('http://100.79.12.4:3100', '100.79.12.4') } },
   { name: 'new node, it reaches the dashboard', setup: { nodeId: 'canary-office', name: 'Office', imageTag: CAPS.imageTag, secrets: SECRETS, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN } } },
   { name: 'running node, it reaches the dashboard', setup: { nodeId: 'canary-office', name: 'Office', imageTag: CAPS.imageTag, secrets: null, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN } } },
 ];
@@ -363,7 +366,7 @@ await check('Docker run and Compose: the published image with the template’s h
   // exact line -p '[fd00::1]:3100:3100' where it matched -p [fd00::1]:3100:3100. An IPv4 address or 0.0.0.0 has no
   // pattern character and stays unquoted, and a node the dashboard doesn't dial publishes no port.
   const published = setup => onboarding.setupGuide({ ...setup, platform: 'docker' }, true).find(block => block.key === 'run').text.split('\n').filter(line => /^\s*-p\s/u.test(line));
-  assert.deepEqual(published({ ...combos[0].setup, direct: onboarding.directTarget('http://[fd00::1]:3100') }), ["  -p '[fd00::1]:3100:3100' \\"]);
+  assert.deepEqual(published({ ...combos[0].setup, direct: onboarding.directTarget('http://[fd00::1]:3100', 'fd00::1') }), ["  -p '[fd00::1]:3100:3100' \\"]);
   assert.deepEqual(published(combos[0].setup), ['  -p 100.79.12.4:3100:3100 \\']);
   assert.deepEqual(published({ ...combos[0].setup, direct: onboarding.directTarget('http://canary-b.lan:3100') }), ['  -p 0.0.0.0:3100:3100 \\']);
   assert.deepEqual(published(combos[1].setup), []);
@@ -459,7 +462,7 @@ await check('new-node names: one helper for every output, kept apart for IDs tha
     return found;
   };
   const freshSetup = (nodeId, platform) => [
-    { nodeId, name: 'Shared host', imageTag: CAPS.imageTag, secrets: SECRETS, direct: onboarding.directTarget('http://100.79.12.4:3100'), platform },
+    { nodeId, name: 'Shared host', imageTag: CAPS.imageTag, secrets: SECRETS, direct: onboarding.directTarget('http://100.79.12.4:3100', '100.79.12.4'), platform },
     { nodeId, name: 'Shared host', imageTag: CAPS.imageTag, secrets: SECRETS, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN }, platform },
   ];
   for (const [a, b] of pairs) for (const { value: platform } of onboarding.PLATFORMS) {
@@ -490,7 +493,7 @@ await check('new-node names: one helper for every output, kept apart for IDs tha
   // The same names for one node whatever else changes: its label, image tag, address, tokens, invitation, reveal and order.
   const office = { nodeId: 'Office', imageTag: CAPS.imageTag };
   const variants = [
-    { ...office, name: 'Office', secrets: SECRETS, direct: onboarding.directTarget('http://100.79.12.4:3100') },
+    { ...office, name: 'Office', secrets: SECRETS, direct: onboarding.directTarget('http://100.79.12.4:3100', '100.79.12.4') },
     { ...office, name: 'Another label', imageTag: 'latest', secrets: { admin: CLUSTER, cluster: ADMIN }, direct: onboarding.directTarget('http://10.0.0.9:8080') },
     { ...office, name: 'Office', secrets: onboarding.newNodeSecrets(), outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN } },
     { ...office, name: 'Office', secrets: onboarding.newNodeSecrets(), outbound: { connectionUrl: CONNECT, token: `${'f'.repeat(32)}.b3RoZXItaW52aXRhdGlvbi1zZWNyZXQtZm9yLXRoZS1zYW1lLW5vZGU` } },
@@ -799,7 +802,7 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
       if (block.secret) assert.ok(buttons.some(found => found.get('aria-label') === `Show private values in ${name}` && found.get('aria-pressed') === 'false'), `${platform}: Show ${name}`);
     }
   }
-  const draft = { label: 'Office', nodeId: 'canary-office', address: 'http://100.79.12.4:3100', platform: 'docker' };
+  const draft = { label: 'Office', nodeId: 'canary-office', address: 'http://100.79.12.4:3100', bindAddress: '100.79.12.4', platform: 'docker' };
   const deploy = props => within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, { draft, onDraft: noop, secrets: SECRETS, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onCancel: noop, ...props }));
   const ready = deploy({});
   for (const value of PRIVATE) assert.ok(!ready.includes(value));
@@ -808,7 +811,7 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   assert.match(text(deploy({ draft: { ...draft, address: '' } })), /The commands appear here once these fields are filled in\./u);
   assert.match(text(deploy({ draft: { ...draft, nodeId: 'canary-b' } })), /Already on this dashboard as “Rack B”\..*The commands appear here/u);
   assert.match(text(deploy({ onboarding: resource(undefined) })), /Reading this dashboard’s image tag…/u);
-  assert.match(text(deploy({ draft: { ...draft, address: 'http://canary-b.lan:3100' } })), /publish port 3100 on every address of the host/u);
+  assert.match(text(deploy({ draft: { ...draft, address: 'http://canary-b.lan:3100' } })), /publish port 3100 on 100\.79\.12\.4 only/u);
   const guard = { current: null };
   const outbound = props => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
     fresh: true, onboarding: resource(CAPS), secrets: SECRETS, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop, onClose: noop, onRequestClose: noop,
@@ -1190,7 +1193,7 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   assert.match(source, /const pair = fresh \? secretsFor\(secrets, current\.nodeId\) : null;/u);
   assert.match(source, /if \(fresh\) onUse\(result\.nodeId\);/u, 'an invitation’s tokens are bound to its node ID');
   // Rendered: a pair used for another ID, or none, gives no steps, and never a running node's steps.
-  const draft = { label: 'Office', nodeId: 'canary-office', address: 'http://100.79.12.4:3100', platform: 'docker' };
+  const draft = { label: 'Office', nodeId: 'canary-office', address: 'http://100.79.12.4:3100', bindAddress: '100.79.12.4', platform: 'docker' };
   const deploy = (secrets, earlier = null) => within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, {
     draft, onDraft: noop, secrets, earlier, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop,
   }));
@@ -1203,8 +1206,10 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   assert.match(own, /--env-file/u);
   assert.doesNotMatch(text(own), /Tokens belong to one node/u, 'no note without another ID');
   assert.match(text(deploy(SECRETS, 'canary-a')), /Tokens belong to one node: the ones below are for canary-office \. Those shown, copied, saved or sent for canary-a stay with that ID\./u);
-  // L7: an IP the host itself must have; NAT or a port forward means the host's own address in the publish line.
-  assert.match(text(own), /publish port 3100 on 100\.79\.12\.4 only, so it must be an address of this host itself\. If the dashboard’s server reaches the host through NAT or a port forward, put the host’s own address, which the forward points to, in the publish line \(CANARY_HOST on a VM\)\./u);
+  // Accepted setup correction (user's2026-10-26report): the explicit local binding is independent of the node URL.
+  assert.match(text(own), /publish port 3100 on 100\.79\.12\.4 only/u);
+  assert.match(text(own), /the node host itself must have that address/u);
+  assert.match(text(own), /Not a VPN, NAT or port-forward address that belongs to another machine/u);
   // L3: a new node that reaches the dashboard can't be invited without its tokens; a running node can.
   const outbound = (fresh, secrets) => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
     fresh, onboarding: resource(CAPS), secrets, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
@@ -1271,7 +1276,7 @@ await check('TLS: a new node the dashboard reaches at an https:// address serves
   assert.ok(transport.includes('"Retained TLS identity is missing; restore the original identity volume"'), 'a lost identity stops it from starting');
   assert.match(nodetls, /AddDate\(10,\s*0,\s*0\)/u, 'ten years');
   assert.match(nodetls, /MinVersion:\s*tls\.VersionTLS13/u, 'TLS 1.3');
-  const https = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100') };
+  const https = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100', '100.79.12.4') };
   const settingLine = { docker: 'CANARY_TLS_MODE=auto', compose: '      CANARY_TLS_MODE: auto', portainer: '      CANARY_TLS_MODE: auto', vm: 'CANARY_TLS_MODE="auto"' };
   const settingBlock = { docker: 'env', compose: 'yaml', portainer: 'yaml', vm: 'env' };
   for (const { value: platform } of onboarding.PLATFORMS) {
@@ -1563,14 +1568,14 @@ await check('TLS views: new-node steps point to the fingerprint in the node’s 
     return tag ? attributes(tag) : null;
   };
   // A new node at an https:// address.
-  const draft = { label: 'Office', nodeId: 'canary-office', address: 'https://100.79.12.4:3100', platform: 'docker' };
+  const draft = { label: 'Office', nodeId: 'canary-office', address: 'https://100.79.12.4:3100', bindAddress: '100.79.12.4', platform: 'docker' };
   const deploy = props => within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, { draft, onDraft: noop, secrets: SECRETS, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop, ...props }));
   const tls = deploy({});
   for (const value of PRIVATE) assert.ok(!tls.includes(value));
   assert.ok(text(tls).includes('HTTPS: the node serves TLS 1.3 itself (CANARY_TLS_MODE=auto) with a self-signed certificate it makes when it first starts, valid for ten years. No certificate authority vouches for it, so the next step asks for its fingerprint, from the line “Node TLS certificate fingerprint:” in the node’s log.'), text(tls));
   assert.doesNotMatch(text(tls), /Plain HTTP/u);
   assert.match(text(tls), /CANARY_TLS_MODE=auto.*-p 100\.79\.12\.4:3100:3100.*Next: verify the node/u);
-  assert.equal(field(tls, 'Address the dashboard’s server will use').get('placeholder'), 'https://100.79.12.4:3100', 'HTTPS is the suggested form');
+  assert.equal(field(tls, 'Node URL').get('placeholder'), 'https://100.79.12.4:3100', 'HTTPS is the suggested form');
   assert.match(text(deploy({ draft: { ...draft, address: 'http://100.79.12.4:3100' } })), /Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary\./u);
   // The direct form, for a running node: no fingerprint field until the address is HTTPS.
   const form = props => within('admin', [ENTRY], React.createElement(registryView.DirectAddForm, { onClose: noop, onBusy: noop, onStage: noop, ...props }));
@@ -1776,8 +1781,8 @@ await check('TLS r2 low ports: a Linux VM unit adds CAP_NET_BIND_SERVICE only fo
   assert.equal(unitOf(onboarding.setupGuide({ ...combos[1].setup, platform: 'vm' }, true)), r1, 'a node that connects out listens on 3100 locally');
   assert.deepEqual([0, 1, 80, 443, 1023, 1024, 3100, 65535].map(onboarding.lowPort), [false, true, true, true, true, false, false, false]);
   // Docker publishes the port itself: host port 443 to the node's 3100, and nothing else differs.
-  const at443 = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4') };
-  const at3100 = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100') };
+  const at443 = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4', '100.79.12.4') };
+  const at3100 = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100', '100.79.12.4') };
   for (const platform of ['docker', 'compose', 'portainer']) {
     const low = onboarding.setupGuide({ ...at443, platform }, true);
     const high = onboarding.setupGuide({ ...at3100, platform }, true);
@@ -1789,7 +1794,7 @@ await check('TLS r2 low ports: a Linux VM unit adds CAP_NET_BIND_SERVICE only fo
   }
   // A portless address keeps its meaning (443, or 80), never a silent 3100; the note says so with the :3100 form.
   assert.equal(onboarding.CANARY_PORT, 3100);
-  assert.deepEqual(onboarding.directTarget('https://100.79.12.4'), { url: 'https://100.79.12.4', host: '100.79.12.4', listen: '100.79.12.4', port: 443, allInterfaces: false });
+  assert.deepEqual(onboarding.directTarget('https://100.79.12.4', '100.79.12.4'), { url: 'https://100.79.12.4', host: '100.79.12.4', listen: '100.79.12.4', port: 443, allInterfaces: false });
   const note = (address, platform = 'docker') => onboarding.schemePortNote(onboarding.directTarget(address), platform);
   assert.equal(note('https://100.79.12.4'), 'Without a port, https:// means port 443, so the commands publish port 443. To use Uptime Canary’s own port instead, enter https://100.79.12.4:3100.');
   assert.equal(note('https://100.79.12.4:443'), note('https://100.79.12.4'), 'an explicit :443 is the same address');
@@ -1802,7 +1807,7 @@ await check('TLS r2 low ports: a Linux VM unit adds CAP_NET_BIND_SERVICE only fo
   on();
   try {
     reached.length = 0;
-    const draft = { label: 'Office', nodeId: 'canary-office', address: 'https://100.79.12.4', platform: 'docker' };
+    const draft = { label: 'Office', nodeId: 'canary-office', address: 'https://100.79.12.4', bindAddress: '100.79.12.4', platform: 'docker' };
     const deploy = change => text(within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, { draft: { ...draft, ...change }, onDraft: noop, secrets: SECRETS, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop })));
     const docker = deploy({});
     assert.ok(docker.includes(note('https://100.79.12.4')) && docker.includes('The commands publish port 443 on 100.79.12.4 only') && docker.includes('-p 100.79.12.4:443:3100'), docker);
@@ -1835,7 +1840,7 @@ await check('TLS r2 tls-info and tls-init: container steps say how to print the 
     const image = readFileSync(imagePath, 'utf8');
     assert.ok(image.includes('COPY --from=build /out/canary /usr/local/bin/canary') && /^USER canary$/mu.test(image), 'canary, run as the image’s own user');
   }
-  const https = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100') };
+  const https = { ...combos[0].setup, direct: onboarding.directTarget('https://100.79.12.4:3100', '100.79.12.4') };
   const res = onboarding.resourceName(https.nodeId);
   const later = command => `Later, ${command} on its host prints it again, with the certificate and its expiry date, and changes nothing.`;
   const info = { docker: later(`docker exec ${res} canary tls-info`), compose: later(`docker compose --env-file ${res}.env exec node canary tls-info`) };

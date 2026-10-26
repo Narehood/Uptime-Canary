@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { directTarget, directTls, imageReference, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -124,6 +124,61 @@ function GuideStep({ n, block, real, onHandled }: { n: number; block: GuideBlock
       </li>
     );
   }
+  const reveal = block.secret ? (
+    <button type="button" className="btn sm" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} private values in ${name}`}
+      onClick={() => { if (!shown) onHandled(); setShown(!shown); }}>
+      <Icon name={shown ? 'eyeOff' : 'eye'} />{shown ? 'Hide' : 'Show'}
+    </button>
+  ) : null;
+  const download = block.file ? (
+    <button type="button" className="btn sm" aria-label={`Download ${block.file}`} onClick={() => { saveText(block.file!, real.text); if (block.secret) onHandled(); }}>
+      <Icon name="download" />Download
+    </button>
+  ) : null;
+  if (block.variables) {
+    // Portainer's basic editor: one entry per row, with separate name and value fields. Copy value takes the raw value
+    // alone, never NAME= or a line break; the real values stay in these handlers and show only after Show.
+    return (
+      <li className={`gstep${block.secret ? ' secret' : ''}`}>
+        <span className="gnum" aria-hidden="true">{n}</span>
+        <div className="gbody">
+          <div className="gstep-h">
+            <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
+            {reveal}
+          </div>
+          <p>Each card below is one entry under Environment variables in Portainer: copy its Name into the entry’s name field and its Value into the value field.</p>
+          <ul className="gvars">
+            {block.variables.map((variable, index) => {
+              const realVariable = real.variables?.[index];
+              if (!realVariable) return null;
+              return (
+                <li key={variable.name} className="gvar">
+                  <div className="gvar-f">
+                    <span className="gvar-k">Name</span>
+                    <code className="gvar-v">{variable.name}</code>
+                    <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} />
+                  </div>
+                  <div className="gvar-f">
+                    <span className="gvar-k">Value</span>
+                    <code className="gvar-v">{variable.secret && !shown ? variable.value : realVariable.value}</code>
+                    <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret ? onHandled : undefined} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="gvars-alt">
+            <small className="muted">Advanced: all entries at once as NAME=value lines, for Portainer’s Advanced mode or Load variables from .env file.</small>
+            <span className="row-wrap">
+              <CopyButton value={real.text} label="Copy .env" ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />
+              {download}
+            </span>
+          </div>
+          {block.secret ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy value, Copy .env and Download include them. Keep them private and delete stray copies.</small> : null}
+        </div>
+      </li>
+    );
+  }
   return (
     <li className={`gstep${block.secret ? ' secret' : ''}`}>
       <span className="gnum" aria-hidden="true">{n}</span>
@@ -131,18 +186,9 @@ function GuideStep({ n, block, real, onHandled }: { n: number; block: GuideBlock
         <div className="gstep-h">
           <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
           <span className="row-wrap">
-            {block.secret ? (
-              <button type="button" className="btn sm" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} private values in ${name}`}
-                onClick={() => { if (!shown) onHandled(); setShown(!shown); }}>
-                <Icon name={shown ? 'eyeOff' : 'eye'} />{shown ? 'Hide' : 'Show'}
-              </button>
-            ) : null}
+            {reveal}
             <CopyButton value={real.text} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />
-            {block.file ? (
-              <button type="button" className="btn sm" aria-label={`Download ${block.file}`} onClick={() => { saveText(block.file!, real.text); if (block.secret) onHandled(); }}>
-                <Icon name="download" />Download
-              </button>
-            ) : null}
+            {download}
           </span>
         </div>
         <pre className="json-pre gpre">{block.secret && !shown ? block.text : real.text}</pre>
@@ -204,7 +250,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
 
-export interface NewNodeDraft { label: string; nodeId: string; address: string; platform: Platform }
+export interface NewNodeDraft { label: string; nodeId: string; address: string; bindAddress?: string; platform: Platform }
 
 /** Says that the tokens shown are this node ID's own, after a pair was used for another ID in the same dialog. */
 function TokensNote({ nodeId, earlier }: { nodeId: string; earlier?: string | null }) {
@@ -217,6 +263,30 @@ function TokensNote({ nodeId, earlier }: { nodeId: string; earlier?: string | nu
 /** A new node without tokens gets no steps at all: a running node's steps would leave it with no administrator. */
 const NO_TOKENS = 'No steps without the new node’s own administrator and cluster tokens, and this page has none for it. Try again above, or add a node that’s already running instead.';
 
+/**
+ * Where the steps open the node's port on its host: the publish or listen address field, never the Node URL. In a
+ * container the node itself always listens on 0.0.0.0; the address picks the host side of Docker's port mapping.
+ */
+function BindingNote({ target, platform }: { target: DirectTarget; platform: Platform }) {
+  const vm = platform === 'vm';
+  const where = vm
+    ? `The service sets CANARY_HOST="${target.listen}", so the node itself listens there.`
+    : `Inside the container the node still listens on 0.0.0.0 (CANARY_HOST); this address only picks the host side of the published port.`;
+  if (target.allInterfaces) {
+    const family = target.host.startsWith('[') ? 'IPv6' : 'IPv4';
+    return (
+      <p className="small fwarn"><Glyph tone="warn" />
+        <span>The commands publish port {target.port} on every {family} interface of the node host ({target.listen}). {where}{vm ? ' A wildcard listener on a Linux VM may accept the other IP version too.' : ''} {bindingAccessNote(platform)}</span>
+      </p>
+    );
+  }
+  return (
+    <p className="small muted">
+      The commands publish port {target.port} on {target.listen} only, so the node host itself must have that address. {where} If it belongs to a VPN that comes up after {vm ? 'the service' : 'Docker'} starts, the port can’t open on it at boot; then use 0.0.0.0. {bindingAccessNote(platform)}
+    </p>
+  );
+}
+
 export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, taken, onNext, onUse, onCancel }: {
   draft: NewNodeDraft; onDraft: (draft: NewNodeDraft) => void; secrets: NodeSecrets | null; earlier?: string | null; onboarding: Resource<NodeOnboardingCapabilities>; taken: Taken;
   onNext: (target: DirectTarget) => void; onUse: (nodeId: string) => void; onCancel: () => void;
@@ -226,10 +296,12 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
   const capabilities = onboarding.data;
   // Only a pair that may serve this node ID; one already used for another ID is never shown for this one.
   const pair = secretsFor(secrets, draft.nodeId);
-  const target = draft.address.trim() ? directTarget(draft.address) : 'Enter the address the dashboard’s server will use.';
-  const errors = { label: labelProblem(draft.label), nodeId: nodeIdProblem(draft.nodeId, taken), address: typeof target === 'string' ? target : undefined };
+  const binding = localBinding(draft.bindAddress ?? '0.0.0.0');
+  const remote = draft.address.trim() ? directTarget(draft.address) : 'Enter the node’s URL, not the dashboard’s URL.';
+  const target = draft.address.trim() ? directTarget(draft.address, draft.bindAddress) : remote;
+  const errors = { label: labelProblem(draft.label), nodeId: nodeIdProblem(draft.nodeId, taken), address: typeof remote === 'string' ? remote : undefined, bindAddress: typeof binding === 'string' ? binding : undefined };
   const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
-  const ready = typeof target !== 'string' && !errors.label && !errors.nodeId;
+  const ready = typeof target !== 'string' && !errors.label && !errors.nodeId && !errors.bindAddress;
   // An address without a port means 443 (or 80), which the steps then use: said, with the address on port 3100.
   const portNote = typeof target === 'string' ? null : schemePortNote(target, draft.platform);
   const set = (change: Partial<NewNodeDraft>): void => onDraft({ ...draft, ...change });
@@ -252,14 +324,14 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
         hint="Every account on this dashboard sees it. It also becomes the node’s own name." />
       <TextField label="Node ID" mono value={draft.nodeId} onChange={nodeId => set({ nodeId })} error={live(draft.nodeId, errors.nodeId)} maxLength={128} placeholder="canary-office"
         hint="New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID." />
-      <TextField label="Address the dashboard’s server will use" type="url" inputMode="url" mono value={draft.address} onChange={address => set({ address })} error={live(draft.address, errors.address)}
-        placeholder="https://100.79.12.4:3100" hint="The host’s IP on a network the dashboard’s server reaches, such as its LAN or NetBird address, and the port to publish. With https:// the node encrypts the connection itself; use http:// only on a network that encrypts it already." />
+      <TextField label="Node URL" type="url" inputMode="url" mono value={draft.address} onChange={address => set({ address })} error={live(draft.address, errors.address)}
+        placeholder="https://100.79.12.4:3100" hint="The new node’s address as the dashboard’s server reaches it, such as the node host’s LAN, NetBird or Tailscale IP, with the port the steps publish. It’s never this dashboard’s own address. Verify uses this URL unchanged; it doesn’t choose which address Docker or the node binds to. With https:// the node encrypts the connection itself; use http:// only on a network that encrypts it already." />
+      <TextField label="Publish or listen address on the node host" mono value={draft.bindAddress ?? '0.0.0.0'} onChange={bindAddress => set({ bindAddress })} error={live(draft.bindAddress ?? '0.0.0.0', errors.bindAddress)}
+        placeholder="0.0.0.0" maxLength={64} hint={`Separate from the Node URL. 0.0.0.0, the default, means all of the host’s IPv4 interfaces. To accept connections on one interface only, enter an IP address the Docker or VM host itself has, or :: for all IPv6 interfaces. Not a VPN, NAT or port-forward address that belongs to another machine, and no URL, host name or port. ${bindingAccessNote(draft.platform)}`} />
       {typeof target !== 'string' && ready && pair ? (
         <>
           <ImageLine capabilities={capabilities} />
-          {target.allInterfaces
-            ? <p className="small fwarn"><Glyph tone="warn" />A host name can’t be published on one address, so the commands publish port {target.port} on every address of the host. Limit who reaches it with the host’s firewall.</p>
-            : <p className="small muted">The commands publish port {target.port} on {target.listen} only, so it must be an address of this host itself. If the dashboard’s server reaches the host through NAT or a port forward, put the host’s own address, which the forward points to, in the publish line (CANARY_HOST on a VM). If the address belongs to a VPN that starts after Docker, Docker can’t publish on it at boot; then publish on 0.0.0.0 and limit it with the firewall.</p>}
+          <BindingNote target={target} platform={draft.platform} />
           {portNote ? <p className="small muted">{portNote}</p> : null}
           {directTls(target)
             ? <p className="small muted"><Icon name="lock" className="inline" />HTTPS: the node serves TLS 1.3 itself (CANARY_TLS_MODE=auto) with a self-signed certificate it makes when it first starts, valid for ten years. No certificate authority vouches for it, so the next step asks for its fingerprint, from the line “{TLS_LOG_LINE}” in the node’s log. The dashboard’s server then accepts only that certificate, and sends the node no credential until it checks out.</p>

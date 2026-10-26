@@ -633,6 +633,8 @@ Add node wizard (source candidate, not accepted):
 72. A new node's tokens belong to the first node ID they're used for. Another ID gets its own pair, and one earlier pair is kept, so going back to that ID matches settings already saved for it; nothing more is kept.
 73. While an invitation is being created, only Stop leaves the dialog: the server saves the invitation before it answers, and only the answer carries its token. A dialog the browser closes on its own opens again, because the page decides when a pending step may be left.
 74. A running node's steps state the startup refusal and its undo before any setting, and an ended invitation for a deployed node points back to them: deployed again as new, its existing data wouldn't accept the new tokens.
+75. A new node's connection URL is independent of the local socket binding. The dashboard verifies the Node URL unchanged; generated Docker host mappings and native listeners use an explicitly chosen local IP, defaulting to `0.0.0.0`. A routed VPN or NAT destination must not silently become a host binding. The wizard states the wildcard exposure and firewall requirement.
+76. Portainer's basic environment editor gets separate variable-name and raw-value copy controls, with private values masked until explicitly shown. The bulk `NAME=value` format remains an explicitly labelled advanced alternative and the downloaded bytes stay unchanged. Copying a name does not count as handling a secret; only a successful private-value copy does.
 
 ---
 

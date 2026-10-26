@@ -310,13 +310,12 @@ are in the [dashboard contract](docs/dashboard-control-plane.md).
 
 ### Add nodes from the dashboard
 
-**Status:** source candidate on `feature/node-onboarding`, not accepted. Its
-local Windows amd64 evidence is below. Hosted Linux amd64 and arm64, Alpine,
-race and all 24 process proofs haven't run on it, no images containing it are
-published, and no Compose, Portainer, VM, NetBird or Tailscale deployment has
-been tested. It stays unaccepted until those gates pass, matching images are
-published and a real deployment works; merging needs the repository owner's
-approval.
+**Original onboarding checkpoint (historical, before PR #14 merged as
+`358ede0`):** the `feature/node-onboarding` candidate had passed the local
+Windows amd64 checks below. Hosted Linux amd64/arm64, Alpine, race and all 24
+process proofs had not run on that checkpoint; no matching images or real
+Compose, Portainer, VM, NetBird or Tailscale deployment had been verified then.
+That record is component evidence, not a current image or release claim.
 
 **Local evidence (Windows amd64, exact sources).** On v3 source
 `e163a607106c074e196c798350f9f70bbf5a7a363e2720dc7ad8df186dbb2a03` the
@@ -346,6 +345,15 @@ node, then you add it) and can guide a new node: the browser makes its tokens,
 one pair per node ID, and shows masked Docker run, Compose, Portainer or Linux
 VM steps that pull the image first (VMs build matching source; there is no
 native download). Keep copied or downloaded settings private.
+
+The setup usability follow-up separates **Node URL** (the node's address as
+reached by the dashboard, used unchanged for verification) from **Publish or
+listen address on the node host** (the host's actual local binding, default
+`0.0.0.0`). Portainer steps provide individual **Copy name** and **Copy value**
+controls; **Copy .env** and Download remain available for bulk import. See the
+[onboarding guide](docs/node-onboarding.md#add-the-node) for binding and firewall
+details. These follow-up controls are a candidate until their reviewed source
+is merged and matching images are published.
 
 When nodes can reach the dashboard but not the reverse, as on a one-way VPN to
 `172.16.99.101`, choose **The node reaches this dashboard**:

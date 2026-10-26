@@ -723,7 +723,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the new-node form', 15000);
     await fill('Name on this dashboard', label, 'dialog[open]');
     await fill('Node ID', id, 'dialog[open]');
-    await fill('Address the dashboard’s server will use', address, 'dialog[open]');
+    await fill('Node URL', address, 'dialog[open]');
     await text(`--env-file ${file}`);
     assert.deepEqual(await downloads(), [file], 'the page offers the private settings under the helper’s name');
     let shown = await page.eval('document.querySelector("dialog[open]").innerText');
@@ -754,6 +754,29 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       await click(tab, 'dialog[open]');
       const words = await page.eval('document.querySelector("dialog[open]").innerText');
       assert.ok(!words.includes(admin) && !words.includes(cluster), `${tab}: masked again after changing tabs`);
+      if (tab === 'Portainer stack') {
+        // User's2026-10-26report: Portainer Basic has separate Name and Value inputs. Each button copies one raw
+        // field only; bulk env text remains available separately. All writes stay in the fixture's in-page hook.
+        for (const [name, value] of [['CANARY_ADMIN_TOKEN', admin], ['CANARY_CLUSTER_TOKEN', cluster]]) {
+          await clickLabelled(`Copy name for ${name}`);
+          assert.equal(await page.eval('window.__copies.at(-1)'), name, 'only the variable name');
+          await clickLabelled(`Copy value for ${name}`);
+          assert.ok((await page.eval('window.__copies.at(-1)')) === value, 'only the raw value, without NAME= or newline');
+        }
+        const hidden = await page.eval('document.querySelector("dialog[open]").outerHTML');
+        assert.ok(!hidden.includes(admin) && !hidden.includes(cluster), 'individual copies leave both private values masked');
+        try {
+          for (const width of [390, 728]) {
+            await page.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+            const layout = await page.eval('(() => {const d=document.querySelector("dialog[open]");return {fits:d.scrollWidth<=d.clientWidth+1,rows:[...d.querySelectorAll(".gvar")].map(e=>e.scrollWidth<=e.clientWidth+1)}})()');
+            assert.ok(layout.fits && layout.rows.length === 2 && layout.rows.every(Boolean), `Portainer variable controls fit ${width}px`);
+          }
+        } finally { await page.send('Emulation.clearDeviceMetricsOverride'); }
+        await fill('Publish or listen address on the node host', '192.0.2.123', 'dialog[open]');
+        assert.ok((await page.eval('document.querySelector("dialog[open]").innerText')).includes(`192.0.2.123:${nodePort}:3100`), 'an independent local binding');
+        assert.equal(await page.eval('__field("Node URL","dialog[open]").value'), address, 'changing a binding never changes the node URL');
+        await fill('Publish or listen address on the node host', '0.0.0.0', 'dialog[open]');
+      }
     }
     await click('Docker run', 'dialog[open]');
     await text(`--env-file ${file}`);
@@ -785,7 +808,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await clickFirst('Add node'); await dialogOpen(); await pick('Deploy a new node');
     await fill('Name on this dashboard', label, 'dialog[open]');
     await fill('Node ID', id, 'dialog[open]');
-    await fill('Address the dashboard’s server will use', address, 'dialog[open]');
+    await fill('Node URL', address, 'dialog[open]');
     await captureOutputs();
     const settings = envOf(await copyOf(file));
     assert.equal(settings.CANARY_TLS_MODE, 'auto');
@@ -1127,7 +1150,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the new-node form', 15000);
     await fill('Name on this dashboard', 'Token node', 'dialog[open]');
     await fill('Node ID', first, 'dialog[open]');
-    await fill('Address the dashboard’s server will use', address, 'dialog[open]');
+    await fill('Node URL', address, 'dialog[open]');
     await text(`--env-file ${fileA}`);
     await captureOutputs();
     const pairOf = settings => [settings.CANARY_ADMIN_TOKEN, settings.CANARY_CLUSTER_TOKEN];

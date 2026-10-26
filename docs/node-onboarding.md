@@ -84,6 +84,34 @@ The native connection listener defaults to `127.0.0.1:8081` when enabled.
 
 ## Add the node
 
+For **Deploy a new node → This dashboard reaches the node**, enter the **Node
+URL**, such as `https://100.99.98.102:3100`. This is the node host's address as
+reached by the dashboard server, never the dashboard's own address. The next
+verification step keeps that URL.
+
+**Publish or listen address on the node host** is a separate setting. Its
+default, `0.0.0.0`, publishes the port on all IPv4 interfaces. Docker-published
+traffic can bypass ordinary host INPUT/UFW rules. Choose an explicit host IP
+to limit exposed interfaces, and use Docker-aware filtering to restrict who
+can connect (for example, `DOCKER-USER` with Docker's iptables backend; use
+the corresponding filtering for its nftables backend). Native VM listeners
+use the host's normal firewall. See [Docker's firewall guidance](https://docs.docker.com/engine/network/packet-filtering-firewalls/).
+To bind one interface, enter an IP actually owned
+by the Docker or VM host. A VPN or NAT destination address may belong to another
+machine and must not be used as the local binding. Inside a container,
+`CANARY_HOST` remains `0.0.0.0`; the separate setting controls Docker's host-side
+port mapping. On a native VM it controls `CANARY_HOST` directly. The URL's port
+is used as the host port (the container still listens on 3100); if a forwarding
+rule translates ports too, adjust the host mapping to match that rule.
+
+On **Portainer stack**, add one Environment variables entry per displayed
+card. **Copy name** copies only its Name; **Copy value** copies only its raw
+Value, without `NAME=` or a trailing line break. Values remain masked on the
+page after copying. The separate **Copy .env** and Download options retain all
+`NAME=value` lines for Advanced mode or **Load variables from .env file**.
+Portainer stores these values with the stack; these are environment variables,
+not Docker secrets. Keep stack-edit access restricted.
+
 Sign in as a dashboard administrator, open **Nodes → Add node**, and choose the
 node-initiated connection. Enter a unique, persistent Node ID and a display
 label. Generate an invitation, then choose Docker, Compose, Portainer, or the VM
@@ -178,6 +206,21 @@ bounded. Transport last-connected time describes contact with the dashboard;
 it does not replace the timestamp or health result of any monitor.
 
 ## Validation status
+
+The setup usability follow-up passed the three workspace type checks and all
+configured frontend pure/control fixtures (including eight new setup groups)
+on v3 source `dad28ba1f28dd6cd0f82fd50834ca0489cc619178eccd05a4f0fa51ae4b06b36`
+on Windows amd64. After adding the narrow-layout browser assertions, the full
+production-build browser suite passed **213/213**, with no page exceptions or
+blocked requests, on unchanged v3 source
+`4e464779b53bf3b1bd38bb157ac2123ecbf344894a2b85b3d278561386218a9c`
+(215.203 s guarded, 2026-10-26). It exercised actual per-field clipboard
+handlers through an in-page fixture, masked values after copy, independent
+local binding and unchanged verification URL, and Portainer controls at 390
+and 728 px. The copied commands were not deployed to Docker, Portainer or a VM.
+Scratch returned to zero; hosted checks and matching published images remain
+separate gates for this follow-up. The earlier 171/171 browser pass omitted
+the optional control-plane fixtures and does not establish this new coverage.
 
 The local Windows amd64 checkpoint is v3 source fingerprint
 `e163a607106c074e196c798350f9f70bbf5a7a363e2720dc7ad8df186dbb2a03`
