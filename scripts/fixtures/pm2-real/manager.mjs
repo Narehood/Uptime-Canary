@@ -1,5 +1,5 @@
 // SOURCE-REVIEWED ONLY: Linux/Alpine; never run this fixture on Windows.
-// Root installs a separate lockfile-pinned pm2@6.0.8 fixture package at
+// Root installs a separate lockfile-pinned pm2@7.1.1 fixture package at
 //   GUARD/pm2-package/node_modules/pm2
 // and launches: /absolute/node --max-old-space-size=64 /absolute/manager.mjs GUARD
 // GUARD must already be a real, current-UID-owned 0700 guarded output directory.
@@ -36,30 +36,30 @@ import cluster from 'node:cluster';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-const VERSION = '6.0.8';
-const COMMIT = '3b3b54727dab5acf6b43778314cd26b84ffa94d3';
+const VERSION = '7.1.1';
+const COMMIT = '34dec9197301165850741b319890b2633ae797f4';
 const NAME = 'canary-pm2-fixture';
 const NAMESPACE = 'canary-fixture';
 const CORE = {
-  'package.json': 'adb2e8a5f18bc868c3540697b0763d14945f03786689db823189d2534cc2d9e3',
-  'index.js': '4774d3dfdf283f67a049ab24e08c2362b236b5b50299a77eed1b5e3e29f6daf1',
-  'paths.js': 'f85d7df72d80ebc34bf96c97b8cd538bacb13924af45c14ca7e201bc82e021eb',
-  'constants.js': 'ab50b83365fb4e3d95cd110be1ee7c7ad4e148abd385a16319e06f0adb9ccbbe',
-  'lib/API.js': 'e7d6f7bf6800ebbd3fa90681b7b85135c112934cb6ec5f1288aab8c1f63c9dca',
-  'lib/Client.js': '2c05d0f5e51e3101de8f1e0b4c24d9b50d0a85e0e13b92c41fb68f280e4be093',
-  'lib/Daemon.js': '820725216d7237c1c90b193e3b19c7338893b5672afb4a0ba81b244aac8f231a',
-  'lib/God.js': 'a43594c030138c6db8d308ee1647903a72a49fc3ae781e600cc56338aa85ba90',
-  'lib/God/ClusterMode.js': '81b63a129581cc493e6d73f6b0f94fa9ba3d74a76334f083b24fdd4887b558a9',
-  'lib/God/ForkMode.js': '3d1f57dee19060862b4856b15cd61ca406047e658071609e545ac5e1e7755cb4',
-  'lib/God/Methods.js': 'd063342503f501ee267eaca19c732d29bc640bf3188f08674b2cdddb9beeeb11',
-  'lib/God/ActionMethods.js': 'fac3eb453287059b94461cff459209c2d0a7c10bcb94ebf0f86aad8d087f82f8',
-  'lib/Common.js': '34c3db95665c2be6e3d8796086faad88acd3b0f7bd25bf068e3c6a2a325add3e',
-  'lib/ProcessContainer.js': 'beaf002a3743489c3df5b884f45d11abceb2491402efc560a4b7c0a15d7e45b8',
-  'lib/ProcessUtils.js': 'aefdfb0ec23957c21da61cc690d75117dbd9a69e7cdfc46fe18f922c386c2f23',
-  'lib/Worker.js': '42a499e37f3c4c653d7e0da33fb4c09744de494d97d1647dca4691f1d80303c7',
+  'package.json': 'de979d9fa51d17baf686ced802d18dcdb21eff12f5ba496119c641af4fa497f8',
+  'index.js': '7b99a3037651e0802349187be8f012feb09da740ccfcf65e9c5a373757f30590',
+  'paths.js': 'e5773c2711f1d41b79de6575cda89e42e96fa4ba42b6c8de373c0785888f9749',
+  'constants.js': 'f6ea58459ed2f60c0ac6385c786cc2be4eec4c92c37feb70db8835a2d47110bd',
+  'lib/API.js': '1bd03fd1800d6e66751ffdf8e0f11d18e35d6c621ad323a8c3dd499d16d4b275',
+  'lib/Client.js': '7fa92932e33f189c00604e76caf409f5d25924c2baefda2e0e2c249e430f57ce',
+  'lib/Daemon.js': 'c4e27c6a2b0f380c9846e298b7a1ef4c745c8f33f00bbd61d9a10eee19ee2fb9',
+  'lib/God.js': '244e0c2e4725960b323394ac941a73a416e6db8cbbb5ddfb5cfdf2405ec64f91',
+  'lib/God/ClusterMode.js': 'a8f8c22bfd73d81aa35dc72f59740e2a0eb2d46c13a39d182f2669137a933b75',
+  'lib/God/ForkMode.js': 'a7f82fbbe3a40804b68a76f89a7b8092f21634cec359b6d7cf0ac554671e90c8',
+  'lib/God/Methods.js': 'db19828776122ce43a44b4f971b8e9fc1e76804d2cf8df05d4b67e2b72a5684e',
+  'lib/God/ActionMethods.js': '2707f1f2d75929e4747b4ea170f64392ba773909b9a3c278042636ce22090f58',
+  'lib/Common.js': '223476aede876e172f8653e8a00227f536538ea1fc174fdb0c4eee198b5f9dbf',
+  'lib/ProcessContainer.js': '87474be33cd36f8a52e1a46695634e9a98a33ce46830e1e0e3168756f3a0c7c9',
+  'lib/ProcessUtils.js': '4166ef73d883fa6871e43cdc94dcddd2f2e221219754e5faea14556bce2e5dfe',
+  'lib/Worker.js': '479701c010251490fe8fcec3af4922e7e68b76a0f6bef8d61ec3a538c7edaa4f',
   'lib/VersionCheck.js': '94ec1eef8127ab2bbc74adb06bacb3cf81eac07a40391223ddb45ded3527a0d2',
-  'lib/Utility.js': '97dc35e42a3ca1fdb4d79829346e8dbc693f1b180a764c99f202abc3328f3129',
-  'lib/Configuration.js': 'ff471fe43b64001f4d9945c546863083d5d691bbd7702feb7094db958f7c9d5b',
+  'lib/Utility.js': '7ef90946cb3c7ac9256078153d2d2d9f230706b1eefdeb21d1cc0ed17efdec0f',
+  'lib/Configuration.js': '3060b4ec29e8591424e91732ef9c827dccb6b513234bb75cff513c41fd858077',
 };
 const rawWrite = process.stdout.write.bind(process.stdout);
 const workers = new Set();

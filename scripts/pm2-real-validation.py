@@ -62,7 +62,7 @@ def fixture_inputs(output):
                     '--prefix', str(package)], env=env, check=True, timeout=120)
     require_link_free_fixture(package)
     lock = json.loads((package / 'package-lock.json').read_text())
-    if lock['packages']['node_modules/pm2']['version'] != '6.0.8':
+    if lock['packages']['node_modules/pm2']['version'] != '7.1.1':
         raise ValueError('Unexpected fixture PM2 version')
     helper = source / 'manager.mjs'
     pins = re.findall(r"'([^']+)': '([a-f0-9]{64})'", helper.read_text())
@@ -71,7 +71,7 @@ def fixture_inputs(output):
     for name, expected in pins:
         if digest(package / 'node_modules/pm2' / name) != expected:
             raise ValueError('Installed PM2 source differs: ' + name)
-    return {'version': '6.0.8', 'coreFilesVerified': len(pins), 'resolvedPackages': len(lock['packages']), 'linkFree': True,
+    return {'version': '7.1.1', 'coreFilesVerified': len(pins), 'resolvedPackages': len(lock['packages']), 'linkFree': True,
             'lockSha256': digest(source / 'package-lock.json'), 'managerSha256': digest(helper)}
 
 
@@ -127,7 +127,7 @@ def offline(output, uid, gid, parent_network, node, binary, control=False):
     routes = Path('/proc/net/route').read_text().splitlines()
     if len(routes) != 1:
         raise RuntimeError('Offline namespace has a route')
-    if subprocess.check_output([node, '--version'], text=True).strip() != 'v24.13.0':
+    if subprocess.check_output([node, '--version'], text=True).strip() != 'v24.22.1':
         raise RuntimeError('Unreviewed Node cluster implementation')
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     subreaper()
@@ -136,7 +136,7 @@ def offline(output, uid, gid, parent_network, node, binary, control=False):
            'TSX_DISABLE_CACHE': '1', 'CANARY_BIN': str(binary), 'PM2_GUARD': str(output)}
     (output / 'tmp').mkdir(exist_ok=True)
     report = {'passed': False, 'isolatedPIDNamespace': True, 'loopbackOnly': True,
-              'uid': uid, 'capabilities': 'none', 'node': 'v24.13.0', 'releaseSignoff': False}
+              'uid': uid, 'capabilities': 'none', 'node': 'v24.22.1', 'releaseSignoff': False}
     try:
         command = [node, '--max-old-space-size=96', '--import', 'tsx']
         if not control:

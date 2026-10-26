@@ -16,8 +16,8 @@ export const PM2_TEXT_MAX = 256;
 /** A Unix socket path holds at most 107 bytes; the node refuses a home whose rpc.sock path is longer. */
 export const PM2_SOCKET_MAX = 107;
 export const PM2_SOCKET = 'rpc.sock';
-/** The only PM2 release whose answers the node reads. A daemon reporting another version stays pending. */
-export const PM2_VERSION = '6.0.8';
+/** Exact supported releases; unreviewed versions still stay pending. */
+export const PM2_VERSION = '6.0.8 or 7.1.1';
 
 export interface Pm2Draft {
   /** The exact process name, which is the monitor's target. Never trimmed: names are compared exactly. */

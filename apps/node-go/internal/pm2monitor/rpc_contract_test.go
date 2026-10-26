@@ -336,6 +336,52 @@ func TestPM2ContractMalformedReplies(t *testing.T) {
 	}
 }
 
+func TestPM2ContractPinnedVersionsPreserveStateRules(t *testing.T) {
+	// PM2 7.1.1 internalizes axon/rpc without changing the two read-only
+	// callbacks. Source: Unitech/pm2 commit 34dec9197301165850741b319890b2633ae797f4,
+	// modules/pm2-axon-rpc/lib/server.js and lib/Daemon.js.
+	for _, version := range []string{"6.0.8", "7.1.1"} {
+		for _, tc := range []struct{ status, state, message string }{
+			{"online", "up", "PM2 process is online"},
+			{"stopped", "down", "PM2 process is not online"},
+			{"future-status", "pending", "PM2 status unavailable"},
+		} {
+			t.Run(version+"/"+tc.status, func(t *testing.T) {
+				result := pm2ContractRun(t, context.Background(), pm2ContractConfig(), func(conn net.Conn) error {
+					id, err := pm2ContractReadCall(conn, "getVersion", "")
+					if err != nil {
+						return err
+					}
+					if _, err = conn.Write(pm2ContractReply(fmt.Sprintf(`{"args":[%q]}`, version), id)); err != nil {
+						return err
+					}
+					next, err := pm2ContractReadCall(conn, "getMonitorData", id)
+					if err != nil {
+						return err
+					}
+					entry := strings.Replace(pm2ContractOnline, `"status":"online"`, `"status":"`+tc.status+`"`, 1)
+					if _, err = conn.Write(pm2ContractReply(pm2ContractList(entry), next)); err != nil {
+						return err
+					}
+					return pm2ContractEnd(conn)
+				})
+				pm2ContractResult(t, result, tc.state, tc.message)
+			})
+		}
+	}
+}
+
+func TestPM2ContractUnreviewedVersion7IsStillRefused(t *testing.T) {
+	for _, version := range []string{"6.0.9", "7.0.0", "7.1.0", "7.1.2", "7.1.1-dev", "7.1.1+custom", " 7.1.1", "7.1.1 "} {
+		t.Run(version, func(t *testing.T) {
+			result := pm2ContractRPC(t, pm2ContractConfig(), "getVersion", func(id string) []byte {
+				return pm2ContractReply(fmt.Sprintf(`{"args":[%q]}`, version), id)
+			}, false)
+			pm2ContractResult(t, result, "pending", "PM2 status unavailable")
+		})
+	}
+}
+
 func TestPM2ContractVersionAndBounds(t *testing.T) {
 	for _, body := range []string{`{"args":["6.0.7"]}`, `{"args":["6.0.8-dev"]}`, `{"args":[6.08]}`, `{"args":["6.0.8",[]]}`, `{"args":["6.0.8"],"error":"private-secret"}`} {
 		t.Run(body, func(t *testing.T) {

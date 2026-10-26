@@ -65,7 +65,7 @@ func check(ctx context.Context, c Config, dial func(context.Context, Config) (ne
 	}
 	version, err := call(conn, "getVersion", "canary-pm2:0", maxVersionReply)
 	var reported string
-	if err != nil || json.Unmarshal(version, &reported) != nil || reported != SupportedVersion || ctx.Err() != nil {
+	if err != nil || json.Unmarshal(version, &reported) != nil || (reported != SupportedVersion && reported != SupportedVersion7) || ctx.Err() != nil {
 		return unavailable()
 	}
 	list, err := call(conn, "getMonitorData", "canary-pm2:1", maxMonitorReply)

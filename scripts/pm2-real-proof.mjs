@@ -48,7 +48,7 @@ async function manager() {
   }
   try {
     const ready = await packet();
-    assert.equal(ready.event, 'ready'); assert.equal(ready.version, '6.0.8'); assert.equal(ready.coreFilesVerified, 19);
+    assert.equal(ready.event, 'ready'); assert.equal(ready.version, '7.1.1'); assert.equal(ready.coreFilesVerified, 19);
     assert.equal(ready.status, 'online'); assert.equal(group(ready.managerPid), ownedGroup); assert.equal(group(ready.appPid), ownedGroup);
     const appPIDs = new Set([ready.appPid]);
     return { ready, async command(op) {
@@ -78,7 +78,7 @@ if (process.argv.includes('--containment-control')) {
     namespace: readlinkSync('/proc/self/ns/pid'), ...pm2.ready,
   }));
   await new Promise(() => {});
-} else test('actual PM2 6.0.8 RPC drives production Go workers and preserves outage state across manager loss', { timeout: 120000 }, async t => {
+} else test('actual PM2 7.1.1 RPC drives production Go workers and preserves outage state across manager loss', { timeout: 120000 }, async t => {
   assert.equal(process.platform, 'linux');
   assert.ok(guard.startsWith(join(root, '.canary/work/current/outputs') + '/'));
   const cluster = new Cluster();

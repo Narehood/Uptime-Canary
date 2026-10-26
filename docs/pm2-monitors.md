@@ -86,9 +86,15 @@ unverified. There is no option to bypass account or permission checks.
 
 ## Compatibility, privacy and resource limits
 
-The initial compatibility profile admits PM2 **6.0.8** only. Other versions
-remain Pending until their protocol behavior is separately researched and
-exercised. Custom RPC endpoints and Windows account selection are not supported.
+The compatibility profiles admit PM2 **6.0.8** and **7.1.1** exactly. The older
+profile remains for existing deployments; the development fixture now pins
+7.1.1 to remove the six reported dependency advisories. Other versions remain
+Pending until their protocol behavior is separately researched and exercised.
+Prefer 7.1.1 for a new or updated PM2 installation; retaining the older profile
+is compatibility, not a security recommendation. This candidate's real 7.1.1
+Linux gate remains required on its matching PR head. See
+[the advisory fixes and exact validation scope](security-validation.md#pm2-fixture-advisories-2026-10-26-candidate).
+Custom RPC endpoints and Windows account selection are not supported.
 This deliberately differs from Kuma's first matching name-or-ID behavior:
 Canary checks all exact name/namespace matches and keeps numeric names literal.
 
@@ -125,8 +131,12 @@ coordinate upgrades across the cluster. No new database format is introduced.
 The comparison baseline is Uptime Kuma 2.5.6,
 [`7ca4a3d`](https://github.com/louislam/uptime-kuma/blob/7ca4a3debd76443d8452da95d4040200a1479af4/server/monitor-types/pm2.js).
 PM2 behavior was researched at
-[`3b3b547` (6.0.8)](https://github.com/Unitech/pm2/tree/3b3b54727dab5acf6b43778314cd26b84ffa94d3),
-with independent codec research against
+[`3b3b547` (6.0.8)](https://github.com/Unitech/pm2/tree/3b3b54727dab5acf6b43778314cd26b84ffa94d3).
+The 7.1.1 candidate pins
+[`34dec91`](https://github.com/Unitech/pm2/tree/34dec9197301165850741b319890b2633ae797f4),
+including its internalized
+[RPC callback envelope](https://github.com/Unitech/pm2/blob/34dec9197301165850741b319890b2633ae797f4/modules/pm2-axon-rpc/lib/server.js).
+The original 6.0.8 profile used independent codec research against
 [`pm2-axon-rpc`](https://github.com/Unitech/pm2-axon-rpc/blob/a040e0233649147894e1f5f2b0a24fd02ebb8675/lib/server.js),
 [`pm2-axon`](https://github.com/Unitech/pm2-axon/blob/e012e208f82b697fd8c0fa9795602cb3a7c82f54/lib/sockets/req.js),
 [`AMP`](https://github.com/tj/node-amp/blob/f48c5bd66b0ec39f03658ba3d427d0161502bb21/lib/encode.js)
@@ -186,7 +196,7 @@ Linux, Alpine, arm64, race acceptance, hosted checks or release readiness.
 Both Linux native-package jobs require the additional actual-PM2 gate against
 their same extracted executable. Its separate locked development-only dependency
 is installed below guarded outputs, not added to the product runtime. The
-fixture uses the real 6.0.8 RPC server and real cluster workers in disposable
+fixture uses the real 7.1.1 RPC server and real cluster workers in disposable
 PID, mount and loopback-only network namespaces. Only system programs run before
 the account, groups, capabilities and privilege escalation are dropped. An
 unchanged-credential system supervisor retains the parent-death relationship;

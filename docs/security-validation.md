@@ -125,3 +125,56 @@ changed code fails; malformed identities cannot produce a plausible entry.
 The current 41 notice sets were regenerated and `--check` passes. No embedded
 JavaScript runtime is present in the application source yet, so this is a gate
 for prospective integration, not evidence of candidate adoption or clearance.
+
+## PM2 fixture advisories, 2026-10-26 candidate
+
+The isolated development fixture now pins PM2 **7.1.1** instead of 6.0.8.
+Its regenerated lockfile contains js-yaml **4.3.2** and removes the affected
+basic-ftp/proxy-agent dependency chain. These packages are not linked into
+the shipped Go executable. No alert is dismissed or exempted by this change.
+
+| Advisory | Resolution in the fixture |
+| --- | --- |
+| [PM2 ReDoS](https://github.com/advisories/GHSA-x5gf-qvw8-r2rm) | Upgrade past the 7.0.0 fix to pinned 7.1.1 |
+| [basic-ftp listing parser](https://github.com/patrickjuchli/basic-ftp/security/advisories/GHSA-c475-qrg2-pj4r) | Affected dependency chain removed |
+| [Repeated YAML aliases](https://github.com/nodeca/js-yaml/security/advisories/GHSA-h67p-54hq-rp68) | js-yaml 4.3.2 |
+| [YAML merge chains](https://github.com/nodeca/js-yaml/security/advisories/GHSA-52cp-r559-cp3m) | js-yaml 4.3.2 |
+| [YAML ordered mappings](https://github.com/nodeca/js-yaml/security/advisories/GHSA-5p4m-2wfm-xmqj) | js-yaml 4.3.2 |
+| [Empty YAML merge sources](https://github.com/nodeca/js-yaml/security/advisories/GHSA-2883-xcg3-v3hh) | js-yaml 4.3.2 |
+
+A live npm audit of the old lockfile found these six underlying advisories
+across seven affected package entries, including transitive dependents. The
+updated lockfile (`f0d258ca9a3d432defab1b20804a8ad39ed2156481047869ba00d8b1c8fc26dd`)
+reported zero vulnerabilities on 2026-10-26. All nineteen selected PM2 files
+matched the npm installation and Git commit
+`34dec9197301165850741b319890b2633ae797f4`; the manager retains exact source pins.
+The security scanner now audits and fingerprints this fixture as well as the
+main workspace and optional game-query service.
+
+Canary retains the exact PM2 6.0.8 compatibility profile and adds an exact
+7.1.1 profile; other versions still yield Pending. New independent RPC cases
+exercise both profiles, unchanged status rules and rejection of unreviewed
+versions. PM2 itself is never installed into or upgraded on a user's machine.
+The native CI runtime also moves to the
+[Node 24.22.1 security release](https://nodejs.org/en/blog/release/v24.22.1),
+with the launcher's version admission updated together.
+
+On unchanged v3 source `af29fa057be5d513f01f2f862a77f80289ae7e381284ad707b9a6defc5916032`,
+Windows amd64 checks passed in 32.328 guarded seconds: eight advisory controls,
+eight launcher controls (two Linux-only cases skipped), web typecheck, nineteen
+PM2 pure groups, manager/proof syntax, the full PM2 Go package and vet.
+The package tests use private transports and independent RPC fixtures, not a
+PM2 daemon.
+Actual PM2 7.1.1 interoperability and supervisor cleanup must pass both native
+Linux CI jobs. These local results do not establish Windows PM2 interoperability,
+hosted acceptance, deployment or a complete release validation.
+
+On the same unchanged source, the real launcher's fixture-installation function
+admitted the new version, all nineteen source pins and a link-free dependency
+tree. A fresh live npm audit again reported zero vulnerabilities (15.250 guarded
+seconds). The production PM2 process proof then passed 1/1 on Windows amd64
+in 81.859 guarded seconds including build; executable SHA-256
+`8821bde975371edd638b198328b7bc5ef8786bf71f71ad603a780695d5b77584`.
+This exercises existing Pending, configuration and HA lifecycle behavior on
+Windows, where that Unix-transport fixture does not run a PM2 daemon. Every
+run returned scratch to zero and kept storage within budget.
