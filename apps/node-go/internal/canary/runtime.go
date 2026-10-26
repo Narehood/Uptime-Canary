@@ -78,7 +78,7 @@ type Node struct {
 	syncing, started, stopped                      bool
 	fault                                          error
 	server                                         *http.Server
-	url                                            string
+	url, listeningURL                              string
 	tlsFingerprint                                 string
 	peerTLSClients                                 map[string]*http.Client
 	ctx                                            context.Context
@@ -471,6 +471,7 @@ func (n *Node) Start() error {
 		scheme = "https://"
 		listener = tls.NewListener(listener, n.server.TLSConfig)
 	}
+	n.listeningURL = scheme + listener.Addr().String()
 	n.url = scheme + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
 	n.started = true
 	if n.connector != nil {
@@ -493,6 +494,13 @@ func (n *Node) Start() error {
 	return nil
 }
 func (n *Node) URL() string { n.mu.Lock(); defer n.mu.Unlock(); return n.url }
+
+// ListeningURL reports the socket binding, rather than a loopback client URL.
+func (n *Node) ListeningURL() string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.listeningURL
+}
 func (n *Node) Stop() error {
 	n.mu.Lock()
 	if n.stopped {

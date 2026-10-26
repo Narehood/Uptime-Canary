@@ -57,7 +57,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "Uptime-Canary: Listener failed to start")
 		return 1
 	}
-	fmt.Printf("Uptime-Canary %s listening at %s\n", node.ID, node.URL())
+	fmt.Printf("Uptime-Canary %s listening at %s\n", node.ID, node.ListeningURL())
 	if fingerprint := node.ConnectionFingerprint(); fingerprint != "" {
 		fmt.Printf("Node connection fingerprint (compare before confirming): %s\n", fingerprint)
 	}

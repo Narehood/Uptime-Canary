@@ -5,6 +5,64 @@ are [native TLS](transport-tls.md), [message presets](notifications.md#message-p
 and [cached software updates](software-updates.md). Matching published images,
 hosted platform gates and operator deployment checks remain separate.
 
+## Post-merge follow-up, 2026-10-26
+
+PRs #15 and #16 merged to `f62ff4550f3969d57066111f469ccdbe3e67f760`.
+Its [image publisher](https://github.com/Narehood/Uptime-Canary/actions/runs/40352639018)
+built and promoted all three images and verified anonymous pulls. That publisher
+required successful image builds but did not require the separate native and
+Alpine validation workflows to pass.
+
+The matching [Alpine proof job](https://github.com/Narehood/Uptime-Canary/actions/runs/40352638842/job/121677386439)
+passed 24/25 process tests. The unchanged 64-monitor capacity test failed its
+45-second all-observer recovery condition: local observations remained UP,
+while remote observations became stale and peer/API requests timed out. Both
+processes remained alive. Native Linux amd64 and arm64 package jobs passed on
+that same source; those results do not clear the Alpine failure. The failure
+remains unresolved, and the published images do not establish full release
+acceptance.
+
+This follow-up changes listener logging, safe connection-error diagnostics,
+and future `latest` promotion admission. The startup log identifies the actual
+bound socket; the internal connectable loopback URL stays unchanged. DNS,
+timeout, refused-connection and HTTP/HTTPS mismatches get specific diagnostic
+categories without returning raw private URLs or credentials. Pin and CA
+verification remain enforced before authenticated requests.
+
+Promotion now requires the latest matching successful attempts of all three
+image builds, four Alpine phases and three native package targets for the exact
+current `main` commit. Completion events check once, and admission is checked
+again immediately before registry writes. Missing, skipped, failed, cancelled,
+pending, stale or superseded required results cannot approve promotion.
+Existing commit tags and rollback controls remain. This does not roll back
+already published tags, fix the capacity failure, create VPN routes, or prove
+that a user's dashboard can reach a private node.
+
+The logging and generic-error regressions failed against the original behavior
+on Windows amd64. After the changes, the complete canary package passed on v3
+source `df4d3a6d4da58f7c789debec37a2bf73fdcf81cdd7f7fa44b84c73bfbfaa00ca`
+(core execution 186.111 s, 254.422 guarded seconds). Scratch returned to zero;
+storage stayed within the existing budgets. Hosted checks and actual
+`workflow_run` promotion behavior remain PR gates, separate from these local
+checks. No capacity workload, freshness policy, assertion or deadline changed.
+
+On source `0a5b1a6c92d37501ead01c0e945e60d9125587d939e3bb8b8264abc4a40ce5d5`,
+all three workspace typechecks, configured web pure/control fixtures, thirteen
+new publication controls, eleven retained registry rollback controls, and vet
+of the core and CLI packages passed in 96.469 guarded seconds. The earlier
+static run retained one failing source-location assertion after the transport
+classifier moved files. Its repair keeps the exact original error wording and
+status and additionally requires the registry handler to call that classifier.
+
+A later Python-only control checks reruns of older workflow IDs: execution
+update time, rather than a larger creation-time run ID, selects the latest
+attempt. Fourteen publication controls passed on source
+`f0fca9ad6aa403f7202bba78eb905c0a4edcaeab72442b13401b5d3c6ff02fa8`.
+A read-only assessment of real `f62ff45` GitHub metadata refused promotion,
+including its failed Alpine workflow. That check performs no registry writes,
+artifact downloads or CI reruns. All Go sources and tests are unchanged from
+the complete core pass above; final source identities retain their own scope.
+
 ## Local checkpoint, 2026-10-26
 
 Windows 11 amd64, Node 24.22.1 and the pinned Go 1.27.3 toolchain. The v3 source

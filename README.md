@@ -413,7 +413,9 @@ If nodes reach the dashboard but it can't reach them, see
 
 All three images published from `34442cc` passed credential-free pulls.
 Current tags and access are listed in [GitHub Packages](https://github.com/Narehood/Uptime-Canary/packages)
-and the [publisher workflow](https://github.com/Narehood/Uptime-Canary/actions/workflows/container-images.yml).
+and the [image-build workflow](https://github.com/Narehood/Uptime-Canary/actions/workflows/container-images.yml).
+The follow-up [promotion workflow](https://github.com/Narehood/Uptime-Canary/actions/workflows/container-publication.yml)
+requires matching validation before moving `latest`.
 The published platform is **Linux amd64**; native arm64 binary validation
 does not establish an arm64 image.
 
@@ -430,8 +432,13 @@ does not establish an arm64 image.
   `CANARY_PULL_POLICY=never` only for deliberately preloaded/offline images.
 - **Publishing:** PRs build all three images without pushing. On `main`, each
   successful build pushes its source tag. `latest` is promoted only after
-  all three builds succeed and the commit is still the head of `main`.
-  Promotion has rollback controls but is not a registry-wide atomic operation.
+  all three builds, all four Alpine phases (including proof and race), and
+  all three native package targets pass for that exact current `main` commit.
+  Completion events check once; no validation polling or duplicate test runs
+  are added. Pending, failed, cancelled, missing or skipped required jobs keep
+  `latest` unchanged. Promotion rechecks the latest attempts and main immediately
+  before writing tags. Rollback controls remain; the registry operation is not
+  atomic across packages. Commit image tags can exist before validation passes.
 - **Visibility:** new GHCR packages may need the owner to make them public.
   Verify anonymous access to the exact tag before relying on it. The GameDig
   package is needed only when deploying that optional service.

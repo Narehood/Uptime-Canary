@@ -1,0 +1,98 @@
+name: Promote validated container images
+
+on:
+  workflow_run:
+    workflows: [Container images, Container validation, Release package validation]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Share the registry-write lock with main image builds. Every completion event
+# checks once; whichever required workflow finishes last can admit promotion.
+concurrency:
+  group: container-images-publish
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  validation:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+      commit: ${{ steps.check.outputs.commit }}
+    steps:
+      - name: Checkout trusted main policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check exact-commit validation gates once
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/container-publication-gate.py
+
+  publish:
+    name: Publish matching validated latest images
+    needs: validation
+    if: needs.validation.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    # Allow the bounded metadata recheck as well as registry rollback/verification.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    env:
+      SOURCE_COMMIT: ${{ needs.validation.outputs.commit }}
+    steps:
+      - name: Checkout validated source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validation.outputs.commit }}
+          persist-credentials: false
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Recheck main and latest validation attempts before registry writes
+        id: recheck
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/container-publication-gate.py --commit "$SOURCE_COMMIT"
+      - name: Promote all validated images
+        if: steps.recheck.outputs.ready == 'true'
+        id: promote
+        run: |
+          prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
+          python3 -B scripts/publish-container-images.py --prefix "$prefix" --commit "$SOURCE_COMMIT" --with-game-query
+          echo "Initial publication may require the package owner to make each GHCR package public before anonymous pulls work." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify all images pull without credentials
+        if: steps.promote.outputs.published == 'true'
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/canary-anonymous-docker
+        run: |
+          mkdir -m 700 "$DOCKER_CONFIG"
+          prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/uptime-canary"
+          for component in node web game-query; do
+            docker pull "$prefix-$component:latest"
+            revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$prefix-$component:latest")"
+            test "$revision" = "$SOURCE_COMMIT"
+          done
