@@ -1,19 +1,10 @@
 import type { RegisteredNode } from '@uptime-canary/shared';
 import type { FleetMonitorRow, FleetSource } from './fleet';
+import type { FleetDeployment } from '@uptime-canary/shared';
+export type { FleetNodeGroup, FleetNodeGroupInput } from '@uptime-canary/shared';
+import type { FleetNodeGroup, FleetNodeGroupInput } from '@uptime-canary/shared';
 
 /** Dashboard placement groups, distinct from a monitoring node's outage dependencies. */
-export interface FleetNodeGroup {
-  id: string;
-  name: string;
-  registrationIds: string[];
-  revision: string;
-  updatedAt: number;
-}
-
-export interface FleetNodeGroupInput {
-  name: string;
-  registrationIds: string[];
-}
 
 /** Presentation contracts only. Root owns reads, permissions, writes and durable deployment state. */
 export interface FleetOverviewProps {
@@ -30,6 +21,9 @@ export interface FleetOverviewProps {
   onOpen: (registrationId: string, monitorId: string) => void;
   onAdd?: () => void;
   onManageGroups?: () => void;
+  onRetryDeployment?: (deployment: FleetDeployment) => void;
+  onRemoveDeployment?: (deployment: FleetDeployment) => void;
+  onEditDeployment?: (deployment: FleetDeployment) => void;
 }
 
 export interface FleetPlacementFieldsProps {
@@ -44,6 +38,7 @@ export interface FleetPlacementFieldsProps {
 }
 
 export interface FleetNodeGroupsProps {
+  onOpenDependencies?: () => void;
   nodes: readonly RegisteredNode[];
   groups: readonly FleetNodeGroup[];
   loading: boolean;

@@ -17,6 +17,7 @@ func (d *Dashboard) Start(ctx context.Context) <-chan struct{} {
 			defer close(d.done)
 			var workers sync.WaitGroup
 			workers.Go(func() { d.poll(ctx) })
+			workers.Go(func() { d.runFleet(ctx) })
 			if d.updates != nil && d.updates.enabled {
 				workers.Go(func() { d.updates.run(ctx) })
 			}

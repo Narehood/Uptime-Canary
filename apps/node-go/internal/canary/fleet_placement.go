@@ -13,10 +13,12 @@ const fleetPlacementCategory = "fleetPlacements"
 // Retries acknowledge the original write; they never silently overwrite a
 // later local edit, revive a deletion, or manufacture another monitor ID.
 type fleetPlacementCommand struct {
-	Sequence int64           `json:"sequence"`
-	Revision string          `json:"revision"`
-	Monitor  json.RawMessage `json:"monitor,omitempty"`
-	Deleted  bool            `json:"deleted,omitempty"`
+	Sequence  int64           `json:"sequence"`
+	Revision  string          `json:"revision"`
+	MonitorID string          `json:"monitorId,omitempty"`
+	Adopt     bool            `json:"adopt,omitempty"`
+	Monitor   json.RawMessage `json:"monitor,omitempty"`
+	Deleted   bool            `json:"deleted,omitempty"`
 }
 
 type fleetPlacementResult struct {
@@ -67,7 +69,11 @@ func fleetCommandHash(b []byte) (string, error) {
 // A retained dashboard role delegation is required even for receipt reads.
 func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int, any, error) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/fleet-placements/")
-	if !fleetPlacementID(id) || (r.Method != "GET" && r.Method != "PUT") {
+	validate := strings.HasSuffix(id, "/validate")
+	if validate {
+		id = strings.TrimSuffix(id, "/validate")
+	}
+	if !fleetPlacementID(id) || (!validate && r.Method != "GET" && r.Method != "PUT") || validate && r.Method != "POST" {
 		return 0, nil, fail(404, "Not found")
 	}
 	owner := fleetPlacementOwner(actor)
@@ -77,12 +83,31 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 	if r.URL.RawQuery != "" || r.URL.ForceQuery {
 		return 0, nil, fail(400, "Placement commands do not accept a query")
 	}
-	monitorID := "fleet-" + id
+	var command fleetPlacementCommand
+	if r.Method != "GET" {
+		if err := dashboardJSON(b, &command, "sequence", "revision", "monitorId", "adopt", "monitor", "deleted"); err != nil {
+			return 0, nil, err
+		}
+	}
+	monitorID, indexed, err := loadOne[string](n.store, "fleetPlacementIndex", id)
+	if err != nil {
+		return 0, nil, fail(503, "Cannot read placement identity")
+	}
+	if !indexed {
+		monitorID = "fleet-" + id
+		if command.Adopt {
+			monitorID = command.MonitorID
+		}
+	}
+	if identifier(monitorID, "monitor ID") != nil || command.MonitorID != "" && command.MonitorID != monitorID {
+		return 0, nil, fail(400, "Invalid placement monitor identity")
+	}
 	previous, exists, err := loadOne[fleetPlacementReceipt](n.store, fleetPlacementCategory, monitorID)
 	if err != nil {
 		return 0, nil, fail(503, "Cannot read placement receipt")
 	}
-	if exists && (previous.Owner != owner || previous.PlacementID != id || previous.MonitorID != monitorID) {
+	transfer := exists && command.Adopt && previous.PlacementID != id && !n.fleetOwnerExists(previous.Owner)
+	if exists && !transfer && (previous.Owner != owner || previous.PlacementID != id || previous.MonitorID != monitorID) {
 		return 0, nil, fail(409, "This placement belongs to another dashboard registration")
 	}
 	if r.Method == "GET" {
@@ -91,13 +116,14 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 		}
 		return 200, previous.fleetPlacementResult, nil
 	}
-	var command fleetPlacementCommand
-	if err = dashboardJSON(b, &command, "sequence", "revision", "monitor", "deleted"); err != nil {
-		return 0, nil, err
+	oldIndex := ""
+	if transfer {
+		oldIndex = previous.PlacementID
+		exists = false
 	}
 	if command.Sequence < 1 || command.Sequence > maxSafe ||
 		(command.Revision != "" && identifier(command.Revision, "revision") != nil) ||
-		command.Deleted && len(command.Monitor) != 0 || !command.Deleted && len(command.Monitor) == 0 {
+		command.Deleted && len(command.Monitor) != 0 || !command.Deleted && len(command.Monitor) == 0 || command.Adopt && (command.MonitorID == "" || command.Deleted) {
 		return 0, nil, fail(400, "Invalid placement command")
 	}
 	hash, err := fleetCommandHash(b)
@@ -118,10 +144,14 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 	}
 	heads := n.heads[monitorID]
 	if !exists {
-		if len(heads) != 0 || command.Revision != "" || command.Deleted {
+		if command.Adopt {
+			if len(heads) != 1 || heads[0].Monitor.Deleted || command.Revision != heads[0].Monitor.Revision || !n.monitorVersionReady(heads[0]) {
+				return 0, nil, fail(409, "The monitor changed before adoption")
+			}
+		} else if len(heads) != 0 || command.Revision != "" || command.Deleted {
 			return 0, nil, fail(409, "A new placement cannot replace an existing monitor")
 		}
-		if len(n.heads) >= maxMonitors {
+		if !command.Adopt && len(n.heads) >= maxMonitors {
 			return 0, nil, fail(409, "Monitor capacity exceeded")
 		}
 	} else if len(heads) != 1 || heads[0].Monitor.Deleted ||
@@ -145,6 +175,9 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 	if r.Context().Err() != nil {
 		return 0, nil, fail(408, "Placement request cancelled")
 	}
+	if validate {
+		return 200, map[string]bool{"valid": true}, nil
+	}
 	monitor := Monitor{MonitorInput: input, ID: monitorID, Revision: newID(), UpdatedAt: n.now(), Deleted: command.Deleted}
 	version, edges, err := n.joinMonitorRevision(monitor, heads)
 	if err != nil {
@@ -154,6 +187,14 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 		Revision: version.Monitor.Revision, Deleted: command.Deleted}
 	receipt := fleetPlacementReceipt{Owner: owner, CommandHash: hash, fleetPlacementResult: result}
 	if err = n.applySnapshotLocal(Snapshot{Versions: []Version{version}, RevisionEdges: edges}, func(e dbExec) error {
+		if oldIndex != "" {
+			if err := remove(e, "fleetPlacementIndex", oldIndex); err != nil {
+				return err
+			}
+		}
+		if err := put(e, "fleetPlacementIndex", id, monitorID); err != nil {
+			return err
+		}
 		return put(e, fleetPlacementCategory, monitorID, receipt)
 	}); err != nil {
 		return 0, nil, err
@@ -166,4 +207,13 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 		status = 201
 	}
 	return status, result, nil
+}
+
+func (n *Node) fleetOwnerExists(owner string) bool {
+	for _, role := range dashboardRoles {
+		if _, ok := n.accounts[owner+"-"+role]; ok {
+			return true
+		}
+	}
+	return false
 }

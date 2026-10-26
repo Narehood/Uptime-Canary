@@ -6,6 +6,8 @@ import { nodeStateInfo, pendingOperation, registrySummary, selectedOperation } f
 import { ago, andList, elapsed, plural, shortClock } from './format';
 import { controlPlaneMode, gatewayMode } from './gateway';
 import { useNow, useResource } from './hooks';
+import { useFleetCatalog } from './fleetState';
+import { FleetController } from './views/FleetController';
 import { assessAll, canEdit, nodeColumns, type Assessment, type NodeColumn } from './model';
 import { dismiss, useNotices } from './notices';
 import { href, navigate, sectionOf, useRoute, type Route } from './router';
@@ -168,6 +170,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const endpoint = overview.node.id;
   // Control plane: the account, its role and its session are the dashboard's, whichever node is selected.
   const controlPlane = controlPlaneMode();
+  const fleetRoute = controlPlane && ['overview', 'monitors', 'node-groups'].includes(route.name);
   const role = controlPlane ? account?.role ?? overview.user.role : overview.user.role;
   const userName = controlPlane ? account?.name ?? overview.user.name : overview.user.name;
   const accountHome = controlPlane ? 'this dashboard' : endpoint;
@@ -181,6 +184,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const channels = useCatalog<NotificationChannelView>(`${connection.identity}|${api.baseUrl}|channels`, signal => nodeScope ? api.channels(signal) : Promise.resolve([]), view => view.channel.id);
   const tags = useCatalog<TagView>(`${connection.identity}|${api.baseUrl}|tags`, signal => nodeScope ? api.tags(signal) : Promise.resolve([]), view => view.tag.id);
   const registry = useCatalog<RegisteredNode>(`${connection.identity}|${api.baseUrl}|registry`, signal => controlPlane ? api.registeredNodes(signal) : Promise.resolve([]), node => node.id, 15_000);
+  const fleetCatalog = useFleetCatalog(api, `${connection.identity}|${role}`, controlPlane && connection.link !== 'rejected');
   // The selected registration as the list shows it now. A rename or an address move keeps the registration and its
   // node, so the selection follows it without dropping anything. When an operation on it finishes, it is read again at
   // once rather than after the poll's back-off.
@@ -217,10 +221,10 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
       refresh: () => session.refresh(),
       openSwitch: request => setSwitching(request ?? {}),
       stillCurrent: () => session.isCurrent({ identity: connection.identity, api }),
-      controlPlane, selection, registry, accountHome,
+      controlPlane, selection, registry, accountHome, fleet: controlPlane ? fleetCatalog : undefined,
       select: node => { session.select(node, connection); },
     };
-  }, [connection, api, overview, endpoint, role, account, search, channels, tags, controlPlane, selection, registry, accountHome]);
+  }, [connection, api, overview, endpoint, role, account, search, channels, tags, controlPlane, selection, registry, accountHome, fleetCatalog]);
 
   // A public status page may have renamed the tab; the dashboard keeps its own title.
   const place = controlPlane ? selection?.label ?? 'dashboard' : endpoint;
@@ -344,7 +348,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
             ><Icon name="logout" /></button>
           </header>
 
-          <LinkBanner connection={connection} onChoose={() => setPicking(true)} onReconnect={() => setSwitching({
+          {!fleetRoute || connection.link === 'rejected' ? <LinkBanner connection={connection} onChoose={() => setPicking(true)} onReconnect={() => setSwitching({
             url: api.baseUrl,
             reason: controlPlane
               ? api.credential === 'session'
@@ -353,7 +357,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
               : api.credential === 'session'
                 ? `Your sign-in on ${endpoint} ended. Sign in again to continue.`
                 : `${endpoint} no longer accepts the token this tab was using. Sign in again to continue.`,
-          })} />
+          })} /> : null}
           <ExpiryBanner connection={connection} onRenew={() => setSwitching({ url: api.baseUrl, reason: controlPlane ? 'Sign in to this dashboard again to start a new 12-hour session.' : `Sign in to ${endpoint} again to start a new 12-hour session.` })} />
           {account && account.passwordEnabled === false && api.credential === 'token' && section !== 'account' && !nudgeDismissed && connection.link === 'live' ? (
             <Banner tone="info" title={<>Set a password for {account.name}</>} actions={<>
@@ -364,7 +368,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
             </Banner>
           ) : null}
           {updates && connection.link !== 'rejected' ? <UpdateBanner updates={updates} onOpen={() => setShowingUpdates(true)} /> : null}
-          {out.length && connection.link === 'live' ? (
+          {!fleetRoute && out.length && connection.link === 'live' ? (
             <Banner
               tone="warn"
               title={<>{endpoint} can’t reach {andList(out.map(node => node.id))}</>}
@@ -397,8 +401,10 @@ const DASHBOARD_ROUTES: ReadonlySet<Route['name']> = new Set<Route['name']>(['no
  * do instead of an empty stand-in that could read as "no monitors". Nodes and accounts never wait for a node.
  */
 function ControlPlaneView({ route, connection }: { route: Route; connection: Connection }) {
+  if (route.name === 'node-groups' || route.name === 'groups') return <FleetController groups />;
+  if (route.name === 'overview' || route.name === 'monitors') return <FleetController />;
   if (DASHBOARD_ROUTES.has(route.name)) return <View route={route} />;
-  if (!connection.selection) return route.name === 'overview' ? <RegistryView home /> : <ChooseNodeView section={sectionOf(route)} />;
+  if (!connection.selection) return <ChooseNodeView section={sectionOf(route)} />;
   if (connection.awaiting) return <NodePendingView />;
   return <View route={route} />;
 }
@@ -525,9 +531,12 @@ function View({ route }: { route: Route }) {
     case 'monitor-new': return <MonitorFormView />;
     case 'monitor': return <MonitorDetailView key={route.id} id={route.id} />;
     case 'monitor-edit': return <MonitorFormView key={route.id} id={route.id} />;
+    case 'fleet-monitor-edit': return <MonitorFormView key={`fleet-${route.id}`} fleetId={route.id} />;
     case 'monitor-clone': return <MonitorFormView key={`clone-${route.id}`} cloneOf={route.id} />;
     case 'tags': return <TagsView />;
     case 'groups': return <GroupsView />;
+    case 'outage-groups': return <GroupsView />;
+    case 'node-groups': return <GroupsView />;
     case 'group-new': return <GroupFormView />;
     case 'group-edit': return <GroupFormView key={route.id} id={route.id} />;
     case 'incidents': return <IncidentsView />;

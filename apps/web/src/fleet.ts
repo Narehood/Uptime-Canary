@@ -1,4 +1,4 @@
-import type { Monitor, MonitorView, Observation, Overview, RegisteredNode, Role } from '@uptime-canary/shared';
+import type { FleetDeployment, Monitor, MonitorView, Observation, Overview, RegisteredNode, Role } from '@uptime-canary/shared';
 import { ApiFailure, type CanaryApi } from './api';
 import { pendingOperation } from './dashboard';
 import { assess, nodeColumns, type Assessment } from './model';
@@ -7,6 +7,11 @@ import { assess, nodeColumns, type Assessment } from './model';
 export const FLEET_READ_CONCURRENCY = 4;
 export const FLEET_REFRESH_MS = 15_000;
 export const FLEET_SNAPSHOT_MAX_AGE_MS = 30_000;
+
+export function managedMonitor(deployments: readonly FleetDeployment[], registrationId: string | undefined, monitorId: string): FleetDeployment | undefined {
+  return deployments.find(d => d.state !== 'removed' && (d.placements.some(p => p.monitorId === monitorId && (p.registrationId === registrationId || p.registrationIds.includes(registrationId ?? '')))
+    || d.source?.monitorId === monitorId && d.source.registrationId === registrationId));
+}
 
 export interface FleetSource {
   node: RegisteredNode;
@@ -31,6 +36,7 @@ export interface FleetResult {
 }
 
 export interface FleetMonitorRow {
+	deployment?: FleetDeployment;
   key: string;
   monitor: Monitor;
   assessment: Assessment;
@@ -122,7 +128,7 @@ function peerScopes(sources: readonly FleetSource[]): Map<string, string> {
  * A central inventory of existing node monitors. Per-node observations keep their reporting source and read time.
  * Placement/deployment authority is deliberately separate: this projection never writes configuration or peers nodes.
  */
-export function fleetMonitorRows(sources: readonly FleetSource[], now: number): FleetMonitorRow[] {
+export function fleetMonitorRows(sources: readonly FleetSource[], now: number, deployments: readonly FleetDeployment[] = []): FleetMonitorRow[] {
   const scopes = peerScopes(sources);
   const grouped = new Map<string, FleetMonitorRow['sources']>();
   for (const source of sources) {
@@ -177,5 +183,38 @@ export function fleetMonitorRows(sources: readonly FleetSource[], now: number): 
     if (differingViews) assessment.detail = 'node views have different revisions';
     rows.push({ key, monitor, assessment, results, sources: members, differingViews });
   }
-  return rows.sort((a, b) => a.assessment.severity - b.assessment.severity || a.monitor.name.localeCompare(b.monitor.name) || a.key.localeCompare(b.key));
+  const consumed = new Set<string>();
+  const managed: FleetMonitorRow[] = [];
+  for (const deployment of deployments) {
+    const matches = (row: FleetMonitorRow): boolean => row.sources.some(({ source, view }) =>
+      deployment.placements.some(p => p.monitorId === view.monitor.id && (p.registrationId === source.node.id || p.registrationIds.includes(source.node.id)))
+      || deployment.source?.registrationId === source.node.id && deployment.source.monitorId === view.monitor.id);
+    const copies = rows.filter(matches);
+    copies.forEach(row => consumed.add(row.key));
+    if (deployment.state === 'removed') continue;
+    const results: FleetResult[] = deployment.registrationIds.map(registrationId => {
+      const source = sources.find(s => s.node.id === registrationId);
+      const p = deployment.placements.find(p => p.registrationIds.includes(registrationId));
+      const row = copies.find(r => r.sources.some(m => m.view.monitor.id === p?.monitorId));
+      const found = row?.results.find(r => r.nodeId === source?.node.nodeId);
+      return found ?? { nodeId: source?.node.nodeId ?? registrationId, name: source?.node.label ?? registrationId,
+        state: 'unknown', message: 'No current result for this placement.', readAt: null, viaPeer: false };
+    });
+    const members = copies.flatMap(row => row.sources);
+    const drift = deployment.placements.some(p => p.state === 'applied' && members.some(m =>
+      m.source.node.id === p.registrationId && m.view.monitor.id === p.monitorId && m.view.monitor.revision !== p.revision));
+    const conflict = members.some(m => m.view.configConflict) || drift;
+    const observations: Observation[] = results.map(r => ({ monitorId: deployment.id, nodeId: r.nodeId,
+      state: r.state === 'paused' ? 'unknown' : r.state, checkedAt: r.observation?.checkedAt ?? 0,
+      latencyMs: r.observation?.latencyMs ?? 0, latencyAvailable: r.observation?.latencyAvailable ?? false, message: r.message }));
+    const state = deployment.state !== 'applied' ? 'unknown' : results.length && results.every(r => r.state === 'paused') ? 'paused'
+      : results.some(r => r.state === 'down') ? 'down' : !results.length || results.some(r => r.state === 'unknown' || r.state === 'paused') ? 'unknown'
+        : results.some(r => r.state === 'pending') ? 'pending' : 'up';
+    const monitor = { ...deployment.monitor, nodeIds: results.map(r => r.nodeId) };
+    const assessment = assess({ monitor, state, observations, unknownNodes: results.filter(r => r.state === 'unknown').length, configConflict: conflict }, new Map());
+    if (deployment.state !== 'applied') assessment.detail = deployment.reason || 'Placement is waiting for confirmation';
+    else if (drift) assessment.detail = 'Changed directly on a node; review before saving';
+    managed.push({ key: `fleet:${deployment.id}`, monitor, assessment, results, sources: members, differingViews: conflict, deployment });
+  }
+  return [...rows.filter(row => !consumed.has(row.key)), ...managed].sort((a, b) => a.assessment.severity - b.assessment.severity || a.monitor.name.localeCompare(b.monitor.name) || a.key.localeCompare(b.key));
 }

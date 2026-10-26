@@ -1,4 +1,26 @@
-import type { Role } from './index.js';
+import type { Monitor, MonitorInput, MonitorTag, Role } from './index.js';
+
+export interface FleetTargetReferences { notificationIds?: string[]; groupId?: string; tags?: MonitorTag[] }
+
+export interface FleetNodeGroup { id: string; name: string; registrationIds: string[]; revision: string; updatedAt: number }
+export interface FleetNodeGroupInput { name: string; registrationIds: string[] }
+export interface FleetSourceReference { registrationId: string; monitorId: string; revision: string }
+export interface FleetPlacement {
+  id: string; registrationId: string; registrationIds: string[]; nodeIds: string[];
+  monitorId: string; sequence: number; revision: string; state: 'pending' | 'applied' | 'removed';
+}
+export interface FleetDeployment {
+  references?: Record<string, FleetTargetReferences>;
+  canCancel?: boolean;
+  id: string; revision: string; updatedAt: number; registrationIds: string[]; source?: FleetSourceReference;
+  placements: FleetPlacement[]; state: 'pending' | 'applied' | 'blocked' | 'unauthorized' | 'removed'; reason?: string;
+  monitor: Monitor;
+}
+export interface FleetDeploymentInput {
+  references?: Record<string, FleetTargetReferences>;
+  /** Kept in form memory across retries of a create whose answer was lost. */
+  requestId?: string; revision?: string; registrationIds: string[]; monitor: MonitorInput; source?: FleetSourceReference;
+}
 
 /** Dashboard-owned registry, shared by every dashboard account. Never contains a node credential. */
 export interface RegisteredNode {

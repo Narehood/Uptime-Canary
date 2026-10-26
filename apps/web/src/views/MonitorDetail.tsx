@@ -6,6 +6,7 @@ import { BROWSER_PENDING } from '../browser';
 import { checkFacts, inputOf, typeLabel } from '../checks';
 import { useCanary } from '../context';
 import { nodeStateInfo, registryOrder } from '../dashboard';
+import { selectedDeployment } from '../fleetActions';
 import { ago, elapsed, hasLatency, latency, latencyOf, maskedUrl, percent, plural, shortRev, span } from '../format';
 import { GAMEDIG_PENDING } from '../gamedig';
 import { useResource } from '../hooks';
@@ -488,7 +489,7 @@ const Fact = ({ label, children }: { label: string; children: ReactNode }) => <>
 
 /** Editors set a manual monitor's result here. It keeps the check generation, so an open outage can recover. */
 function ManualControl({ view }: { view: MonitorView }) {
-  const { api, endpoint, refresh, stillCurrent } = useCanary();
+  const ctx = useCanary(); const { api, endpoint, refresh, stillCurrent } = ctx;
   const m = view.monitor;
   const formId = useId();
   const [state, setState] = useState<'' | 'up' | 'down' | 'pending'>(m.manual?.state ?? '');
@@ -500,11 +501,16 @@ function ManualControl({ view }: { view: MonitorView }) {
   const save = async (): Promise<void> => {
     setBusy(true); setError(null);
     try {
-      const input = inputOf(m);
-      const manual: NonNullable<typeof input.manual> = { ...(m.manual ?? {}) };
+      const deployment = selectedDeployment(ctx, m.id);
+      const input = inputOf(deployment?.monitor ?? m);
+      const manual: NonNullable<typeof input.manual> = { ...(input.manual ?? {}) };
       if (state) manual.state = state; else delete manual.state;
       if (message.trim()) manual.message = message.trim(); else delete manual.message;
       if (Object.keys(manual).length) input.manual = manual; else delete input.manual;
+      if (deployment) {
+        await api.saveFleetMonitor({ monitor: input, registrationIds: deployment.registrationIds }, deployment);
+        if (!stillCurrent()) return; ctx.fleet?.reload(); notify('Saved the manual result for every selected placement. Nodes report it after confirmation.'); navigate(href('overview')); return;
+      }
       const saved = await api.updateMonitor(m.id, { ...input, revision: m.revision });
       if (!stillCurrent()) return;
       notify(`Set “${saved.name}” to ${state || 'not set (pending)'} on ${endpoint} (revision ${shortRev(saved.revision)}). Assigned nodes report it on their next check.`);
@@ -549,7 +555,7 @@ function DeliveriesCard({ view }: { view: MonitorView }) {
 }
 
 export function MonitorDetailView({ id }: { id: string }) {
-  const { monitorMap, assessmentOf, overview, endpoint, editable, api, refresh, nodeMap, tags, stillCurrent } = useCanary();
+  const ctx = useCanary(); const { monitorMap, assessmentOf, overview, endpoint, editable, api, refresh, nodeMap, tags, stillCurrent } = ctx;
   const view = monitorMap.get(id);
   const a = assessmentOf(id);
   const [busy, setBusy] = useState(false);
@@ -573,6 +579,11 @@ export function MonitorDetailView({ id }: { id: string }) {
   const togglePause = async (): Promise<void> => {
     setBusy(true); setError(null);
     try {
+      const deployment = selectedDeployment(ctx, m.id);
+      if (deployment) {
+        await api.saveFleetMonitor({ monitor: { ...inputOf(deployment.monitor), enabled: !m.enabled }, registrationIds: deployment.registrationIds }, deployment);
+        if (!stillCurrent()) return; ctx.fleet?.reload(); notify(`Requested ${m.enabled ? 'pause' : 'resume'} for “${m.name}” on every selected node.`); navigate(href('overview')); return;
+      }
       const saved = await api.updateMonitor(m.id, { ...inputOf(m), enabled: !m.enabled, revision: m.revision });
       if (!stillCurrent()) return;
       notify(`${saved.enabled ? 'Resumed' : 'Paused'} “${saved.name}” on ${endpoint} (revision ${shortRev(saved.revision)}).${saved.enabled ? '' : ' An open incident closes without a recovery alert.'}`);
@@ -651,13 +662,18 @@ export function MonitorDetailView({ id }: { id: string }) {
 }
 
 function DeleteDialog({ view, onClose }: { view: MonitorView; onClose: () => void }) {
-  const { api, endpoint, refresh, stillCurrent } = useCanary();
+  const ctx = useCanary(); const { api, endpoint, refresh, stillCurrent } = ctx;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const m = view.monitor;
   const remove = async (): Promise<void> => {
     setBusy(true); setError(null);
     try {
+      const deployment = selectedDeployment(ctx, m.id);
+      if (deployment) {
+        await api.removeFleetMonitor(deployment); if (!stillCurrent()) return;
+        ctx.fleet?.reload(); notify(`Requested deletion of “${m.name}” from every selected node. Offline placements stay pending.`); navigate(href('overview')); return;
+      }
       await api.deleteMonitor(m.id, m.revision);
       if (!stillCurrent()) return;
       notify(`Deleted “${m.name}” on ${endpoint}. Peers keep the deletion when they sync.`);
@@ -671,6 +687,7 @@ function DeleteDialog({ view, onClose }: { view: MonitorView; onClose: () => voi
   };
   return (
     <Modal title={`Delete ${m.name}?`} onClose={onClose} busy={busy}>
+      {ctx.controlPlane && ctx.fleet?.deployments.some(d => d.state !== 'removed' && d.placements.some(p => p.monitorId === m.id)) ? <p>This is a fleet monitor. Deletion applies to every selected node and stays pending until its placements confirm it.</p> : null}
       <p>This stops the check on {plural(m.nodeIds.length, 'node')} and writes a deletion that peers respect, so it stays deleted when nodes reconnect. An open incident closes without a recovery alert.</p>
       <p className="muted small">Deleting revision <Rev revision={m.revision} />. If someone changed it in the meantime, {endpoint} rejects the deletion.</p>
       {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Not deleted</b><p>{error}</p></div></div> : null}

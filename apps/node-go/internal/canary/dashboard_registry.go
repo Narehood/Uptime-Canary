@@ -89,6 +89,8 @@ type DashboardOptions struct {
 }
 
 type Dashboard struct {
+	fleet                    map[string]dashboardFleetRecord
+	fleetBusy                map[string]bool
 	updates                  *dashboardUpdates
 	accounts                 *DashboardAccounts
 	mu                       sync.Mutex
@@ -212,6 +214,9 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 		d.registry[id] = row
 	}
 	if err = d.loadInvitations(); err != nil {
+		return nil, err
+	}
+	if err = d.loadFleet(); err != nil {
 		return nil, err
 	}
 	d.updates, err = newDashboardUpdates(d, o.CheckUpdates, o.UpdateClient)

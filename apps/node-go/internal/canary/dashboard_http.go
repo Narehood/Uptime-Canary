@@ -109,6 +109,10 @@ func (d *Dashboard) currentActor(r *http.Request, actor AccountView, admin bool)
 
 func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, actor AccountView) {
 	p := r.URL.Path
+	if p == "/api/dashboard/node-groups" || strings.HasPrefix(p, "/api/dashboard/node-groups/") || p == "/api/dashboard/fleet/monitors" || strings.HasPrefix(p, "/api/dashboard/fleet/monitors/") {
+		d.fleetRequest(w, r, actor)
+		return
+	}
 	if p == "/api/dashboard/updates" || strings.HasPrefix(p, "/api/dashboard/updates/") {
 		d.updateRequest(w, r, actor)
 		return
@@ -491,6 +495,18 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 		d.mu.Unlock()
 		errorReply(w, fail(409, "This node operation is already running"))
 		return
+	}
+	for _, deployment := range d.fleet {
+		if deployment.State == "removed" {
+			continue
+		}
+		for _, placement := range deployment.Placements {
+			if placement.RegistrationID == id && placement.State != "removed" {
+				d.mu.Unlock()
+				errorReply(w, fail(409, "Retire this node's fleet placements before removing its registration"))
+				return
+			}
+		}
 	}
 	row.State, row.Error = "removing", ""
 	err := d.saveAuthorizedRegistry(row, r, actor)
