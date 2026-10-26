@@ -592,6 +592,16 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .gstep-h { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
 .gstep-h b { font-size: 13px; }
 .gpre { margin: 0; max-height: 260px; }
+/* Portainer's basic editor: one card per variable, its Name and Value each with their own Copy */
+.gvars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gvar { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; min-width: 0; }
+.gvar-f { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; grid-template-areas: "k v b"; gap: 4px 10px; align-items: center; min-width: 0; }
+.gvar-f + .gvar-f { border-top: 1px solid var(--border); padding-top: 6px; }
+.gvar-k { grid-area: k; font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.gvar-v { grid-area: v; font: 12px/1.45 var(--mono); color: var(--text-1); overflow-wrap: anywhere; word-break: break-all; min-width: 0; }
+.gvar-f > .btn { grid-area: b; justify-self: end; }
+.gvars-alt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.gvars-alt > small { flex: 1 1 220px; min-width: 0; }
 .btn.copy-failed { color: var(--critical-text); border-color: var(--critical); }
 .wiz-status { display: flex; flex-direction: column; gap: 4px; border: 1px dashed var(--border-2); border-radius: 10px; padding: 10px 12px; }
 .pairing { border: 1px solid var(--warning); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
@@ -602,6 +612,7 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .types.two { grid-template-columns: minmax(0, 1fr); }
   .gstep { grid-template-columns: minmax(0, 1fr); }
   .gnum { display: none; }
+  .gvar-f { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "k b" "v v"; }
 }
 .type-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; background: var(--surface-2); }
 .type-now b { font-size: 14px; }

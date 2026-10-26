@@ -1,4 +1,5 @@
 import type { NodeInvitation, RegisteredNode } from '@uptime-canary/shared';
+import { parseIPv4, parseIPv6 } from './tailscale';
 
 /**
  * The Add node wizard without rendering: the node ID rule, the credentials a new node gets from this browser, and the
@@ -147,12 +148,12 @@ export function resourceName(nodeId: string): string {
 export interface DirectTarget {
   /** The address the dashboard's server will use; the verification step checks it. */
   url: string;
-  /** Docker's publish address: an IP literal (IPv6 in brackets), or 0.0.0.0 for a host name. */
+  /** Local publish address chosen independently of url: an IP literal (IPv6 in brackets). */
   host: string;
-  /** The native node's CANARY_HOST: the same IP without brackets, or 0.0.0.0. */
+  /** The native node's CANARY_HOST: the chosen local IP without brackets. */
   listen: string;
   port: number;
-  /** Published on every host address, because the address names a host rather than one IP. */
+  /** A wildcard local binding: 0.0.0.0 or ::. It is never inferred from the remote node URL. */
   allInterfaces: boolean;
 }
 
@@ -162,16 +163,26 @@ export interface DirectTarget {
  * administrator then enters that certificate's fingerprint from the node's log before the dashboard's server contacts it.
  * http:// sets the node up without encryption, as before, for a network that encrypts traffic itself.
  */
-export function directTarget(input: string): DirectTarget | string {
+export function directTarget(input: string, bindAddress = '0.0.0.0'): DirectTarget | string {
   let url: URL;
   try { url = new URL(input.trim()); } catch { return 'Enter the full address, like https://100.79.12.4:3100.'; }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'Use an https:// address, like https://100.79.12.4:3100: the new node then encrypts its connections itself.';
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') return 'Use only the scheme, host and port, like https://100.79.12.4:3100.';
   const port = url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80;
-  const ipv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(url.hostname);
-  const ipv6 = url.hostname.startsWith('[');
-  if (!ipv4 && !ipv6) return { url: url.origin, host: '0.0.0.0', listen: '0.0.0.0', port, allInterfaces: true };
-  return { url: url.origin, host: url.hostname, listen: ipv6 ? url.hostname.slice(1, -1) : url.hostname, port, allInterfaces: false };
+  const binding = localBinding(bindAddress);
+  if (typeof binding === 'string') return binding;
+  return { url: url.origin, ...binding, port };
+}
+
+/** A local interface IP, never a connection URL or DNS name. Blank selects the explicit default wildcard. */
+export function localBinding(input: string): Pick<DirectTarget, 'host' | 'listen' | 'allInterfaces'> | string {
+  const value = input.trim() || '0.0.0.0';
+  const ipv4 = parseIPv4(value);
+  if (ipv4) return { host: value, listen: value, allInterfaces: ipv4.every(byte => byte === 0) };
+  const bare = value.startsWith('[') && value.endsWith(']') ? value.slice(1, -1) : value;
+  const ipv6 = parseIPv6(bare);
+  if (ipv6) return { host: `[${bare}]`, listen: bare, allInterfaces: ipv6.every(byte => byte === 0) };
+  return 'Enter an IP address that belongs to the node host, or 0.0.0.0 for all IPv4 interfaces. Do not enter a URL, host name or port.';
 }
 
 /** The new node serves HTTPS itself: its settings select CANARY_TLS_MODE=auto. */
@@ -243,7 +254,11 @@ export interface GuideBlock {
   /** Holds private values: masked unless revealed; Copy and Download always carry the real text. */
   secret: boolean;
   text: string;
+  /** Portainer basic editor: copy names and raw values separately; masked values follow reveal just like text. */
+  variables?: GuideVariable[];
 }
+
+export interface GuideVariable { name: string; value: string; secret: boolean }
 
 export const imageReference = (tag: string): string => `${NODE_IMAGE}:${tag}`;
 /** The commit a `sha-<full commit>` tag names, or null for `latest` and other tags. */
@@ -333,19 +348,20 @@ function newNodeBlocks(setup: NodeSetup, { name = setup.nodeId, res, image, hide
     case 'compose':
     case 'portainer': {
       const portainer = setup.platform === 'portainer';
-      const variables = [
-        `CANARY_ADMIN_TOKEN=${hide(literal(secrets.admin))}`,
-        `CANARY_CLUSTER_TOKEN=${hide(literal(secrets.cluster))}`,
-        ...(out ? [`CANARY_DASHBOARD_ENROLL_TOKEN=${hide(out.token)}`] : []),
+      const variableFields: GuideVariable[] = [
+        { name: 'CANARY_ADMIN_TOKEN', value: hide(literal(secrets.admin)), secret: true },
+        { name: 'CANARY_CLUSTER_TOKEN', value: hide(literal(secrets.cluster)), secret: true },
+        ...(out ? [{ name: 'CANARY_DASHBOARD_ENROLL_TOKEN', value: hide(out.token), secret: true }] : []),
       ];
+      const variables = variableFields.map(variable => `${variable.name}=${variable.value}`);
       const yaml = composeFile({ project: portainer ? null : res, nodeId: id, name, image, direct, tls, connection: out ?? null });
       if (portainer) {
         const started = tls ? ` ${tlsSteps('the container’s log in Portainer', 'volume')} Then choose Next and enter the fingerprint.` : '';
         return [
           { key: 'stack', kind: 'note', secret: false, title: 'Add the stack', text: `In Portainer, open Stacks and choose Add stack. Name it ${res}, choose Web editor and paste the YAML below. Keep the stack name: Portainer names the two volumes after it.` },
           { key: 'yaml', kind: 'file', file: `${res}.yml`, secret: false, title: 'Stack YAML (no private values)', text: yaml },
-          { key: 'variables', kind: 'file', file: `${res}.env`, secret: true, title: 'Environment variables', text: `${variables.join('\n')}\n` },
-          { key: 'deploy', kind: 'note', secret: false, title: 'Deploy', text: `Under Environment variables, switch to Advanced mode and paste these lines, or use Load variables from .env file with the download. If this host has run ${image} before, pull it again first (under Images in Portainer), so the node doesn't start an older copy of that tag. Then choose Deploy the stack. Portainer keeps these variables with the stack, so anyone who can edit the stack in Portainer can read them.${out ? ' The node’s log in Portainer shows its connection fingerprint.' : ''}${started}` },
+          { key: 'variables', kind: 'file', file: `${res}.env`, secret: true, title: 'Environment variables', text: `${variables.join('\n')}\n`, variables: variableFields },
+          { key: 'deploy', kind: 'note', secret: false, title: 'Deploy', text: `Under Environment variables, add one entry for each row: copy its Name into Portainer's name field and its Value into the value field. Copy value includes only the value, without NAME= or a trailing line break. To import all entries together, use Advanced mode with Copy .env, or Load variables from .env file with the download. If this host has run ${image} before, pull it again first (under Images in Portainer), so the node doesn't start an older copy of that tag. Then choose Deploy the stack. Portainer keeps these variables with the stack, so anyone who can edit the stack in Portainer can read them.${out ? ' The node’s log in Portainer shows its connection fingerprint.' : ''}${started}` },
         ];
       }
       // One private file name throughout: the download's. Every Compose command names it with --env-file, because
@@ -434,7 +450,7 @@ function existingNodeBlocks(setup: NodeSetup, { res, image, hide }: Parts): Guid
           key: 'list', kind: 'note', secret: false, title: 'If its environment is a list',
           text: `The lines above are for an environment written as KEY: value, indented like its other entries. In a list of - KEY=value entries, add ${listed.slice(0, -1).join(', ')}${listed.length > 2 ? ',' : ''} and ${listed[listed.length - 1]} instead.`,
         },
-        { key: 'env', kind: 'file', file: `${res}-connect.env`, secret: true, title: portainer ? 'Add this environment variable to the stack, or replace its earlier value' : 'Put this line in its .env file, or the file its Compose commands pass with --env-file, replacing an earlier one', text: `CANARY_DASHBOARD_ENROLL_TOKEN=${hide(out.token)}\n` },
+        { key: 'env', kind: 'file', file: `${res}-connect.env`, secret: true, title: portainer ? 'Add this environment variable to the stack, or replace its earlier value' : 'Put this line in its .env file, or the file its Compose commands pass with --env-file, replacing an earlier one', text: `CANARY_DASHBOARD_ENROLL_TOKEN=${hide(out.token)}\n`, ...(portainer ? { variables: [{ name: 'CANARY_DASHBOARD_ENROLL_TOKEN', value: hide(out.token), secret: true }] } : {}) },
         portainer
           ? { key: 'update', kind: 'note', secret: false, title: 'Update the stack', text: `Choose Update the stack, with re-pull of the image if you changed its tag or this host may have an older copy of it. The node’s log in Portainer shows its connection fingerprint, or ${refused}.` }
           : { key: 'up', kind: 'command', secret: false, title: 'Apply it, adding the --env-file option its Compose commands use, if any', text: 'docker compose up -d\ndocker compose logs node\n' },

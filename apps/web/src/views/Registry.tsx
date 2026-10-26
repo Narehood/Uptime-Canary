@@ -406,7 +406,7 @@ export function AddNodeDialog({ onClose }: { onClose: () => void }) {
   // The latest pair, for handlers that run before the next render (an invitation's answer, a draft change).
   const held = useRef(secrets);
   const [secretFailure, setSecretFailure] = useState<string | null>(null);
-  const [draft, setDraft] = useState<NewNodeDraft>({ label: '', nodeId: '', address: '', platform: 'docker' });
+  const [draft, setDraft] = useState<NewNodeDraft>({ label: '', nodeId: '', address: '', bindAddress: '0.0.0.0', platform: 'docker' });
   const [platform, setPlatform] = useState<Platform>('docker');
   const [deployed, setDeployed] = useState<DirectTarget | null>(null);
   const [locked, setLocked] = useState(false);
