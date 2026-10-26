@@ -58,6 +58,23 @@ took 205.828 s. The three typechecks and all 338 pure/control groups were then
 rerun on the same unchanged source and passed in 20.187 guarded seconds.
 Scratch returned to zero and storage stayed within budget.
 
+## Deployment configuration follow-up
+
+PR head `2af02ee` failed the Alpine node job before runtime validation because
+the exact expected dashboard environment omitted the three new protocol-20
+settings. The expectation now includes the accepted defaults, keeping the
+full environment and split-service equality assertions. Additional checks
+cover explicit native TLS/pins, disabled updates and retained outbound trust
+after removing the invitation.
+
+On unchanged v3 source `620e452ea5f7273a71527ff05abf80761f2f05132c267c6cf823f18036534e88`,
+a checksum-verified standalone Docker Compose v2.39.4 parser on Windows amd64
+reproduced the original assertion and passed all seven corrected configuration
+groups in 6.875 guarded seconds, including the disposable tool download.
+Scratch returned to zero. This checks configuration parsing only: it uses no
+Docker daemon, image pull or deployment, and reads no local environment file.
+Application sources are unchanged from the earlier checkpoints.
+
 ## What is exercised
 
 - Real native TLS handshakes, retained keys, wrong pins before any HTTP

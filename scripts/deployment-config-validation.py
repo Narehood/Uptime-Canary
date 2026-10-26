@@ -49,6 +49,11 @@ def validate(root):
         # Accepted onboarding contract: optional dedicated listener and the
         # matching node image tag are dashboard-owned settings.
         "CANARY_DASHBOARD_CONNECTION_URL": "",
+        # Accepted protocol-20 deployment contract: optional native TLS/pins
+        # preserve legacy defaults; dashboard-owned image checks default on.
+        "CANARY_DASHBOARD_CONNECTION_TLS_MODE": "",
+        "CANARY_LOCAL_NODE_TLS_FINGERPRINT": "",
+        "CANARY_UPDATE_CHECKS": "true",
         "CANARY_DASHBOARD_NODE_IMAGE_TAG": "latest"}
     empty = config("deploy/portainer-dashboard.yml", {**clean, "CANARY_CORS_ORIGINS": fixture["CANARY_CORS_ORIGINS"]})
     assert empty["services"]["web"]["environment"]["CANARY_LOCAL_NODE_URL"] == ""
@@ -141,12 +146,40 @@ def validate(root):
     assert connected["environment"]["CANARY_DASHBOARD_NODE_IMAGE_TAG"] == pinned
     mapping = [p for p in connected["ports"] if p["target"] == 8081]
     assert len(mapping) == 1 and mapping[0]["host_ip"] == "192.0.2.19" and str(mapping[0]["published"]) == "19348"
+    # Explicit trust and opt-out values must survive Compose interpolation in
+    # both the split stacks and the build-from-checkout configuration.
+    tls_fixture = {**clean, **fixture, "COMPOSE_PROFILES": "web",
+        "CANARY_TLS_MODE": "auto",
+        "CANARY_LOCAL_NODE_URL": "https://node:3100",
+        "CANARY_LOCAL_NODE_TLS_FINGERPRINT": "c" * 64,
+        "CANARY_DASHBOARD_CONNECTION_URL": "https://192.0.2.19:18348",
+        "CANARY_DASHBOARD_CONNECTION_TLS_MODE": "auto",
+        "CANARY_UPDATE_CHECKS": "false"}
+    for name in ("deploy/portainer-stack.yml", "deploy/portainer-node.yml",
+                 "deploy/portainer-dashboard.yml", "compose.yaml"):
+        services = config(name, tls_fixture)["services"]
+        if "node" in services:
+            assert services["node"]["environment"]["CANARY_TLS_MODE"] == "auto"
+        if "web" in services:
+            environment = services["web"]["environment"]
+            for key in ("CANARY_LOCAL_NODE_URL", "CANARY_LOCAL_NODE_TLS_FINGERPRINT",
+                        "CANARY_DASHBOARD_CONNECTION_URL", "CANARY_DASHBOARD_CONNECTION_TLS_MODE",
+                        "CANARY_UPDATE_CHECKS"):
+                assert environment[key] == tls_fixture[key], (name, key)
+    pinned_outbound = config("deploy/portainer-node-outbound.yml", {
+        **connection_fixture, "CANARY_DASHBOARD_ENROLL_TOKEN": "",
+        "CANARY_DASHBOARD_TLS_FINGERPRINT": "d" * 64})["services"]["node"]
+    assert pinned_outbound["environment"]["CANARY_DASHBOARD_ENROLL_TOKEN"] == ""
+    assert pinned_outbound["environment"]["CANARY_DASHBOARD_TLS_FINGERPRINT"] == "d" * 64
+    assert service["environment"]["CANARY_TLS_MODE"] == ""
+    assert service["environment"]["CANARY_DASHBOARD_TLS_FINGERPRINT"] == ""
     print("PASS combined, node-only, dashboard-only and build-from-checkout Compose configuration")
     print("PASS split service parity, shared dashboard account state, separate retained keys and private node volumes")
     print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
     print("PASS GHCR pulls, matching commit tags, full image overrides and offline pull policy")
     print("PASS optional GameDig source profile and registry stack use separate credentials and private networking")
     print("PASS optional node connection listener, private host binding and outbound node with no inbound port")
+    print("PASS native TLS settings, explicit certificate pins, retained outbound trust and disabled update checks")
 
 
 if __name__ == "__main__":
