@@ -1,17 +1,19 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { DeliveryAttemptView, EmailAddress, NotificationChannel, NotificationChannelInput, NotificationConfig, NotificationProvider } from '@uptime-canary/shared';
+import { discordTemplateProblem, TEMPLATE_PROTOCOL, templateCapability, templateSummary, unsupportedPlaceholders, withoutAddedPlaceholders, type TemplateLevel } from '../alertTemplates';
 import { ApiFailure, describeFailure, isAbort, jsonBytes } from '../api';
 import { useCanary } from '../context';
 import { ago, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
 import { useResource } from '../hooks';
-import { buildMessaging, control, isMessaging, messagingDraft, messagingRoute, MFIELD_LABEL, templateProblem, TEXT_LIMIT, TITLE_LIMIT, urlProblem, type MessagingDraft, type MField } from '../messaging';
+import { buildMessaging, control, isMessaging, messagingDraft, messagingRoute, MFIELD_LABEL, templateProblem, urlProblem, type MessagingDraft, type MField } from '../messaging';
 import { notify } from '../notices';
 import { href, navigate } from '../router';
 import { Banner, Card, Chip, EmptyState, ErrorText, FilterChips, Modal, PageHead, ReadOnly, Rev, Tag, Time } from '../ui/bits';
-import { CheckField, Disclosure, ErrorSummary, SecretField, Seg, TextAreaField, TextField } from '../ui/forms';
+import { CheckField, Disclosure, ErrorSummary, SecretField, Seg, TextField } from '../ui/forms';
 import { Glyph, Icon, type IconName } from '../ui/icons';
 import type { Tone } from '../model';
 import { storedExtras } from '../writable';
+import { MessageTemplates } from './MessageTemplates';
 import { MessagingFields } from './MessagingFields';
 
 // ---------- providers
@@ -593,6 +595,8 @@ interface ChannelDraft extends MessagingDraft {
   isDefault: boolean;
   kind: Kind;
   discordUrl: string;
+  /** Peer protocol 20: Discord's card layout (webhook.embed). Only its own control changes it; a provider change or preset never does. */
+  discordEmbed: boolean;
   hookUrl: string; hookBearer: string; hookInsecure: boolean;
   senderEmail: string; senderName: string;
   recipients: Recipient[];
@@ -611,6 +615,7 @@ function channelDraft(channel: NotificationChannel | undefined): ChannelDraft {
     isDefault: channel?.isDefault === true,
     kind: c?.kind ?? 'discord',
     discordUrl: c?.kind === 'discord' ? c.webhook?.url ?? '' : '',
+    discordEmbed: c?.kind === 'discord' && c.webhook?.embed === true,
     hookUrl: c?.kind === 'webhook' ? c.webhook?.url ?? '' : '', hookBearer: c?.kind === 'webhook' ? c.webhook?.bearerToken ?? '' : '', hookInsecure: Boolean(c?.kind === 'webhook' && c.webhook?.allowInsecureHTTP),
     senderEmail: c?.sender?.email ?? '', senderName: c?.sender?.name ?? '',
     recipients: (c?.recipients?.length ? c.recipients : [{ email: '' }]).map(r => ({ key: ++recipientKey, email: r.email, name: r.name ?? '' })),
@@ -639,7 +644,12 @@ const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun
 /** Channel keys this form writes. Other stored keys belong to the channel, not its provider, so they survive a provider change. */
 const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault'];
 
-function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
+/**
+ * `level` is the selected node's template grammar (alertTemplates.ts templateCapability). Peer protocol 20 applies templates
+ * to Discord and adds the card layout; for an older or unknown node the form writes neither the layout nor newly typed
+ * protocol 20 placeholders, and keeps what the node already stores.
+ */
+function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined, level: TemplateLevel = 'legacy'): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
   const errors: Partial<Record<CField, string>> = {};
   const name = draft.name.trim();
   if (!name || name.length > 128 || control(name)) errors.name = 'Enter a name of at most 128 characters.';
@@ -681,6 +691,10 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
       if (!DISCORD.test(url)) errors.discordUrl = 'Paste the webhook URL from Discord’s channel settings: https://discord.com/api/webhooks/…';
       config.webhook = { ...(same?.webhook ?? {}), url };
       delete config.webhook.bearerToken; delete config.webhook.allowInsecureHTTP;
+      // Written only when chosen, as Go's omitempty stores it, so an unchanged channel saves as before.
+      if (level === 'enhanced') {
+        if (draft.discordEmbed) config.webhook.embed = true; else delete config.webhook.embed;
+      }
       break;
     }
     case 'webhook': {
@@ -732,8 +746,10 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
     default:
       if (isMessaging(kind)) buildMessaging(kind, draft, same, config, errors);
   }
-  // Chat and push providers take a title (stored as the subject template) and plain text, never HTML.
-  const messaging = isMessaging(kind);
+  // Chat and push providers, and Discord from peer protocol 20, take a title (stored as the subject template) and plain
+  // text, never HTML. Older nodes don't use templates for Discord, so whatever it stores is kept there.
+  const discordText = kind === 'discord' && level === 'enhanced';
+  const messaging = isMessaging(kind) || discordText;
   const templates: NonNullable<NotificationConfig['templates']> = { ...(same?.templates ?? {}) };
   delete templates.subject; delete templates.text; delete templates.html;
   if (draft.subject) templates.subject = draft.subject;
@@ -742,8 +758,17 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
   if (bytesOf(draft.subject) > 512 || control(draft.subject)) errors.templates = `The ${messaging ? 'title' : 'subject'} is at most 512 bytes on one line.`;
   else if (bytesOf(draft.text) > 65_536 || !messaging && bytesOf(draft.html) > 65_536) errors.templates = 'Text and HTML templates are at most 64 KiB each.';
   else if (isMessaging(kind)) {
-    const problem = templateProblem(kind, draft.subject, draft.text);
+    // The added placeholders are values, not fixed text, where the node fills them in.
+    const problem = level === 'enhanced' ? templateProblem(kind, withoutAddedPlaceholders(draft.subject), withoutAddedPlaceholders(draft.text)) : templateProblem(kind, draft.subject, draft.text);
     if (problem) errors.templates = problem;
+  } else if (discordText) {
+    const problem = discordTemplateProblem(draft.subject, draft.text, draft.discordEmbed);
+    if (problem) errors.templates = problem;
+  }
+  const later = errors.templates ? [] : unsupportedPlaceholders({ subject: draft.subject, text: draft.text, html: messaging ? '' : draft.html }, original?.config.templates, level);
+  if (later.length) {
+    const names = later.map(name => `{{${name}}}`).join(', ');
+    errors.templates = `${names} ${later.length === 1 ? 'is' : 'are'} filled in only by nodes on peer protocol ${TEMPLATE_PROTOCOL} or later; this node would send ${later.length === 1 ? 'it' : 'them'} as typed. Remove ${later.length === 1 ? 'it' : 'them'}, or upgrade the node first.`;
   }
   if (Object.keys(templates).length) config.templates = templates;
   if (Object.keys(errors).length) return { errors };
@@ -758,8 +783,6 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
  * contract harness appends `export { channelDraft, buildChannel }` to its review copy of this file.
  */
 export const channelFormModel = { channelDraft, buildChannel };
-
-const PLACEHOLDERS = ['{{event_kind}}', '{{monitor_name}}', '{{monitor_id}}', '{{incident_id}}', '{{observations_summary}}', '{{idempotency_key}}'];
 
 /**
  * The edit form mounts only once the stored channel is known, so its draft, disclosures and base revision come from
@@ -781,7 +804,7 @@ function ChannelFormBody({ id }: { id?: string }) {
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<{ message: string; stale: boolean } | null>(null);
   const [attempts, setAttempts] = useState(0);
-  const [templatesOpen, setTemplatesOpen] = useState(Boolean(initial.subject || initial.text || initial.html));
+  const [templatesOpen, setTemplatesOpen] = useState(Boolean(initial.subject || initial.text || initial.html || initial.discordEmbed));
   const [apiOpen, setApiOpen] = useState(Boolean(initial.mailgunBase || initial.brevoBase || initial.mandrillBase || initial.tgBase || initial.poBase));
   const [previewing, setPreviewing] = useState<NotificationChannelInput | null>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
@@ -796,12 +819,13 @@ function ChannelFormBody({ id }: { id?: string }) {
     return <div className="view"><PageHead crumbs={<a href={href('notifications')}>Notifications</a>} title="Edit channel" /><Card>{channels.list ? <EmptyState title="Channel not found">{endpoint} doesn’t know this channel. It may have been deleted.</EmptyState> : <p className="muted">Loading the channel from {endpoint}…</p>}</Card></div>;
   }
 
-  const { input, errors } = buildChannel(draft, base);
+  // What the selected node renders: its overview's reported peer protocol, or the six-placeholder grammar when it reports none.
+  const capability = templateCapability(overview.build);
+  const { input, errors } = buildChannel(draft, base, capability.level);
   const visible = showErrors ? errors : {};
   const set = <K extends keyof ChannelDraft>(key: K, value: ChannelDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));
   const provider = PROVIDER.get(draft.kind)!;
-  const messaging = isMessaging(draft.kind);
   const current = existing?.channel;
   const changedElsewhere = Boolean(current && base && current.revision !== base.revision);
   const conflicted = Boolean(existing?.configConflict);
@@ -970,19 +994,10 @@ function ChannelFormBody({ id }: { id?: string }) {
             </>
           ) : null}
 
-          <Disclosure title="Message templates" summary={draft.subject || draft.text || (draft.html && !messaging) ? [draft.subject ? (messaging ? 'title' : 'subject') : '', draft.text ? 'text' : '', draft.html && !messaging ? 'HTML' : ''].filter(Boolean).join(' · ') : 'Built-in wording'} open={templatesOpen} onToggle={() => setTemplatesOpen(v => !v)}>
-            <p className="full muted small">Optional literal text with these substitutions only: {PLACEHOLDERS.map(p => <span key={p} className="mono tok">{p}</span>)}. Nothing executes, and HTML substitutions are escaped. Avoid putting private details in messages.</p>
-            {messaging ? (
-              <p className="full muted small">
-                {provider.label} gets plain text: formatting characters appear as typed. Built-in wording that runs long is shortened to fit and ends with “[truncated; see monitor details]”.
-                Your own title and text are sent exactly; if a filled-in template is too long, that attempt fails instead of being cut.
-              </p>
-            ) : null}
-            {provider.email || messaging ? <TextField full label={messaging ? 'Title' : 'Subject'} value={draft.subject} onChange={value => set('subject', value)} placeholder="{{monitor_name}} is {{event_kind}}" disabled={saving} hint={messaging ? TITLE_LIMIT : undefined} /> : null}
-            <TextAreaField full optional label="Text" value={draft.text} onChange={value => set('text', value)} rows={4} disabled={saving} placeholder="{{monitor_name}}: {{observations_summary}}" hint={isMessaging(draft.kind) ? TEXT_LIMIT[draft.kind].rule : undefined} />
-            {provider.email ? <TextAreaField full mono optional label="HTML" value={draft.html} onChange={value => set('html', value)} rows={4} disabled={saving} /> : null}
-            {messaging && draft.html ? <p className="full fwarn"><Glyph tone="warn" />{provider.label} gets plain text, so saving drops the HTML template.</p> : null}
-            {visible.templates ? <div className="full"><ErrorText id={`${formId}-tpl`}>{visible.templates}</ErrorText></div> : null}
+          <Disclosure title="Message templates" summary={templateSummary(draft.kind, draft, capability.level, draft.discordEmbed)} open={templatesOpen} onToggle={() => setTemplatesOpen(v => !v)}>
+            <MessageTemplates kind={draft.kind} providerLabel={provider.label} icon={<ProviderIcon kind={draft.kind} />} channelName={draft.name}
+              fields={{ subject: draft.subject, text: draft.text, html: draft.html }} onChange={patch} saving={saving} error={visible.templates} formId={formId}
+              capability={capability} nodeName={endpoint} embed={draft.discordEmbed} onEmbed={value => set('discordEmbed', value)} />
           </Disclosure>
 
           {visible.size ? <div className="full"><ErrorText id={`${formId}-size`}>{visible.size}</ErrorText></div> : null}

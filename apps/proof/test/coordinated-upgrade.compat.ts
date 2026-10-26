@@ -153,7 +153,7 @@ test('published dashboard accounts and encrypted node registration survive serve
     const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CANARY_') && key !== 'NODE_OPTIONS'));
     dashboard = spawn(executable, ['dashboard'], { cwd: cluster.directory, stdio: 'ignore', env: {
       ...environment, CANARY_DASHBOARD_DATA: data, CANARY_DASHBOARD_IDENTITY: identity, CANARY_DASHBOARD_ASSETS: assets,
-      CANARY_DASHBOARD_HOST: '127.0.0.1', CANARY_DASHBOARD_PORT: String(port), CANARY_DASHBOARD_ORIGINS: base,
+      CANARY_DASHBOARD_HOST: '127.0.0.1', CANARY_DASHBOARD_PORT: String(port), CANARY_DASHBOARD_ORIGINS: base, CANARY_UPDATE_CHECKS: 'false',
       CANARY_LOCAL_NODE_URL: node.url, CANARY_LOCAL_NODE_TOKEN: node.adminToken,
     } });
     dashboard.on('error', () => {});

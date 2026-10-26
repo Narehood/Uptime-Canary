@@ -230,6 +230,7 @@ type Identity struct {
 	Name string `json:"name"`
 }
 type Overview struct {
+	Build         *BinaryIdentity    `json:"build,omitempty"`
 	Node          Identity           `json:"node"`
 	Now           int64              `json:"now"`
 	Monitors      []MonitorView      `json:"monitors"`
@@ -333,9 +334,10 @@ type attempt struct {
 	SuppressionBoundary string `json:"suppressionBoundary,omitempty"`
 }
 type Peer struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
-	URL  string `json:"url"`
+	ID             string `json:"id"`
+	Name           string `json:"name,omitempty"`
+	URL            string `json:"url"`
+	TLSFingerprint string `json:"tlsFingerprint,omitempty"`
 }
 type settings struct {
 	Peers               []Peer   `json:"peers"`
@@ -362,6 +364,7 @@ type Doer interface {
 type Options struct {
 	NodeID, NodeName, Host, DBPath, AdminToken, ClusterToken string
 	IdentityDirectory                                        string
+	TLSMode, DashboardTLSFingerprint                         string
 	DashboardURL, DashboardEnrollToken                       string
 	Port                                                     *int
 	Peers                                                    []Peer

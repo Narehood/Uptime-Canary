@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer, request as upstreamRequest } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { dirname, join, resolve } from 'node:path';
+import { pinnedFixtureFetch } from './tls-fixture.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,6 +29,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   const password = 'Private dashboard browser fixture password';
   const proxyCookie = 'canary_dashboard_fixture_proxy';
   let session = '', denied = 0, authenticated = 0;
+  let updatePreview = null;
   const paths = [];
   const watchers = new Set();
   // Test-only: one dashboard answer held back after the dashboard's server has answered it, so a step can look at the
@@ -62,6 +64,15 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
     const upstream = upstreamRequest(new URL(req.url, backend), { method: req.method, headers, timeout: 14000 }, response => {
       if (entry) entry.status = response.statusCode;
       const returned = { ...response.headers }; delete returned['set-cookie'];
+      // UI-only sample metadata, after the real server authenticated this GET.
+      // All POSTs still reach the disabled real service, so this fixture never
+      // queries GitHub/GHCR or grants authority through a sample answer.
+      if (updatePreview && entry?.path === '/api/dashboard/updates' && req.method === 'GET' && response.statusCode === 200) {
+        response.resume();
+        delete returned['content-length']; delete returned['content-encoding'];
+        res.writeHead(200, { ...returned, 'content-type': 'application/json' }).end(JSON.stringify(updatePreview));
+        return;
+      }
       if (held) {
         const chunks = []; let size = 0;
         response.on('data', chunk => { size += chunk.length; if (size <= 65536) chunks.push(chunk); });
@@ -125,7 +136,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   const child = spawn(join(runDir, process.platform === 'win32' ? 'review-node.exe' : 'review-node'), ['dashboard'], {
     cwd: runDir, env: { ...env, CANARY_DASHBOARD_DATA: join(runDir, 'dashboard-data'), CANARY_DASHBOARD_IDENTITY: identity,
       CANARY_DASHBOARD_ASSETS: join(runDir, 'dist'), CANARY_DASHBOARD_HOST: '127.0.0.1',
-      CANARY_DASHBOARD_PORT: new URL(backend).port, CANARY_DASHBOARD_ORIGINS: origin,
+      CANARY_DASHBOARD_PORT: new URL(backend).port, CANARY_DASHBOARD_ORIGINS: origin, CANARY_UPDATE_CHECKS: 'false',
       CANARY_DASHBOARD_CONNECTION_URL: connectionUrl, CANARY_DASHBOARD_CONNECTION_HOST: '127.0.0.1', CANARY_DASHBOARD_CONNECTION_PORT: new URL(connectionBackend).port },
     windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -207,13 +218,16 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
     for (const stream of [node.stdout, node.stderr]) {
       stream.on('data', value => { const chunk = String(value); if (head.length < 16384) head = (head + chunk).slice(0, 16384); tail = (tail + chunk).slice(-16384); });
     }
-    const url = `http://127.0.0.1:${nodePort}`;
+    const nativeTLS = settings.CANARY_TLS_MODE === 'auto';
+    const url = `${nativeTLS ? 'https' : 'http'}://127.0.0.1:${nodePort}`;
+    const certificatePin = () => /Node TLS certificate fingerprint: ([0-9a-f]{64})/u.exec(head)?.[1] ?? null;
+    const read = (path, options) => nativeTLS ? pinnedFixtureFetch(url + path, certificatePin(), options) : fetch(url + path, options);
     await until(async () => {
       if (node.exitCode !== null) throw Error(`Wizard node ${id} exited during startup: ${tail.slice(-600)}`);
-      try { return (await fetch(url + '/api/auth/status')).ok; } catch { return false; }
+      try { return (await read('/api/auth/status')).ok; } catch { return false; }
     }, `${id} ready`, 30000);
     return {
-      url,
+      url, request: read, tlsFingerprint: certificatePin,
       /** The connection fingerprint the node printed, or null before it did. */
       fingerprint: () => FINGERPRINT_LINE.exec(head)?.[1] ?? null,
       log: () => tail,
@@ -222,6 +236,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   }
   return {
     origin, backend, child, code, password, proxyCookie, route, startNode, freePort: port,
+    previewUpdates(value) { assert.ok(Buffer.byteLength(JSON.stringify(value)) < 32768); updatePreview = value; },
     // The node-connection address the dashboard reports (the HTTPS front), its private listener behind it, and what the
     // front carried.
     connection: {
@@ -763,6 +778,46 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.equal(me.status, 200, 'the node’s first administrator is the token made in the page');
     return { defaultForm: 'running node, dashboard reaches it', generatedInBrowser: 2, maskedPreview: true, copyFailureVisible: true, downloadMatchesCopy: true, objectUrlRevoked: true, addedWithAddressOnly: true, credentialsLeftPage: true };
   });
+  await step('Control plane: HTTPS setup authenticates the retained certificate before enrollment and hides trust details from viewers', async () => {
+    const id = 'review-wizard-tls', label = 'Wizard HTTPS node', file = await settingsFile(id);
+    const nodePort = await fixture.freePort(), address = `https://127.0.0.1:${nodePort}`;
+    await page.eval('location.hash="#/nodes"'); await text('Wizard direct node');
+    await clickFirst('Add node'); await dialogOpen(); await pick('Deploy a new node');
+    await fill('Name on this dashboard', label, 'dialog[open]');
+    await fill('Node ID', id, 'dialog[open]');
+    await fill('Address the dashboard’s server will use', address, 'dialog[open]');
+    await captureOutputs();
+    const settings = envOf(await copyOf(file));
+    assert.equal(settings.CANARY_TLS_MODE, 'auto');
+    const started = await fixture.startNode(id, settings, nodePort);
+    const pin = started.tlsFingerprint(); assert.match(pin, /^[0-9a-f]{64}$/u);
+    await click('Next: verify the node', 'dialog[open]');
+    const before = fixture.stats().paths.length;
+    await click('Verify node', 'dialog[open]');
+    await text('Enter the fingerprint from the new node');
+    assert.equal(fixture.stats().paths.slice(before).filter(entry => entry.path === '/api/dashboard/verify').length, 0, 'blank trust sent no request');
+    await fill('TLS certificate fingerprint', '0'.repeat(64), 'dialog[open]');
+    await click('Verify node', 'dialog[open]');
+    await until(() => fixture.stats().paths.slice(before).some(entry => entry.path === '/api/dashboard/verify' && entry.status === 502), 'wrong certificate refused', 20000);
+    assert.ok(!(await fixture.api('/api/dashboard/nodes', 'GET', undefined, owner)).value.some(row => row.nodeId === id));
+    await fill('TLS certificate fingerprint', pin.toUpperCase().match(/../gu).join(':'), 'dialog[open]');
+    // A deliberate refusal switches the existing form action to Verify again.
+    // The wrong-pin and successful-enrollment assertions remain unchanged.
+    await click('Verify again', 'dialog[open]'); await text('Verified by the dashboard', 20000);
+    await page.eval(`[...document.querySelectorAll('dialog[open] button')].find(b=>__norm(b.innerText)===${q('Add “' + label + '”')}).click()`);
+    await dialogClosed(30000);
+    const row = (await fixture.api('/api/dashboard/nodes', 'GET', undefined, owner)).value.find(entry => entry.nodeId === id);
+    assert.equal(row.url, address); assert.equal(row.tlsFingerprint, pin);
+    assert.equal((await started.request('/api/auth/me', { headers: { Authorization: 'Bearer ' + settings.CANARY_ADMIN_TOKEN } })).status, 200);
+    // These checks exercise permission redaction, not another password login.
+    // Keep the real ten-per-minute socket-IP sign-in throttle unchanged.
+    const viewer = randomBytes(32).toString('hex'); secrets.add(viewer);
+    assert.equal((await fixture.api('/api/accounts', 'POST', { name: 'tls-viewer', role: 'viewer', token: viewer }, owner)).status, 201);
+    assert.equal((await fixture.api('/api/auth/me', 'GET', undefined, viewer)).status, 200);
+    const hidden = (await fixture.api('/api/dashboard/nodes', 'GET', undefined, viewer)).value.find(entry => entry.id === row.id);
+    assert.equal(hidden.url, undefined); assert.equal(hidden.tlsFingerprint, undefined);
+    return { nativeTLS: true, blankTrustNoRequest: true, wrongPinRefused: true, colonFingerprintAccepted: true, viewerTrustHidden: true };
+  });
   await step('Control plane: the node-reaches-dashboard choice follows the dashboard’s own answer; invitations stay administrators’, shown once and masked, and cancelling one changes no node', async () => {
     const begin = fixture.stats().paths.length;
     const capabilities = await fixture.api('/api/dashboard/onboarding', 'GET', undefined, owner);
@@ -888,9 +943,11 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.equal(accountsBefore.status, 200, JSON.stringify(accountsBefore.value));
     assert.deepEqual(accountsBefore.value.map(row => String(row.id)).filter(entry => entry.startsWith('dashboard-')), [], 'no dashboard role account on the node yet');
     // Viewers can't list, read, confirm or cancel the connected invitation.
-    const password = 'Private dashboard pairing viewer password'; secrets.add(password);
-    assert.equal((await fixture.api('/api/accounts', 'POST', { name: 'pairing-viewer', role: 'viewer', password }, owner)).status, 201);
-    const viewer = (await fixture.api('/api/auth/login', 'POST', { name: 'pairing-viewer', password })).value.token; secrets.add(viewer);
+    // Independent role checks must not consume the shared password-login quota.
+    // Prove the token first; all original forbidden-route assertions stay 403.
+    const viewer = randomBytes(32).toString('hex'); secrets.add(viewer);
+    assert.equal((await fixture.api('/api/accounts', 'POST', { name: 'pairing-viewer', role: 'viewer', token: viewer }, owner)).status, 201);
+    assert.equal((await fixture.api('/api/auth/me', 'GET', undefined, viewer)).status, 200);
     const viewerRefused = [];
     for (const [path, method] of [['/api/dashboard/invitations', 'GET'], [`/api/dashboard/invitations/${invitation.id}`, 'GET'], [`/api/dashboard/invitations/${invitation.id}/confirm`, 'POST'], [`/api/dashboard/invitations/${invitation.id}`, 'DELETE']]) {
       const reply = await fixture.api(path, method, undefined, viewer);
@@ -1114,6 +1171,62 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.ok(sent.some(entry => entry.method === 'GET' && entry.path === '/api/dashboard/invitations'), 'the wizard read the reserved IDs');
     assert.ok(!sent.some(entry => entry.path === '/api/dashboard/verify' || (entry.path.startsWith('/api/dashboard/invitations') && entry.method !== 'GET')), 'nothing was verified or invited');
     return { samePairAcrossLabelAndPlatform: true, newPairForAnotherId: true, revealedWithOtherId: mixed, firstIdPairBack: true, sentToServer: false };
+  });
+  await step('Control plane: software updates use cached same-origin metadata, show rebuilds and roles, dismiss per sign-in and never install', async () => {
+    const openUpdates = () => page.eval('document.querySelector("button.upd-btn").click()');
+    await openUpdates(); await dialogOpen(); await text('Software updates');
+    assert.equal(await page.eval('[...document.querySelectorAll("dialog[open] button")].filter(b=>__norm(b.innerText)==="Check now").length'), 0, 'disabled deployment has no manual action');
+    await footClose(); await dialogClosed();
+    const now = Date.now(), commit = 'a'.repeat(40), begin = fixture.stats().paths.length;
+    const adminToken = randomBytes(32).toString('hex'), viewerToken = randomBytes(32).toString('hex');
+    for (const token of [adminToken, viewerToken]) secrets.add(token);
+    for (const [name, role, token] of [['updates-admin','admin',adminToken],['updates-viewer','viewer',viewerToken]])
+      assert.equal((await fixture.api('/api/accounts','POST',{name,role,token},owner)).status,201);
+    const enter = async token => {
+      await page.send('Page.reload'); await text('Sign in'); await ready();
+      await page.eval('(() => { const choices=[...document.querySelectorAll("label")].filter(l=>l.querySelector("input[type=radio]")&&__norm(l.innerText)==="Account token");if(choices.length!==1)throw Error("token choice missing");choices[0].querySelector("input").click(); })()');
+      await fill('Account token',token); await click('Sign in');
+      await until(() => page.eval('!!document.querySelector("nav.rail")'), 'token account signed in'); await ready();
+    };
+    fixture.previewUpdates({ enabled:true, intervalHours:6, state:'ok', checkedAt:now, nextCheckAt:now+21600000, images:[
+      { component:'dashboard', label:'Dashboard', image:'ghcr.io/narehood/uptime-canary-web', currentCommit:commit, latestCommit:commit, currentBuiltAt:now-172800000, latestBuiltAt:now-86400000, status:'update-available' },
+    ] });
+    try {
+      await enter(adminToken);
+      await until(() => page.eval('!!document.querySelector(".upd-banner")'), 'cached image rebuild notice');
+      await click('Details', '.upd-banner'); await dialogOpen(); await text('newer build of the same source');
+      assert.equal(await page.eval('[...document.querySelectorAll("dialog[open] a")].filter(a=>a.href.includes("/compare/")).length'), 0, 'a rebuild has no code compare link');
+      for (const mode of ['light','dark']) {
+        await page.eval(`document.documentElement.dataset.mode=${q(mode)}`);
+        for (const width of [390,728,1280]) {
+          await page.send('Emulation.setDeviceMetricsOverride', { width, height:900, deviceScaleFactor:1, mobile:false });
+          await page.eval('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+          assert.ok(await page.eval('document.documentElement.scrollWidth<=innerWidth'), `${mode} ${width}: updates overflow`);
+        }
+      }
+      await page.send('Emulation.clearDeviceMetricsOverride');
+      await click('Check now', 'dialog[open]');
+      await text('Update checks are off in this dashboard');
+      assert.equal(fixture.stats().paths.slice(begin).filter(r=>r.method==='POST' && r.path==='/api/dashboard/updates/check').length,1,'one manual request, no automatic retry');
+      await footClose(); await dialogClosed();
+      // The token-only account password nudge has its own Not now action.
+      // Dismiss this update banner, then wait for React to commit its removal.
+      await click('Not now', '.upd-banner');
+      await until(() => page.eval('!document.querySelector(".upd-banner")'), 'this update notice dismissed');
+      assert.equal(await page.eval('!!document.querySelector(".upd-banner")'),false);
+      await page.eval('location.hash="#/nodes"'); await ready();
+      assert.equal(fixture.stats().paths.slice(begin).filter(r=>r.method==='GET' && r.path==='/api/dashboard/updates').length,1,'navigation reuses the one cached reader');
+      await enter(viewerToken);
+      await until(() => page.eval('!!document.querySelector(".upd-banner")'), 'new sign-in sees advisory');
+      await openUpdates(); await dialogOpen();
+      assert.equal(await page.eval('[...document.querySelectorAll("dialog[open] button")].filter(b=>__norm(b.innerText)==="Check now").length'),0,'viewers read, never start checks');
+      await footClose(); await dialogClosed();
+    } finally {
+      fixture.previewUpdates(null);
+      await page.send('Emulation.clearDeviceMetricsOverride');
+      await enter(adminToken);
+    }
+    return { cachedReads:true, syntheticMetadata:'UI only; real server authenticates GET and refuses disabled POST', roles:true, explicitManualOnce:true, sameSourceRebuild:true, installs:0, layouts:6 };
   });
   await step('Control plane: every browser API request stays at the dashboard origin; no node credential is persisted', async () => {
     const calls = report.requests.slice(start).filter(value => /^\/(api|public)\//u.test(new URL(value.url).pathname));

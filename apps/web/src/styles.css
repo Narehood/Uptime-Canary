@@ -1043,3 +1043,64 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .sp-preview .pv-mark { width: 12px; height: 12px; border-radius: 4px; background: var(--accent); flex: none; }
 .sp-preview .pub-desc { margin: 0; }
 .sp-preview > p { margin: 0; }
+
+/* Alert message templates: presets, then the fields beside a preview with sample data. The frame is illustrative; the words are the node's. */
+.tpl-presets { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tpl-presets-h, .tpl-pv-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.tpl-presets h4, .tpl-pv h4 { margin: 0; font-size: 13px; font-weight: 650; color: var(--text-1); }
+.tpl-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tpl-cards > li { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); min-width: 0; }
+.tpl-cards > li.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tpl-cards > li > p { margin: 0; flex: 1; }
+.tpl-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; border: 1px solid var(--warning); border-radius: 10px; padding: 10px 12px; background: var(--warning-wash); }
+.tpl-confirm > p { margin: 0; display: flex; align-items: flex-start; gap: 6px; font-weight: 550; color: var(--text-1); }
+.tpl-confirm .g { width: 14px; height: 14px; margin-top: 2px; flex: none; }
+.tpl-undo { margin: 0; color: var(--text-2); }
+.tpl-work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 18px; align-items: start; }
+.tpl-fields { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.tpl-fields > p { margin: 0; }
+.tpl-pv { display: flex; flex-direction: column; gap: 10px; min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--page); }
+.tpl-pv > p { margin: 0; }
+.tpl-msg { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px 16px; background: var(--surface); box-shadow: inset 4px 0 0 var(--neutral); }
+.tpl-msg.ev-down { box-shadow: inset 4px 0 0 var(--critical); }
+.tpl-msg.ev-repeat { box-shadow: inset 4px 0 0 var(--warning); }
+.tpl-msg.ev-recovery { box-shadow: inset 4px 0 0 var(--good); }
+.tpl-msg-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12.5px; color: var(--text-2); }
+.tpl-msg-h .prov-ic { width: 22px; height: 22px; border-radius: 6px; margin-right: 0; }
+.tpl-msg-h .prov-ic .ic { width: 13px; height: 13px; }
+.tpl-ev { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-weight: 600; color: var(--text-1); }
+.tpl-ev .g { width: 13px; height: 13px; }
+.tpl-msg-title { font-weight: 650; color: var(--text-1); overflow-wrap: anywhere; }
+.tpl-msg-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-1); font-size: 13.5px; line-height: 1.5; }
+.tpl-mail-subj { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--grid); overflow-wrap: anywhere; }
+.tpl-msg-src { margin: 4px 0 0; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+.tpl-vals > summary { cursor: pointer; font-weight: 600; font-size: 12.5px; color: var(--text-1); padding: 4px 0; }
+.tpl-vals > p { margin: 4px 0 0; }
+.tpl-vals dl { margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.tpl-vals dl > div { display: grid; grid-template-columns: minmax(0, 13em) minmax(0, 1fr); gap: 2px 10px; }
+.tpl-vals dt { font-size: 12px; color: var(--text-1); overflow-wrap: anywhere; }
+.tpl-vals dd { margin: 0; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tpl-val { font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-1); }
+.tpl-vals small { color: var(--text-3); font-size: 12px; }
+@container app (max-width: 1179px) { .tpl-work { grid-template-columns: minmax(0, 1fr); } }
+@container app (max-width: 699px) {
+  .tpl-cards { grid-template-columns: minmax(0, 1fr); }
+  .tpl-vals dl > div { grid-template-columns: minmax(0, 1fr); }
+  .tpl-ev { margin-left: 0; flex-basis: 100%; }
+}
+@media (forced-colors: active) {
+  .tpl-msg { border-left: 4px solid CanvasText; }
+  .tpl-cards > li.on { outline: 2px solid Highlight; }
+  .tpl-confirm { border: 1px solid CanvasText; }
+}
+/* Discord cards (peer protocol 20). The edge is the node's embed color for the event, the same in both themes, so the card carries it instead of the frame. */
+.tpl-msg.tpl-msg-card { box-shadow: none; padding-left: 12px; }
+.tpl-dc-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; border: 1px solid var(--border); border-left: 4px solid var(--embed, var(--neutral)); border-radius: 6px; padding: 10px 12px; background: var(--surface-2); }
+.tpl-dc-card.ev-down { --embed: #d03b3b; }
+.tpl-dc-card.ev-repeat { --embed: #fab219; }
+.tpl-dc-card.ev-recovery { --embed: #0ca30c; }
+.tpl-dc-card.ev-test { --embed: #2a78d6; }
+.tpl-dc-title { font-weight: 700; color: var(--text-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tpl-dc-desc { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-1); font-size: 13px; line-height: 1.45; }
+.tpl-dc-time { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+@media (forced-colors: active) { .tpl-dc-card { border-left: 4px solid CanvasText; } }

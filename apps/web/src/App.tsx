@@ -30,6 +30,7 @@ import { PublicStatusView } from './views/PublicStatus';
 import { ChooseNodeView, NodePendingView, NodePickerDialog, RegistryView } from './views/Registry';
 import { StatusPageFormView, StatusPagesView } from './views/StatusPages';
 import { TagsView } from './views/Tags';
+import { UpdateBanner, UpdatesButton, UpdatesDialog, useUpdates } from './views/Updates';
 
 export function App() {
   const { connection } = useSession();
@@ -174,6 +175,9 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const nodeScope = !controlPlane || selection !== null;
   const [signingOut, setSigningOut] = useState(false);
   const [nudgeDismissed, setNudgeDismissed] = useState(() => nudgeDismissedFor === connection.identity);
+  // Control plane: the dashboard's stored update status (null elsewhere, where nothing is asked).
+  const updates = useUpdates(connection);
+  const [showingUpdates, setShowingUpdates] = useState(false);
   const channels = useCatalog<NotificationChannelView>(`${connection.identity}|${api.baseUrl}|channels`, signal => nodeScope ? api.channels(signal) : Promise.resolve([]), view => view.channel.id);
   const tags = useCatalog<TagView>(`${connection.identity}|${api.baseUrl}|tags`, signal => nodeScope ? api.tags(signal) : Promise.resolve([]), view => view.tag.id);
   const registry = useCatalog<RegisteredNode>(`${connection.identity}|${api.baseUrl}|registry`, signal => controlPlane ? api.registeredNodes(signal) : Promise.resolve([]), node => node.id, 15_000);
@@ -325,6 +329,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
               <kbd aria-hidden="true">/</kbd>
             </label>
             <Freshness connection={connection} />
+            {updates ? <UpdatesButton updates={updates} onOpen={() => setShowingUpdates(true)} /> : null}
             <ThemeButton theme={theme} />
             <a className="me" href={href('account')} aria-current={section === 'account' ? 'page' : undefined} data-tip={`${userName} · ${role} on ${accountHome}${api.expiresAt ? ` · session ends ${shortClock(api.expiresAt, connection.issuerSkew === null ? overview.now : connection.fetchedAt + connection.issuerSkew)}` : ' · account token'}`}>
               <span className="av" aria-hidden="true">{userName.slice(0, 1).toUpperCase()}</span>
@@ -358,6 +363,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
               You’re signed in with an account token. With a password (and optionally an authenticator app) you can sign in on {accountHome} without handling the token.
             </Banner>
           ) : null}
+          {updates && connection.link !== 'rejected' ? <UpdateBanner updates={updates} onOpen={() => setShowingUpdates(true)} /> : null}
           {out.length && connection.link === 'live' ? (
             <Banner
               tone="warn"
@@ -378,6 +384,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
       </div>
       {switching ? <SwitchDialog initialUrl={switching.url} reason={switching.reason} onClose={() => setSwitching(null)} /> : null}
       {picking ? <NodePickerDialog onClose={() => setPicking(false)} /> : null}
+      {showingUpdates && updates ? <UpdatesDialog updates={updates} admin={ctx.admin} skew={connection.issuerSkew ?? 0} onClose={() => setShowingUpdates(false)} /> : null}
     </CanaryContext.Provider>
   );
 }

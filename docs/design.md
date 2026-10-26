@@ -1,5 +1,41 @@
 # Uptime-Canary dashboard design
 
+## Protocol-20 candidate, 2026-10-26
+
+The current feature branch adds verified native TLS onboarding, message presets
+and local event previews, Discord plain/card layouts, and a cached software
+update notice. This paragraph describes source undergoing validation, not a
+published release or complete release acceptance. Earlier exact-source records
+below retain their original scope.
+
+The 2026-10-26 local checkpoint passed all three workspace typechecks, 338
+pure/control groups, 213/213 browser checks and 25/25 process proofs on Windows
+amd64. See [exact source and limits](transport-validation.md); this does not
+replace hosted platform, image or real deployment acceptance.
+
+TLS fingerprints belong to the server certificate and remain distinct from the
+enrollment-device fingerprint. New direct nodes default to HTTPS; the admin
+compares the log-derived certificate hash before verification. Existing HTTP
+deployments require an explicit migration. Empty HTTPS trust uses CA/hostname
+verification and never means accept any certificate. Outbound node settings
+retain the dedicated listener's advertised pin after pairing. See
+[transport and lifecycle](transport-tls.md).
+
+Preset selection is explicit, custom replacement asks first, and Undo remains
+available until another edit. Sample event previews run locally and send no
+message; provider frames are illustrative. The selected node's reported peer
+protocol gates the added placeholders and Discord cards. Older or unknown nodes
+keep the original grammar. Custom messages that exceed a provider limit fail
+instead of being silently shortened. See [message contracts](notifications.md).
+
+The signed-in control-plane shell shows Software updates and an advisory banner
+only when updates are available. One shared feed survives node selection. All
+roles can inspect cached results; only admins request a manual check. Dismissal
+lasts for this sign-in and the same update; a later source/build can show again.
+The server checks fixed official node/dashboard metadata every six hours with
+persisted cooldowns and conditional requests. Neither the browser nor nodes poll
+GitHub. No action pulls or installs an image. See [update notices](software-updates.md).
+
 ## Published protocol-19 checkpoint, 2026-10-25
 
 [PR #12](https://github.com/Narehood/Uptime-Canary/pull/12) merged with the

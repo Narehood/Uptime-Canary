@@ -9,9 +9,9 @@ import test from 'node:test';
 import type { NodeInvitation, RegisteredNode } from '../../../packages/shared/src/dashboard.js';
 import { Cluster, ROOT, compiledRuntime } from '../fixtures/cluster.js';
 
-test('node-initiated pairing survives process restarts and dashboard loss without interrupting monitoring', { timeout: 120000 }, async t => {
+for (const nativeTLS of [false, true]) test(`node-initiated ${nativeTLS ? 'pinned native TLS' : 'CA TLS proxy'} pairing survives process restarts and dashboard loss without interrupting monitoring`, { timeout: 120000 }, async t => {
   const trust = join(ROOT, 'apps/proof/fixtures/localhost-cert.pem');
-  const nodeEnvironment: NodeJS.ProcessEnv = { SSL_CERT_FILE: trust };
+  const nodeEnvironment: NodeJS.ProcessEnv = nativeTLS ? {} : { SSL_CERT_FILE: trust };
   const cluster = new Cluster(nodeEnvironment);
   let dashboard: ChildProcess | undefined;
   let nodeRequests = 0, leakedCookie = false;
@@ -44,19 +44,25 @@ test('node-initiated pairing survives process restarts and dashboard loss withou
     response.on('close', () => { if (!response.writableEnded) upstream.destroy(); });
     incoming.pipe(upstream);
   });
-  tls.listen(0, '127.0.0.1'); await once(tls, 'listening');
-  const tlsAddress = tls.address(); assert.ok(tlsAddress && typeof tlsAddress !== 'string');
-  const connectionOrigin = `https://127.0.0.1:${tlsAddress.port}`;
-  t.after(async () => { tls.closeAllConnections(); await new Promise<void>(resolve => tls.close(() => resolve())); });
+  let connectionOrigin = `https://127.0.0.1:${connectionPort}`;
+  if (!nativeTLS) {
+    tls.listen(0, '127.0.0.1'); await once(tls, 'listening');
+    const tlsAddress = tls.address(); assert.ok(tlsAddress && typeof tlsAddress !== 'string');
+    connectionOrigin = `https://127.0.0.1:${tlsAddress.port}`;
+    t.after(async () => { tls.closeAllConnections(); await new Promise<void>(resolve => tls.close(() => resolve())); });
+  }
+  let dashboardLog = '';
   async function startDashboard(): Promise<void> {
     const environment = { ...process.env };
     for (const key of Object.keys(environment)) if (key.startsWith('CANARY_')) delete environment[key];
     dashboard = spawn(compiledRuntime(), ['dashboard'], { cwd: cluster.directory, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...environment,
       CANARY_DASHBOARD_DATA: join(cluster.directory, 'dashboard-data'), CANARY_DASHBOARD_IDENTITY: identity,
       CANARY_DASHBOARD_ASSETS: assets, CANARY_DASHBOARD_HOST: '127.0.0.1', CANARY_DASHBOARD_PORT: String(uiPort),
-      CANARY_DASHBOARD_ORIGINS: origin, CANARY_DASHBOARD_CONNECTION_HOST: '127.0.0.1', CANARY_DASHBOARD_CONNECTION_PORT: String(connectionPort), CANARY_DASHBOARD_CONNECTION_URL: connectionOrigin } });
+      CANARY_UPDATE_CHECKS: 'false', CANARY_DASHBOARD_ORIGINS: origin, CANARY_DASHBOARD_CONNECTION_HOST: '127.0.0.1', CANARY_DASHBOARD_CONNECTION_PORT: String(connectionPort), CANARY_DASHBOARD_CONNECTION_URL: connectionOrigin,
+      CANARY_DASHBOARD_CONNECTION_TLS_MODE: nativeTLS ? 'auto' : 'off' } });
     let bytes = 0;
-    for (const stream of [dashboard.stdout!, dashboard.stderr!]) stream.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > 65536) dashboard?.kill('SIGKILL'); });
+    dashboardLog = '';
+    for (const stream of [dashboard.stdout!, dashboard.stderr!]) stream.on('data', (chunk: Buffer) => { bytes += chunk.length; dashboardLog = (dashboardLog + chunk.toString()).slice(-16384); if (bytes > 65536) dashboard?.kill('SIGKILL'); });
     await cluster.wait('dashboard readiness without a node', async () => { try { return (await fetch(origin + '/readyz', { signal: AbortSignal.timeout(500) })).ok; } catch { return false; } }, 15000);
   }
   let owner = '';
@@ -70,6 +76,13 @@ test('node-initiated pairing survives process restarts and dashboard loss withou
   assert.equal((await api('/api/dashboard/setup', 'POST', { name: 'owner', password, code })).status, 201);
   const login = await api('/api/auth/login', 'POST', { name: 'owner', password });
   assert.equal(login.status, 200); owner = login.body.token; cluster.secrets.push(owner);
+  const capabilities = await api('/api/dashboard/onboarding');
+  if (nativeTLS) {
+    const pin = capabilities.body.connectionTlsFingerprint;
+    assert.match(pin, /^[0-9a-f]{64}$/u);
+    assert.ok(dashboardLog.includes('Dashboard connection TLS certificate fingerprint: ' + pin), 'advertised trust equals local server certificate');
+    nodeEnvironment.CANARY_DASHBOARD_TLS_FINGERPRINT = pin;
+  } else assert.equal(capabilities.body.connectionTlsFingerprint, undefined);
   const created = await api('/api/dashboard/invitations', 'POST', { label: 'VPN node', nodeId: node.id });
   assert.equal(created.status, 201);
   const invitation: NodeInvitation & { token: string } = created.body; cluster.secrets.push(invitation.token);
@@ -106,5 +119,8 @@ test('node-initiated pairing survives process restarts and dashboard loss withou
   const accounts = await cluster.api<any[]>(node, '/api/accounts');
   assert.equal(accounts.status, 200); assert.equal(accounts.body.length, 1, 'removal revoked all three role accounts');
   assert.equal(leakedCookie, false);
-  assert.ok(nodeRequests > 10, 'real requests crossed the node-initiated TLS transport');
+  if (nativeTLS) {
+    assert.equal(nodeRequests, 0, 'native TLS used no CA proxy');
+    assert.equal((await api('/api/dashboard/onboarding')).body.connectionTlsFingerprint, nodeEnvironment.CANARY_DASHBOARD_TLS_FINGERPRINT, 'restart kept native certificate');
+  } else assert.ok(nodeRequests > 10, 'real requests crossed the node-initiated TLS transport');
 });

@@ -122,7 +122,7 @@ func (n *Node) monitorViews(role string) []MonitorView {
 func (n *Node) overview(a account) Overview {
 	now := n.now()
 	monitors := n.monitorViews(a.Role)
-	out := Overview{Node: Identity{n.ID, n.Name}, Now: now, Monitors: monitors, Groups: n.groupViews(monitors), Nodes: []NodeView{{ID: n.ID, Name: n.Name, State: "local", LastSeenAt: Ptr(now)}}, Incidents: []IncidentView{}, Notifications: []NotificationView{}, Maintenance: n.maintenanceViews()}
+	out := Overview{Build: Ptr(LocalBinaryIdentity()), Node: Identity{n.ID, n.Name}, Now: now, Monitors: monitors, Groups: n.groupViews(monitors), Nodes: []NodeView{{ID: n.ID, Name: n.Name, State: "local", LastSeenAt: Ptr(now)}}, Incidents: []IncidentView{}, Notifications: []NotificationView{}, Maintenance: n.maintenanceViews()}
 	out.User.Name = a.Name
 	out.User.Role = a.Role
 	for _, p := range n.settings.Peers {

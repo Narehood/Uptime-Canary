@@ -26,6 +26,19 @@ HTTPS origin to the connection listener without interactive SSO. This candidate
 requires images built from matching source; stack variables do not add the
 feature to an older image. The linked guide records its acceptance limits.
 
+For the protocol-20 candidate, [native TLS](transport-tls.md) adds
+`CANARY_TLS_MODE=auto` for node API/HA connections and explicit certificate
+fingerprints. The wizard defaults new direct nodes to HTTPS. Existing stack
+variables stay compatible; migrating a running stack requires updating callers'
+URLs and trust, not just changing its node's mode. A dedicated outbound listener
+can use `CANARY_DASHBOARD_CONNECTION_TLS_MODE=auto` and include its pin in the
+node settings, or retain a trusted HTTPS proxy with native listener TLS off.
+
+The dashboard checks official image metadata centrally every six hours and
+shows advisory update notices; it never updates a stack itself. Set
+`CANARY_UPDATE_CHECKS=false` on the dashboard to turn those checks off. See
+[update notices](software-updates.md) for scope and custom/older build limits.
+
 The project is development software, not a validated release. The templates
 pull development images from GitHub Container Registry (GHCR), following the
 same deployment pattern as [WebTools](https://github.com/Narehood/webtools).

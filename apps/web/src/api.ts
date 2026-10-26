@@ -1,5 +1,5 @@
 import type {
-  AccountInput, AccountView, AuthenticationStatus, AuthenticatorEnrollment, Group, GroupInput, GroupView, Monitor, MonitorInput,
+  AccountInput, AccountView, AuthenticationStatus, AuthenticatorEnrollment, BinaryIdentity, Group, GroupInput, GroupView, Monitor, MonitorInput,
   MonitorView, Observation, Overview, PasswordLoginInput, PasswordLoginResult, Role,
   LocalAvailabilityHistory, LocalHistoryStatistics, NotificationChannel, NotificationChannelInput, NotificationChannelView,
   DeliveryAttemptView, Maintenance, MaintenanceInput, MaintenanceView,
@@ -50,6 +50,29 @@ export function normalizeApiUrl(input: string): string {
   return url.origin;
 }
 
+/** What the TLS certificate fingerprint fields accept, in the words of the line a node logs with it. */
+export const TLS_FINGERPRINT_FORMAT = 'Use the 64 hexadecimal characters after “Node TLS certificate fingerprint:” in the node’s log.';
+const TLS_FINGERPRINT = /^[0-9a-f]{64}$/iu;
+
+/**
+ * A TLS certificate's SHA-256 fingerprint as an administrator enters it: the 64 hexadecimal characters a node logs after
+ * "Node TLS certificate fingerprint:", or the same hash as 32 colon-separated pairs, which other tools print. Gives the
+ * lowercase 64-character form Go's nodetls.Fingerprint accepts, '' for an empty field (ordinary certificate checks), or
+ * null for anything else. It names one public certificate; it isn't a secret, and it isn't the node-connection fingerprint
+ * of a node that connects to the dashboard.
+ */
+export function tlsFingerprintValue(input: string): string | null {
+  const text = input.trim();
+  if (!text) return '';
+  const hex = TLS_FINGERPRINT.test(text) ? text : /^[0-9a-f]{2}(?::[0-9a-f]{2}){31}$/iu.test(text) ? text.replace(/:/gu, '') : null;
+  return hex === null ? null : hex.toLowerCase();
+}
+
+/** A fingerprint the dashboard's server sent: exactly 64 hexadecimal characters, kept lowercase, or nothing. */
+const reportedFingerprint = (value: unknown): string | undefined => typeof value === 'string' && TLS_FINGERPRINT.test(value) ? value.toLowerCase() : undefined;
+/** Go's omitempty leaves a field out; null or '' mean the same. */
+const absent = (value: unknown): boolean => value === undefined || value === null || value === '';
+
 /** Account tokens are printable ASCII without spaces; anything else could never authenticate. */
 export function checkToken(token: string): string | null {
   if (!token) return 'Enter the account token for this node.';
@@ -98,9 +121,44 @@ export function normalizeOverview(value: unknown): Overview {
     notifications: list(value.notifications),
     user: { name: typeof value.user.name === 'string' ? value.user.name : 'account', role: value.user.role },
   };
+  const build = normalizeBuild(value.build);
+  if (build) overview.build = build;
   if ('groups' in value) overview.groups = normalizeGroups(value.groups);
   if ('maintenance' in value) overview.maintenance = list<MaintenanceView>(value.maintenance);
   return overview;
+}
+
+/** The highest peer protocol this page reads as one: anything above it is taken as malformed, not as a newer node. */
+export const MAX_PEER_PROTOCOL = 10_000;
+/** A commit as Go's build identity writes one (build_identity.go): 40 hexadecimal digits. */
+const BUILD_COMMIT = /^[0-9a-f]{40}$/iu;
+
+/**
+ * A node's own build, from its overview (Go's LocalBinaryIdentity; older nodes send none). It's kept only with a whole
+ * peer protocol from 1 to MAX_PEER_PROTOCOL, since features are offered by that number (alert templates need 20): an
+ * absent, fractional, string or out-of-range protocol drops the whole build, and no protocol is assumed in its place.
+ * Only the known fields are kept: text cleaned like other node text, commits only in Go's form (lowercased), and
+ * `modified` only beside a commit, as Go sends it; otherwise it reads as unknown (null), never as clean.
+ */
+export function normalizeBuild(value: unknown): BinaryIdentity | undefined {
+  if (!isRecord(value)) return undefined;
+  const protocol = value.peerProtocol;
+  if (typeof protocol !== 'number' || !Number.isSafeInteger(protocol) || protocol < 1 || protocol > MAX_PEER_PROTOCOL) return undefined;
+  const text = (field: unknown, limit = 128): string => typeof field === 'string' ? cleanText(field, limit) : '';
+  const commit = (field: unknown): string | undefined => typeof field === 'string' && BUILD_COMMIT.test(field) ? field.toLowerCase() : undefined;
+  const sourceCommit = commit(value.sourceCommit);
+  const imageRevision = commit(value.imageRevision);
+  const imageBuiltAt = typeof value.imageBuiltAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.test(value.imageBuiltAt)
+    && Number.isFinite(Date.parse(value.imageBuiltAt)) && Date.parse(value.imageBuiltAt) > 0 ? value.imageBuiltAt : undefined;
+  return {
+    name: text(value.name), version: text(value.version), moduleVersion: text(value.moduleVersion), goVersion: text(value.goVersion),
+    os: text(value.os, 32), arch: text(value.arch, 32),
+    ...(sourceCommit ? { sourceCommit } : {}),
+    ...(imageRevision ? { imageRevision } : {}),
+    ...(imageBuiltAt ? { imageBuiltAt } : {}),
+    modified: sourceCommit && typeof value.modified === 'boolean' ? value.modified : null,
+    peerProtocol: protocol,
+  };
 }
 
 /** Stands in for a node in the dashboard's own overview, which reports no node: nothing is read from one. */
@@ -146,6 +204,10 @@ export function normalizeRegisteredNode(value: unknown): RegisteredNode {
   // Outbound nodes open the connection themselves and have no address here. Last connected is transport activity only.
   if (value.connection === 'outbound' || value.connection === 'direct') node.connection = value.connection;
   if (finite(value.lastConnectedAt) && value.lastConnectedAt > 0) node.lastConnectedAt = value.lastConnectedAt;
+  // Administrators only, like the address: the one certificate the dashboard's server accepts there. Without it, the
+  // server checks an HTTPS node's certificate against the authorities it trusts.
+  const pin = reportedFingerprint(value.tlsFingerprint);
+  if (pin) node.tlsFingerprint = pin;
   return node;
 }
 
@@ -180,7 +242,10 @@ export function normalizeOnboarding(value: unknown): NodeOnboardingCapabilities 
     throw new ApiFailure(200, 'This dashboard sent onboarding settings this page could not read.');
   }
   if (value.connectionProtocol !== 1) throw new ApiFailure(200, 'This dashboard uses a node-connection protocol this page doesn’t know. Reload the page.');
-  const connectionUrl = value.outboundEnabled === true ? connectionOrigin(value.connectionUrl) : null;
+  // The dedicated listener's own certificate, sent only when it terminates TLS itself. A value that isn't a fingerprint
+  // can't be pinned as the dashboard means it, so the address isn't offered rather than written without its pin.
+  const pinned = absent(value.connectionTlsFingerprint) ? null : reportedFingerprint(value.connectionTlsFingerprint) ?? false;
+  const connectionUrl = value.outboundEnabled === true && pinned !== false ? connectionOrigin(value.connectionUrl) : null;
   const capabilities: NodeOnboardingCapabilities = {
     outboundEnabled: connectionUrl !== null,
     connectionProtocol: 1,
@@ -189,14 +254,20 @@ export function normalizeOnboarding(value: unknown): NodeOnboardingCapabilities 
     nativeDownloadAvailable: value.nativeDownloadAvailable === true,
   };
   if (connectionUrl) capabilities.connectionUrl = connectionUrl;
+  if (connectionUrl && pinned) capabilities.connectionTlsFingerprint = pinned;
   return capabilities;
 }
 
-/** An invitation's status. Unknown fields are dropped, a token included: only creation returns one. */
+/**
+ * An invitation's status. Unknown fields are dropped, a token included: only creation returns one. Its certificate
+ * fingerprint, when the node-connection listener terminates TLS itself, is bound to it like its address, so a value
+ * that isn't one makes the invitation unreadable rather than give settings without it.
+ */
 export function normalizeInvitation(value: unknown): NodeInvitation {
   const connectionUrl = isRecord(value) ? connectionOrigin(value.connectionUrl) : null;
+  const pinned = isRecord(value) && !absent(value.connectionTlsFingerprint) ? reportedFingerprint(value.connectionTlsFingerprint) ?? false : null;
   if (!isRecord(value) || typeof value.id !== 'string' || !REGISTRATION_ID.test(value.id) || typeof value.nodeId !== 'string' || !REGISTRATION_ID.test(value.nodeId)
-      || !finite(value.expiresAt) || typeof value.state !== 'string' || !(INVITATION_STATES as readonly string[]).includes(value.state) || !connectionUrl) {
+      || !finite(value.expiresAt) || typeof value.state !== 'string' || !(INVITATION_STATES as readonly string[]).includes(value.state) || !connectionUrl || pinned === false) {
     throw new ApiFailure(200, 'This dashboard sent an invitation this page could not read.');
   }
   const invitation: NodeInvitation = {
@@ -207,6 +278,7 @@ export function normalizeInvitation(value: unknown): NodeInvitation {
     expiresAt: value.expiresAt,
     state: value.state as NodeInvitation['state'],
   };
+  if (pinned) invitation.connectionTlsFingerprint = pinned;
   if (typeof value.registrationId === 'string' && REGISTRATION_ID.test(value.registrationId)) invitation.registrationId = value.registrationId;
   const node = value.node;
   if (isRecord(node) && typeof node.id === 'string' && typeof node.fingerprint === 'string' && cleanText(node.fingerprint, 256)) {
@@ -239,7 +311,7 @@ export function normalizeVerification(value: unknown): NodeVerification {
   }
   const url = cleanText(value.url, 512);
   const id = cleanText(value.node.id, 128);
-  return {
+  const verification: NodeVerification = {
     ticket: value.ticket,
     expiresAt: value.expiresAt,
     node: { id, name: typeof value.node.name === 'string' && value.node.name.trim() ? cleanText(value.node.name, 128) : id },
@@ -248,6 +320,10 @@ export function normalizeVerification(value: unknown): NodeVerification {
     // Either the server's word or the address itself: plain HTTP is never reported as encrypted.
     plainHttp: value.plainHttp === true || url.startsWith('http:'),
   };
+  // The certificate the server accepted there, as it will save it. The form compares it with the one it sent.
+  const pin = reportedFingerprint(value.tlsFingerprint);
+  if (pin) verification.tlsFingerprint = pin;
+  return verification;
 }
 
 function normalizeGroups(value: unknown): GroupView[] {
@@ -510,8 +586,12 @@ export async function createDashboardOwner(input: DashboardOwnerInput, signal?: 
 /** `removing`: the dashboard stopped reading it, but the node's revocation isn't confirmed yet (202). */
 export type NodeRemoval = { removed: true } | { removed: false; node: RegisteredNode | null };
 
-/** A registry edit: always the label; `url` only to follow the same node to a new address. */
-export interface RegisteredNodeEdit { label: string; url?: string }
+/**
+ * A registry edit: always the label; `url` only to follow the same node to a new address; `tlsFingerprint` only to change
+ * the certificate the dashboard's server accepts there ('' returns to ordinary certificate checks). Left out, the server
+ * keeps the saved address and fingerprint.
+ */
+export interface RegisteredNodeEdit { label: string; url?: string; tlsFingerprint?: string }
 
 export type Credential = 'token' | 'session';
 
@@ -774,9 +854,18 @@ export class CanaryApi {
     if (value !== null && !Array.isArray(value)) throw new ApiFailure(200, 'This dashboard sent a node list this page could not read.');
     return list<unknown>(value).map(normalizeRegisteredNode);
   }
-  /** Read-only: the dashboard's server contacts the address and proves the node's identity. Nothing changes on the node. */
+  /**
+   * Read-only: the dashboard's server contacts the address and proves the node's identity. Nothing changes on the node.
+   * With `tlsFingerprint` it accepts only that HTTPS certificate there, before it sends the credential; without one the
+   * body is exactly as before, and an HTTPS certificate is checked against the authorities the server trusts. A
+   * fingerprint that isn't one, or one for a plain HTTP address, never leaves the page (Go validateTLSOrigin refuses both).
+   */
   async verifyNode(input: NodeVerificationInput, signal?: AbortSignal): Promise<NodeVerification> {
     const body: NodeVerificationInput = { label: input.label.trim(), url: normalizeApiUrl(input.url), token: input.token };
+    const pin = tlsFingerprintValue(input.tlsFingerprint ?? '');
+    if (pin === null) throw new Error(TLS_FINGERPRINT_FORMAT);
+    if (pin && !body.url.startsWith('https:')) throw new Error('A certificate fingerprint needs an https:// address.');
+    if (pin) body.tlsFingerprint = pin;
     return normalizeVerification(await this.own<unknown>('/api/dashboard/verify', 'POST', body, signal));
   }
   /** Drops an unused verification. Expiry drops it too, so a failure here leaves nothing behind for long. */
@@ -793,12 +882,18 @@ export class CanaryApi {
    * Renames the entry; with `url`, also moves it to the same node's new address. A rename needs no node. A move is
    * saved only after the dashboard's server proves the same node ID answers there and accepts all three of this
    * dashboard's existing role credentials, so the registration ID, its credentials and its public links stay. It can't
-   * point the entry at a different node. The bundled node's address belongs to the deployment (409).
+   * point the entry at a different node. The bundled node's address belongs to the deployment (409). `tlsFingerprint`
+   * changes the certificate accepted there ('' clears it), checked the same way, with that certificate, first.
    */
   async editNode(id: string, changes: RegisteredNodeEdit, signal?: AbortSignal): Promise<RegisteredNode> {
     const path = `/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}`;
     const body: RegisteredNodeEdit = { label: changes.label.trim() };
     if (changes.url !== undefined) body.url = normalizeApiUrl(changes.url);
+    if (changes.tlsFingerprint !== undefined) {
+      const pin = tlsFingerprintValue(changes.tlsFingerprint);
+      if (pin === null) throw new Error(TLS_FINGERPRINT_FORMAT);
+      body.tlsFingerprint = pin;
+    }
     return normalizeRegisteredNode(await this.own<unknown>(path, 'PATCH', body, signal, NODE_CHANGE_TIMEOUT_MS));
   }
   /**
@@ -871,6 +966,22 @@ export class CanaryApi {
   async confirmInvitation(id: string, signal?: AbortSignal): Promise<RegisteredNode> {
     const path = `/api/dashboard/invitations/${encodeURIComponent(checkRegistration(id))}/confirm`;
     return normalizeRegisteredNode(await this.own<unknown>(path, 'POST', undefined, signal, NODE_CHANGE_TIMEOUT_MS));
+  }
+
+  // ----- software updates: the dashboard's own cached check of the official images. Both are the dashboard's own routes,
+  // with this sign-in and never with a node selection. The answer is passed on as sent; updates.ts readUpdateStatus
+  // reads it.
+  /** Every signed-in role. The server answers from what it last checked; reading never makes it contact a registry. */
+  async updates(signal?: AbortSignal): Promise<unknown> {
+    return this.own<unknown>('/api/dashboard/updates', 'GET', undefined, signal);
+  }
+  /**
+   * Administrators: asks the server to check soon. No body: the server refuses one. It answers 202 with the status, 409
+   * while a check runs or checks are off, and 429 while checks are held back, such as within fifteen minutes of the last
+   * one. Sent once; never retried here.
+   */
+  async checkUpdates(signal?: AbortSignal): Promise<unknown> {
+    return this.own<unknown>('/api/dashboard/updates/check', 'POST', undefined, signal);
   }
 }
 

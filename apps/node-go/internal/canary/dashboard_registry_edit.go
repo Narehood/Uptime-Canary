@@ -12,11 +12,12 @@ import (
 func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, actor AccountView, id string) {
 	raw, err := readBounded(r.Body, 4096)
 	var input struct {
-		Label string  `json:"label"`
-		URL   *string `json:"url"`
+		Label          string  `json:"label"`
+		URL            *string `json:"url"`
+		TLSFingerprint *string `json:"tlsFingerprint"`
 	}
 	if err == nil {
-		err = dashboardJSON(raw, &input, "label", "url")
+		err = dashboardJSON(raw, &input, "label", "url", "tlsFingerprint")
 	}
 	if err == nil {
 		err = validText(input.Label, "node label", 128)
@@ -43,7 +44,7 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 	d.mu.Unlock()
 	candidate := before
 	candidate.Label = input.Label
-	if input.URL != nil && before.Connection == "outbound" {
+	if (input.URL != nil || input.TLSFingerprint != nil) && before.Connection == "outbound" {
 		errorReply(w, fail(400, "Node-initiated connections have no dashboard-dialed node address"))
 		return
 	}
@@ -57,8 +58,17 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 		errorReply(w, err)
 		return
 	}
+	if input.TLSFingerprint != nil {
+		candidate.TLSFingerprint = *input.TLSFingerprint
+	}
+	candidate.TLSFingerprint, err = validateTLSOrigin(candidate.URL, candidate.TLSFingerprint)
+	if err != nil {
+		errorReply(w, fail(400, err.Error()))
+		return
+	}
 	secret := dashboardNodeSecrets{}
-	if candidate.URL != before.URL {
+	trustChanged := candidate.URL != before.URL || candidate.TLSFingerprint != before.TLSFingerprint
+	if trustChanged {
 		if before.Local && d.localURL != "" && before.URL == d.localURL {
 			errorReply(w, fail(409, "The bundled node address is managed in deployment settings"))
 			return
@@ -85,7 +95,7 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	current, exists := d.registry[id]
-	if !exists || current.URL != before.URL || current.Credentials != before.Credentials || current.Label != before.Label || d.busy[id] || dashboardOperationPending(current.State) {
+	if !exists || current.URL != before.URL || current.Credentials != before.Credentials || current.TLSFingerprint != before.TLSFingerprint || current.Label != before.Label || d.busy[id] || dashboardOperationPending(current.State) {
 		errorReply(w, fail(409, "Registered node changed; refresh before editing"))
 		return
 	}
@@ -95,7 +105,7 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 			return
 		}
 	}
-	if candidate.URL == before.URL {
+	if !trustChanged {
 		candidate = current
 		candidate.Label = input.Label
 	}

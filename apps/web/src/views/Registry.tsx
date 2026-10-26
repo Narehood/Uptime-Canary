@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { NodeVerification, RegisteredNode } from '@uptime-canary/shared';
-import { ApiFailure, describeFailure, isAbort } from '../api';
+import { ApiFailure, describeFailure, isAbort, tlsFingerprintValue, type RegisteredNodeEdit } from '../api';
 import { useCanary } from '../context';
 import {
-  canRecoverAccess, credentialProblem, editChanges, editFailure, labelProblem, nodeActions, nodeAddressProblem, nodeStateInfo, pendingOperation,
-  recoveryFailure, recoveryOutcome, recoveryProblem, registryOrder, registrySummary, rotationFailure, SECTION_TITLES, shownNodeId, type ChangeFailure,
+  canRecoverAccess, certificateRefused, credentialProblem, editChanges, editFailure, httpsAddress, labelProblem, nodeActions, nodeAddressProblem, nodeStateInfo,
+  pendingOperation, recoveryFailure, recoveryOutcome, recoveryProblem, registryOrder, registrySummary, rotationFailure, SECTION_TITLES, shownNodeId,
+  tlsFingerprintEdit, tlsFingerprintProblem, type ChangeFailure,
 } from '../dashboard';
 import { ago, elapsed, plural } from '../format';
 import { pageOrigin } from '../gateway';
@@ -15,7 +16,7 @@ import { session } from '../session';
 import { Banner, Card, EmptyState, Modal, PageHead, Spinner, Tag, Time, nodeStateText, nodeTone } from '../ui/bits';
 import { ErrorSummary, SecretField, TextField } from '../ui/forms';
 import { EndpointMark, Glyph, Icon } from '../ui/icons';
-import { secretsFor, secretsForNode, type DialogSecrets, type DirectTarget, type Platform } from '../onboarding';
+import { directTls, secretsFor, secretsForNode, TLS_LOG_LINE, type DialogSecrets, type DirectTarget, type Platform } from '../onboarding';
 import {
   AddNodeChooser, NewNodeDeploy, OutboundNode, PendingNodesCard, useInvitations, useOnboarding, type AddPlan, type NewNodeDraft, type Taken,
 } from './NodeWizard';
@@ -32,6 +33,9 @@ import {
  * credential is handled the same way.
  * Add node also offers the wizard in NodeWizard.tsx: a new node to deploy, and nodes that connect to this dashboard
  * themselves. The direct form for a running node stays its default and works as before.
+ * A direct HTTPS node may have a TLS certificate fingerprint (administrators only, like its address): the dashboard's
+ * server then accepts only that certificate there. It's public, never a credential, and never the node-connection
+ * fingerprint of a node that connects to this dashboard. Empty means the server's ordinary certificate checks.
  */
 
 const period = (text: string): string => /[.!?]$/u.test(text) ? text : `${text}.`;
@@ -202,6 +206,8 @@ function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
       <p className="nc-state"><b>{info.label}.</b> {info.text}{node.error ? <> <span className="muted">{period(node.error)}</span></> : null}</p>
       <dl className="kv">
         {node.url ? <><dt>Address</dt><dd className="mono">{node.url}</dd></> : null}
+        {/* Administrators only, like the address. The Edit dialog shows all 64 characters. */}
+        {node.tlsFingerprint ? <><dt>TLS certificate</dt><dd><span className="mono">{node.tlsFingerprint.slice(0, 12)}…{node.tlsFingerprint.slice(-12)}</span> <span className="muted">· pinned</span></dd></> : null}
         {outbound ? <><dt>Last connected</dt><dd>{node.lastConnectedAt ? <><Time at={node.lastConnectedAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastConnectedAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd></> : null}
         {node.nodeName && node.nodeName !== node.nodeId && node.nodeName !== node.label ? <><dt>Node name</dt><dd>{node.nodeName}</dd></> : null}
         <dt>Last read</dt><dd>{node.lastReadAt ? <><Time at={node.lastReadAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastReadAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd>
@@ -222,6 +228,7 @@ function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
       {admin && node.state === 'credential-refused' ? <p className="small muted">To give it new credentials, use Rotate access with a current administrator credential from the node.</p> : null}
       {recover && node.error ? <p className="small muted">If the node stopped accepting the credential this update uses, Recover access finishes the same update with a current administrator credential from the node.</p> : null}
       {admin && node.state === 'different-node' && actions.move ?<p className="small muted">If <span className="mono">{node.nodeId}</span> moved, edit this entry’s address. The dashboard’s server checks that the same node answers there before saving.</p> : null}
+      {admin && node.state === 'not-answering' && node.tlsFingerprint && actions.move ? <p className="small muted">This entry accepts only the certificate with its saved fingerprint. If the node’s certificate was replaced, enter the new fingerprint with Edit; the dashboard’s server checks that the same node answers with it before saving.</p> : null}
       {!admin && unfinished ? <p className="small muted">{node.state === 'rotating' ? 'An administrator can retry it.' : 'An administrator can retry or remove it.'}</p> : null}
       {error ? <p className="small fwarn" role="alert"><Glyph tone="down" />{error}</p> : null}
     </article>
@@ -343,7 +350,11 @@ export function NodePickerDialog({ onClose }: { onClose: () => void }) {
 
 type Failure = { title: string; text: string };
 
-function verifyFailure(error: unknown, generated = false): Failure {
+/**
+ * `trust` is how the server was asked to check the node's certificate: only the fingerprint entered ('pinned'), against
+ * the authorities it trusts ('ca', an HTTPS address without one), or not at all ('none', plain HTTP).
+ */
+export function verifyFailure(error: unknown, generated = false, trust: 'pinned' | 'ca' | 'none' = 'none'): Failure {
   const text = describeFailure(error, { preferDetail: true });
   if (!(error instanceof ApiFailure)) return { title: 'Not verified', text };
   const detail = error.detail ?? '';
@@ -352,12 +363,23 @@ function verifyFailure(error: unknown, generated = false): Failure {
       ? { title: 'The node refused its new administrator token', text: 'Check that it started with the settings from the previous step, on new, empty volumes: a node that already has accounts ignores CANARY_ADMIN_TOKEN. Nothing was saved.' }
       : { title: 'The node refused this credential', text: 'It may be mistyped, revoked, or not an admin credential on that node. Paste it again to retry. Nothing was saved.' };
   }
+  // The TLS handshake failed, before any credential went to the node.
+  if (error.status === 502 && certificateRefused(detail)) {
+    return {
+      title: 'The node’s certificate wasn’t accepted',
+      text: `${text} ${trust === 'pinned' ? `Copy the fingerprint again from the line “${TLS_LOG_LINE}” in the node’s own log, and check the address.` : 'It isn’t one the dashboard’s server trusts.'} The dashboard’s server sent the node no credential. Nothing was saved.`,
+    };
+  }
   if (error.status === 502 && /different node/iu.test(detail)) return { title: 'A different node answers at this address', text: `${text} Nothing was saved.` };
   if (error.status === 502 && /redirect/iu.test(detail)) {
     return { title: 'The address answered with a redirect', text: 'The dashboard doesn’t follow redirects, so an address can’t send it somewhere else. Enter the node’s own address. Nothing was saved.' };
   }
   if (error.status === 0 || error.status === 502 || error.status === 504) {
-    return { title: 'The dashboard’s server couldn’t verify this node', text: `${text} Your browser wasn’t involved, so it doesn’t matter whether this computer can reach the address. Nothing was saved.` };
+    // Go's message for any failed connection also names the certificate, so nothing here says which one it was.
+    const tls = trust === 'pinned'
+      ? ' With a fingerprint, the dashboard’s server accepts only that certificate: a node that presents another one ends here too, before any credential is sent.'
+      : trust === 'ca' ? ' A node with a self-signed certificate of its own, such as one started with CANARY_TLS_MODE=auto, needs its certificate fingerprint here.' : '';
+    return { title: 'The dashboard’s server couldn’t verify this node', text: `${text} Your browser wasn’t involved, so it doesn’t matter whether this computer can reach the address.${tls} Nothing was saved.` };
   }
   if (error.status === 401) return { title: 'Your sign-in to this dashboard ended', text: 'Sign in again, then add the node. Nothing was saved.' };
   if (error.status === 403) return { title: 'Only administrators add nodes', text };
@@ -427,7 +449,8 @@ export function AddNodeDialog({ onClose }: { onClose: () => void }) {
   if (!plan.fresh && plan.link === 'direct') body = <DirectAddForm onClose={onClose} onBusy={hold} onStage={lock} />;
   else if (plan.link === 'direct') {
     body = deployed && verifying
-      ? <DirectAddForm key="new" onClose={onClose} onBusy={hold} onStage={lock} credential={verifying.admin} expectedId={draft.nodeId} initialLabel={draft.label.trim()} initialUrl={deployed.url} onBack={() => setDeployed(null)} />
+      ? <DirectAddForm key="new" onClose={onClose} onBusy={hold} onStage={lock} credential={verifying.admin} expectedId={draft.nodeId} initialLabel={draft.label.trim()} initialUrl={deployed.url}
+        pinRequired={directTls(deployed)} onBack={() => setDeployed(null)} />
       : <NewNodeDeploy draft={draft} onDraft={changeDraft} secrets={pair} earlier={earlier} onboarding={onboarding} taken={taken}
         onNext={target => { tokensFor(draft.nodeId, true); setDeployed(target); }} onUse={nodeId => tokensFor(nodeId, true)} onCancel={onClose} />;
   } else {
@@ -458,15 +481,30 @@ interface DirectOptions {
   expectedId?: string;
   initialLabel?: string;
   initialUrl?: string;
+  /**
+   * A new node that serves HTTPS with its own self-signed certificate (CANARY_TLS_MODE=auto): its fingerprint, from its
+   * log, is required, because no certificate authority vouches for that certificate.
+   */
+  pinRequired?: boolean;
   /** Back to the new node's deployment steps. */
   onBack?: () => void;
 }
 
-/** Verify, then confirm: the form a running node is added with, and a new direct node's last step. */
-function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initialLabel = '', initialUrl = '', onBack }: DirectOptions) {
+/** Where the fingerprint comes from, and what it isn't. */
+const PIN_SOURCE = `Copy the 64 characters after “${TLS_LOG_LINE}” from the node’s own log, where you see its output yourself, such as your own terminal on its host, not from a message or page someone else could change. A node in a container also prints it with canary tls-info run inside it, such as with docker exec. It isn’t secret, and it isn’t the “Node connection fingerprint” of a node that connects to this dashboard.`;
+
+/**
+ * Verify, then confirm: the form a running node is added with, and a new direct node's last step. The TLS certificate
+ * fingerprint field shows for an https:// address (or while it holds a value); left empty, nothing about it is sent and
+ * the form works exactly as before.
+ */
+export function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initialLabel = '', initialUrl = '', pinRequired = false, onBack }: DirectOptions) {
   const { api, registry, connection, stillCurrent } = useCanary();
   const [label, setLabel] = useState(initialLabel);
   const [url, setUrl] = useState(initialUrl);
+  const [pin, setPin] = useState('');
+  // The fingerprint the last verification sent (normalized), to compare with the one the server reports back.
+  const [sentPin, setSentPin] = useState('');
   const [token, setToken] = useState('');
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState<null | 'verify' | 'add'>(null);
@@ -497,7 +535,10 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
   // A new node's own administrator token stays with the dialog, so a failed check can simply be tried again.
   const generated = credential !== undefined;
   const sent = credential ?? token;
-  const errors = { label: labelProblem(label), url: nodeAddressProblem(url), token: credentialProblem(sent) };
+  const pinShown = pinRequired || httpsAddress(url) || pin !== '';
+  const errors = {
+    label: labelProblem(label), url: nodeAddressProblem(url), tlsFingerprint: pinShown ? tlsFingerprintProblem(pin, url, pinRequired) : undefined, token: credentialProblem(sent),
+  };
   const visible: Partial<typeof errors> = show ? errors : {};
   const discard = (): void => {
     const outstanding = ticket.current;
@@ -512,9 +553,12 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
     if (Object.values(errors).some(Boolean)) { failed(); return; }
     const controller = new AbortController();
     attempt.current = controller;
+    const trust = !httpsAddress(url) ? 'none' : tlsFingerprintValue(pin) ? 'pinned' : 'ca';
+    setSentPin(tlsFingerprintValue(pin) ?? '');
     setBusy('verify');
     try {
-      const result = await api.verifyNode({ label, url, token: sent }, controller.signal);
+      // An empty fingerprint isn't sent: the body is then exactly { label, url, token }, as before.
+      const result = await api.verifyNode({ label, url, token: sent, tlsFingerprint: pin }, controller.signal);
       setToken('');
       if (controller.signal.aborted || !stillCurrent()) { void api.discardVerification(result.ticket).catch(() => undefined); return; }
       ticket.current = result.ticket;
@@ -525,7 +569,7 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
       setToken('');
       if (isAbort(error)) { setNotice(generated ? 'Stopped. Nothing was saved.' : 'Stopped. Nothing was saved. Paste the credential again to verify.'); return; }
       if (!stillCurrent()) return;
-      setFailure(verifyFailure(error, generated));
+      setFailure(verifyFailure(error, generated, trust));
       failed();
     } finally {
       if (attempt.current === controller) attempt.current = null;
@@ -580,7 +624,7 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
     body = (
       <form className="connect-form" onSubmit={event => { void verify(event); }} noValidate aria-busy={busy === 'verify'}>
         <p className="sec">{generated
-          ? <>The dashboard’s server contacts the new node <span className="mono">{expectedId}</span> at this address with the administrator token made for it; your browser doesn’t. Verifying changes nothing on the node.</>
+          ? <>The dashboard’s server contacts the new node <span className="mono">{expectedId}</span> at this address with the administrator token made for it; your browser doesn’t. Verifying changes nothing on the node.{pinRequired ? ' It accepts only the certificate with the fingerprint below, and sends the token only once that certificate checks out.' : ''}</>
           : 'The dashboard’s server contacts the node at this address; your browser doesn’t. A private, NetBird or Tailscale address is fine as long as the server can reach it. Verifying changes nothing on the node.'}</p>
         {notice ? <Banner tone="info" title={notice} /> : null}
         <ErrorSummary ref={summaryRef} title={failure ? failure.title : 'Check these fields'} errors={errorList}>{failure ? <p>{failure.text}</p> : null}</ErrorSummary>
@@ -588,6 +632,13 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
           hint="Every account on this dashboard sees it. The node keeps its own ID." />
         <TextField label="Node address" type="url" inputMode="url" mono value={url} onChange={setUrl} error={visible.url} disabled={busy !== null} placeholder="http://100.79.12.4:3100"
           hint="Scheme, host and port, as the dashboard’s server reaches it. HTTPS certificates are checked and redirects aren’t followed." />
+        {pinShown ? (
+          <TextField label="TLS certificate fingerprint" mono value={pin} onChange={setPin} error={visible.tlsFingerprint} disabled={busy !== null} maxLength={200}
+            placeholder={pinRequired ? '64 hexadecimal characters from the node’s log' : 'Empty: checked against trusted certificate authorities'}
+            hint={pinRequired
+              ? `${PIN_SOURCE} The dashboard’s server then accepts only this certificate at the address.`
+              : `Only for a node whose certificate no authority the dashboard’s server trusts has signed, such as one started with CANARY_TLS_MODE=auto. ${PIN_SOURCE} With it, the server accepts only that certificate. Empty, it checks the certificate and host name against the authorities it trusts; it never accepts just any certificate. Adding the node doesn’t change its own TLS setting.`} />
+        ) : null}
         {generated ? (
           <dl className="kv"><dt>Enrollment credential</dt><dd>The administrator token made for <span className="mono">{expectedId}</span> in the previous step. It goes only to the dashboard’s server.</dd></dl>
         ) : (
@@ -610,6 +661,8 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
     const name = verified.label || label.trim();
     // A new node is expected by its ID; another node answering there is never added from this step.
     const mismatch = expectedId !== undefined && verified.node.id !== expectedId;
+    // The server reports the fingerprint it will save; anything but the one sent is never added from here.
+    const pinMismatch = (verified.tlsFingerprint ?? '') !== sentPin;
     body = (
       <>
         <div className="banner b-ok" role="status">
@@ -622,13 +675,17 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
           </div>
         </div>
         {mismatch ? <Banner tone="down" title="A different node answers at this address">It proved it is <span className="mono">{verified.node.id}</span>, not the new node <span className="mono">{expectedId}</span>, so it can’t be added from here. Go back and check the address. Nothing was saved.</Banner> : null}
+        {pinMismatch ? <Banner tone="down" title="The certificate fingerprint isn’t the one entered">The dashboard’s server reported a different certificate fingerprint than the one this page sent, so the node can’t be added from here. Go back and verify again. Nothing was saved.</Banner> : null}
         <dl className="kv">
           <dt>Name on this dashboard</dt><dd>{name}</dd>
           <dt>Node ID</dt><dd className="mono">{verified.node.id}</dd>
           {verified.node.name !== verified.node.id ? <><dt>Node name</dt><dd>{verified.node.name}</dd></> : null}
           <dt>Address</dt><dd className="mono">{verified.url}</dd>
+          {verified.tlsFingerprint ? <><dt>TLS certificate</dt><dd className="mono">{verified.tlsFingerprint}</dd></> : null}
           <dt>Verification</dt><dd>{expired ? 'Expired' : `Ends in ${elapsed(remaining)}`}</dd>
         </dl>
+        {verified.tlsFingerprint ? <p className="small muted"><Icon name="lock" className="inline" />The dashboard’s server accepted only the certificate with this fingerprint there, before it sent the credential, and keeps using only that one for this node.</p> : null}
+        {!verified.plainHttp && !verified.tlsFingerprint ? <p className="small muted"><Icon name="lock" className="inline" />HTTPS: the dashboard’s server checked the node’s certificate and host name against the certificate authorities it trusts.</p> : null}
         {verified.plainHttp ? <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use HTTPS, or a network that encrypts it, such as NetBird or Tailscale.</p> : null}
         <p className="modal-note">Adding it lets every account on this dashboard read this node, and editors and administrators change its monitoring. The dashboard’s server sets up its own access on the node for each role. It doesn’t join the node to other nodes’ peers or change its identity, credentials or cluster secret.</p>
         {expired && !spent ? <Banner tone="warn" title="This verification expired">Nothing was added. Go back and verify again.</Banner> : null}
@@ -637,7 +694,7 @@ function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId, initi
           <button type="button" className="btn" onClick={back} disabled={busy !== null}><Icon name="chevLeft" />Back</button>
           <span className="row-wrap">
             <button type="button" className="btn" onClick={onClose} disabled={busy !== null}>{spent ? 'Close' : 'Cancel'}</button>
-            {(spent && !busy) || mismatch ? null : <button type="button" className="btn primary" onClick={() => { void add(); }} disabled={busy !== null || expired}><Icon name="plus" />{busy === 'add' ? 'Adding…' : `Add “${name}”`}</button>}
+            {(spent && !busy) || mismatch || pinMismatch ? null : <button type="button" className="btn primary" onClick={() => { void add(); }} disabled={busy !== null || expired}><Icon name="plus" />{busy === 'add' ? 'Adding…' : `Add “${name}”`}</button>}
           </span>
         </div>
       </>
@@ -695,32 +752,49 @@ export function RemoveNodeDialog({ node, onClose }: { node: RegisteredNode; onCl
 // public links stay. The list keeps showing (and refreshing) the saved entry while a dialog is open; neither dialog
 // changes what the list shows until the dashboard's server answers.
 
-/** Rename the entry, or follow the same node to a new address. Never a way to point it at another node. */
+/**
+ * Rename the entry, follow the same node to a new address, or change the TLS certificate it must present there (for
+ * example after its certificate was replaced). Never a way to point it at another node. An address or certificate change
+ * is saved only after the dashboard's server checks the same node with it, using all three of its credentials.
+ */
 export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode; onClose: () => void }) {
   const { api, registry, stillCurrent } = useCanary();
   const node = registry.map.get(opened.id) ?? opened;
   const [label, setLabel] = useState(opened.label);
   const [url, setUrl] = useState(opened.url ?? '');
+  const [pin, setPin] = useState(opened.tlsFingerprint ?? '');
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ChangeFailure | null>(null);
   const [summaryRef, failed] = useSummaryFocus();
 
-  // The bundled node's address belongs to the deployment; the server refuses to move it (409).
+  // The bundled node's address belongs to the deployment; the server refuses to move it (409), or to change its
+  // certificate fingerprint, which the deployment's settings set too.
   const movable = !node.local && opened.connection !== 'outbound' && opened.url !== undefined;
   const pending = pendingOperation(node.state);
-  const changedMeanwhile = node.label !== opened.label || node.url !== opened.url;
+  const pinMeanwhile = node.tlsFingerprint !== opened.tlsFingerprint;
+  const changedMeanwhile = node.label !== opened.label || node.url !== opened.url || pinMeanwhile;
   const { input, moving, errors } = editChanges(opened, label, url, movable);
-  // Fields left as they were keep a newer saved value: an address-only edit doesn't undo a rename made meanwhile.
-  const body = input ? { ...input, label: label === opened.label ? node.label : input.label } : null;
-  const unchanged = !body && !errors.label && !errors.url;
-  const visible: { label?: string; url?: string } = show ? errors : {};
+  // The fingerprint field shows for an HTTPS address, and stays while it holds a value, so a plain HTTP move clears it
+  // explicitly rather than drop a saved fingerprint unseen.
+  const pinShown = movable && (httpsAddress(url) || pin !== '' || Boolean(opened.tlsFingerprint));
+  const trust = pinShown ? tlsFingerprintEdit(opened, pin, url) : null;
+  const pinChanged = Boolean(trust?.changed);
+  const fieldErrors: { label?: string; url?: string; tlsFingerprint?: string } = trust?.error ? { ...errors, tlsFingerprint: trust.error } : errors;
+  const invalid = Boolean(fieldErrors.label || fieldErrors.url || fieldErrors.tlsFingerprint);
+  // Fields left as they were keep a newer saved value: an address-only edit doesn't undo a rename made meanwhile, and a
+  // fingerprint is sent only when it changed here.
+  const keptLabel = label.trim() === opened.label ? node.label : label.trim();
+  const renamed: RegisteredNodeEdit | null = input ? { ...input, label: label === opened.label ? node.label : input.label } : null;
+  const body: RegisteredNodeEdit | null = pinChanged && !invalid && trust ? { ...(renamed ?? { label: keptLabel }), tlsFingerprint: trust.value } : renamed;
+  const unchanged = !body && !invalid;
+  const visible: { label?: string; url?: string; tlsFingerprint?: string } = show ? fieldErrors : {};
 
   const save = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (busy || pending) return;
     setShow(true); setFailure(null);
-    if (errors.label || errors.url) { failed(); return; }
+    if (invalid) { failed(); return; }
     if (!body) return;
     setBusy(true);
     try {
@@ -729,11 +803,15 @@ export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode
       registry.reload();
       notify(moving
         ? `${saved.label} is now read at ${saved.url ?? body.url}. The dashboard’s server confirmed it’s the same node, ${saved.nodeId}.`
-        : `Renamed to ${saved.label}. Every account on this dashboard sees the new name.`);
+        : pinChanged
+          ? body.tlsFingerprint
+            ? `${saved.label} now has to present the certificate with the new fingerprint. The dashboard’s server confirmed it’s the same node, ${saved.nodeId}.`
+            : `${saved.label}’s certificate is now checked against the certificate authorities the dashboard’s server trusts. It confirmed it’s the same node, ${saved.nodeId}.`
+          : `Renamed to ${saved.label}. Every account on this dashboard sees the new name.`);
       onClose();
     } catch (error) {
       if (isAbort(error) || !stillCurrent()) return;
-      const next = editFailure(error, node, moving);
+      const next = editFailure(error, node, moving, pinChanged);
       if (next.reload) registry.reload();
       setFailure(next);
       failed();
@@ -748,7 +826,7 @@ export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode
         <p className="sec">Every account on this dashboard sees these changes. The registration stays the same, with its ID, its public status links and anyone’s current view of it.</p>
         {changedMeanwhile ? (
           <Banner tone="info" title="This entry changed while the form was open">
-            It’s now “{node.label}”{node.url ? <> at <span className="mono">{node.url}</span></> : null}. Fields you didn’t edit here keep those newer values when you save.
+            It’s now “{node.label}”{node.url ? <> at <span className="mono">{node.url}</span></> : null}.{pinMeanwhile ? ' Its TLS certificate fingerprint changed too.' : ''} Fields you didn’t edit here keep those newer values when you save.
           </Banner>
         ) : null}
         {pending ? <Banner tone="warn" title={nodeStateInfo(node).label}>Another change to this node is running. Wait until it finishes, then save.</Banner> : null}
@@ -764,17 +842,29 @@ export function EditNodeDialog({ node: opened, onClose }: { node: RegisteredNode
           <p className="small muted">This node connects to the dashboard itself, so its entry has no address to edit. Renaming works even while it isn’t connected.</p>
         ) : (
           <>
-            <dl className="kv"><dt>Address</dt><dd className="mono">{node.url ?? 'Not shown'}</dd></dl>
-            <p className="small muted">This deployment’s settings manage the bundled node’s address, so it changes there, not here. You can still rename it.</p>
+            <dl className="kv">
+              <dt>Address</dt><dd className="mono">{node.url ?? 'Not shown'}</dd>
+              {node.tlsFingerprint ? <><dt>TLS certificate</dt><dd className="mono">{node.tlsFingerprint}</dd></> : null}
+            </dl>
+            <p className="small muted">This deployment’s settings manage the bundled node’s address{node.tlsFingerprint ? ' and its certificate fingerprint' : ''}, so it changes there, not here. You can still rename it.</p>
           </>
         )}
+        {pinShown ? (
+          <TextField label="TLS certificate fingerprint" mono value={pin} onChange={setPin} error={visible.tlsFingerprint} disabled={busy} maxLength={200}
+            placeholder="Empty: checked against trusted certificate authorities"
+            hint={<>The one certificate the dashboard’s server accepts at this address, for a node whose certificate no authority it trusts has signed, such as one started with CANARY_TLS_MODE=auto. Change it only when the node’s certificate was replaced. {PIN_SOURCE} Empty, the server checks the certificate and host name against the authorities it trusts; it never accepts just any certificate. Before saving a change, it checks that <span className="mono">{opened.nodeId}</span> answers with that certificate and accepts all three of this dashboard’s access credentials, which it sends only once the certificate checks out.</>} />
+        ) : null}
+        {movable && !pinShown ? (
+          <p className="small muted">To have this node encrypt its own connections, start it with CANARY_TLS_MODE=auto: it then serves only HTTPS. At the same time, change its peers’ CANARY_PEERS entries for it to its https:// address with its fingerprint, and enter both here. To read the fingerprint before that, first set CANARY_TLS_MODE=off in its settings: once a node has its certificate, leaving the setting empty starts it with HTTPS. Then stop it and run its tls-init command once with those settings, its data and the same user, such as canary tls-init in a one-off container of its image with its volumes: that makes its ten-year certificate and prints the fingerprint, without serving, checks or alerts. Start it again as before; it stays on plain HTTP until you set auto. Nothing on this page changes the node’s settings.</p>
+        ) : null}
         {moving ? <p className="small muted">The dashboard’s server contacts the new address when you save. Renaming alone works even while the node isn’t answering.</p> : null}
+        {!moving && pinChanged ? <p className="small muted">The dashboard’s server contacts the node with the new certificate setting when you save. Renaming alone works even while the node isn’t answering.</p> : null}
         {moving && body?.url?.startsWith('http:') ? <p className="small fwarn"><Glyph tone="warn" />Plain HTTP: traffic between the dashboard’s server and this node isn’t encrypted by Uptime Canary. Use HTTPS, or a network that encrypts it, such as NetBird or Tailscale.</p> : null}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
             <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="btn primary" disabled={busy || pending || unchanged}><Icon name="check" />{busy ? (moving ? 'Checking the new address…' : 'Saving…') : 'Save changes'}</button>
+            <button type="submit" className="btn primary" disabled={busy || pending || unchanged}><Icon name="check" />{busy ? (moving ? 'Checking the new address…' : pinChanged ? 'Checking the node…' : 'Saving…') : 'Save changes'}</button>
           </span>
         </div>
       </form>

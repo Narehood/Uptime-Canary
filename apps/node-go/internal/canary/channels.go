@@ -47,7 +47,7 @@ func parseChannel(b []byte) (ChannelInput, error) {
 		return in, fail(400, "Invalid notification provider configuration")
 	}
 	if in.Config.Kind == "discord" {
-		if discordWebhookURL(in.Config.Webhook.URL) == nil || len(in.Config.Recipients) != 0 || in.Config.Webhook.BearerToken != "" {
+		if discordWebhookURL(in.Config.Webhook.URL) == nil || len(in.Config.Recipients) != 0 || in.Config.Webhook.BearerToken != "" || !providerDelivery.ValidateTemplates(in.Config.Templates) {
 			return in, fail(400, "Discord requires a valid Discord webhook URL")
 		}
 	} else if providerDelivery.Validate(in.Config) != nil {

@@ -12,7 +12,17 @@ import (
 // and callers that do not own a lifecycle never acquire background work.
 // The caller cancels ctx and waits for the returned channel before Close.
 func (d *Dashboard) Start(ctx context.Context) <-chan struct{} {
-	d.start.Do(func() { go func() { defer close(d.done); d.poll(ctx) }() })
+	d.start.Do(func() {
+		go func() {
+			defer close(d.done)
+			var workers sync.WaitGroup
+			workers.Go(func() { d.poll(ctx) })
+			if d.updates != nil && d.updates.enabled {
+				workers.Go(func() { d.updates.run(ctx) })
+			}
+			workers.Wait()
+		}()
+	})
 	return d.done
 }
 
@@ -86,8 +96,13 @@ func (d *Dashboard) ensureLocalNode(ctx context.Context) {
 			// Once identity is proved, never send its credentials to a new URL.
 			if row.State == "enrolling" && !d.busy[row.ID] && (row.Unproved || row.URL == d.localURL) {
 				secret, err := d.openSecrets(row)
-				if err == nil && (row.URL != d.localURL || secret.EnrollmentToken != d.localToken) {
+				if err == nil && (row.URL != d.localURL || secret.EnrollmentToken != d.localToken || row.Unproved && row.TLSFingerprint != d.localTLSFingerprint) {
 					row.URL, row.Error, secret.EnrollmentToken = d.localURL, "", d.localToken
+					// Only a never-proved placeholder may adopt deployment trust.
+					// Established registrations require the explicit edit/proof path.
+					if row.Unproved {
+						row.TLSFingerprint = d.localTLSFingerprint
+					}
 					row.Credentials, err = d.sealSecrets(row, secret)
 					if err == nil {
 						_ = d.saveRegistry(row)
@@ -113,7 +128,7 @@ func (d *Dashboard) ensureLocalNode(ctx context.Context) {
 	}
 	// Publish a starting local card before network contact. Authentication and
 	// setup remain independent even if the bundled process has not started.
-	row := registeredNodeRecord{RegisteredNode: RegisteredNode{ID: strings.ReplaceAll(newID(), "-", ""), Label: "Local node", NodeName: "Local node", NodeID: "pending", URL: d.localURL, Local: true, State: "enrolling"}, Unproved: true}
+	row := registeredNodeRecord{RegisteredNode: RegisteredNode{ID: strings.ReplaceAll(newID(), "-", ""), Label: "Local node", NodeName: "Local node", NodeID: "pending", URL: d.localURL, TLSFingerprint: d.localTLSFingerprint, Local: true, State: "enrolling"}, Unproved: true}
 	secret := dashboardNodeSecrets{dashboardRoleTokens: dashboardRoleTokens{NodeID: "pending"}, EnrollmentToken: d.localToken}
 	var err error
 	secret.Admin, err = randomCredential(32)
@@ -193,7 +208,7 @@ func (d *Dashboard) adoptLocalIdentity(ctx context.Context, placeholder register
 	d.mu.Unlock()
 	defer func() { d.mu.Lock(); delete(d.busy, id); d.mu.Unlock() }()
 	probe := row
-	probe.URL = placeholder.URL
+	probe.URL, probe.TLSFingerprint = placeholder.URL, placeholder.TLSFingerprint
 	for _, role := range dashboardRoles {
 		if err = d.nodeActor(ctx, probe, secret.token(role), role); err != nil {
 			return placeholder, secret, err
@@ -202,7 +217,7 @@ func (d *Dashboard) adoptLocalIdentity(ctx context.Context, placeholder register
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	row = d.registry[id]
-	row.URL, row.Local, row.NodeName, row.State, row.Error = placeholder.URL, true, identity.Name, "starting", ""
+	row.URL, row.TLSFingerprint, row.Local, row.NodeName, row.State, row.Error = placeholder.URL, placeholder.TLSFingerprint, true, identity.Name, "starting", ""
 	row.Credentials, err = d.sealSecrets(row, secret)
 	if err != nil {
 		return placeholder, secret, err

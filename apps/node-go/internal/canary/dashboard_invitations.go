@@ -25,14 +25,15 @@ type invitedNodeReport struct {
 }
 
 type nodeInvitation struct {
-	ID             string             `json:"id"`
-	Label          string             `json:"label"`
-	NodeID         string             `json:"nodeId"`
-	ConnectionURL  string             `json:"connectionUrl"`
-	ExpiresAt      int64              `json:"expiresAt"`
-	State          string             `json:"state"`
-	RegistrationID string             `json:"registrationId,omitempty"`
-	Node           *invitedNodeReport `json:"node,omitempty"`
+	ID                       string             `json:"id"`
+	Label                    string             `json:"label"`
+	NodeID                   string             `json:"nodeId"`
+	ConnectionURL            string             `json:"connectionUrl"`
+	ConnectionTLSFingerprint string             `json:"connectionTlsFingerprint,omitempty"`
+	ExpiresAt                int64              `json:"expiresAt"`
+	State                    string             `json:"state"`
+	RegistrationID           string             `json:"registrationId,omitempty"`
+	Node                     *invitedNodeReport `json:"node,omitempty"`
 }
 
 type nodeInvitationRecord struct {
@@ -179,6 +180,9 @@ func (d *Dashboard) invitationRequest(w http.ResponseWriter, r *http.Request, ac
 		out := map[string]any{"outboundEnabled": d.connectionEnabled && d.connectionURL != "", "connectionProtocol": 1, "imageTag": d.nodeImageTag, "containerPlatforms": []string{"linux/amd64"}, "nativeDownloadAvailable": false}
 		if d.connectionURL != "" {
 			out["connectionUrl"] = d.connectionURL
+			if d.connectionTLSFingerprint != "" {
+				out["connectionTlsFingerprint"] = d.connectionTLSFingerprint
+			}
 		}
 		reply(w, 200, out)
 		return
@@ -218,7 +222,7 @@ func (d *Dashboard) invitationRequest(w http.ResponseWriter, r *http.Request, ac
 	defer d.mu.Unlock()
 	if row, ok := d.registry[id]; ok && row.Connection == "outbound" {
 		if r.Method == "GET" {
-			reply(w, 200, nodeInvitation{ID: id, Label: row.Label, NodeID: row.NodeID, ConnectionURL: d.connectionURL, ExpiresAt: row.InvitationExpiresAt, State: "confirmed", RegistrationID: id})
+			reply(w, 200, nodeInvitation{ID: id, Label: row.Label, NodeID: row.NodeID, ConnectionURL: d.connectionURL, ConnectionTLSFingerprint: d.connectionTLSFingerprint, ExpiresAt: row.InvitationExpiresAt, State: "confirmed", RegistrationID: id})
 			return
 		}
 		errorReply(w, fail(409, "This invitation is already paired; use Remove node to revoke access"))
@@ -314,7 +318,7 @@ func (d *Dashboard) createInvitation(w http.ResponseWriter, r *http.Request, act
 		errorReply(w, fail(403, "Dashboard administrator permission is required"))
 		return
 	}
-	v := nodeInvitationRecord{nodeInvitation: nodeInvitation{ID: id, Label: input.Label, NodeID: input.NodeID, ConnectionURL: d.connectionURL, ExpiresAt: now + invitationLifetime.Milliseconds(), State: "waiting"}, TokenHash: digest(token), CreatorID: actor.ID, CreatorVersion: creator.AuthVersion}
+	v := nodeInvitationRecord{nodeInvitation: nodeInvitation{ID: id, Label: input.Label, NodeID: input.NodeID, ConnectionURL: d.connectionURL, ConnectionTLSFingerprint: d.connectionTLSFingerprint, ExpiresAt: now + invitationLifetime.Milliseconds(), State: "waiting"}, TokenHash: digest(token), CreatorID: actor.ID, CreatorVersion: creator.AuthVersion}
 	if err = d.saveInvitation(r, actor, v, removed); err != nil {
 		errorReply(w, err)
 		return

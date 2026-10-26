@@ -99,7 +99,12 @@ not accidentally target service accounts on a selected monitoring node.
 - Registration is administrator-only. URLs are validated HTTP(S) origins,
   redirects are refused, private destinations are intentional operator choices,
   and the server never provides an arbitrary unauthenticated URL proxy.
-- TLS verification remains enabled for HTTPS nodes. Requests, responses,
+- TLS verification remains enabled for HTTPS nodes. In protocol 20, optional
+  `tlsFingerprint` pins an exact certificate (including a native self-signed
+  one); empty keeps ordinary CA/hostname checks. Verification tickets preserve
+  trust, and trust/address edits prove the same node with all saved roles before
+  resealing credentials. A pin change cannot reuse a pool trusted under another
+  certificate. See [TLS lifecycle](transport-tls.md). Requests, responses,
   concurrency and timeouts are bounded. A failed node cannot block dashboard
   login or prevent other registered nodes from loading.
 - The public dashboard gateway must not expose `/internal/` peer-sync routes.

@@ -21,6 +21,7 @@ var digits = regexp.MustCompile(`^\d+$`)
 func OptionsFromEnvironment(get func(string) string) (Options, error) {
 	o := Options{NodeID: get("CANARY_NODE_ID"), NodeName: get("CANARY_NODE_NAME"), Host: get("CANARY_HOST"), DBPath: get("CANARY_DB"), AdminToken: get("CANARY_ADMIN_TOKEN"), ClusterToken: get("CANARY_CLUSTER_TOKEN")}
 	o.IdentityDirectory = get("CANARY_IDENTITY_DIRECTORY")
+	o.TLSMode, o.DashboardTLSFingerprint = get("CANARY_TLS_MODE"), get("CANARY_DASHBOARD_TLS_FINGERPRINT")
 	o.DashboardURL, o.DashboardEnrollToken = get("CANARY_DASHBOARD_URL"), get("CANARY_DASHBOARD_ENROLL_TOKEN")
 	for _, setting := range []struct {
 		name     string
@@ -82,9 +83,33 @@ func OptionsFromEnvironment(get func(string) string) (Options, error) {
 const usage = "Commands: serve, dashboard, status, monitors, add <json-file>, update <id> <json-file>, delete <id> <revision>, history <id>, statistics <id>, accounts, add-account <json-file>, conflicts <id>, resolve <id> <json-file>, groups, add-group <json-file>, update-group <id> <json-file>, delete-group <id> <revision>, group-conflicts <id>, resolve-group <id> <json-file>, channels, add-channel <json-file>, update-channel <id> <json-file>, delete-channel <id> <revision>, channel-conflicts <id>, resolve-channel <id> <json-file>, test-channel <id> <revision>, deliveries [monitor-id], maintenance, add-maintenance <json-file>, update-maintenance <id> <json-file>, delete-maintenance <id> <revision>, maintenance-conflicts <id>, resolve-maintenance <id> <json-file>, recover-account <database-file> <account-name> <password-file> [--reset-mfa] [--revoke-token]"
 
 func Usage() string {
-	return usage + ", availability <id>, status-pages, add-status-page <json-file>, update-status-page <id> <json-file>, delete-status-page <id> <revision>, status-page-conflicts <id>, resolve-status-page <id> <json-file>, tags, add-tag <json-file>, update-tag <id> <json-file>, delete-tag <id> <revision>, tag-conflicts <id>, resolve-tag <id> <json-file>, " + databaseCopyUsage + ", activate-restore <quarantined-database-file> [--identity-directory <retained-directory>], version"
+	return usage + ", availability <id>, status-pages, add-status-page <json-file>, update-status-page <id> <json-file>, delete-status-page <id> <revision>, status-page-conflicts <id>, resolve-status-page <id> <json-file>, tags, add-tag <json-file>, update-tag <id> <json-file>, delete-tag <id> <revision>, tag-conflicts <id>, resolve-tag <id> <json-file>, " + databaseCopyUsage + ", activate-restore <quarantined-database-file> [--identity-directory <retained-directory>], version, tls-info, tls-init, tls-renew <current-fingerprint>, trust-dashboard <old-fingerprint|system> <new-fingerprint|system>, healthcheck"
 }
 func RunCLI(ctx context.Context, args []string, get func(string) string, client Doer) (any, error) {
+	if len(args) > 0 && args[0] == "tls-renew" {
+		if len(args) != 2 {
+			return nil, errors.New("Usage: tls-renew <current-fingerprint>")
+		}
+		return RenewTLS(get, args[1])
+	}
+	if len(args) > 0 && args[0] == "trust-dashboard" {
+		if len(args) != 3 {
+			return nil, errors.New("Usage: trust-dashboard <old-fingerprint|system> <new-fingerprint|system>")
+		}
+		return TrustDashboard(get, args[1], args[2])
+	}
+	if len(args) == 1 && args[0] == "tls-init" {
+		return InitializeTLS(get)
+	}
+	if len(args) == 1 && args[0] == "tls-info" {
+		return TLSCertificateInfo(get)
+	}
+	if len(args) == 1 && args[0] == "healthcheck" {
+		if err := HealthCheck(ctx, get); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ready": true}, nil
+	}
 	if len(args) > 0 && (args[0] == "version" || args[0] == "--version") {
 		if len(args) != 1 {
 			return nil, errors.New("Usage: version")
@@ -271,7 +296,17 @@ func RunCLI(ctx context.Context, args []string, get func(string) string, client 
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	if client == nil {
-		client = newHTTPClient()
+		baseClient := newHTTPClient()
+		pin, e := validateTLSOrigin(base, get("CANARY_TLS_FINGERPRINT"))
+		if e != nil {
+			return nil, e
+		}
+		pinned, e := pinnedHTTPClient(baseClient, baseClient.Transport.(*http.Transport), pin)
+		if e != nil {
+			return nil, e
+		}
+		defer pinned.CloseIdleConnections()
+		client = pinned
 	}
 	resp, err := client.Do(req)
 	if err != nil {

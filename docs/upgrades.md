@@ -1,12 +1,24 @@
 # Coordinated upgrades
 
-Upgrade a cluster as one compatible build. Protocol 19 adds monitor and
-configuration contracts that protocol 18 cannot safely exchange. Mixed peers
+Upgrade a cluster as one compatible build. The protocol-20 candidate adds
+notification configuration and template semantics that protocol 19 cannot safely
+exchange (protocol 19 previously added contracts incompatible with 18). Mixed peers
 reject snapshots; they do not silently discard unfamiliar settings. During
 that interval each node continues its own checks and delivery policy. Partition
 duplicates remain possible, and all-observer recovery can wait for compatible,
 fresh observations. A rolling deployment is not a promise of uninterrupted
 cluster convergence.
+
+Native TLS rollout is a separate explicit operation. Prepare retained
+certificates in `CANARY_TLS_MODE=off`, exchange fingerprints over a trusted
+channel, then switch peer URLs/pins and TLS mode together. Preserve identity
+volumes and follow [encrypted transport](transport-tls.md), including certificate
+renewal and outbound trust changes. A regular software upgrade never silently
+replaces a saved certificate or trusted remote fingerprint.
+
+The dashboard's [software update notice](software-updates.md) is advisory. It
+checks metadata centrally about four times a day and installs nothing. A notice
+does not override an operator's digest pin or prove that an image was deployed.
 
 ## Before deployment
 

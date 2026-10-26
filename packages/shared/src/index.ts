@@ -1,6 +1,7 @@
 /** Public management API contract. Runtime coordination types remain private to the node. */
 export * from './status.js';
 export * from './dashboard.js';
+export * from './updates.js';
 export * from './gamedig.js';
 export type MonitorType = 'http' | 'ping' | 'tcp' | 'tls' | 'dns' | 'websocket' | 'smtp' | 'docker' | 'redis' | 'postgres' | 'mysql' | 'mqtt' | 'sftp' | 'mongodb' | 'sqlserver' | 'ntp' | 'grpc' | 'snmp' | 'radius' | 'sip-options' | 'rabbitmq' | 'kafka-producer' | 'oracledb' | 'manual' | 'push' | 'globalping' | 'system-service' | 'steam' | 'pm2' | 'tailscale-ping' | 'real-browser' | 'gamedig';
 export type ObservationState = 'up' | 'down' | 'unknown' | 'pending';
@@ -380,7 +381,7 @@ export interface NotificationConfig {
   mailgun?: { apiKey: string; domain: string; region?: 'US' | 'EU'; baseURL?: string; allowInsecureHTTP?: boolean };
   brevo?: { apiKey: string; baseURL?: string; allowInsecureHTTP?: boolean };
   mandrill?: { apiKey: string; baseURL?: string; allowInsecureHTTP?: boolean };
-  webhook?: { url: string; bearerToken?: string; allowInsecureHTTP?: boolean };
+  webhook?: { url: string; bearerToken?: string; allowInsecureHTTP?: boolean; embed?: boolean };
   slack?: { webhookURL: string; allowInsecureHTTP?: boolean };
   telegram?: { botToken: string; chatId: string; messageThreadId?: number; silent?: boolean; protectContent?: boolean; disableLinkPreview?: boolean; baseURL?: string; allowInsecureHTTP?: boolean };
   ntfy?: { topic: string; token?: string; username?: string; password?: string; priority?: number; tags?: string[]; baseURL?: string; allowInsecureHTTP?: boolean };
@@ -415,7 +416,22 @@ export interface DeliveryAttemptView {
   held?: boolean;
 }
 
+export interface BinaryIdentity {
+  name: string;
+  version: string;
+  moduleVersion: string;
+  goVersion: string;
+  os: string;
+  arch: string;
+  sourceCommit?: string;
+  imageRevision?: string;
+  imageBuiltAt?: string;
+  modified: boolean | null;
+  peerProtocol: number;
+}
+
 export interface Overview {
+  build?: BinaryIdentity;
   node: { id: string; name: string };
   now: number;
   monitors: MonitorView[];

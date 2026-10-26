@@ -1,5 +1,5 @@
 import type { NodeInvitation, RegisteredNode, Role } from '@uptime-canary/shared';
-import { ApiFailure, checkRegistration, describeFailure, normalizeApiUrl } from './api';
+import { ApiFailure, checkRegistration, describeFailure, normalizeApiUrl, TLS_FINGERPRINT_FORMAT, tlsFingerprintValue } from './api';
 import { elapsed } from './format';
 import { pageOrigin } from './gateway';
 import type { Tone } from './model';
@@ -221,23 +221,46 @@ function commonFailure(error: unknown, verb: string): ChangeFailure | null {
   return null;
 }
 
-export function editFailure(error: unknown, node: RegisteredNode, moving: boolean): ChangeFailure {
+/**
+ * The dashboard's server refused the node's TLS certificate itself: Go's nodetls.ErrCertificate ("Cannot authenticate the
+ * Canary TLS certificate"), its "Cannot authenticate the node certificate", or an explicit mismatch. Its general "Cannot
+ * reach this node ...; check its address, certificate and permissions" names every failed connection, so it isn't one.
+ */
+export const certificateRefused = (detail: string): boolean =>
+  /authenticate the (?:node |canary tls )?certificate|certificate (?:doesn’t|does not|did not) match|fingerprint (?:mismatch|doesn’t match|does not match)/iu.test(detail);
+
+/**
+ * An edit's failure. `moving` (a new address) and `pinChanged` (a new or cleared TLS certificate fingerprint) both mean
+ * the dashboard's server checked the node first, with the new settings, so the node's answer can be the reason.
+ */
+export function editFailure(error: unknown, node: RegisteredNode, moving: boolean, pinChanged = false): ChangeFailure {
   const common = commonFailure(error, 'saved');
   if (common) return common;
   const failure = error as ApiFailure;
   const detail = failure.detail ?? '';
   const text = describeFailure(error, { preferDetail: true });
   const done = (title: string, body: string, reload = false): ChangeFailure => ({ title, text: `${body} ${NOTHING}`, unknown: false, reload });
+  const checked = moving || pinChanged;
   if (failure.status === 409 && /deployment/iu.test(detail)) return done('This address is set by the deployment', `${text} You can still rename it here.`, true);
   if (failure.status === 409 && /already registered/iu.test(detail)) return done('Another entry already uses this address', text);
-  if (moving && failure.status === 502 && /different node/iu.test(detail)) {
+  // The TLS handshake failed, so the server sent the node no credential.
+  if (checked && failure.status === 502 && certificateRefused(detail)) {
+    return done('The node’s certificate wasn’t accepted', `${text} ${pinChanged
+      ? 'Check the fingerprint against the line “Node TLS certificate fingerprint:” in the node’s own log.'
+      : 'The new address has to present the certificate this entry already accepts.'} The dashboard’s server sent the node no credential, so the entry stays as it was.`);
+  }
+  if (checked && failure.status === 502 && /different node/iu.test(detail)) {
     return done('A different node answers at this address', `It isn’t ${node.nodeId}, so the entry stays where it was. To read that node too, add it as its own node.`);
   }
-  if (moving && failure.status === 502 && /refused|role|identity/iu.test(detail)) {
-    return done('This address doesn’t accept this dashboard’s access', `${text} The node there must accept all three of the credentials this dashboard already uses on ${node.nodeId}, so the entry stays where it was.`);
+  if (checked && failure.status === 502 && /refused|role|identity/iu.test(detail)) {
+    return done(moving ? 'This address doesn’t accept this dashboard’s access' : 'The node doesn’t accept this dashboard’s access', `${text} The node there must accept all three of the credentials this dashboard already uses on ${node.nodeId}, so the entry stays where it was.`);
   }
-  if (moving && (failure.status === 502 || failure.status === 504)) {
-    return done('The dashboard’s server couldn’t check the new address', `${text} Your browser wasn’t involved, so it doesn’t matter whether this computer can reach it.`);
+  if (checked && (failure.status === 502 || failure.status === 504)) {
+    const trust = pinChanged
+      ? ' A certificate that doesn’t match the fingerprint entered here ends the check too, before any credential is sent.'
+      : node.tlsFingerprint ? ' This entry accepts only the certificate with its saved fingerprint, at the new address too.' : '';
+    return done(moving ? 'The dashboard’s server couldn’t check the new address' : 'The dashboard’s server couldn’t check the node with that certificate',
+      `${text} Your browser wasn’t involved, so it doesn’t matter whether this computer can reach it.${trust}`);
   }
   return done('Not saved', text);
 }
@@ -437,6 +460,40 @@ export function nodeAddressProblem(input: string): string | undefined {
   try { origin = normalizeApiUrl(input); } catch (error) { return error instanceof Error ? error.message : 'Enter a full address, like http://100.79.12.4:3100.'; }
   if (origin === pageOrigin()) return 'That’s this dashboard’s own address. Enter the node’s address as the dashboard’s server reaches it.';
   return undefined;
+}
+
+/** The address's origin when it reads as one; the address field reports its own problems. */
+function originOf(url: string): string | null {
+  try { return normalizeApiUrl(url); } catch { return null; }
+}
+
+/** Whether a direct form's address field names an HTTPS address, so its TLS certificate fingerprint field applies. */
+export const httpsAddress = (url: string): boolean => /^\s*https:\/\//iu.test(url);
+
+/**
+ * The TLS certificate fingerprint field of the direct forms. Empty: the dashboard's server checks an HTTPS node's
+ * certificate against the certificate authorities it trusts, with the host name, as for any HTTPS address; empty never
+ * means "accept any certificate". A fingerprint makes it accept only that certificate, so it needs an https:// address
+ * (Go validateTLSOrigin). `required`: a new node with its own self-signed certificate, which only its fingerprint names.
+ */
+export function tlsFingerprintProblem(pin: string, url: string, required = false): string | undefined {
+  const value = tlsFingerprintValue(pin);
+  if (value === null) return TLS_FINGERPRINT_FORMAT;
+  if (!value) return required ? 'Enter the fingerprint from the new node’s log. Its certificate is its own, so no certificate authority vouches for it.' : undefined;
+  const origin = originOf(url);
+  if (origin && !origin.startsWith('https:')) return 'A certificate fingerprint needs an https:// address. Clear it to use plain HTTP.';
+  return undefined;
+}
+
+/**
+ * The edit form's fingerprint against the saved one: the value to send ('' clears it), whether it changed, and the field's
+ * problem. Like the label, a fingerprint left as the form opened isn't sent, so a newer saved one stays.
+ */
+export function tlsFingerprintEdit(node: RegisteredNode, pin: string, url: string): { value: string; changed: boolean; error?: string } {
+  const value = tlsFingerprintValue(pin);
+  const error = tlsFingerprintProblem(pin, url);
+  if (value === null) return { value: '', changed: false, error };
+  return { value, changed: value !== (node.tlsFingerprint ?? ''), ...(error ? { error } : {}) };
 }
 
 /** Same rule as the server's: an account-token-shaped credential, 24 to 256 printable characters, at least 8 distinct. */

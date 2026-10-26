@@ -1,7 +1,7 @@
 // Independent contract review. All disposable files belong to the storage guard.
 // Run: python scripts/bounded_validation.py --timeout 600 -- node scripts/dashboard-contract-review.mjs --await-browser
 // Development: --fixture holds an owned fixture; --run <runDir> reviews that fixture; STOP ends it.
-// Uses the documented Chrome/CDP fallback after attempting T3 preview. No .env or user database access.
+// Automated regression suite uses the documented private Chrome/CDP fixture. No .env or user database access.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -1263,6 +1263,43 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     assert.ok(!storage.includes('hook-preview-unsaved'), 'the unsaved settings never reach browser storage');
     await nav('#/notifications'); await heading('Notifications');
     return { previewSent: true, savedNothing: true };
+  });
+  await step('Alert templates: presets, Undo and explicit replacement stay local; Discord cards show each sample event without sending', async () => {
+    await nav('#/channels/new'); await heading('New channel');
+    await page.eval('document.querySelector("input[type=radio][value=discord]").click()');
+    await disclose('Message templates'); await text('Sample data');
+    const start = report.requests.length;
+    const fields = () => page.eval('[__field("Title").value,__field("Text").value]');
+    const preset = name => page.eval(`document.querySelector('button[aria-label="Use the ${name} preset"]').click()`);
+    const initial = await fields();
+    await preset('Compact'); await text('Compact preset applied');
+    const compact = await fields(); assert.ok(compact[0].includes('{{status}}'));
+    await click('Undo'); assert.deepEqual(await fields(), initial);
+    await fill('Title', 'My custom {{monitor_name}}'); await fill('Text', 'Keep this text');
+    await preset('Detailed'); await text('Replace your own');
+    assert.equal(await page.eval('document.activeElement?.textContent'), 'Replace');
+    await click('Keep mine'); assert.deepEqual(await fields(), ['My custom {{monitor_name}}', 'Keep this text']);
+    await preset('Detailed'); await click('Replace');
+    const detailed = await fields(); assert.ok(detailed[1].includes('{{downtime}}'));
+    await choose('Card'); await until(() => page.eval('!!document.querySelector(".tpl-dc-card")'), 'Discord sample card');
+    for (const [label, event] of [['Down','down'], ['Still down','repeat'], ['Recovery','recovery'], ['Test','test']]) {
+      await choose(label, '.tpl-pv');
+      assert.ok(await page.eval(`!!document.querySelector('.tpl-dc-card.ev-${event}')`), label);
+    }
+    for (const mode of ['light', 'dark']) {
+      await page.eval(`document.documentElement.dataset.mode=${J(mode)}`);
+      for (const width of [390,728,1280]) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height:900, deviceScaleFactor:1, mobile:false });
+        await page.eval('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+        assert.ok(await page.eval('document.documentElement.scrollWidth<=innerWidth'), `${mode} ${width}: template overflow`);
+      }
+    }
+    await page.send('Emulation.clearDeviceMetricsOverride');
+    const changed = report.requests.slice(start).filter(r => r.method !== 'GET');
+    assert.deepEqual(changed, [], 'preview changed server state or sent a test');
+    assert.ok(report.requests.slice(start).every(r => [state.origin,A.url,B.url,state.sink].includes(new URL(r.url).origin)), 'preview contacted an external provider');
+    await nav('#/notifications'); await heading('Notifications');
+    return { presets:true, undo:true, replacementExplicit:true, localPreview:true, events:4, layouts:6 };
   });
   await step('Status page presentation (r5): the form and node agree on appearance, address and feed; Markdown and the footer stay inert; the feed has announcements only', async () => {
     const pageOf = async () => (await api(A, '/api/status-pages')).value.find(v => v.statusPage.slug === slug).statusPage;

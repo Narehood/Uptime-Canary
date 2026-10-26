@@ -54,7 +54,10 @@ func NewDashboardAccounts(o DashboardAccountOptions) (*DashboardAccounts, error)
 	n, err := New(Options{NodeID: "dashboard-accounts", NodeName: "Dashboard accounts",
 		DBPath: filepath.Join(o.Directory, "accounts.db"), IdentityDirectory: identityDirectory,
 		AdminToken: serviceToken, ClusterToken: dashboardServiceToken("dashboard-unused-peer-token", o.SetupToken),
-		CORSOrigins: o.CORSOrigins})
+		// This account runtime serves no node listener. Connection TLS is enabled
+		// explicitly by RunDashboard; retained/expired optional certs must not
+		// silently enable TLS or block the account service when it is off.
+		TLSMode: "off", CORSOrigins: o.CORSOrigins})
 	if err != nil {
 		return nil, err
 	}

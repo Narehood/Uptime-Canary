@@ -211,8 +211,16 @@ func (n *Node) sendChannelTest(c Channel, t notificationTarget, a attempt, previ
 	openedAt := n.now()
 	n.mu.Unlock()
 	body, err := json.Marshal(map[string]any{"kind": "test", "channelId": c.ID, "monitor": Identity{Name: "Notification test"}, "node": Identity{n.ID, n.Name}, "observations": []Observation{}})
+	genericBody := body
+	monitor := Monitor{MonitorInput: MonitorInput{Name: "Notification test", WebhookURL: t.URL}}
+	incident, node := Incident{OpenedAt: openedAt}, Identity{n.ID, n.Name}
 	if t.Provider == "discord" {
-		body, err = formatDiscordNotification(Monitor{MonitorInput: MonitorInput{Name: c.Name, WebhookURL: t.URL}}, Incident{OpenedAt: openedAt}, a, Identity{n.ID, n.Name}, nil)
+		body, err = formatDiscordNotification(Monitor{MonitorInput: MonitorInput{Name: c.Name, WebhookURL: t.URL}}, incident, a, node, nil)
+		if err == nil && discordConfigured(t.Config) {
+			body, err = addNotificationTemplateFacts(genericBody, monitor, incident, a, node, nil, body)
+		}
+	} else if t.Provider != "webhook" && err == nil {
+		body, err = addNotificationTemplateFacts(body, monitor, incident, a, node, nil, nil)
 	}
 	result := notificationDeliveryResult{ErrorCode: "invalid_message"}
 	if err == nil {

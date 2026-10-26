@@ -219,6 +219,9 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 func (n *Node) notificationBody(m Monitor, i Incident, a attempt, observations []Sample) ([]byte, error) {
 	// Retries retain the persisted attempt identity even when reconciliation
 	// changes the canonical ID. Every payload includes the current full aliases.
+	// Repeat cards use this attempt's send time, rather than the outage opening.
+	// This affects only the new template envelope; legacy payload bytes stay intact.
+	a.LastAt = n.now()
 	target, ok := n.targetForAttempt(m, a)
 	if !ok {
 		return nil, fail(409, "Notification destination is unavailable")
@@ -228,7 +231,22 @@ func (n *Node) notificationBody(m Monitor, i Incident, a attempt, observations [
 	if target.Provider == "discord" {
 		provider = notificationDiscord
 	}
-	return provider.format(m, i, a, Identity{n.ID, n.Name}, observations)
+	node := Identity{n.ID, n.Name}
+	body, err := provider.format(m, i, a, node, observations)
+	if err != nil || target.ChannelID == "" || target.Provider == "webhook" {
+		return body, err
+	}
+	if target.Provider == "discord" {
+		if !discordConfigured(target.Config) {
+			return body, nil
+		}
+		generic, err := notificationGeneric.format(m, i, a, node, observations)
+		if err != nil {
+			return nil, err
+		}
+		return addNotificationTemplateFacts(generic, m, i, a, node, observations, body)
+	}
+	return addNotificationTemplateFacts(body, m, i, a, node, observations, nil)
 }
 func publicSamples(samples []Sample) []Observation {
 	out := make([]Observation, 0, len(samples))

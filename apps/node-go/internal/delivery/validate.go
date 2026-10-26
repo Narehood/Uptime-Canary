@@ -18,6 +18,9 @@ var errMessage = errors.New("delivery message is invalid")
 
 // Validate checks local configuration only and returns a fixed, safe error.
 func Validate(c Config) error {
+	if c.Webhook.Embed {
+		return errConfig
+	}
 	if !header(c.Templates.Subject, 512) || !body(c.Templates.Text, MaxBodyBytes) || !body(c.Templates.HTML, MaxBodyBytes) {
 		return errConfig
 	}
@@ -154,6 +157,17 @@ func validURL(raw string, insecure bool) bool {
 }
 
 func prepareMessage(c Config, m Message) (Message, error) {
+	if c.Kind == Webhook && len(m.APIBody) > 0 {
+		c.Templates = Templates{}
+	}
+	for _, value := range []string{m.Status, m.MonitorType, m.MonitorTarget, m.OpenedAt, m.ResolvedAt, m.Downtime, m.SenderNode} {
+		if !header(value, 512) {
+			return m, errMessage
+		}
+	}
+	if !body(m.NodeResults, 16<<10) {
+		return m, errMessage
+	}
 	for _, s := range []string{m.EventKind, m.MonitorName, m.MonitorID, m.IncidentID, m.IdempotencyKey} {
 		if !header(s, 256) {
 			return m, errMessage
@@ -215,6 +229,9 @@ func renderTemplate(source string, m Message, escape bool, limit int) (string, e
 		"event_kind": m.EventKind, "monitor_name": m.MonitorName,
 		"monitor_id": m.MonitorID, "incident_id": m.IncidentID,
 		"observations_summary": m.ObservationsSummary, "idempotency_key": m.IdempotencyKey,
+		"status": m.Status, "monitor_type": m.MonitorType, "monitor_target": m.MonitorTarget,
+		"opened_at": m.OpenedAt, "resolved_at": m.ResolvedAt, "downtime": m.Downtime,
+		"node_results": m.NodeResults, "sender_node": m.SenderNode,
 	}
 	var out strings.Builder
 	appendBounded := func(value string) bool {
