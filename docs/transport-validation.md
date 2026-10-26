@@ -128,6 +128,30 @@ Scratch returned to zero and storage stayed within budget. The actual published
 Linux executable upgrade requires the hosted Linux amd64 rerun; these local
 checks do not replace that gate or establish release acceptance.
 
+## Race-suite lifecycle investigation
+
+The [Alpine race job on `df7be05`](https://github.com/Narehood/Uptime-Canary/actions/runs/40330706045/job/121599294646)
+reported zero data-race warnings and 1,184 passing core test events, but failed
+`TestMonitorMetadataEditsPreserveDeliveredOutageAcrossPeersAndRestart` while
+waiting for exactly one recovery delivery and both peers' fresh up state after
+restart. Its only assertion detail was "Condition did not become true";
+the report did not distinguish missing delivery, duplicate delivery or stale
+observations. The package and race gate therefore failed.
+
+Failure-only diagnostics now record both webhook delivery lists, monitor
+revisions/observations, incidents, receipts, queued attempts and runtime faults.
+Every original assertion and the eight-second condition deadline remain
+unchanged. There is no application change or claimed root-cause fix.
+
+On unchanged v3 source
+`0096c146c54b20c10359a08dfde2f987ebd7cad7c120f676fdf44645f810fb8b`,
+twenty repetitions of that test passed on Windows amd64 without race
+instrumentation (Go package 50.996 s; 158.171 guarded seconds including
+compilation). Scratch returned to zero and storage stayed within budget.
+No native C compiler or Docker is installed on that host, so this does not
+reproduce the Alpine race environment. The failure remains unresolved pending
+the hosted rerun and its additional diagnostics if it fails again.
+
 ## What is exercised
 
 - Real native TLS handshakes, retained keys, wrong pins before any HTTP

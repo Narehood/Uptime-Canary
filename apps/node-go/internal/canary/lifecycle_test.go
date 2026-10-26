@@ -102,6 +102,23 @@ func TestMonitorMetadataEditsPreserveDeliveredOutageAcrossPeersAndRestart(t *tes
 	initialHook, editedHook := webhook(t), webhook(t)
 	dir := t.TempDir()
 	c := cluster(t, []string{"a", "b"}, func(o *Options) { o.DBPath = filepath.Join(dir, o.NodeID+".db") })
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("Lifecycle deliveries: initial=%+v edited=%+v", initialHook.all(), editedHook.all())
+		for _, node := range c.nodes {
+			view := getOverview(t, node)
+			for _, monitor := range view.Monitors {
+				t.Logf("node=%s monitor=%s revision=%s state=%s unknown=%d observations=%+v", node.ID,
+					monitor.Monitor.ID, monitor.Monitor.Revision, monitor.State, monitor.UnknownNodes, monitor.Observations)
+			}
+			t.Logf("node=%s incidents=%+v notifications=%+v error=%v", node.ID, view.Incidents, view.Notifications, node.Error())
+			node.mu.Lock()
+			t.Logf("node=%s attempts=%+v", node.ID, node.attempts)
+			node.mu.Unlock()
+		}
+	}()
 	a, b := c.nodes[0], c.nodes[1]
 	g1 := addGroup(t, a, GroupInput{Name: "First", NodeIDs: []string{"a", "b"}})
 	g2 := addGroup(t, a, GroupInput{Name: "Second", NodeIDs: []string{"a", "b"}})
