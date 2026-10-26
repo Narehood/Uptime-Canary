@@ -39,6 +39,7 @@ def fingerprint(source):
     files += sorted((source / "apps/web").glob("package*.json"))
     files += sorted((source / "services/game-query").glob("package*.json"))
     files += sorted((source / "services/game-query").glob("*.mjs"))
+    files += sorted((source / "scripts/fixtures/pm2-real").glob("package*.json"))
     files += sorted((source / "apps/node-go/internal/gamedigmonitor").glob("*.json"))
     return {str(p.relative_to(source)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in files if p.is_file()}
@@ -178,6 +179,8 @@ def main():
     commands = {"npm": [npm, "audit", "--json"], "go": [scan, "-json", "./apps/node-go/..."]}
     if (source / 'services/game-query/package-lock.json').is_file():
         commands['npm-game-query'] = [npm, 'audit', '--json', '--prefix', str(source / 'services/game-query'), '--workspaces=false']
+    if (source / 'scripts/fixtures/pm2-real/package-lock.json').is_file():
+        commands['npm-pm2-fixture'] = [npm, 'audit', '--json', '--prefix', str(source / 'scripts/fixtures/pm2-real'), '--workspaces=false']
     report = {"startedAt": stamp, "target": {"goos": args.goos, "goarch": args.goarch},
               "source": str(source), "sourceBefore": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(), "checks": {}}
     failed = False

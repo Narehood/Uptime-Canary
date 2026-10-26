@@ -42,6 +42,20 @@ class Opener:
 
 
 class AdvisoryEvidenceTests(unittest.TestCase):
+    def test_pm2_fixture_manifests_are_part_of_the_security_fingerprint(self):
+        with tempfile.TemporaryDirectory() as path:
+            root = Path(path)
+            fixture = root / "scripts/fixtures/pm2-real"
+            fixture.mkdir(parents=True)
+            for name in ("package.json", "package-lock.json"):
+                (fixture / name).write_text("{}")
+            before = security.fingerprint(root)
+            self.assertEqual(set(before), {
+                "scripts/fixtures/pm2-real/package.json",
+                "scripts/fixtures/pm2-real/package-lock.json"})
+            (fixture / "package-lock.json").write_text('{"changed":true}')
+            self.assertNotEqual(before, security.fingerprint(root))
+
     def goja_fixture(self, root):
         directory = root / "apps/node-go/third_party/goja"
         directory.mkdir(parents=True)

@@ -14,6 +14,7 @@ import (
 
 const Type = "pm2"
 const SupportedVersion = "6.0.8"
+const SupportedVersion7 = "7.1.1"
 
 type Options struct {
 	Transport string `json:"transport"`

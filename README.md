@@ -129,7 +129,7 @@ Editors and admins manage monitors, tags, groups, channels, maintenance, status 
 | Passive and operator | Push heartbeats, manual status | Push: your job sends `POST /api/push` with `Authorization: Push <token>` before the interval ends |
 | Remote probes (third party) | Globalping ping (ICMP or TCP), HTTP (GET, HEAD, OPTIONS) and DNS (16 record types) | One remote measurement per check and node; latency is the probe's own measurement |
 | On each node's own system | System service (systemd on Linux, Service Control Manager on Windows) | The node's own service manager; exact internal service name, no credentials or measured latency |
-| On each node's own system | PM2 process (an existing local PM2 6.0.8 daemon) | Exact process name, optional namespace; local Unix socket or Windows pipe; no measured latency |
+| On each node's own system | PM2 process (an existing local PM2 6.0.8 or 7.1.1 daemon) | Exact process name, optional namespace; local Unix socket or Windows pipe; no measured latency |
 | On each node's own system | Tailscale ping (the node's installed Tailscale client) | The target is a peer's address or name; no options or credentials; the client's reported round trip is the latency |
 | Game servers | Steam game server (listing in Steam's game server directory) | Steam Web API key required; optional ICMP echo is the only latency; no direct game-protocol query |
 | Game servers | GameDig game server (a query through your GameDig 5.3.3 service) | Needs the separate query service and its token; 358 catalogue IDs, not each tested; GameDig's measured round trip is the latency |
@@ -141,7 +141,7 @@ All 32 types share retries, a retry interval, inversion, placement, channels, re
 | Check | Where it runs and what it needs |
 | --- | --- |
 | [System service](docs/system-services.md) | Each node reads its own systemd service on Linux or Service Control Manager entry on Windows. Exact internal name; no remote shell or service control. |
-| [PM2 process](docs/pm2-monitors.md) | Existing **PM2 6.0.8** on the node's own machine, under the same effective account. Linux uses the explicit PM2 home; Windows uses its fixed local pipe. Exact process name and optional namespace; every matching process must be online. |
+| [PM2 process](docs/pm2-monitors.md) | Existing **PM2 6.0.8 or 7.1.1** on the node's own machine, under the same effective account. Linux uses the explicit PM2 home; Windows uses its fixed local pipe. Exact process name and optional namespace; every matching process must be online. |
 | [Tailscale ping](docs/tailscale-monitors.md) | Installed local Tailscale client and an authorized running daemon. The standard node image includes neither. One peer ping, relay replies included; no ICMP fallback. |
 | [Real browser](docs/browser-monitors.md) | A dedicated trusted Chromium service reachable by each assigned node. Every check uses a fresh private context; downloads are denied and the context is closed. No browser is bundled or started by Canary. |
 | [Steam game server](docs/steam-monitors.md) | A Steam Web API key and a server listed in Steam's directory. It checks directory membership; only the optional ICMP echo measures latency. |
