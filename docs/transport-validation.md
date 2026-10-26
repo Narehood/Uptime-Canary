@@ -152,6 +152,34 @@ No native C compiler or Docker is installed on that host, so this does not
 reproduce the Alpine race environment. The failure remains unresolved pending
 the hosted rerun and its additional diagnostics if it fails again.
 
+## ARM64 DNS fixture reservation follow-up
+
+The [native ARM64 job on `105250d`](https://github.com/Narehood/Uptime-Canary/actions/runs/40335375056/job/121615476064)
+failed before packaging or process proofs. Its full canary core tests passed
+(144.932 s), but `TestDNSExtendedCanonicalAdmissionAndTCPFallback` could not
+start its private fixture: UDP selected port 41828, which was already occupied
+in TCP. A free UDP port does not reserve that port in TCP.
+
+Factoring out the unchanged allocator and forcing that collision reproduced
+the failure on Windows amd64, v3 source
+`912b16331eb787aae1084c006489514b3e40e61a4043cdf39f762934132da299`.
+The fixture now reserves TCP first, then UDP on the same address. Only a UDP
+address-in-use bind error retries allocation, with a 32-attempt cap and cleanup
+of every rejected TCP reservation. Both successful sockets stay owned until
+fixture cleanup. Regressions cover an occupied TCP port, a real UDP collision,
+exhausted allocation attempts and immediate propagation of other bind errors.
+No DNS query, assertion or deadline is retried or relaxed; production code is
+unchanged.
+
+On unchanged v3 source
+`0fdbf92ed6c0d45f9f54607158ea029fd105454fbcc8976b7866e3ad41287c5d`,
+twenty repetitions of all DNS tests passed (2.909 s), followed by the complete
+checks package (3.238 s) and its vet checks, in 58.250 guarded seconds on
+Windows amd64. Scratch returned to zero and storage stayed within budget.
+The matching native ARM64 run is still required. This fixture fix does not
+clear the earlier 64-monitor process-proof recovery failure or establish
+Alpine race acceptance; those gates were not reached in this failed job.
+
 ## What is exercised
 
 - Real native TLS handshakes, retained keys, wrong pins before any HTTP
