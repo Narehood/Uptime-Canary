@@ -303,6 +303,38 @@ func TestSteamAPIDeadlinePolicyPreservesParentCancellation(t *testing.T) {
 	}
 }
 
+func TestSteamScheduledDeadlineCausePreservesCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer server.Close()
+	for _, failureIsDown := range []bool{false, true} {
+		c := fixtureConfig(server.URL)
+		c.Timeout, c.Options.APIFailureIsDown = 60*time.Millisecond, failureIsDown
+		ctx, cancel := WithMeasurementTimeout(context.Background(), c.Timeout)
+		result := Check(ctx, c)
+		cancel()
+		want := "pending"
+		if failureIsDown {
+			want = "down"
+		}
+		if result.State != want || result.LatencyAvailable {
+			t.Fatal("scheduled measurement deadline ignored its policy", result)
+		}
+		parent, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		ctx, cancel = WithMeasurementTimeout(parent, c.Timeout)
+		result = Check(ctx, c)
+		cancel()
+		stop()
+		if result.State != "pending" || result.LatencyAvailable {
+			t.Fatal("earlier caller deadline became an outage", result)
+		}
+		ctx, cancel = WithMeasurementTimeout(context.Background(), c.Timeout)
+		cancel()
+		if result = Check(ctx, c); result.State != "pending" || result.LatencyAvailable {
+			t.Fatal("explicit cancellation became an outage", result)
+		}
+	}
+}
+
 func TestSteamTLSHostnameAndMinimumVersionRemainRequired(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"response":{"servers":[{"addr":"127.0.0.9:27015"}]}}`))

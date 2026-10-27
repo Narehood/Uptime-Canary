@@ -121,7 +121,29 @@ registered destinations per definition or group. Each node's own monitor and
 resource limits still apply. Network loss after preflight can leave some
 placements applied and others pending; this is not a transaction across nodes.
 
-After the first Sol review, the recovery and destination-selection repairs
+The separate project-wide Sol review found two probe deadline bugs: GameDig's
+socket deadline could discard a successful Minecraft reply, and the scheduler's
+Steam deadline bypassed the optional API-failure-as-Down policy. Both new
+regressions failed before their fixes. Socket waits now have margin inside the
+GameDig attempt, and Steam distinguishes its scheduled measurement deadline
+from earlier caller deadlines and cancellation.
+
+After those repairs, Windows amd64 passed **4,518** Go test events across 28
+tested packages, with four platform skips and no failures, all-package vet,
+all three workspace typechecks and every configured pure/control fixture
+(374.765 seconds guarded), at unchanged v3 fingerprint
+`d27fe6458a9b82748b82c4664db17189145f54c62590b1281d13d09b1387954a`.
+Only GameDig test timing diagnostics were added afterward. Five fresh Node
+processes then passed **25/25** service test cases (28.062 seconds guarded),
+including the original three-second control and a new 1.5-second case, at
+`7e1890f78ead906c4b6bd76ac1faf299cd1e5f4d61f9a17856a537cca05bc305`.
+The three-second queries completed in 1,918–1,932 ms; first TCP traffic arrived
+in 245–250 ms. No deadline or original assertion was relaxed. The earlier
+Windows Pending result at 3,059 ms remains recorded; its exhausted phase was
+not established, and passing reruns do not prove its original cause. These
+checks do not replace the separate platform, image and deployment gates below.
+
+After the first fleet Sol review, the recovery and destination-selection repairs
 passed all three workspace typechecks and every configured pure/control fixture,
 including 21 fleet management groups (22.922 seconds guarded), and the complete
 browser suite again: **220/220**, zero exceptions and blocked requests (298.843

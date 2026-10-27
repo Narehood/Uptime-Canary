@@ -10,11 +10,14 @@ try {
   const remaining = Math.min(input.timeoutMs, input.deadline - Date.now());
   if (remaining < 25) { parentPort.postMessage({ state: 'pending', latencyMs: 0 }); process.exit(0); }
   const attempt = Math.max(1, Math.floor(remaining * 0.8));
+  // Composite protocols must settle their sockets before the enclosing attempt
+  // expires; otherwise one silent protocol can discard another one's success.
+  const socket = Math.max(1, Math.min(2000, Math.floor(attempt * 0.75)));
   const result = await GameDig.query({
     type: input.game, host: input.host,
     ...(input.port ? { port: input.port } : {}), givenPortOnly: Boolean(input.givenPortOnly),
     ...(input.token ? { token: input.token } : {}),
-    socketTimeout: Math.max(1, Math.min(attempt, 2000)), attemptTimeout: attempt,
+    socketTimeout: socket, attemptTimeout: attempt,
     maxRetries: 1, requestPlayers: false, portCache: false, stripColors: true,
   });
   const latencyMs = result?.ping;

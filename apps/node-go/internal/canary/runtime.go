@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 	"uptime-canary/apps/node-go/internal/heartbeat"
+	"uptime-canary/apps/node-go/internal/steam"
 )
 
 // Node serializes configuration, episode reconciliation, and persistence under
@@ -633,7 +634,11 @@ func (n *Node) tick() {
 			continue
 		}
 		n.nextProbe[id] = now + m.IntervalMs
-		ctx, cancel := context.WithTimeout(n.ctx, time.Duration(m.TimeoutMs)*time.Millisecond)
+		withTimeout := context.WithTimeout
+		if m.Type == "steam" {
+			withTimeout = steam.WithMeasurementTimeout
+		}
+		ctx, cancel := withTimeout(n.ctx, time.Duration(m.TimeoutMs)*time.Millisecond)
 		n.probing[id] = cancel
 		monitor := *m
 		var pushResult ProbeResult

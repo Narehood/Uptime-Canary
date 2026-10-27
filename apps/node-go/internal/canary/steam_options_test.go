@@ -161,6 +161,38 @@ func TestSteamRuntimeProviderPendingAbsenceAndRecovery(t *testing.T) {
 	}
 }
 
+func TestSteamRuntimeAPITimeoutPolicy(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		failureIsDown bool
+		state         string
+	}{{"pending", false, "pending"}, {"down", true, "down"}} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+			defer server.Close()
+			n, hook := local(t, nil), webhook(t)
+			in := steamInput([]string{"a"})
+			in.Enabled, in.WebhookURL, in.TimeoutMs = true, hook.URL, 75
+			in.Steam.APIURL, in.Steam.AllowInsecureAPI, in.Steam.APIFailureIsDown = server.URL, true, test.failureIsDown
+			add(t, n, in)
+			eventually(t, func() bool {
+				views := getOverview(t, n).Monitors
+				// The API includes an Unknown placeholder before the first sample.
+				return len(views) == 1 && len(views[0].Observations) == 1 && views[0].Observations[0].CheckedAt > 0
+			})
+			observation := getOverview(t, n).Monitors[0].Observations[0]
+			if observation.State != test.state || observation.LatencyAvailable == nil || *observation.LatencyAvailable || strings.Contains(observation.Message, in.Steam.APIKey) {
+				t.Fatal("scheduled API deadline ignored policy or invented RTT/leaked a credential", observation)
+			}
+			if test.failureIsDown {
+				eventually(t, func() bool { return hook.count("down") == 1 })
+			} else if hook.count("down") != 0 {
+				t.Fatal("uncertain provider timeout sent a game outage")
+			}
+		})
+	}
+}
+
 func TestSteamConfigurationSQLRollbackAndRetry(t *testing.T) {
 	var clock atomic.Int64
 	clock.Store(maintenanceClock(12, 1))
