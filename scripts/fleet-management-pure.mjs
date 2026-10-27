@@ -13,6 +13,7 @@ const load = p => scope.import(pathToFileURL(resolve(root, 'apps/web/src', p)).h
 const { CanaryApi, ApiFailure } = await load('api.ts');
 const { readFleetDeployment, readFleetGroup } = await load('fleetApi.ts');
 const { fleetMonitorRows, managedMonitor } = await load('fleet.ts');
+const { reviewedFleetHeads } = await load('fleetActions.ts');
 const { readReferenceProfiles } = await load('fleetReferences.ts');
 const { FleetOverviewView } = await load('views/FleetOverview.tsx');
 const { FleetPlacementFields } = await load('views/FleetPlacementFields.tsx');
@@ -168,6 +169,26 @@ await check('reconciliation sends only explicitly reviewed revisions to the dash
   assert.equal(sent.headers['X-Canary-Registered-Node'], undefined);
   assert.deepEqual(JSON.parse(sent.body), { revision: d.revision, observedRevisions });
 });
+await check('review samples the action clock after a fresh read while still refusing expired, future and conflicted snapshots', () => {
+  const originalNow = Date.now;
+  const sources = [source(A, 'physical-a', 'revision-a'), source(B, 'physical-b', 'node-local-edit')];
+  sources.forEach(s => { s.readAt = now + 500; });
+  const d = deployment();
+  try {
+    assert.equal(reviewedFleetHeads(d, sources, now), null, 'previous timer tick cannot validate a later read');
+    Date.now = () => now + 750;
+    const reviewed = reviewedFleetHeads(d, sources);
+    assert.equal(reviewed.revisions[d.placements[1].id], 'node-local-edit');
+    Date.now = () => now + 31_000;
+    assert.equal(reviewedFleetHeads(d, sources), null, 'an event cannot reuse a stale render clock');
+    Date.now = () => now + 750;
+    sources[0].overview.monitors[0].configConflict = true;
+    assert.equal(reviewedFleetHeads(d, sources), null);
+    sources[0].overview.monitors[0].configConflict = false;
+    sources[0].readAt = now + 1000;
+    assert.equal(reviewedFleetHeads(d, sources), null, 'genuine future timestamps remain refused');
+  } finally { Date.now = originalNow; }
+});
 scope.unregister();
-console.log(`${18 - failed}/18 fleet management groups passed`);
+console.log(`${19 - failed}/19 fleet management groups passed`);
 if (failed) process.exitCode = 1;

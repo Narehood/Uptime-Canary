@@ -273,7 +273,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   };
 }
 
-export async function reviewDashboardControlPlane({ fixture, A, B, page, step, until, fill, click, text, ready, report, secrets }) {
+export async function reviewDashboardControlPlane({ fixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet = false }) {
   const q = JSON.stringify;
   const start = report.requests.length;
   const clickFirst = async label => {
@@ -336,6 +336,11 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.ok(!JSON.stringify(registrations).includes(A.token) && !JSON.stringify(registrations).includes(B.token));
     return { readOnlyVerification: true, cancellationLeavesNoAccounts: true, registeredNodes: 2 };
   });
+  if (onlyFleet) {
+    await reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner });
+    await page.send('Network.setBlockedURLs', { urls: [] });
+    return;
+  }
   await step('Control plane: select two nodes without another sign-in; monitoring and account routes remain separate', async () => {
     for (const label of ['First private node', 'Second private node']) {
       await page.eval('location.hash="#/nodes"'); await text(label);
@@ -1257,7 +1262,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     }
     return { cachedReads:true, syntheticMetadata:'UI only; real server authenticates GET and refuses disabled POST', roles:true, explicitManualOnce:true, sameSourceRebuild:true, installs:0, layouts:6 };
   });
-  await reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner });
+  await reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner, includeOutbound: true });
   await step('Control plane: every browser API request stays at the dashboard origin; no node credential is persisted', async () => {
     const calls = report.requests.slice(start).filter(value => /^\/(api|public)\//u.test(new URL(value.url).pathname));
     assert.ok(calls.length > 10);

@@ -2,7 +2,7 @@
 // executable, browser and profile. No external destinations or deployments.
 import assert from 'node:assert/strict';
 
-export async function reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner }) {
+export async function reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner, includeOutbound = false }) {
   const q = JSON.stringify;
   const name = 'Fleet browser same-name service';
   const groupName = 'Fleet browser sites';
@@ -11,14 +11,18 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
   const nav = async hash => { await page.eval(`location.hash=${q(hash)}`); await ready(); };
   const openRegistration = async node => {
     await nav('#/nodes');
-    await until(() => page.eval(`document.querySelector('main h1')?.textContent==='Nodes'&&[...document.querySelectorAll('main button')].some(b=>b.getAttribute('aria-label')===${q('Open ' + node.label)}&&!b.disabled)`), 'registered node Open action', 25000);
-    await click('Open ' + node.label);
+    const card = `document.querySelector(${q(`article[aria-labelledby="r-${node.id}"]`)})`;
+    // A selected registration has Viewing/Its overview instead of an Open
+    // button. Check that exact registration; never select an arbitrary node.
+    await until(() => page.eval(`document.querySelector('main h1')?.textContent==='Nodes'&&!!${card}&&(${card}.classList.contains('ep')||[...${card}.querySelectorAll('button')].some(b=>b.getAttribute('aria-label')===${q('Open ' + node.label)}&&!b.disabled))`), 'registered node selected or available to open', 25000);
+    await page.eval(`(() => {const card=${card};if(!card.classList.contains('ep')){const button=[...card.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===${q('Open ' + node.label)}&&!b.disabled);if(!button)throw Error('expected registration Open missing');button.click()}})()`);
   };
   const refresh = async () => {
     await nav('#/overview');
     await until(() => page.eval('document.querySelector("main h1")?.textContent==="All nodes"'), 'central fleet heading');
     await until(() => page.eval('[...document.querySelectorAll("main button")].some(b=>__norm(b.innerText)==="Refresh"&&!b.disabled)'), 'fleet finished its current read', 25000);
     await click('Refresh', 'main');
+    await until(() => page.eval('[...document.querySelectorAll("main button")].some(b=>__norm(b.innerText)==="Refresh"&&!b.disabled)'), 'new fleet read completed', 25000);
   };
   const rows = label => page.eval(`[...document.querySelectorAll('tbody tr')].filter(r=>r.querySelector('.fl-mon-n')?.textContent===${q(label)}).length`);
   const rowAction = async label => {
@@ -165,7 +169,12 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
     const changed = await api(`/api/monitors/${p.monitorId}`, 'PUT', { ...inputOf(before), revision: before.revision, name: 'Changed directly on the private node' }, b.id);
     assert.equal(changed.status, 200);
     await refresh(); await rowAction('Review node edits');
-    await text('Replace node edits:', 5000); await click('Keep node edits', 'dialog[open]');
+    try { await text('Replace node edits:', 5000); }
+    catch (error) {
+      const evidence = await page.eval('({banners:[...document.querySelectorAll("main .banner")].map(e=>e.textContent),nodes:[...document.querySelectorAll(".fl-node")].map(e=>({text:e.textContent,state:e.className}))})');
+      throw Error(`${error.message}; ${JSON.stringify(evidence)}`);
+    }
+    await click('Keep node edits', 'dialog[open]');
     assert.equal((await readMonitor(b.id, p.monitorId)).revision, changed.value.revision);
     await rowAction('Review node edits'); await click('Replace reviewed node settings', 'dialog[open]');
     await waitApplied();
@@ -182,5 +191,25 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
     for (const p of definition.placements) assert.equal(await readMonitor(p.registrationId, p.monitorId), undefined);
     assert.ok(await readMonitor(b.id, unrelated.id), 'unrelated monitor remains');
     return { widths: [1280, 728, 390], deletionAcknowledged: true, unrelatedPreserved: true };
+  });
+  if (includeOutbound) await step('Fleet: a node-initiated connection applies and retires the same durable placement without an inbound URL', async () => {
+    const node = (await api('/api/dashboard/nodes')).value.find(n => n.connection === 'outbound' && n.nodeId === 'review-paired');
+    assert.ok(node, 'the real paired process from onboarding remains registered');
+    assert.equal(node.url, undefined);
+    const before = (await api('/api/monitors', 'GET', undefined, node.id)).value.map(v => v.monitor.id).sort();
+    const requestId = 'a09fb13768394f10b1c2d3e4f5061728';
+    const created = await api('/api/dashboard/fleet/monitors', 'POST', { requestId, registrationIds: [node.id], monitor: {
+      name: 'Outbound fleet placement', type: 'manual', target: 'manual', nodeIds: [node.nodeId], enabled: false,
+      intervalMs: 60000, timeoutMs: 1000, notificationIds: [] } });
+    assert.equal(created.status, 202);
+    const deployed = await until(async () => (await api('/api/dashboard/fleet/monitors')).value.find(d => d.id === requestId && d.state === 'applied'), 'outbound fleet commands applied', 30000);
+    assert.equal(deployed.placements.length, 1);
+    const placement = deployed.placements[0];
+    const monitor = await readMonitor(node.id, placement.monitorId);
+    assert.deepEqual(monitor.nodeIds, [node.nodeId]);
+    assert.equal((await api(`/api/dashboard/fleet/monitors/${requestId}`, 'DELETE', { revision: deployed.revision })).status, 202);
+    await until(async () => (await api('/api/dashboard/fleet/monitors')).value.find(d => d.id === requestId)?.state === 'removed', 'outbound deletion confirmed', 30000);
+    assert.deepEqual((await api('/api/monitors', 'GET', undefined, node.id)).value.map(v => v.monitor.id).sort(), before);
+    return { outbound: true, inboundURL: false, appliedAndRetired: true, unrelatedMonitorsKept: true };
   });
 }

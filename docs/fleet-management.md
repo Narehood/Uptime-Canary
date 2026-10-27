@@ -117,10 +117,50 @@ registered destinations per definition or group. Each node's own monitor and
 resource limits still apply. Network loss after preflight can leave some
 placements applied and others pending; this is not a transaction across nodes.
 
-Local validation is recorded separately from hosted/platform acceptance. The
-candidate has focused Windows Go and static checks; the first browser run
-exposed a first-node navigation regression, and the next passed all 213 existing
-checks but found selector errors in the six new fleet steps. Those original
-failures remain recorded. A corrected full run, complete Go/vet checks, hosted
-Linux/ARM/Alpine/race gates and real deployment remain to be confirmed.
-Nothing here claims a release or publication of fleet-capable images.
+On Windows amd64, the candidate passed these local checks on unchanged v3
+source fingerprint
+`99e4de603f4acee625223121e89eeec613c92055dd3e03b2394079725fe36450`:
+
+- All three workspace typechecks and every configured Dockerfile pure/control
+  fixture, including 10 fleet inventory groups and 19 fleet management groups
+  (23.140 seconds guarded).
+- The complete production-build/browser harness: **220/220**, zero page
+  exceptions and zero blocked requests (317.484 seconds guarded). It preserves
+  the existing 213 checks and adds seven fleet scenarios: independent inventory,
+  saved node groups, adoption with destination-local tags, draft preservation,
+  explicit node-edit review, owned-copy removal, and placement/retirement through
+  a real node-initiated connection with no inbound URL. The group editor,
+  reference controls and summary fit 390, 728 and 1280 pixels in both themes.
+- All-package Go vet (63.406 seconds guarded).
+
+The browser's production source manifest is
+`a0fa56e182b72154e6936ba0313b07ce775bb7bd80bedfcb3aa39307f3a45f61`;
+its executable SHA-256 is
+`8654e994b0c06ba92451f89c0996a1392c738a5b0628ea724cac06c8e13e5166`.
+These identify that local build, rather than a published container.
+
+An earlier broad Go checkpoint passed **4,511 test events**, with four platform
+skips, no failures and 28 tested packages, plus all-package vet (416.406 seconds
+guarded), on fingerprint
+`33d626b34ada445681c9d3251a1512e7e97f8cf64d9526e10be0cd0898a4da2d`.
+That precedes the frontend action-clock fix and outbound route admission.
+After the latter, the fleet, invitation and connection Go tests passed again
+(119.391 seconds guarded, package-cwd fingerprint
+`a0fe67cc1e1ce05951fb9de262a59e5fae7593c292bdbfc27a6819a4230a7e41`),
+including a live TLS connection applying and retiring a placement and refusing
+viewer receipt access. The final browser and vet checks cover the follow-up.
+
+Earlier failures remain on record: the first full run exposed the missing
+first-node entry action; later runs found test selector/precondition errors and
+a real review-action clock bug. A newly read snapshot was compared with an older
+UI timer tick. Actions now sample their own clock, with a regression for fresh,
+expired, future and conflicted snapshots. Original assertions were retained.
+
+The storage guard stopped the initial unstripped Go compile at its scratch
+limit and cleaned it. Compiler debug metadata was then omitted with the same
+assertions, owned cache and 512 MiB limit. All completed runs returned scratch
+to zero and left the module cache unchanged. No real notifications were sent.
+
+Hosted Linux/ARM/Alpine/race, extracted-package process proofs, image gates,
+review and a real Portainer/VM/VPN deployment remain separate acceptance work.
+No release or publication of fleet-capable images is claimed here.

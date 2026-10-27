@@ -572,7 +572,13 @@ Edits carry the revision they change; a stale one is rejected with HTTP 409. Con
 
 ## Checks and validation
 
-The protocol-20 candidate passed three workspace typechecks, **338** pure/control
+The fleet-management candidate passed all three workspace typechecks, all
+configured pure/control fixtures and **220/220** production-build/browser checks
+locally on Windows amd64, including placement through a node-initiated
+connection. Go and vet results, original failures and platform/deployment
+limits are recorded with their [exact source scopes](docs/fleet-management.md#persistence-limits-and-validation).
+
+The earlier protocol-20 checkpoint passed three workspace typechecks, **338** pure/control
 groups, **213/213** browser checks and **25/25** regular process proofs locally
 on Windows amd64 at v3 source `61ea890b…` (2026-10-26). These are local candidate
 results, with hosted platform/image gates and real deployment checks still

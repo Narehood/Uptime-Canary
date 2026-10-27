@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { FleetDeployment } from '@uptime-canary/shared';
 import { useCanary } from '../context';
-import { fleetMonitorRows, fleetSourceCurrent } from '../fleet';
+import { fleetMonitorRows } from '../fleet';
+import { reviewedFleetHeads } from '../fleetActions';
 import { useFleetReader } from '../fleetState';
 import { useNow } from '../hooks';
 import { canEdit } from '../model';
@@ -13,7 +14,8 @@ import { Modal, Rev } from '../ui/bits';
 /** Integration only: all traffic is same-origin and the presentation receives no credentials. */
 export function FleetController({ groups = false }: { groups?: boolean }) {
   const { api, registry, fleet, connection, role, select, selection, search, setSearch } = useCanary();
-  const now = useNow(1000);
+  useNow(1000);
+  const now = Date.now();
   const [failure, setFailure] = useState<string>();
   const [removing, setRemoving] = useState<FleetDeployment>();
   const [reconciling, setReconciling] = useState<{ deployment: FleetDeployment; revisions: Record<string, string>; labels: Record<string, string> }>();
@@ -48,17 +50,11 @@ export function FleetController({ groups = false }: { groups?: boolean }) {
     } : undefined}
     onRemoveDeployment={editable ? deployment => setRemoving(deployment) : undefined}
     onReconcileDeployment={editable ? deployment => {
-      const revisions: Record<string, string> = {}, labels: Record<string, string> = {};
-      for (const placement of deployment.placements.filter(p => p.state !== 'removed')) {
-        const source = reader.sources.find(s => s.node.id === placement.registrationId);
-        const view = source?.overview?.monitors.find(v => v.monitor.id === placement.monitorId);
-        if (!source || !fleetSourceCurrent(source, now) || !view || view.configConflict) {
-          setFailure('Refresh every placement node and resolve configuration conflicts before reviewing node edits. A monitor deleted directly can be retired with Remove everywhere.'); return;
-        }
-        revisions[placement.id] = view.monitor.revision; labels[placement.id] = source.node.label;
+      const reviewed = reviewedFleetHeads(deployment, reader.sources);
+      if (!reviewed) {
+        setFailure('Refresh every placement node and resolve configuration conflicts before reviewing node edits. A monitor deleted directly can be retired with Remove everywhere.'); return;
       }
-      if (!Object.keys(revisions).length) { setFailure('No existing placement revision is available to review. Edit its settings or retry preflight.'); return; }
-      setReconciling({ deployment, revisions, labels });
+      setReconciling({ deployment, ...reviewed });
     } : undefined}
     onEditDeployment={editable ? deployment => {
       const node = registry.map.get(deployment.placements[0]?.registrationId ?? deployment.registrationIds[0] ?? '');
