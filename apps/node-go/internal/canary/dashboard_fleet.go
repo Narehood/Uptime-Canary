@@ -780,6 +780,9 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	}
 	close(jobs)
 	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if first != nil {
 		return fail(502, "A selected node cannot be read yet")
 	}
@@ -915,8 +918,8 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		commands[p.ID] = command
 		p.State = "pending"
 	}
-	plan.Commands = commands
-	row.Placements = placements
+	candidatePlan := *plan
+	candidatePlan.Commands = commands
 	// Validate the complete plan on every anchor before journaling or applying
 	// any remote changes. Missing node-local channels/tags/groups are not dropped.
 	for _, p := range placements {
@@ -933,7 +936,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		if err != nil {
 			return err
 		}
-		body, err := fleetCommandBytes(*plan, p)
+		body, err := fleetCommandBytes(candidatePlan, p)
 		if err != nil {
 			return err
 		}
@@ -945,6 +948,11 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			return fail(response.StatusCode, "A node refused the deployment preflight; check its version, revision and local channel, tag or group references")
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	row.Placements = placements
+	plan.Commands = commands
 	plan.Prepared = true
 	plan.ObservedRevisions = nil
 	plan.Rejected = nil

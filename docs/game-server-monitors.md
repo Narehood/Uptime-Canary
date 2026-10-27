@@ -100,6 +100,12 @@ cannot be configured. A game adapter's own protocol activity is still subject
 to its upstream implementation; the service does not make every game equally
 cheap or remove the need for deployment resource limits.
 
+The service passes GameDig a socket timeout capped at two seconds and at 75%
+of its attempt budget. This leaves time for sibling protocol failures to
+settle. A reply that misses the shorter socket bound can fail while the overall
+query still has time left; a longer monitor timeout does not remove the
+two-second socket cap.
+
 ## Evidence boundaries
 
 Local Windows tests exercised the actual locked library against a private

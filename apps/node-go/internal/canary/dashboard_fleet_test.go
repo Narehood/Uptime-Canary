@@ -3,6 +3,7 @@ package canary
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -925,6 +926,70 @@ func TestDashboardFleetUpdatesRetiresAndReloadsJournal(t *testing.T) {
 	}
 	if w = dashboardHTTP(reloaded, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision}); w.Code != 204 {
 		t.Fatal("confirmed deletion was not idempotent")
+	}
+}
+
+func TestDashboardFleetPreparationFailureKeepsCommittedLayout(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	row := fleetCreateFixture(t, d, owner, []string{ra.ID}, nil)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	placements := copyFleet(row).Placements
+	plan, err := d.openFleet(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(refs []string) {
+		row = d.fleet[row.ID]
+		w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{
+			"revision": row.Revision, "registrationIds": []string{ra.ID, rb.ID}, "monitor": plan.Monitor,
+			"references": map[string]any{rb.ID: map[string]any{"notificationIds": refs}},
+		})
+		if w.Code != 202 {
+			t.Fatal(w.Code)
+		}
+	}
+	request([]string{"not-on-this-node"})
+	before, err := d.openFleet(d.fleet[row.ID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	after, err := d.openFleet(row)
+	if err != nil || row.State != "blocked" || !equalJSON(placements, row.Placements) || !equalJSON(before, after) ||
+		a.current(placements[0].MonitorID).Revision != placements[0].Revision || len(b.heads) != 0 {
+		t.Fatal("failed preflight published candidate placements or changed the previous plan")
+	}
+	request([]string{})
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "applied" || len(row.Placements) != 2 || len(a.heads) != 1 || len(b.heads) != 1 || row.Placements[0].ID != placements[0].ID {
+		t.Fatal("corrected preflight could not retain the existing copy and add its destination")
+	}
+}
+
+func TestDashboardFleetPreparationCancellationKeepsInputs(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	row := copyFleet(fleetCreateFixture(t, d, owner, []string{reg.ID}, nil))
+	plan, err := d.openFleet(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRow, beforePlan := copyFleet(row), plan
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err = d.prepareFleet(ctx, &row, &plan); !errors.Is(err, context.Canceled) || !equalJSON(row, beforeRow) || !equalJSON(plan, beforePlan) || len(node.heads) != 0 {
+		t.Fatal("cancelled preparation changed its inputs or did not preserve cancellation", err)
 	}
 }
 

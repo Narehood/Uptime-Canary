@@ -148,6 +148,14 @@ Windows Pending result at 3,059 ms remains recorded; its exhausted phase was
 not established, and passing reruns do not prove its original cause. These
 checks do not replace the separate platform, image and deployment gates below.
 
+A subsequent PR review tightened preflight publication: failed or cancelled
+preparation now keeps the previous committed placement layout and command plan.
+The two new regressions failed before the fix. Fleet, node-group, receipt and
+outbound-connection tests then passed (57.016 seconds guarded, package-cwd
+fingerprint
+`7f575469af8fb2546e23ce8383d48c49f4891c486bc7aa74073363692f2c942d`).
+This follow-up changes no frontend or GameDig timeout policy.
+
 After the first fleet Sol review, the recovery and destination-selection repairs
 passed all three workspace typechecks and every configured pure/control fixture,
 including 21 fleet management groups (22.922 seconds guarded), and the complete
