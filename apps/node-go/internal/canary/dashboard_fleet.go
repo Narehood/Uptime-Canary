@@ -64,6 +64,8 @@ type dashboardFleetPlan struct {
 	Monitor           MonitorInput                     `json:"monitor"`
 	Prepared          bool                             `json:"prepared"`
 	Deleted           bool                             `json:"deleted"`
+	Rejected          map[string]bool                  `json:"rejected,omitempty"`
+	Unsent            map[string]bool                  `json:"unsent,omitempty"`
 	// Monitor settings are held once, rather than copied into 64 encrypted commands.
 	Commands map[string]fleetPlacementCommand `json:"commands"`
 }
@@ -189,6 +191,26 @@ func fleetWritesConfirmed(row dashboardFleetRecord, plan dashboardFleetPlan) boo
 	return true
 }
 
+func fleetCanReconcile(row dashboardFleetRecord, plan dashboardFleetPlan, observed map[string]string) bool {
+	if !plan.Prepared {
+		return true
+	}
+	for _, p := range row.Placements {
+		command, ok := plan.Commands[p.ID]
+		if ok && (command.Sequence != p.Sequence || p.State == "pending") {
+			if plan.Unsent[p.ID] {
+				continue
+			}
+			// Only a definite refusal plus a different, explicitly reviewed CAS
+			// revision can replace this command. Unknown answers retain exact replay.
+			if !plan.Rejected[p.ID] || observed[p.ID] == "" || observed[p.ID] == command.Revision {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Caller holds d.mu. Identity generations and the journal commit share the account lock.
 func (d *Dashboard) saveFleet(r *http.Request, actor AccountView, row dashboardFleetRecord, plan dashboardFleetPlan) error {
 	n := d.accounts.node
@@ -215,7 +237,7 @@ func (d *Dashboard) saveFleet(r *http.Request, actor AccountView, row dashboardF
 	if err = n.identityTransactionLocked(func(e dbExec) error { return put(e, "dashboardFleet", row.ID, row) }); err != nil {
 		return err
 	}
-	d.fleet[row.ID] = row
+	d.fleet[row.ID] = copyFleet(row)
 	return nil
 }
 func (d *Dashboard) fleetAuthorized(row dashboardFleetRecord) bool {
@@ -342,7 +364,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 			return
 		}
 		if action == "reconcile" {
-			if !fleetWritesConfirmed(row, plan) || row.State == "removed" || len(in.ObservedRevisions) < 1 || len(in.ObservedRevisions) > 64 {
+			if !fleetCanReconcile(row, plan, in.ObservedRevisions) || row.State == "removed" || len(in.ObservedRevisions) < 1 || len(in.ObservedRevisions) > 64 {
 				errorReply(w, fail(409, "Resolve the saved command before reviewing node edits"))
 				return
 			}
@@ -925,6 +947,11 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	}
 	plan.Prepared = true
 	plan.ObservedRevisions = nil
+	plan.Rejected = nil
+	plan.Unsent = map[string]bool{}
+	for id := range commands {
+		plan.Unsent[id] = true
+	}
 	return nil
 }
 func (d *Dashboard) finishFleet(ctx context.Context, id string) {
@@ -1008,6 +1035,13 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			save()
 			return
 		}
+		if plan.Unsent[p.ID] {
+			// Persist the unknown-outcome boundary before any request can leave.
+			delete(plan.Unsent, p.ID)
+			if !save() {
+				return
+			}
+		}
 		response, b, e := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "PUT", "/api/fleet-placements/"+p.ID, body)
 		var result fleetPlacementResult
 		command := plan.Commands[p.ID]
@@ -1017,6 +1051,12 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			if e == nil && (response.StatusCode == 400 || response.StatusCode == 404 || response.StatusCode == 409) {
 				row.State = "blocked"
 				row.Reason = "A placement needs review on its node; its version, references or monitor revision differs"
+			}
+			if e == nil && response.StatusCode == 409 {
+				if plan.Rejected == nil {
+					plan.Rejected = map[string]bool{}
+				}
+				plan.Rejected[p.ID] = true
 			}
 			row.RetryAt = time.Now().Add(30 * time.Second).UnixMilli()
 			save()

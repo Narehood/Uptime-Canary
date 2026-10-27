@@ -13,7 +13,7 @@ const load = p => scope.import(pathToFileURL(resolve(root, 'apps/web/src', p)).h
 const { CanaryApi, ApiFailure } = await load('api.ts');
 const { readFleetDeployment, readFleetGroup } = await load('fleetApi.ts');
 const { fleetMonitorRows, managedMonitor } = await load('fleet.ts');
-const { reviewedFleetHeads } = await load('fleetActions.ts');
+const { fleetEditingRegistration, reviewedFleetHeads } = await load('fleetActions.ts');
 const { readReferenceProfiles } = await load('fleetReferences.ts');
 const { FleetOverviewView } = await load('views/FleetOverview.tsx');
 const { FleetPlacementFields } = await load('views/FleetPlacementFields.tsx');
@@ -189,6 +189,29 @@ await check('review samples the action clock after a fresh read while still refu
     assert.equal(reviewedFleetHeads(d, sources), null, 'genuine future timestamps remain refused');
   } finally { Date.now = originalNow; }
 });
+await check('edit placement skips removed or missing anchors and uses an existing active destination', () => {
+  const d = deployment(), nodes = new Map([[B.id, B]]);
+  d.placements[0].state = 'removed'; d.placements[0].registrationIds = [];
+  d.registrationIds = [B.id];
+  assert.equal(fleetEditingRegistration(d, nodes), B);
+  d.placements[1].registrationId = 'missing-anchor';
+  assert.equal(fleetEditingRegistration(d, nodes), B, 'an existing HA member can open the editor');
+  d.placements[1].state = 'removed';
+  assert.equal(fleetEditingRegistration(d, nodes), B, 'desired destinations work before placement preparation');
+  d.registrationIds = [];
+  assert.equal(fleetEditingRegistration(d, nodes), undefined);
+  assert.equal(fleetEditingRegistration(deployment(), new Map([[A.id, A], [B.id, B]])), A);
+});
+await check('review can include an unsent new destination without inventing its physical revision', () => {
+  const d = deployment(), sources = [source(A, 'physical-a', 'node-local-edit'), source(B, 'unrelated', 'unrelated-revision')];
+  d.placements[1].sequence = 0; d.placements[1].monitorId = `fleet-${d.placements[1].id}`;
+  const reviewed = reviewedFleetHeads(d, sources, now);
+  assert.deepEqual(reviewed.revisions, { [d.placements[0].id]: 'node-local-edit' });
+  d.placements[1].sequence = 1;
+  assert.equal(reviewedFleetHeads(d, sources, now), null, 'a missing previously deployed monitor still needs retirement');
+  d.placements[1].sequence = 0; sources[1].status = 'unavailable';
+  assert.equal(reviewedFleetHeads(d, sources, now), null, 'an unread destination cannot be assumed empty');
+});
 scope.unregister();
-console.log(`${19 - failed}/19 fleet management groups passed`);
+console.log(`${21 - failed}/21 fleet management groups passed`);
 if (failed) process.exitCode = 1;

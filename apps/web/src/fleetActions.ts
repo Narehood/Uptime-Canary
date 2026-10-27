@@ -1,7 +1,12 @@
 import type { Canary } from './context';
-import type { FleetDeployment } from '@uptime-canary/shared';
+import type { FleetDeployment, RegisteredNode } from '@uptime-canary/shared';
 import { ApiFailure } from './api';
 import { managedMonitor, fleetSourceCurrent, type FleetSource } from './fleet';
+
+export function fleetEditingRegistration(deployment: FleetDeployment, nodes: ReadonlyMap<string, RegisteredNode>): RegisteredNode | undefined {
+  const ids = deployment.placements.filter(p => p.state !== 'removed').flatMap(p => [p.registrationId, ...p.registrationIds]);
+  return [...ids, ...deployment.registrationIds].map(id => nodes.get(id)).find(node => node !== undefined);
+}
 
 /** Do not fall back to a node-local write while the dashboard's ownership map is unreadable. */
 export function selectedDeployment(ctx: Canary, monitorId: string) {
@@ -15,7 +20,9 @@ export function reviewedFleetHeads(deployment: FleetDeployment, sources: readonl
   for (const placement of deployment.placements.filter(p => p.state !== 'removed')) {
     const source = sources.find(s => s.node.id === placement.registrationId);
     const view = source?.overview?.monitors.find(v => v.monitor.id === placement.monitorId);
-    if (!source || !fleetSourceCurrent(source, now) || !view || view.configConflict) return null;
+    if (!source || !fleetSourceCurrent(source, now)) return null;
+    if (!view && placement.sequence === 0 && placement.monitorId === `fleet-${placement.id}`) continue;
+    if (!view || view.configConflict) return null;
     revisions[placement.id] = view.monitor.revision; labels[placement.id] = source.node.label;
   }
   return Object.keys(revisions).length ? { revisions, labels } : null;

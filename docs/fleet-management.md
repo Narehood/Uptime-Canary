@@ -92,6 +92,10 @@ removed while it still has an active or retiring fleet placement.
 - **Review node edits** shows the fresh revisions the dashboard read. Confirming
   replacement applies the dashboard's saved settings only if those reviewed
   revisions remain current. Resolve configuration conflicts on the node first.
+  A confirmed revision refusal can be reviewed even after the command was
+  prepared. The dashboard checks the previous node receipt before replacing it;
+  commands not yet sent remain part of the plan. A lost response still requires
+  exact replay through Retry placement before it can be superseded.
 - **Load latest** in the monitor form discards its draft and loads the latest
   logical settings, destinations and reference choices together.
 - **Cancel placement** is available before any configuration was sent for a new
@@ -117,7 +121,29 @@ registered destinations per definition or group. Each node's own monitor and
 resource limits still apply. Network loss after preflight can leave some
 placements applied and others pending; this is not a transaction across nodes.
 
-On Windows amd64, the candidate passed these local checks on unchanged v3
+After the first Sol review, the recovery and destination-selection repairs
+passed all three workspace typechecks and every configured pure/control fixture,
+including 21 fleet management groups (22.922 seconds guarded), and the complete
+browser suite again: **220/220**, zero exceptions and blocked requests (298.843
+seconds). Both used unchanged Windows amd64 v3 fingerprint
+`0836d3f7201f5d9f771a7647141bc92a3960da068f087e210da74f96502d68e1`.
+The production manifest hash was
+`270d7aef0a22e0778955bd6ae61790e7a8f6d66bc9c318acf2e230ed3401c53e`;
+the executable hash was
+`dade9bba2ca19b9280425df3053e5a3d37c6920276ff7f68e6269dd5beb46f0d`.
+
+A subsequent Go-only change copies committed placement arrays before publishing
+them to dashboard readers. Fleet, node-group and placement Go tests passed again
+(38.296 seconds guarded, package-cwd fingerprint
+`b783ad7b88d8f7e9e4ab67dd77b6c466dce28a6790205ff3de90fbec50f2c1f4`).
+Regressions cover a refused prepared update with existing and new unsent
+destinations, lost create/update acknowledgements, removed-node editor selection,
+and a failed confirmation save followed by restart from its committed journal.
+The first failure-injection fixture incorrectly retried a faulted runtime without
+restarting; it now follows the persistence-error restart contract. Its original
+failure is retained. Scratch returned to zero and the module cache was unchanged.
+
+Before those review repairs, a Windows amd64 checkpoint passed these local checks on unchanged v3
 source fingerprint
 `99e4de603f4acee625223121e89eeec613c92055dd3e03b2394079725fe36450`:
 

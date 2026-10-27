@@ -108,6 +108,47 @@ func TestDashboardFleetJournalFailureSendsNoRemoteWrite(t *testing.T) {
 	}
 }
 
+func TestDashboardFleetFailedConfirmationSaveKeepsPublishedJournal(t *testing.T) {
+	d, owner, options := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	row := fleetCreateFixture(t, d, owner, []string{reg.ID}, nil)
+	if _, err := d.accounts.node.store.db.Exec(`CREATE TRIGGER fleet_confirmation_failure BEFORE INSERT ON records
+ WHEN NEW.category='dashboardFleet' AND json_extract(NEW.payload,'$.placements[0].state')='applied'
+ BEGIN SELECT RAISE(ABORT,'private fixture failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	stored, ok, err := loadOne[dashboardFleetRecord](d.accounts.node.store, "dashboardFleet", row.ID)
+	row = d.fleet[row.ID]
+	if err != nil || !ok || row.State != "pending" || row.Placements[0].State != "syncing" || !equalJSON(stored, row) {
+		t.Fatal("an uncommitted worker mutation leaked into the published journal")
+	}
+	if _, err = d.accounts.node.store.db.Exec(`DROP TRIGGER fleet_confirmation_failure`); err != nil {
+		t.Fatal(err)
+	}
+	// auth.go's identityTransactionLocked faults the runtime on any persistence
+	// error. Restore storage and restart before testing the original recovery claim.
+	d.Close()
+	_ = d.accounts.Close()
+	accounts, err := NewDashboardAccounts(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer accounts.Close()
+	restarted, err := NewDashboard(DashboardOptions{Accounts: accounts, Key: dashboardKeyFixture})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	restarted.finishFleet(context.Background(), row.ID)
+	if restarted.fleet[row.ID].State != "applied" || len(node.heads) != 1 {
+		t.Fatal("the retained confirmation could not finish after journal recovery")
+	}
+}
+
 func TestDashboardFleetHAReferenceMismatchPreflightWritesNothing(t *testing.T) {
 	d, owner, _ := dashboardRegistryFixture(t)
 	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
@@ -317,6 +358,18 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	if w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision}); w.Code != 409 {
 		t.Fatal("an unconfirmed write was forgotten instead of resolved")
 	}
+	plan, err := d.openFleet(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := row.Placements[0]
+	w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{
+		"revision": row.Revision, "observedRevisions": map[string]string{p.ID: node.current(p.MonitorID).Revision},
+	})
+	after, err := d.openFleet(d.fleet[row.ID])
+	if w.Code != 409 || err != nil || !equalJSON(plan, after) {
+		t.Fatal("review discarded an unknown saved command instead of retaining exact replay")
+	}
 	var revision string
 	for _, heads := range node.heads {
 		revision = heads[0].Monitor.Revision
@@ -326,6 +379,39 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	row = d.fleet[row.ID]
 	if row.State != "applied" || len(node.heads) != 1 || row.Placements[0].Revision != revision {
 		t.Fatal("retry duplicated or replaced an already committed monitor")
+	}
+	input := node.current(p.MonitorID).MonitorInput
+	input.Name = "Update whose acknowledgement is lost"
+	w = dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{
+		"revision": row.Revision, "monitor": input, "registrationIds": row.RegistrationIDs,
+	})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	lose.Store(true)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	plan, err = d.openFleet(row)
+	if err != nil || row.Placements[0].Sequence != 1 || !plan.Prepared {
+		t.Fatal("the unknown update was not retained")
+	}
+	input.Name = "Later direct edit must also survive exact replay"
+	local, err := node.writeMonitor(input, node.heads[p.MonitorID], p.MonitorID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{
+		"revision": row.Revision, "observedRevisions": map[string]string{p.ID: local.Revision},
+	})
+	after, err = d.openFleet(d.fleet[row.ID])
+	if w.Code != 409 || err != nil || !equalJSON(plan, after) {
+		t.Fatal("review discarded an unknown update after a later direct edit")
+	}
+	lose.Store(false)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.Placements[0].Sequence != 2 || node.current(p.MonitorID).Revision != local.Revision {
+		t.Fatal("unknown update did not recover its original receipt without overwriting the direct edit")
 	}
 }
 
@@ -594,6 +680,108 @@ func TestDashboardFleetReconciliationUsesOnlyReviewedCurrentRevision(t *testing.
 	row = d.fleet[row.ID]
 	if row.State != "removed" || row.Placements[0].Revision != deleted.Revision || row.Placements[0].Sequence != 3 {
 		t.Fatal("a native deletion left the global record permanently stuck")
+	}
+}
+
+func TestDashboardFleetReconcilesPreparedUpdateAfterDirectEdit(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	var editBeforeWrite atomic.Bool
+	var edited Monitor
+	nodes := map[string]*Node{}
+	register := func(id string) string {
+		node := dashboardRemoteFixture(t, id)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && editBeforeWrite.Swap(false) {
+				id := "fleet-" + strings.TrimPrefix(r.URL.Path, "/api/fleet-placements/")
+				input := node.current(id).MonitorInput
+				input.Name = "Direct edit after preflight"
+				var err error
+				edited, err = node.writeMonitor(input, node.heads[id], id, false)
+				if err != nil {
+					t.Error(err)
+				}
+			}
+			node.ServeHTTP(w, r)
+		}))
+		t.Cleanup(server.Close)
+		reg := enrollDashboardNode(t, d, owner, server.URL)
+		nodes[reg.ID] = node
+		return reg.ID
+	}
+	row := fleetCreateFixture(t, d, owner, []string{register("node-a"), register("node-b")}, nil)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	p := row.Placements[0]
+	node := nodes[p.RegistrationID]
+	added := register("node-c")
+	input := node.current(p.MonitorID).MonitorInput
+	input.Name = "Saved dashboard update"
+	w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{
+		"revision": row.Revision, "monitor": input, "registrationIds": append(slices.Clone(row.RegistrationIDs), added),
+	})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	editBeforeWrite.Store(true)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	plan, err := d.openFleet(row)
+	if err != nil || row.State != "blocked" || !plan.Prepared || !plan.Rejected[p.ID] || row.Placements[0].Sequence != p.Sequence {
+		t.Fatal("the refused prepared command was not retained")
+	}
+	if len(row.Placements) != 3 || len(plan.Unsent) != 2 {
+		t.Fatal("later existing and new destinations were not retained as unsent")
+	}
+	// Retry still sends exactly the rejected command and cannot overwrite the edit.
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/retry", owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	if node.current(p.MonitorID).Revision != edited.Revision {
+		t.Fatal("an ordinary retry overwrote a direct edit")
+	}
+	row = d.fleet[row.ID]
+	for _, revisions := range []map[string]string{{}, {p.ID: p.Revision}} {
+		w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{"revision": row.Revision, "observedRevisions": revisions})
+		if w.Code != 409 {
+			t.Fatal("a rejected command was replaced without a different reviewed revision")
+		}
+	}
+	// The refusal survives a restart, and the worker verifies the previous node
+	// receipt before preparing sequence 2 against the reviewed current head.
+	if err = d.loadFleet(); err != nil {
+		t.Fatal(err)
+	}
+	observed := map[string]string{}
+	for _, placement := range row.Placements {
+		if placement.Sequence > 0 {
+			observed[placement.ID] = nodes[placement.RegistrationID].current(placement.MonitorID).Revision
+		}
+	}
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{
+		"revision": row.Revision, "observedRevisions": observed,
+	})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "applied" || row.Placements[0].Sequence != p.Sequence+1 || node.current(p.MonitorID).Name != input.Name || len(node.heads) != 1 {
+		t.Fatal("explicit review did not recover the refused prepared update")
+	}
+	for _, placement := range row.Placements {
+		if placement.State != "applied" || nodes[placement.RegistrationID].current(placement.MonitorID).Name != input.Name || len(nodes[placement.RegistrationID].heads) != 1 {
+			t.Fatal("recovery lost or duplicated an unsent destination")
+		}
+	}
+	w = dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State != "removed" || node.current(p.MonitorID) != nil {
+		t.Fatal("recovered placement could not be retired")
 	}
 }
 

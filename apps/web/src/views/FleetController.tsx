@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FleetDeployment } from '@uptime-canary/shared';
 import { useCanary } from '../context';
 import { fleetMonitorRows } from '../fleet';
-import { reviewedFleetHeads } from '../fleetActions';
+import { fleetEditingRegistration, reviewedFleetHeads } from '../fleetActions';
 import { useFleetReader } from '../fleetState';
 import { useNow } from '../hooks';
 import { canEdit } from '../model';
@@ -57,7 +57,7 @@ export function FleetController({ groups = false }: { groups?: boolean }) {
       setReconciling({ deployment, ...reviewed });
     } : undefined}
     onEditDeployment={editable ? deployment => {
-      const node = registry.map.get(deployment.placements[0]?.registrationId ?? deployment.registrationIds[0] ?? '');
+      const node = fleetEditingRegistration(deployment, registry.map);
       if (!node) { setFailure('Register a destination node before editing this placement.'); return; }
       if (selection?.id !== node.id) select(node);
       navigate(href('fleet-monitors', deployment.id, 'edit'));
