@@ -7,12 +7,15 @@ import (
 	"testing"
 )
 
+// recordJSONOracle preserves the original algorithm independently of shortcuts.
 func recordJSONOracle(a, b any) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
 }
 
+// TestRecordEqualityMatchesJSON protects wire-state equality, including cases
+// where native Go equality or private proof fields differ from JSON semantics.
 func TestRecordEqualityMatchesJSON(t *testing.T) {
 	incident := capacityScopeOriginal("source", "monitor", "generation", 1, 10)
 	incident.ResolvedAt = Ptr(int64(20))
@@ -95,6 +98,7 @@ func TestRecordEqualityMatchesJSON(t *testing.T) {
 	}
 }
 
+// BenchmarkRecordEquality measures no-op comparison cost, not capacity acceptance.
 func BenchmarkRecordEquality(b *testing.B) {
 	incident := capacityScopeOriginal("source", "monitor", "generation", 1, 10)
 	sample := Sample{Observation: Observation{MonitorID: "monitor", State: "up", LatencyMs: 1}}

@@ -574,6 +574,8 @@ func (n *Node) currentGroup(id string) *Group {
 	g := h[0].Group
 	return &g
 }
+// equalJSON compares serialized state; selected unchanged records can avoid
+// encoding, while all other values retain the original JSON comparison.
 func equalJSON(a, b any) bool {
 	if sameRecord(a, b) {
 		return true

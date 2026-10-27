@@ -614,3 +614,21 @@ application/test executables must not be launched on this workstation. No
 broader package, candidate process-proof or candidate Alpine pass is claimed.
 The candidate remains unverified for the original failure until hosted checks
 complete.
+
+At PR #22 head `caff3dd05d35aa0b564a802d355eb36f5bfcb53b`, the
+[Alpine proof job](https://github.com/Narehood/Uptime-Canary/actions/runs/40603518739/job/122537239756)
+passes the complete process suite and the combined/separate stack checks.
+The [native Linux amd64 package job](https://github.com/Narehood/Uptime-Canary/actions/runs/40603518710/job/122537239854)
+still fails the same capacity recovery gate: 71.614 seconds for the capacity
+case, with fresh local up observations but sampled remote observations older
+than their three-second validity window. Its API polls also reach their
+two-second deadlines. The other 24 process cases pass. This platform difference
+does not establish a complete repair.
+
+The Linux amd64 package job now collects the existing fixed recovery CPU
+profile only after a failed package proof. The original failure log is retained
+in one overwritten 64 KiB file before the next guard command replaces its log.
+The profiler uses the same owned cache and scratch limits, retains only a small
+JSON text report, and refuses non-Linux hosts before creating output or invoking
+Go. Its executable and CPU profile are disposable. A collected profile is never
+reported as capacity acceptance; the original proof gates remain unchanged.
