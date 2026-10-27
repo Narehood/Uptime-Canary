@@ -118,6 +118,29 @@ await check('dashboard group views use registry memberships and omit editor acti
   assert.match(html, /Every site/); assert.match(html, /Office/); assert.match(html, /Cloud/);
   assert.ok(!/<button[^>]*>[^<]*New node group/u.test(html));
 });
+await check('retiring members stay visible and unknown until their own configuration is confirmed', () => {
+  const d = deployment(); d.state = 'pending'; d.registrationIds = [A.id];
+  d.placements[0].state = 'syncing'; d.placements[0].registrationIds = [A.id];
+  d.placements[0].retiringRegistrationIds = [B.id]; d.placements[0].nodeIds = [A.nodeId];
+  d.placements = [d.placements[0]];
+  const a = source(A, 'physical-a', 'revision-a'), b = source(B, 'physical-a', 'older-revision', 'up');
+  const normalized = readFleetDeployment(d);
+  assert.deepEqual(normalized.placements[0].retiringRegistrationIds, [B.id]);
+  const rows = fleetMonitorRows([a, b], now, [normalized]);
+  assert.equal(rows.length, 1); assert.equal(rows[0].results.length, 2);
+  const result = rows[0].results.find(r => r.nodeId === B.nodeId);
+  assert.equal(result.state, 'unknown'); assert.match(result.message, /Removal.*confirmation/u);
+  assert.ok(managedMonitor([normalized], B.id, 'physical-a'));
+  assert.throws(() => readFleetDeployment({ ...d, placements: [{ ...d.placements[0], retiringRegistrationIds: [B.id, B.id] }] }));
+});
+await check('an old healthy result cannot confirm a pending write or a different physical revision', () => {
+  for (const state of ['pending', 'syncing', 'applied']) {
+    const d = deployment(); d.state = 'pending'; d.placements[0].state = state;
+    const row = fleetMonitorRows([source(A, 'physical-a', 'old-physical-revision', 'up'), source(B, 'physical-b', 'revision-b')], now, [d])[0];
+    const result = row.results.find(r => r.nodeId === A.nodeId);
+    assert.equal(result.state, 'unknown'); assert.match(result.message, /not confirmed/u);
+  }
+});
 scope.unregister();
-console.log(`${13 - failed}/13 fleet management groups passed`);
+console.log(`${15 - failed}/15 fleet management groups passed`);
 if (failed) process.exitCode = 1;

@@ -7,7 +7,8 @@ export interface FleetNodeGroupInput { name: string; registrationIds: string[] }
 export interface FleetSourceReference { registrationId: string; monitorId: string; revision: string }
 export interface FleetPlacement {
   id: string; registrationId: string; registrationIds: string[]; nodeIds: string[];
-  monitorId: string; sequence: number; revision: string; state: 'pending' | 'applied' | 'removed';
+  retiringRegistrationIds?: string[];
+  monitorId: string; sequence: number; revision: string; state: 'pending' | 'syncing' | 'applied' | 'removed';
 }
 export interface FleetDeployment {
   references?: Record<string, FleetTargetReferences>;

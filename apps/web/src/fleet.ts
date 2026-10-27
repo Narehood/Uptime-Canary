@@ -9,7 +9,7 @@ export const FLEET_REFRESH_MS = 15_000;
 export const FLEET_SNAPSHOT_MAX_AGE_MS = 30_000;
 
 export function managedMonitor(deployments: readonly FleetDeployment[], registrationId: string | undefined, monitorId: string): FleetDeployment | undefined {
-  return deployments.find(d => d.state !== 'removed' && (d.placements.some(p => p.monitorId === monitorId && (p.registrationId === registrationId || p.registrationIds.includes(registrationId ?? '')))
+  return deployments.find(d => d.state !== 'removed' && (d.placements.some(p => p.state !== 'removed' && p.monitorId === monitorId && (p.registrationId === registrationId || p.registrationIds.includes(registrationId ?? '') || p.retiringRegistrationIds?.includes(registrationId ?? '')))
     || d.source?.monitorId === monitorId && d.source.registrationId === registrationId));
 }
 
@@ -187,16 +187,26 @@ export function fleetMonitorRows(sources: readonly FleetSource[], now: number, d
   const managed: FleetMonitorRow[] = [];
   for (const deployment of deployments) {
     const matches = (row: FleetMonitorRow): boolean => row.sources.some(({ source, view }) =>
-      deployment.placements.some(p => p.monitorId === view.monitor.id && (p.registrationId === source.node.id || p.registrationIds.includes(source.node.id)))
+      deployment.placements.some(p => (p.state !== 'removed' || deployment.state === 'removed') && p.monitorId === view.monitor.id && (p.registrationId === source.node.id || p.registrationIds.includes(source.node.id) || p.retiringRegistrationIds?.includes(source.node.id)))
       || deployment.source?.registrationId === source.node.id && deployment.source.monitorId === view.monitor.id);
     const copies = rows.filter(matches);
     copies.forEach(row => consumed.add(row.key));
     if (deployment.state === 'removed') continue;
-    const results: FleetResult[] = deployment.registrationIds.map(registrationId => {
+    const retiring = new Set(deployment.placements.flatMap(p => p.retiringRegistrationIds ?? []));
+    const displayIds = [...new Set([...deployment.registrationIds, ...retiring])];
+    const results: FleetResult[] = displayIds.map(registrationId => {
       const source = sources.find(s => s.node.id === registrationId);
-      const p = deployment.placements.find(p => p.registrationIds.includes(registrationId));
+      const p = deployment.placements.find(p => p.registrationIds.includes(registrationId) || p.retiringRegistrationIds?.includes(registrationId));
+      if (retiring.has(registrationId) && !deployment.registrationIds.includes(registrationId)) {
+        return { nodeId: source?.node.nodeId ?? registrationId, name: source?.node.label ?? registrationId,
+          state: 'unknown', message: 'Removal is waiting for confirmation from this node.', readAt: source?.readAt ?? null, viaPeer: false };
+      }
       const row = copies.find(r => r.sources.some(m => m.view.monitor.id === p?.monitorId));
       const found = row?.results.find(r => r.nodeId === source?.node.nodeId);
+      const own = row?.sources.find(m => m.source.node.id === registrationId && m.view.monitor.id === p?.monitorId);
+      if (found && p && (p.state === 'pending' || own && (own.view.configConflict || own.view.monitor.revision !== p.revision))) {
+        return { ...found, state: 'unknown', message: 'This node has not confirmed the saved monitor configuration.' };
+      }
       return found ?? { nodeId: source?.node.nodeId ?? registrationId, name: source?.node.label ?? registrationId,
         state: 'unknown', message: 'No current result for this placement.', readAt: null, viaPeer: false };
     });

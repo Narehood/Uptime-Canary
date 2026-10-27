@@ -19,8 +19,10 @@ export function readFleetDeployment(value: unknown): FleetDeployment {
     || !record(value.monitor) || !text(value.monitor.name) || !text(value.monitor.type) || !ids(value.monitor.nodeIds) || typeof value.monitor.enabled !== 'boolean') return bad();
   const placements = value.placements.map((p): FleetPlacement => {
     if (!record(p) || !fleetId(p.id) || !id(p.registrationId) || !ids(p.registrationIds) || !ids(p.nodeIds) || !id(p.monitorId)
-      || !integer(p.sequence) || !text(p.revision) || !['pending', 'applied', 'removed'].includes(String(p.state))) return bad();
+      || !integer(p.sequence) || !text(p.revision) || !['pending', 'syncing', 'applied', 'removed'].includes(String(p.state))
+      || p.retiringRegistrationIds !== undefined && !ids(p.retiringRegistrationIds)) return bad();
     return { id: p.id, registrationId: p.registrationId, registrationIds: [...p.registrationIds], nodeIds: [...p.nodeIds], monitorId: p.monitorId,
+      ...(p.retiringRegistrationIds !== undefined ? { retiringRegistrationIds: [...p.retiringRegistrationIds as string[]] } : {}),
       sequence: p.sequence, revision: p.revision, state: p.state as FleetPlacement['state'] };
   });
   if (new Set(placements.map(p => p.id)).size !== placements.length) return bad();

@@ -501,7 +501,7 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 			continue
 		}
 		for _, placement := range deployment.Placements {
-			if placement.RegistrationID == id && placement.State != "removed" {
+			if placement.State != "removed" && (placement.RegistrationID == id || slices.Contains(placement.RegistrationIDs, id) || slices.Contains(placement.RetiringRegistrationIDs, id)) {
 				d.mu.Unlock()
 				errorReply(w, fail(409, "Retire this node's fleet placements before removing its registration"))
 				return

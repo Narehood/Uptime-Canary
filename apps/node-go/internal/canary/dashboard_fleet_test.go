@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -103,6 +104,19 @@ func TestDashboardFleetAdoptsExistingAndKeepsOnePeerPlacement(t *testing.T) {
 	row := fleetCreateFixture(t, d, owner, []string{ra.ID, rb.ID}, &fleetSourceReference{ra.ID, m.ID, m.Revision})
 	d.finishFleet(context.Background(), row.ID)
 	row = d.fleet[row.ID]
+	// Accepted fleet behavior: an anchor acknowledgement cannot confirm a peer
+	// that has not received the new causal revision. Preserve the original final
+	// assertions, and explicitly replicate before expecting applied.
+	if row.State != "pending" || row.Placements[0].State != "syncing" {
+		t.Fatalf("an unsynced HA member was marked complete: %s", row.State)
+	}
+	for _, page := range causalCapacityPages(t, a) {
+		if err = b.applySnapshot(page); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
 	if row.State != "applied" || len(row.Placements) != 1 || row.Placements[0].MonitorID != m.ID || len(a.heads) != 1 {
 		t.Fatalf("existing HA monitor was duplicated: %s %s", row.State, row.Reason)
 	}
@@ -137,6 +151,9 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	if row.State != "pending" || len(node.heads) != 1 {
 		t.Fatal("lost answer was not retained as an unknown saved outcome")
 	}
+	if w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision}); w.Code != 409 {
+		t.Fatal("an unconfirmed write was forgotten instead of resolved")
+	}
 	var revision string
 	for _, heads := range node.heads {
 		revision = heads[0].Monitor.Revision
@@ -146,6 +163,156 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	row = d.fleet[row.ID]
 	if row.State != "applied" || len(node.heads) != 1 || row.Placements[0].Revision != revision {
 		t.Fatal("retry duplicated or replaced an already committed monitor")
+	}
+}
+
+func TestDashboardFleetDeleteUnpreparedUpdateRetiresExistingMonitors(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	var offline atomic.Bool
+	sa := httptest.NewServer(a)
+	sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if offline.Load() {
+			http.Error(w, "private fixture unavailable", 503)
+			return
+		}
+		b.ServeHTTP(w, r)
+	}))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	row := fleetCreateFixture(t, d, owner, []string{ra.ID}, nil)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	plan, err := d.openFleet(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": row.Revision, "registrationIds": []string{ra.ID, rb.ID}, "monitor": plan.Monitor})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	row = d.fleet[row.ID]
+	plan, _ = d.openFleet(row)
+	if fleetCanCancel(row, plan) {
+		t.Fatal("an unapplied update concealed its already deployed monitors")
+	}
+	offline.Store(true)
+	w = dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal("existing deployment was discarded as a cancellable new plan")
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "removed" || len(row.Placements) != 1 || a.current(row.Placements[0].MonitorID) != nil || len(b.heads) != 0 {
+		t.Fatalf("retirement needed an untouched new target or orphaned the old monitor: %s %s", row.State, row.Reason)
+	}
+}
+
+func TestDashboardFleetHAOfflineRemovalStaysVisibleUntilPeerConfirms(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	in := input([]string{"a", "b"}, "http://127.0.0.1:9", "")
+	in.Enabled = false
+	m, err := a.writeMonitor(in, nil, "remove-from-peer", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncPeer := func() {
+		for _, page := range causalCapacityPages(t, a) {
+			if err := b.applySnapshot(page); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	syncPeer()
+	var offline atomic.Bool
+	sa := httptest.NewServer(a)
+	sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if offline.Load() {
+			http.Error(w, "private fixture unavailable", 503)
+			return
+		}
+		b.ServeHTTP(w, r)
+	}))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	row := fleetCreateFixture(t, d, owner, []string{ra.ID, rb.ID}, &fleetSourceReference{ra.ID, m.ID, m.Revision})
+	d.finishFleet(context.Background(), row.ID)
+	syncPeer()
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "applied" {
+		t.Fatal(row.Reason)
+	}
+	plan, _ := d.openFleet(row)
+	offline.Store(true)
+	w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": row.Revision, "registrationIds": []string{ra.ID}, "monitor": plan.Monitor})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "pending" || row.Placements[0].State != "syncing" || !slices.Contains(row.Placements[0].RetiringRegistrationIDs, rb.ID) || slices.Contains(a.current(m.ID).NodeIDs, "b") || !slices.Contains(b.current(m.ID).NodeIDs, "b") {
+		t.Fatalf("offline removal was lost or blocked the anchor's stop command: %s %s", row.State, row.Reason)
+	}
+	if w := dashboardHTTP(d, "DELETE", "/api/dashboard/nodes/"+rb.ID, owner, "", nil); w.Code != 409 {
+		t.Fatal("a retiring peer registration could be orphaned")
+	}
+	// A later full deletion must retain the already retiring peer too. Its old
+	// monitor remains visible there until causal replication resumes.
+	w = dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "pending" || a.current(m.ID) != nil || b.current(m.ID) == nil || !slices.Contains(row.Placements[0].RetiringRegistrationIDs, rb.ID) {
+		t.Fatal("offline peer deletion was falsely complete")
+	}
+	syncPeer()
+	offline.Store(false)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "removed" || b.current(m.ID) != nil || len(row.Placements[0].RetiringRegistrationIDs) != 0 || row.Placements[0].Sequence != 3 {
+		t.Fatal("peer confirmation did not finish the original command sequence")
+	}
+}
+
+func TestDashboardFleetSourceAdoptionIsNotRepeatedAfterRetirement(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	m, err := a.writeMonitor(placementFixtureInput(), nil, "one-time-source", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := fleetCreateFixture(t, d, owner, []string{ra.ID, rb.ID}, &fleetSourceReference{ra.ID, m.ID, m.Revision})
+	d.finishFleet(context.Background(), row.ID)
+	for _, ids := range [][]string{{rb.ID}, {ra.ID, rb.ID}} {
+		row = d.fleet[row.ID]
+		plan, _ := d.openFleet(row)
+		w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": row.Revision, "registrationIds": ids, "monitor": plan.Monitor})
+		if w.Code != 202 {
+			t.Fatal(w.Code)
+		}
+		d.finishFleet(context.Background(), row.ID)
+		if d.fleet[row.ID].State != "applied" {
+			t.Fatal(d.fleet[row.ID].Reason)
+		}
+	}
+	row = d.fleet[row.ID]
+	if !row.SourceCompleted || a.current(m.ID) != nil || !a.heads[m.ID][0].Monitor.Deleted {
+		t.Fatal("reselection resurrected the retired original monitor")
+	}
+	for _, p := range row.Placements {
+		if p.RegistrationID == ra.ID && (p.MonitorID == m.ID || a.current(p.MonitorID) == nil) {
+			t.Fatal("reselection failed to use a fresh physical identity")
+		}
 	}
 }
 

@@ -25,15 +25,22 @@ type fleetSourceReference struct {
 	MonitorID      string `json:"monitorId"`
 	Revision       string `json:"revision"`
 }
+
+func (source *fleetSourceReference) UnmarshalJSON(b []byte) error {
+	type plain fleetSourceReference
+	return dashboardJSON(b, (*plain)(source), "registrationId", "monitorId", "revision")
+}
+
 type dashboardFleetPlacement struct {
-	ID              string   `json:"id"`
-	RegistrationID  string   `json:"registrationId"`
-	RegistrationIDs []string `json:"registrationIds"`
-	NodeIDs         []string `json:"nodeIds"`
-	MonitorID       string   `json:"monitorId"`
-	Sequence        int64    `json:"sequence"`
-	Revision        string   `json:"revision"`
-	State           string   `json:"state"`
+	ID                      string   `json:"id"`
+	RegistrationID          string   `json:"registrationId"`
+	RegistrationIDs         []string `json:"registrationIds"`
+	RetiringRegistrationIDs []string `json:"retiringRegistrationIds,omitempty"`
+	NodeIDs                 []string `json:"nodeIds"`
+	MonitorID               string   `json:"monitorId"`
+	Sequence                int64    `json:"sequence"`
+	Revision                string   `json:"revision"`
+	State                   string   `json:"state"`
 }
 type dashboardFleetRecord struct {
 	ID              string                    `json:"id"`
@@ -41,6 +48,7 @@ type dashboardFleetRecord struct {
 	UpdatedAt       int64                     `json:"updatedAt"`
 	RegistrationIDs []string                  `json:"registrationIds"`
 	Source          *fleetSourceReference     `json:"source,omitempty"`
+	SourceCompleted bool                      `json:"sourceCompleted,omitempty"`
 	Placements      []dashboardFleetPlacement `json:"placements"`
 	State           string                    `json:"state"`
 	Reason          string                    `json:"reason,omitempty"`
@@ -148,9 +156,36 @@ func copyFleet(row dashboardFleetRecord) dashboardFleetRecord {
 	row.Placements = slices.Clone(row.Placements)
 	for i := range row.Placements {
 		row.Placements[i].RegistrationIDs = slices.Clone(row.Placements[i].RegistrationIDs)
+		row.Placements[i].RetiringRegistrationIDs = slices.Clone(row.Placements[i].RetiringRegistrationIDs)
 		row.Placements[i].NodeIDs = slices.Clone(row.Placements[i].NodeIDs)
 	}
 	return row
+}
+
+func fleetCanCancel(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
+	if plan.Prepared {
+		return false
+	}
+	for _, p := range row.Placements {
+		if p.Sequence > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// A prepared command with no durable acknowledgement can already have run.
+// Changes and retirement must first resolve that exact saved command.
+func fleetWritesConfirmed(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
+	if !plan.Prepared {
+		return true
+	}
+	for _, p := range row.Placements {
+		if command, ok := plan.Commands[p.ID]; ok && (command.Sequence != p.Sequence || p.State == "pending") {
+			return false
+		}
+	}
+	return true
 }
 
 // Caller holds d.mu. Identity generations and the journal commit share the account lock.
@@ -206,8 +241,13 @@ func (d *Dashboard) publicFleet(row dashboardFleetRecord, role string) (any, err
 		Monitor         Monitor                          `json:"monitor"`
 		CanCancel       bool                             `json:"canCancel"`
 		References      map[string]fleetTargetReferences `json:"references,omitempty"`
-	}{row.ID, row.Revision, row.UpdatedAt, slices.Clone(row.RegistrationIDs), row.Source, slices.Clone(row.Placements), row.State, row.Reason,
-		publicMonitor(Monitor{MonitorInput: plan.Monitor, ID: row.ID, Revision: row.Revision, UpdatedAt: row.UpdatedAt, Deleted: plan.Deleted}, role), !plan.Prepared, func() map[string]fleetTargetReferences {
+	}{row.ID, row.Revision, row.UpdatedAt, slices.Clone(row.RegistrationIDs), func() *fleetSourceReference {
+		if row.SourceCompleted {
+			return nil
+		}
+		return row.Source
+	}(), slices.Clone(row.Placements), row.State, row.Reason,
+		publicMonitor(Monitor{MonitorInput: plan.Monitor, ID: row.ID, Revision: row.Revision, UpdatedAt: row.UpdatedAt, Deleted: plan.Deleted}, role), fleetCanCancel(row, plan), func() map[string]fleetTargetReferences {
 			if role == "viewer" {
 				return nil
 			}
@@ -303,7 +343,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 				reply(w, 204, nil)
 				return
 			}
-			if !plan.Prepared {
+			if fleetCanCancel(row, plan) {
 				row.Source = nil
 				row.Placements = []dashboardFleetPlacement{}
 				row.RegistrationIDs = []string{}
@@ -320,7 +360,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 				reply(w, 204, nil)
 				return
 			}
-			if row.State != "applied" && row.State != "removed" {
+			if !fleetWritesConfirmed(row, plan) {
 				errorReply(w, fail(409, "Finish the saved deployment before removing it"))
 				return
 			}
@@ -446,12 +486,17 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 			errorReply(w, fail(503, "Fleet configuration unavailable"))
 			return
 		}
-		if row.State != "applied" && !(row.State == "blocked" && !plan.Prepared) {
+		if plan.Deleted || !fleetWritesConfirmed(row, plan) {
 			errorReply(w, fail(409, "Finish or retry the saved deployment before editing it"))
 			return
 		}
 		if in.References == nil {
-			references = plan.References
+			references = map[string]fleetTargetReferences{}
+			for registration, ref := range plan.References {
+				if slices.Contains(in.RegistrationIDs, registration) {
+					references[registration] = ref
+				}
+			}
 		}
 	}
 	row = copyFleet(row)
@@ -619,9 +664,15 @@ func (d *Dashboard) fleetRead(ctx context.Context, registration, role string) (O
 	return view, row, err
 }
 func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord, plan *dashboardFleetPlan) error {
-	ids := slices.Clone(row.RegistrationIDs)
+	desired := row.RegistrationIDs
+	if plan.Deleted {
+		desired = nil
+	}
+	ids := slices.Clone(desired)
 	for _, p := range row.Placements {
-		ids = append(ids, p.RegistrationID)
+		if p.State != "removed" && (!plan.Deleted || p.Sequence > 0) {
+			ids = append(ids, p.RegistrationID)
+		}
 	}
 	ids = unique(ids)
 	views := map[string]Overview{}
@@ -672,12 +723,12 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	// Keep existing anchors and physical IDs. A network partition must not move
 	// a management authority to another peer or manufacture a conflicting root.
 	for _, p := range row.Placements {
-		if p.State == "removed" {
+		if p.State == "removed" || plan.Deleted && p.Sequence == 0 {
 			continue
 		}
 		p = copyFleet(dashboardFleetRecord{Placements: []dashboardFleetPlacement{p}}).Placements[0]
 		members := []string{}
-		for _, id := range row.RegistrationIDs {
+		for _, id := range desired {
 			if slices.Contains(p.RegistrationIDs, id) || knownPeer(p.RegistrationID, id) {
 				if !claimed[id] {
 					members = append(members, id)
@@ -685,16 +736,24 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 				}
 			}
 		}
-		p.RegistrationIDs = members
+		retiring := []string{}
+		for _, id := range unique(append(slices.Clone(p.RegistrationIDs), p.RetiringRegistrationIDs...)) {
+			if !slices.Contains(members, id) {
+				retiring = append(retiring, id)
+			}
+		}
+		p.RegistrationIDs, p.RetiringRegistrationIDs = members, retiring
 		p.NodeIDs = []string{}
 		for _, id := range members {
 			p.NodeIDs = append(p.NodeIDs, views[id].Node.ID)
 		}
-		placements = append(placements, p)
+		if p.Sequence > 0 || len(members) > 0 {
+			placements = append(placements, p)
+		}
 	}
-	remaining := slices.Clone(row.RegistrationIDs)
+	remaining := slices.Clone(desired)
 	slices.Sort(remaining)
-	if row.Source != nil && slices.Contains(row.RegistrationIDs, row.Source.RegistrationID) && !claimed[row.Source.RegistrationID] {
+	if row.Source != nil && !row.SourceCompleted && slices.Contains(desired, row.Source.RegistrationID) && !claimed[row.Source.RegistrationID] {
 		remaining = append([]string{row.Source.RegistrationID}, remaining...)
 	}
 	for _, anchor := range remaining {
@@ -703,7 +762,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		}
 		members := []string{}
 		nodeIDs := []string{}
-		for _, id := range row.RegistrationIDs {
+		for _, id := range desired {
 			if !claimed[id] && knownPeer(anchor, id) {
 				claimed[id] = true
 				members = append(members, id)
@@ -712,7 +771,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		}
 		id := strings.ReplaceAll(newID(), "-", "")
 		p := dashboardFleetPlacement{ID: id, RegistrationID: anchor, RegistrationIDs: members, NodeIDs: nodeIDs, MonitorID: "fleet-" + id}
-		if row.Source != nil && anchor == row.Source.RegistrationID {
+		if row.Source != nil && !row.SourceCompleted && anchor == row.Source.RegistrationID {
 			p.MonitorID = row.Source.MonitorID
 			p.Revision = row.Source.Revision
 		}
@@ -809,7 +868,7 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 	}
 	for i := range row.Placements {
 		p := &row.Placements[i]
-		if p.State == "applied" || p.State == "removed" {
+		if p.State == "applied" || p.State == "removed" || p.State == "syncing" {
 			continue
 		}
 		if !d.fleetAuthorized(row) {
@@ -858,10 +917,39 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			return
 		}
 		p.Sequence, p.Revision = result.Sequence, result.Revision
+		p.State = "syncing"
+		if command.Adopt {
+			row.SourceCompleted = true
+		}
+		if !save() {
+			return
+		}
+	}
+	// An anchor acknowledgement is not proof that an offline HA member has
+	// stopped or updated its checks. Keep the journal and retiring membership
+	// until each member's own authenticated snapshot confirms the saved revision.
+	for i := range row.Placements {
+		p := &row.Placements[i]
+		if p.State != "syncing" {
+			continue
+		}
+		if !d.fleetAuthorized(row) {
+			row.State = "unauthorized"
+			row.Reason = "The authorizing account changed; review and retry this saved deployment"
+			save()
+			return
+		}
+		if err = d.confirmFleetPlacement(ctx, row, plan, *p); err != nil {
+			row.Reason = "Waiting for every assigned or retiring node to confirm its configuration"
+			row.RetryAt = time.Now().Add(30 * time.Second).UnixMilli()
+			save()
+			return
+		}
 		p.State = "applied"
-		if result.Deleted {
+		if plan.Commands[p.ID].Deleted {
 			p.State = "removed"
 		}
+		p.RetiringRegistrationIDs = nil
 		if !save() {
 			return
 		}
@@ -873,6 +961,37 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 	row.Reason = ""
 	row.RetryAt = 0
 	save()
+}
+
+func (d *Dashboard) confirmFleetPlacement(ctx context.Context, row dashboardFleetRecord, plan dashboardFleetPlan, p dashboardFleetPlacement) error {
+	ids := unique(append(append([]string{p.RegistrationID}, p.RegistrationIDs...), p.RetiringRegistrationIDs...))
+	for _, id := range ids {
+		if !d.fleetAuthorized(row) {
+			return fail(403, "Deployment authorization changed")
+		}
+		view, _, err := d.fleetRead(ctx, id, row.ActorRole)
+		if err != nil {
+			return err
+		}
+		var monitor *MonitorView
+		for i := range view.Monitors {
+			if view.Monitors[i].Monitor.ID == p.MonitorID {
+				monitor = &view.Monitors[i]
+				break
+			}
+		}
+		if plan.Commands[p.ID].Deleted {
+			if monitor != nil {
+				return fail(409, "A node has not confirmed the monitor deletion")
+			}
+			continue
+		}
+		if monitor == nil || monitor.ConfigConflict || monitor.Monitor.Revision != p.Revision ||
+			slices.Contains(monitor.Monitor.NodeIDs, view.Node.ID) != slices.Contains(p.RegistrationIDs, id) {
+			return fail(409, "A node has not confirmed the saved monitor assignment")
+		}
+	}
+	return nil
 }
 func (d *Dashboard) runFleet(ctx context.Context) {
 	for {
