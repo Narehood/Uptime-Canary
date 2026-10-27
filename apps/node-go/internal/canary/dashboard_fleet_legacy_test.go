@@ -497,3 +497,53 @@ func TestGroupMixedVersionNativeReuseKeepsIndependentSource(t *testing.T) {
 		})
 	}
 }
+
+func TestGroupMixedVersionCancelledResourceIntentDoesNotBlockNewConsumer(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	var posts atomic.Int32
+	var refuse atomic.Bool
+	refuse.Store(true)
+	legacy := legacyFleetFixture(b, &posts, nil)
+	sa := httptest.NewServer(a)
+	sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if refuse.Load() && r.Method == "POST" && r.URL.Path == "/api/notification-channels" {
+			posts.Add(1)
+			w.Header().Set("X-Canary-Node-Id", b.ID)
+			errorReply(w, fail(502, "Fixture cannot confirm creation"))
+			return
+		}
+		legacy.ServeHTTP(w, r)
+	}))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	channel := groupChannelFixture(t, a)
+	in := placementFixtureInput()
+	in.NotificationIDs = []string{channel.ID}
+	original := groupMonitorFixture(t, a, in)
+	group := groupSyncFixture(t, d, owner, []string{ra.ID, rb.ID})
+	finishGroupFixture(t, d)
+	row := fleetRowForOriginal(t, d, original.ID)
+	plan, _ := d.openFleet(row)
+	if row.State != "pending" || plan.Prepared || posts.Load() != 1 {
+		t.Fatal("fixture did not retain its unprepared resource intent", row.State, row.Reason)
+	}
+	w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 204 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	refuse.Store(false)
+	in.Name = "New consumer after cancellation"
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", map[string]any{"requestId": placementFixtureID, "groupIds": []string{group.ID}, "monitor": in, "syncNotifications": true, "notificationSourceRegistrationId": ra.ID})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.finishFleet(context.Background(), placementFixtureID)
+	if d.fleet[placementFixtureID].State != "applied" || posts.Load() != 2 || len(b.channelViews("admin")) != 1 {
+		t.Fatal("removed definition blocked a fresh consumer", d.fleet[placementFixtureID].Reason)
+	}
+	if d.fleet[row.ID].State != "removed" || a.current(original.ID).Revision != original.Revision {
+		t.Fatal("cancelling an unprepared deployment changed its original monitor")
+	}
+}

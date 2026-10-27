@@ -12,7 +12,7 @@ import { readAvailability } from './availability';
 import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
 import { readScreenshot } from './screenshot';
 import { readFleetDeployment, readFleetGroup } from './fleetApi';
-import { rememberSignIn, savedSignIn } from './browserSession';
+import { rememberSignIn, savedSignIn, type SignInIssuer } from './browserSession';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
@@ -649,14 +649,14 @@ export class CanaryApi {
   /** Whether `other` carries the same credential (used to avoid signing out a session that's still in use). A node selection doesn't count. */
   sameCredential(other: CanaryApi): boolean { return other.token === this.token && other.baseUrl === this.baseUrl; }
 
-  remember(): void {
-    rememberSignIn({ baseUrl: this.baseUrl, token: this.token, credential: this.credential, expiresAt: this.expiresAt });
+  remember(issuer: SignInIssuer): void {
+    rememberSignIn({ baseUrl: this.baseUrl, token: this.token, credential: this.credential, expiresAt: this.expiresAt, issuer });
   }
 
-  static remembered(): CanaryApi | null {
+  static remembered(): { api: CanaryApi; issuer: SignInIssuer } | null {
     const saved = savedSignIn();
     if (!saved) return null;
-    try { return new CanaryApi(saved.baseUrl, saved.token, { credential: saved.credential, ...(saved.expiresAt === null ? {} : { expiresAt: saved.expiresAt }) }); }
+    try { return { api: new CanaryApi(saved.baseUrl, saved.token, { credential: saved.credential, ...(saved.expiresAt === null ? {} : { expiresAt: saved.expiresAt }) }), issuer: saved.issuer }; }
     catch { rememberSignIn(null); return null; }
   }
 

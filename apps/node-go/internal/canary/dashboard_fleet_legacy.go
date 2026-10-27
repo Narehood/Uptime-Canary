@@ -183,6 +183,9 @@ func (d *Dashboard) copyLegacyFleetResource(ctx context.Context, row dashboardFl
 	collect(*plan)
 	d.mu.Lock()
 	for _, other := range d.fleet {
+		if other.State == "removed" {
+			continue
+		}
 		if otherPlan, err := d.openFleet(other); err == nil {
 			collect(otherPlan)
 		}

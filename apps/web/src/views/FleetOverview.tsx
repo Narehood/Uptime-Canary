@@ -218,7 +218,7 @@ function attentionOf(shaped: readonly ShapedRow[]): Attention[] {
     const state = row.deployment?.state;
     const stuck = state === 'blocked' || state === 'unauthorized';
     if (!matchesFilter(row.assessment, 'failing') && !matchesFilter(row.assessment, 'unknown') && !row.differingViews && !stuck) continue;
-    list.push({ item, placement: state ? PLACEMENT_WAIT[state] : undefined, troubled: item.results.filter(({ shape }) => shape.tone !== 'up' && shape.tone !== 'paused') });
+    list.push({ item, placement: state ? PLACEMENT_WAIT[state] : undefined, troubled: item.results.filter(({ shape }) => shape.tone !== 'up') });
   }
   return list.sort((a, b) => a.item.row.assessment.severity - b.item.row.assessment.severity
     || a.item.row.monitor.name.localeCompare(b.item.row.monitor.name) || a.item.row.key.localeCompare(b.item.row.key));

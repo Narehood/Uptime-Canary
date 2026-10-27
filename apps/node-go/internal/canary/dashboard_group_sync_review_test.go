@@ -198,6 +198,58 @@ func TestGroupCopiedChannelRetainsOriginAfterOriginalDefinitionChanges(t *testin
 	}
 }
 
+func TestGroupExplicitSyncRetriesEveryBlockedPreflight(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	var refuse atomic.Bool
+	refuse.Store(true)
+	sa := httptest.NewServer(a)
+	sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if refuse.Load() && r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/validate") {
+			w.Header().Set("X-Canary-Node-Id", b.ID)
+			errorReply(w, fail(400, "Fixture preflight refusal"))
+			return
+		}
+		b.ServeHTTP(w, r)
+	}))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	in := placementFixtureInput()
+	groupMonitorFixture(t, a, in)
+	in.Name = "Second blocked monitor"
+	groupMonitorFixture(t, a, in)
+	group := groupSyncFixture(t, d, owner, []string{ra.ID, rb.ID})
+	finishGroupFixture(t, d)
+	for _, row := range d.fleet {
+		if row.State != "blocked" {
+			t.Fatal("fixture did not block every monitor", row.State, row.Reason)
+		}
+	}
+	refuse.Store(false)
+	w := dashboardHTTP(d, "POST", "/api/dashboard/node-groups/"+group.ID+"/sync", owner, "", map[string]string{"revision": group.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.runGroupSyncs(context.Background())
+	for _, row := range d.fleet {
+		if row.State != "pending" {
+			t.Fatal("one explicit sync failed to reset every blocked definition", row.State, row.Reason)
+		}
+	}
+	for id := range d.fleet {
+		d.finishFleet(context.Background(), id)
+	}
+	for _, row := range d.fleet {
+		if row.State != "applied" {
+			t.Fatal(row.State, row.Reason)
+		}
+	}
+	if len(b.monitorViews("admin")) != 2 {
+		t.Fatal("group did not deploy both retried monitors")
+	}
+}
+
 func TestGroupSyncWaitsForMembershipBeforeReportingApplied(t *testing.T) {
 	d, owner, _ := dashboardRegistryFixture(t)
 	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")

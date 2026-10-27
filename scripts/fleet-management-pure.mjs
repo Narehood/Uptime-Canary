@@ -120,6 +120,14 @@ await check('Overview is a health summary and Monitors owns the full searchable 
   assert.ok(!overview.includes('<table')); assert.ok(!overview.includes('Edit placement'));
   assert.match(monitors, /<table/); assert.match(monitors, /Search monitors and nodes/); assert.match(monitors, /Edit placement/);
   assert.ok(!monitors.includes('Nodes on this dashboard')); assert.ok(!monitors.includes('Needs attention'));
+  const paused=source(B,'physical-b','revision-b','paused'); paused.overview.monitors[0].monitor.enabled=false;
+  const mixed=[sources[0],paused];
+  const attention=render(FleetOverviewView,{...props,sources:mixed,rows:fleetMonitorRows(mixed,now,[deployment()])})
+    .match(/<ul class="fl-res" aria-label="Nodes where Service[^"]*">([\s\S]*?)<\/ul>/)?.[1];
+  assert.ok(attention?.includes('Cloud')&&attention.includes('Paused'),'unknown attention must identify the paused node');
+  const pausedA=source(A,'physical-a','revision-a','paused'); pausedA.overview.monitors[0].monitor.enabled=false;
+  const allPaused=[pausedA,paused];
+  assert.ok(!render(FleetOverviewView,{...props,sources:allPaused,rows:fleetMonitorRows(allPaused,now,[deployment()])}).includes('class="fl-at '));
 });
 await check('placement checkboxes use the complete registry and keep missing selections', () => {
   const html = render(FleetPlacementFields, { nodes: [A, B], groups: [], selectedRegistrationIds: [A.id, 'missing-registration'], onChange() {} });

@@ -288,6 +288,13 @@ func (d *Dashboard) syncNodeGroup(ctx context.Context, id string, job dashboardG
 				return
 			}
 		}
+	}
+	// Retry and renew every eligible definition before a pending row can end
+	// the status pass. One explicit sync covers the complete group.
+	for _, row := range d.fleet {
+		if !slices.Contains(row.GroupIDs, id) || row.State == "removed" {
+			continue
+		}
 		if row.State == "blocked" || row.State == "unauthorized" {
 			d.finishGroupSyncLocked(group, job, "blocked", row.Reason)
 			return
