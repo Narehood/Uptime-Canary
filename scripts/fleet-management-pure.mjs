@@ -19,6 +19,7 @@ const { FleetOverviewView } = await load('views/FleetOverview.tsx');
 const { FleetPlacementFields } = await load('views/FleetPlacementFields.tsx');
 const { FleetNodeGroupsView } = await load('views/FleetNodeGroups.tsx');
 const { FleetReferenceFields } = await load('views/FleetReferenceFields.tsx');
+const { FleetGroupTargets } = await load('views/FleetGroupTargets.tsx');
 const React = await import('react');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const h = React.createElement;
@@ -212,6 +213,31 @@ await check('review can include an unsent new destination without inventing its 
   d.placements[1].sequence = 0; sources[1].status = 'unavailable';
   assert.equal(reviewedFleetHeads(d, sources, now), null, 'an unread destination cannot be assumed empty');
 });
+await check('persistent group assignments and sync progress survive API decoding', () => {
+  const value={...deployment(),groupIds:[A.id],pinnedRegistrationIds:[B.id],syncNotifications:true,notificationSourceRegistrationId:A.id};
+  const read=readFleetDeployment(value);
+  assert.deepEqual(read.groupIds,[A.id]);assert.deepEqual(read.pinnedRegistrationIds,[B.id]);assert.equal(read.syncNotifications,true);
+  for(const changed of [{...value,groupIds:['not-a-group']},{...value,syncNotifications:'yes'},{...value,pinnedRegistrationIds:[B.id,B.id]}])assert.throws(()=>readFleetDeployment(changed));
+  const group=readFleetGroup({id:A.id,name:'Sites',revision:'r',updatedAt:1,registrationIds:[A.id],syncState:'pending',syncReason:'Waiting for a node'});
+  assert.equal(group.syncState,'pending');assert.equal(group.syncReason,'Waiting for a node');
+});
+await check('explicit sync uses the dashboard issuer and current group revision', async () => {
+  let sent;
+  const group={id:A.id,name:'Sites',revision:'saved-group',updatedAt:1,registrationIds:[A.id,B.id]};
+  globalThis.fetch=async(url,init)=>{sent={url,...init};return new Response(JSON.stringify({...group,revision:'queued-group',syncState:'pending'}),{status:202,headers:{'Content-Type':'application/json'}})};
+  const api=new CanaryApi(location.origin,token,{credential:'session',registeredNode:B.id});
+  const result=await api.syncNodeGroup(group);
+  assert.equal(new URL(sent.url).pathname,`/api/dashboard/node-groups/${group.id}/sync`);
+  assert.equal(sent.headers['X-Canary-Registered-Node'],undefined);assert.deepEqual(JSON.parse(sent.body),{revision:group.revision});
+  assert.equal(result.revision,'queued-group');assert.equal(result.syncState,'pending');
+});
+await check('node groups have their own section and individual node fields have no group shortcuts', () => {
+  const group={id:A.id,name:'Sites',revision:'r',updatedAt:1,registrationIds:[A.id,B.id]};
+  const html=render(FleetGroupTargets,{groups:[group],nodes:[A,B],selected:[group.id],active:true,outside:[],onChange(){},onChooseNodes(){}});
+  assert.match(html,/Node groups/);assert.match(html,/Sites/);assert.match(html,new RegExp(`value="${group.id}"`));assert.match(html,/checked/);
+  const nodes=render(FleetPlacementFields,{nodes:[A,B],selectedRegistrationIds:[A.id],onChange(){}});
+  assert.ok(!nodes.includes('Add a node group'));assert.ok(!nodes.includes('fl-gpick'));
+});
 scope.unregister();
-console.log(`${21 - failed}/21 fleet management groups passed`);
+console.log(`${24 - failed}/24 fleet management groups passed`);
 if (failed) process.exitCode = 1;

@@ -13,12 +13,13 @@ const fleetPlacementCategory = "fleetPlacements"
 // Retries acknowledge the original write; they never silently overwrite a
 // later local edit, revive a deletion, or manufacture another monitor ID.
 type fleetPlacementCommand struct {
-	Sequence  int64           `json:"sequence"`
-	Revision  string          `json:"revision"`
-	MonitorID string          `json:"monitorId,omitempty"`
-	Adopt     bool            `json:"adopt,omitempty"`
-	Monitor   json.RawMessage `json:"monitor,omitempty"`
-	Deleted   bool            `json:"deleted,omitempty"`
+	Sequence  int64                `json:"sequence"`
+	Revision  string               `json:"revision"`
+	MonitorID string               `json:"monitorId,omitempty"`
+	Adopt     bool                 `json:"adopt,omitempty"`
+	Monitor   json.RawMessage      `json:"monitor,omitempty"`
+	Deleted   bool                 `json:"deleted,omitempty"`
+	Resources []fleetResourceInput `json:"resources,omitempty"`
 }
 
 type fleetPlacementResult struct {
@@ -85,7 +86,7 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 	}
 	var command fleetPlacementCommand
 	if r.Method != "GET" {
-		if err := dashboardJSON(b, &command, "sequence", "revision", "monitorId", "adopt", "monitor", "deleted"); err != nil {
+		if err := dashboardJSON(b, &command, "sequence", "revision", "monitorId", "adopt", "monitor", "deleted", "resources"); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -176,6 +177,10 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 		command.Revision != heads[0].Monitor.Revision || !n.monitorVersionReady(heads[0]) {
 		return 0, nil, fail(409, "Placement revision is stale or configuration has conflicting heads")
 	}
+	resourceSnapshot, resourceReceipts, bundled, err := n.prepareFleetResources(owner, command.Resources)
+	if err != nil {
+		return 0, nil, err
+	}
 	var input MonitorInput
 	if command.Deleted {
 		input = heads[0].Monitor.MonitorInput
@@ -186,7 +191,7 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 		}
 		// Fleet configuration always names its destinations. Unlike an ordinary
 		// POST, this route never silently adds a node's default channels.
-		if err = n.validateReferences(&Monitor{MonitorInput: input, ID: monitorID}, nil); err != nil {
+		if err = n.validateFleetReferences(&Monitor{MonitorInput: input, ID: monitorID}, nil, bundled); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -204,7 +209,14 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 	result := fleetPlacementResult{PlacementID: id, MonitorID: monitorID, Sequence: command.Sequence,
 		Revision: version.Monitor.Revision, Deleted: command.Deleted}
 	receipt := fleetPlacementReceipt{Owner: owner, CommandHash: hash, fleetPlacementResult: result}
-	if err = n.applySnapshotLocal(Snapshot{Versions: []Version{version}, RevisionEdges: edges}, func(e dbExec) error {
+	resourceSnapshot.Versions = []Version{version}
+	resourceSnapshot.RevisionEdges = append(resourceSnapshot.RevisionEdges, edges...)
+	if err = n.applySnapshotLocal(resourceSnapshot, func(e dbExec) error {
+		for key, receipt := range resourceReceipts {
+			if err := put(e, "fleetResourceReceipts", key, receipt); err != nil {
+				return err
+			}
+		}
 		if oldIndex != "" {
 			if err := remove(e, "fleetPlacementIndex", oldIndex); err != nil {
 				return err

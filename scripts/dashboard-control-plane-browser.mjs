@@ -416,7 +416,15 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
   const rowOf = async id => (await fixture.api('/api/dashboard/nodes', 'GET', undefined, owner)).value.find(row => row.id === id);
   const dialogOpen = () => until(() => page.eval('!!document.querySelector("dialog[open]")'), 'dialog open');
   const dialogClosed = timeout => until(() => page.eval('!document.querySelector("dialog[open]")'), 'dialog closed', timeout);
-  const viewing = label => until(() => page.eval(`(document.querySelector('.topbar .tb-btn .t1')?.textContent ?? '').includes(${q('Viewing ' + label)})`), `viewing ${label}`);
+  // The global node picker was removed for the accepted fleet-first UI.
+  // Selection is shown on node-specific pages and on the selected Nodes card.
+  const viewing = async label => {
+    const previous = await page.eval('location.hash');
+    await page.eval('location.hash="#/nodes"'); await ready();
+    await until(() => page.eval(`document.querySelector('article.rnode.ep h3')?.textContent===${q(label)}`), `selected registration ${label}`);
+    assert.equal(await page.eval("document.querySelectorAll('.topbar .tb-btn').length"), 0, 'fleet topbar has no global node picker');
+    await page.eval(`location.hash=${q(previous)}`); await ready();
+  };
   const atNode = async (path, token) => {
     const response = await fetch(B.url + path, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error' });
     const body = await response.text(); let value; try { value = JSON.parse(body); } catch {}

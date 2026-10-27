@@ -219,6 +219,9 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 	if err = d.loadFleet(); err != nil {
 		return nil, err
 	}
+	if err = d.loadGroupAuthority(); err != nil {
+		return nil, err
+	}
 	d.updates, err = newDashboardUpdates(d, o.CheckUpdates, o.UpdateClient)
 	if err != nil {
 		return nil, err

@@ -232,7 +232,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   }, [connection, api, overview, endpoint, role, account, search, channels, tags, controlPlane, selection, registry, accountHome, fleetCatalog]);
 
   // A public status page may have renamed the tab; the dashboard keeps its own title.
-  const place = controlPlane ? selection?.label ?? 'dashboard' : endpoint;
+  const place = controlPlane ? fleetRoute ? 'dashboard' : selection?.label ?? 'dashboard' : endpoint;
   useEffect(() => { document.title = `Uptime Canary · ${place}`; }, [place]);
 
   // Move focus to the page heading on navigation so screen readers announce the new view.
@@ -306,18 +306,8 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
 
         <div className="work">
           <header className="topbar">
-            {controlPlane ? (
-              <button type="button" className="tb-btn" onClick={() => setPicking(true)} aria-haspopup="dialog">
-                <EndpointMark />
-                <span className="tb-txt">
-                  <span className="t1">{selection ? <>Viewing {selection.label}</> : 'This dashboard'}</span>
-                  <span className="t2">{selection
-                    ? <><span className="mono">{selection.nodeId}</span>{connection.awaiting ? '' : peers.length ? ` · ${peers.length - out.length} of ${plural(peers.length, 'peer')} in view` : ''} · choose node</>
-                    : registry.list ? `${plural(fleet.total, 'node')} · choose one` : 'Loading nodes…'}</span>
-                </span>
-                <Icon name="chevDown" />
-              </button>
-            ) : (
+            {/* Control plane: Overview and Monitors show every node, so only pages about one node offer a node choice. */}
+            {controlPlane ? null : (
               <button type="button" className="tb-btn" onClick={() => setSwitching({})} aria-haspopup="dialog">
                 <EndpointMark />
                 <span className="tb-txt">
@@ -387,7 +377,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
           ) : null}
 
           <main id="main" tabIndex={-1} className={connection.link !== 'live' && !connection.awaiting ? 'is-stale' : undefined}>
-            {controlPlane ? <ControlPlaneView route={route} connection={connection} /> : <View route={route} />}
+            {controlPlane ? <ControlPlaneView route={route} connection={connection} onChoose={() => setPicking(true)} /> : <View route={route} />}
           </main>
         </div>
       </div>
@@ -405,14 +395,47 @@ const DASHBOARD_ROUTES: ReadonlySet<Route['name']> = new Set<Route['name']>(['no
  * Control plane: monitoring views need a selected node that has answered at least once. Until then they show what to
  * do instead of an empty stand-in that could read as "no monitors". Nodes and accounts never wait for a node.
  */
-function ControlPlaneView({ route, connection }: { route: Route; connection: Connection }) {
+function ControlPlaneView({ route, connection, onChoose }: { route: Route; connection: Connection; onChoose: () => void }) {
   if (route.name === 'fleet-monitor-edit') return <View route={route} />;
   if (route.name === 'node-groups' || route.name === 'groups') return <FleetController groups />;
   if (route.name === 'overview' || route.name === 'monitors') return <FleetController />;
   if (DASHBOARD_ROUTES.has(route.name)) return <View route={route} />;
   if (!connection.selection) return <ChooseNodeView section={sectionOf(route)} />;
-  if (connection.awaiting) return <NodePendingView />;
-  return <View route={route} />;
+  if (connection.awaiting) return <><NodeScope route={route} onChoose={onChoose} /><NodePendingView /></>;
+  return <><NodeScope route={route} onChoose={onChoose} /><View route={route} /></>;
+}
+
+/** What a page shows of the one node it reads. Monitor forms name their node themselves, beside the channel list. */
+function scopeText(route: Route): string | null {
+  switch (route.name) {
+    case 'monitor-new': case 'monitor-edit': case 'monitor-clone': return null;
+    case 'monitor': return 'This monitor as seen by';
+    case 'notifications': case 'channel-new': case 'channel-edit': return 'Notification channels on';
+    case 'deliveries': case 'receipts': return 'Notifications sent by';
+    case 'outage-groups': case 'group-new': case 'group-edit': return 'Outage dependencies on';
+    case 'tags': return 'Tags on';
+    case 'incidents': return 'Incidents recorded by';
+    case 'maintenance': case 'maintenance-new': case 'maintenance-edit': return 'Maintenance on';
+    case 'status-pages': case 'status-page-new': case 'status-page-edit': return 'Status pages served by';
+    case 'config': return 'Configuration of';
+    default: return 'Showing';
+  }
+}
+
+/** Control plane: names the node a node-specific page reads, with a way to read another one. Overview and Monitors never need it. */
+function NodeScope({ route, onChoose }: { route: Route; onChoose: () => void }) {
+  const { selection } = useCanary();
+  const text = scopeText(route);
+  if (!selection || !text) return null;
+  return (
+    <div className="cp-scope">
+      <EndpointMark />
+      <span className="cp-scope-t">
+        <span className="muted">{text}</span> <b>{selection.label}</b> <span className="mono">{selection.nodeId}</span>
+      </span>
+      <button type="button" className="btn sm" onClick={onChoose} aria-haspopup="dialog"><Icon name="nodes" />Change node</button>
+    </div>
+  );
 }
 
 /** A password session ends at a fixed time. Warn shortly before, measured on the node's clock. */

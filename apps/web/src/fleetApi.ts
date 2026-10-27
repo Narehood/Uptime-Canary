@@ -11,12 +11,18 @@ const bad = (): never => { throw new ApiFailure(200, 'The dashboard returned unr
 
 export function readFleetGroup(value: unknown): FleetNodeGroup {
   if (!record(value) || !fleetId(value.id) || !id(value.revision) || !text(value.name) || !ids(value.registrationIds) || !integer(value.updatedAt)) return bad();
-  return { id: value.id, revision: value.revision, name: value.name, registrationIds: [...value.registrationIds], updatedAt: value.updatedAt };
+  if (value.syncState !== undefined && !['pending','applied','blocked'].includes(String(value.syncState)) || value.syncReason !== undefined && !text(value.syncReason,1024)) return bad();
+  return { id: value.id, revision: value.revision, name: value.name, registrationIds: [...value.registrationIds], updatedAt: value.updatedAt,
+    ...(value.syncState !== undefined ? { syncState: value.syncState as FleetNodeGroup['syncState'] } : {}), ...(value.syncReason !== undefined ? { syncReason: value.syncReason as string } : {}) };
 }
 export function readFleetDeployment(value: unknown): FleetDeployment {
   if (!record(value) || !fleetId(value.id) || !id(value.revision) || !integer(value.updatedAt) || !ids(value.registrationIds)
     || !['pending', 'applied', 'blocked', 'unauthorized', 'removed'].includes(String(value.state)) || !Array.isArray(value.placements) || value.placements.length > 64
     || !record(value.monitor) || !text(value.monitor.name) || !text(value.monitor.type) || !ids(value.monitor.nodeIds) || typeof value.monitor.enabled !== 'boolean') return bad();
+  if (value.pinnedRegistrationIds !== undefined && !ids(value.pinnedRegistrationIds)
+    || value.groupIds !== undefined && (!ids(value.groupIds) || !value.groupIds.every(fleetId))
+    || value.syncNotifications !== undefined && typeof value.syncNotifications !== 'boolean'
+    || value.notificationSourceRegistrationId !== undefined && !id(value.notificationSourceRegistrationId)) return bad();
   const placements = value.placements.map((p): FleetPlacement => {
     if (!record(p) || !fleetId(p.id) || !id(p.registrationId) || !ids(p.registrationIds) || !ids(p.nodeIds) || !id(p.monitorId)
       || !integer(p.sequence) || !text(p.revision) || !['pending', 'syncing', 'applied', 'removed'].includes(String(p.state))
@@ -44,6 +50,10 @@ export function readFleetDeployment(value: unknown): FleetDeployment {
     }
   }
   return { id: value.id, revision: value.revision, updatedAt: value.updatedAt, registrationIds: [...value.registrationIds], placements,
+    ...(value.pinnedRegistrationIds !== undefined ? { pinnedRegistrationIds: [...value.pinnedRegistrationIds as string[]] } : {}),
+    ...(value.groupIds !== undefined ? { groupIds: [...value.groupIds as string[]] } : {}),
+    ...(value.syncNotifications !== undefined ? { syncNotifications: value.syncNotifications as boolean } : {}),
+    ...(value.notificationSourceRegistrationId !== undefined ? { notificationSourceRegistrationId: value.notificationSourceRegistrationId as string } : {}),
     ...(value.references !== undefined ? {references} : {}),
     canCancel: value.canCancel === true,
     canRemove: value.canRemove === true,

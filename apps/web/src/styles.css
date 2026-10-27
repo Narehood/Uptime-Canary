@@ -1173,13 +1173,6 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .fl-open-more > summary { list-style: none; }
 .fl-open-more > summary::-webkit-details-marker { display: none; }
 .fl-open-more[open] > summary { background: var(--surface-2); }
-.fl-gpick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 4px; }
-.fl-gpick-k { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-.fl-gpick-l { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.fl-gchip { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
-.fl-gchip .ic { width: 13px; height: 13px; }
-.fl-gchip.on { border-color: var(--accent); background: var(--accent-wash); color: var(--text-1); }
-.fl-gchip[disabled] { opacity: .5; cursor: not-allowed; }
 .fl-place .nodepick label { align-items: flex-start; }
 .fl-place .nodepick input { margin-top: 2px; }
 .fl-place[disabled] .nodepick label { opacity: .6; cursor: not-allowed; }
@@ -1228,7 +1221,6 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 }
 @media (forced-colors: active) {
   .fl-node, .fl-r, .fl-snap, .fl-missing, .fl-members li, .fl-peer-note { border: 1px solid CanvasText; }
-  .fl-gchip.on { outline: 2px solid Highlight; }
 }
 /* Fleet references: each selected node's own channels, outage dependency group and tags. IDs belong to one node, and
    reading a node is transport, so its status reuses the snapshot treatment (accent, dashes, hatching), never health colours. */
@@ -1290,4 +1282,62 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 @media (forced-colors: active) {
   .fl-ref, .fl-ref-st, .fl-ref-retry, .fl-ref-miss li { border: 1px solid CanvasText; }
   .fl-ref.on { outline: 2px solid Highlight; }
+}
+/* Group sync: copying monitors is a process, not health, so its state reuses the snapshot treatment (accent, dashes),
+   with the warning colour only when a sync stopped or a node can't take the form's outage dependency group. */
+.fl-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; color: var(--text-2); min-width: 0; }
+.fl-sync-st { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-2); border-radius: 6px; padding: 1px 7px; font-size: 11.5px; font-weight: 650; color: var(--text-1); background: var(--surface); white-space: nowrap; }
+.fl-sync-st .ic, .fl-sync-st .g { width: 12px; height: 12px; color: var(--text-3); }
+.fl-sync.s-applied .fl-sync-st { background: var(--accent-wash); border-color: transparent; }
+.fl-sync.s-applied .fl-sync-st .ic { color: var(--accent-text); }
+.fl-sync.s-pending .fl-sync-st { border-style: dashed; }
+.fl-sync.s-pending .fl-sync-st .ic { color: var(--accent-text); }
+.fl-sync.s-blocked .fl-sync-st { background: var(--warning-wash); border-color: var(--warning); }
+.fl-sync-n { color: var(--text-3); }
+.fl-sync-r { flex: 1 1 100%; min-width: 0; color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
+.fl-gcard .acts { flex-wrap: wrap; justify-content: flex-end; }
+.fl-gerr { margin: 0; font-size: 12.5px; }
+.fl-gchange { display: flex; flex-direction: column; gap: 6px; }
+.fl-gchange p { margin: 0; display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--text-1); }
+.fl-gchange .ic { flex: none; width: 14px; height: 14px; margin-top: 1px; color: var(--accent-text); }
+.fl-gchange .g { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+.fl-gchange p.warn { font-weight: 550; }
+/* The monitor form's node groups, then one Advanced disclosure for nodes chosen one by one and per-node settings. */
+.fl-gsel { gap: 8px; }
+.fl-gsel-off { margin: 0; display: flex; align-items: flex-start; gap: 8px; border-radius: 10px; padding: 9px 11px; background: var(--surface-2); color: var(--text-1); font-size: 12.5px; }
+.fl-gsel-off .ic { flex: none; margin-top: 1px; color: var(--text-3); }
+.fl-gsel-l { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 8px; }
+.fl-gsel-l label { display: flex; gap: 10px; align-items: flex-start; min-width: 0; border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; cursor: pointer; min-height: 52px; background: var(--surface); }
+.fl-gsel-l label:hover { border-color: var(--border-2); }
+.fl-gsel-l label:has(input:checked) { border-color: var(--accent); background: var(--accent-wash); }
+.fl-gsel-l label.warn { border-style: dashed; border-color: var(--warning); }
+.fl-gsel-l input { accent-color: var(--accent-btn); width: 16px; height: 16px; margin: 2px 0 0; flex: none; }
+.fl-gsel[disabled] .fl-gsel-l label { opacity: .6; cursor: not-allowed; }
+.fl-gsel-b { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fl-gsel-b b { font-size: 13.5px; font-weight: 650; color: var(--text-1); overflow-wrap: anywhere; }
+.fl-gsel-b .nm-sub { font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.fl-gsel-b .fl-gsel-w { color: var(--text-1); font-weight: 550; }
+.fl-gsel-w .g { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; }
+.fl-gsel-none { border: 1px dashed var(--border-2); border-radius: 11px; padding: 12px; font-size: 13px; color: var(--text-2); }
+.fl-gsel-none p { margin: 0 0 10px; }
+.fl-gsel-out { margin: 0; font-size: 12.5px; }
+.fl-adv { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-top: 8px; }
+.fl-src { margin: 0; display: flex; align-items: flex-start; gap: 8px; max-width: 90ch; border-radius: 10px; padding: 9px 11px; background: var(--accent-wash); color: var(--text-1); font-size: 12.5px; }
+.fl-src > .ic { flex: none; width: 14px; height: 14px; margin-top: 1px; color: var(--accent-text); }
+.fl-src.warn { max-width: none; background: var(--warning-wash); border: 1px solid var(--warning); }
+.fl-src > .g { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+.fl-ref.gap { border-color: var(--warning); }
+.fl-ref-sync dd { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.fl-ref-sync dd > span { min-width: 0; }
+.fl-ref-sync .linkbtn { font-size: 12px; white-space: nowrap; }
+.fl-ref-gap { display: inline-flex; align-items: flex-start; gap: 6px; font-weight: 550; }
+.fl-ref-gap .g { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+/* Control plane: the one node a node-specific page reads. Overview and Monitors show every node, so they never carry it. */
+.cp-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 12px; padding: 6px 8px 6px 6px; background: var(--surface); font-size: 13px; }
+.cp-scope-t { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; color: var(--text-1); }
+.cp-scope-t b { font-weight: 650; }
+.cp-scope-t .mono { font-size: 11.5px; color: var(--text-3); }
+@media (forced-colors: active) {
+  .fl-sync-st, .fl-src, .fl-gsel-l label, .fl-gsel-off, .cp-scope { border: 1px solid CanvasText; }
+  .fl-gsel-l label:has(input:checked) { outline: 2px solid Highlight; }
 }

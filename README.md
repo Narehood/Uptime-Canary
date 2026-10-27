@@ -25,7 +25,7 @@ images. See
 and [software updates](docs/software-updates.md). Upgrade every peer together.
 
 **Central fleet management:** one monitor view across registered
-nodes, saved node groups and placement on independent nodes, with explicit
+nodes, group-based monitor sync and placement on independent nodes, with advanced
 per-node resource choices and durable recovery. Use matching node and dashboard
 builds containing this feature; the PR #18 baseline predates it.
 [Workflow and validation limits](docs/fleet-management.md).
@@ -99,7 +99,9 @@ Sign in with the node address (`http://127.0.0.1:3100`) and a password or accoun
 This development server runs the dashboard in **direct mode**, like the built files on any other static host: the browser calls the node you name. The dashboard container instead runs the **dashboard server** (merged through PR #11; not a release): you create and sign in with a dashboard account, not a node account, choose among the nodes registered with that dashboard, and the browser never contacts a node ([deployment options](#deployment-options)).
 
 With the [fleet-management candidate](docs/fleet-management.md), Overview and
-Monitors show all registered nodes, and Run on and Node groups use the whole
+Monitors show all registered nodes. New monitors follow Node groups, with
+automatic notification-channel copying; individual-node settings are under
+Advanced settings. Node groups use the whole
 registry. A managed monitor has one row with per-node results. Independent
 nodes receive separate copies; configured HA peers keep their shared
 configuration and alert coordination. Registration does not create HA peering.

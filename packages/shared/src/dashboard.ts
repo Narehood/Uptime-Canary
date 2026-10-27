@@ -2,7 +2,7 @@ import type { Monitor, MonitorInput, MonitorTag, Role } from './index.js';
 
 export interface FleetTargetReferences { notificationIds?: string[]; groupId?: string; tags?: MonitorTag[] }
 
-export interface FleetNodeGroup { id: string; name: string; registrationIds: string[]; revision: string; updatedAt: number }
+export interface FleetNodeGroup { id: string; name: string; registrationIds: string[]; revision: string; updatedAt: number; syncState?: 'pending' | 'applied' | 'blocked'; syncReason?: string }
 export interface FleetNodeGroupInput { name: string; registrationIds: string[] }
 export interface FleetSourceReference { registrationId: string; monitorId: string; revision: string }
 export interface FleetPlacement {
@@ -11,6 +11,10 @@ export interface FleetPlacement {
   monitorId: string; sequence: number; revision: string; state: 'pending' | 'syncing' | 'applied' | 'removed';
 }
 export interface FleetDeployment {
+  pinnedRegistrationIds?: string[];
+  groupIds?: string[];
+  syncNotifications?: boolean;
+  notificationSourceRegistrationId?: string;
   references?: Record<string, FleetTargetReferences>;
   canCancel?: boolean;
   canRemove?: boolean;
@@ -19,6 +23,9 @@ export interface FleetDeployment {
   monitor: Monitor;
 }
 export interface FleetDeploymentInput {
+  groupIds?: string[];
+  syncNotifications?: boolean;
+  notificationSourceRegistrationId?: string;
   references?: Record<string, FleetTargetReferences>;
   /** Kept in form memory across retries of a create whose answer was lost. */
   requestId?: string; revision?: string; registrationIds: string[]; monitor: MonitorInput; source?: FleetSourceReference;

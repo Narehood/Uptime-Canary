@@ -219,7 +219,9 @@ await check('rendered: a new monitor names default channels and a conflicted def
 await check('source: defaults prefill only new monitors, apply never preselects or exceeds 200, and the unsaved test keeps settings in memory only', () => {
   const form = source('views/MonitorForm.tsx');
   assert.match(form, /setDraft\(d => d\.channelsMode === 'chosen' \? d : \{ \.\.\.d, channelIds: defaultKey \? defaultKey\.split\(' '\) : \[\], channelsMode: 'defaults' \}\)/u);
-  assert.match(form, /onChange=\{ids => setDraft\(d => \(\{ \.\.\.d, channelIds: ids, channelsMode: 'chosen' \}\)\)\}/u, 'a pick is the user’s choice');
+  // Group-first copying also remembers the catalogue that supplied the IDs;
+  // picking channels still opts out of subsequent default prefills.
+  assert.match(form, /onChange=\{ids => \{ setReferenceSource\(referenceSourceId\); setDraft\(d => \(\{ \.\.\.d, channelIds: ids, channelsMode: 'chosen' \}\)\); \}\}/u, 'a pick is the user’s choice');
   const channels = source('views/Channels.tsx');
   assert.match(channels, /const \[selected, setSelected\] = useState<string\[\]>\(\[\]\);/u, 'nothing is selected until the user picks');
   assert.match(channels, /const APPLY_MAX = 200;/u);
