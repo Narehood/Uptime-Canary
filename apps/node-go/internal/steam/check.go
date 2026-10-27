@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -15,6 +16,14 @@ import (
 )
 
 const endpoint = "/IGameServersService/GetServerList/v1/"
+
+var errMeasurementDeadline = errors.New("Steam measurement deadline")
+
+// WithMeasurementTimeout marks the scheduled measurement's own deadline.
+// Earlier caller deadlines and explicit cancellation retain their own cause.
+func WithMeasurementTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(ctx, timeout, errMeasurementDeadline)
+}
 
 type dependencies struct {
 	lookup func(context.Context, string) ([]net.IPAddr, error)
@@ -40,7 +49,7 @@ func check(ctx context.Context, c Config, deps dependencies) Result {
 	unavailable := func() Result {
 		// The monitor's own API deadline is a provider failure governed by
 		// the configured policy. Caller cancellation/expiry is no observation.
-		if c.Options.APIFailureIsDown && parent.Err() == nil {
+		if c.Options.APIFailureIsDown && (parent.Err() == nil || context.Cause(parent) == errMeasurementDeadline) {
 			return Result{State: "down", Message: "Steam directory API unavailable"}
 		}
 		return Result{State: "pending", Message: "Steam directory API unavailable"}

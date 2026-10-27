@@ -129,6 +129,26 @@ func TestNodeInvitationFirstConfirmationAndScopedRoleTransport(t *testing.T) {
 	if err != nil || resp.StatusCode != 403 {
 		t.Fatal("connection elevated viewer authority")
 	}
+	// The same real node-initiated connection must carry durable fleet commands,
+	// not just legacy monitoring routes. No inbound URL exists for this node.
+	fleet := fleetCreateFixture(t, d, owner, []string{row.ID}, nil)
+	d.finishFleet(context.Background(), fleet.ID)
+	fleet = d.fleet[fleet.ID]
+	if fleet.State != "applied" || len(fleet.Placements) != 1 {
+		t.Fatalf("outbound placement did not apply: %s %s", fleet.State, fleet.Reason)
+	}
+	p := fleet.Placements[0]
+	resp, _, err = d.nodeRequest(context.Background(), row, secrets.Viewer, "GET", "/api/fleet-placements/"+p.ID, nil)
+	if err != nil || resp.StatusCode != 403 {
+		t.Fatal("outbound fleet receipts elevated viewer authority")
+	}
+	if result := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+fleet.ID, owner, "", map[string]string{"revision": fleet.Revision}); result.Code != 202 {
+		t.Fatal("outbound placement retirement was refused")
+	}
+	d.finishFleet(context.Background(), fleet.ID)
+	if d.fleet[fleet.ID].State != "removed" {
+		t.Fatal("outbound placement retirement was not confirmed")
+	}
 	removed := dashboardHTTP(d, "DELETE", "/api/dashboard/nodes/"+row.ID, owner, "", nil)
 	if removed.Code != 204 {
 		t.Fatalf("removal: %d %s", removed.Code, removed.Body.String())
@@ -138,6 +158,18 @@ func TestNodeInvitationFirstConfirmationAndScopedRoleTransport(t *testing.T) {
 	n.mu.Unlock()
 	if accounts != 1 || d.connections.LastSeen(row.ID) != 0 {
 		t.Fatal("removal retained delegated authority or session")
+	}
+}
+
+func TestNodeConnectionFleetPathsStayNarrow(t *testing.T) {
+	base := "/api/fleet-placements/" + placementFixtureID
+	for _, method := range []string{"GET", "PUT", "POST", "PATCH", "DELETE"} {
+		for _, target := range []string{base, base + "/validate", base + "?", base + "?token=refused", base + "/validate?", base + "/other", "/api/fleet-placements/not-an-id", base + "/../other"} {
+			want := target == base && (method == "GET" || method == "PUT") || target == base+"/validate" && method == "POST"
+			if connectionNodePath(method, target, placementFixtureOwner) != want {
+				t.Fatalf("incorrect placement connection route admission: %s %s", method, target)
+			}
+		}
 	}
 }
 

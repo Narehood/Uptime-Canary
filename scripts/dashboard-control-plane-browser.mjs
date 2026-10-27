@@ -10,6 +10,7 @@ import { createServer, request as upstreamRequest } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { dirname, join, resolve } from 'node:path';
 import { pinnedFixtureFetch } from './tls-fixture.mjs';
+import { reviewFleet } from './fleet-browser.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -272,7 +273,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   };
 }
 
-export async function reviewDashboardControlPlane({ fixture, A, B, page, step, until, fill, click, text, ready, report, secrets }) {
+export async function reviewDashboardControlPlane({ fixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet = false }) {
   const q = JSON.stringify;
   const start = report.requests.length;
   const clickFirst = async label => {
@@ -285,6 +286,9 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await ready();
   };
   const verify = async (node, label) => {
+    // The central overview waits for the first registry read before directing
+    // an empty dashboard to enrollment. Require the same Add node action.
+    await until(() => page.eval('[...document.querySelectorAll("button,a")].some(e=>__vis(e)&&__norm(e.innerText)==="Add node")'), 'Add node entry', 15000);
     await clickFirst('Add node');
     await until(() => page.eval('!!document.querySelector("dialog[open]")'), 'add-node dialog');
     await fill('Name on this dashboard', label, 'dialog[open]');
@@ -332,12 +336,18 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.ok(!JSON.stringify(registrations).includes(A.token) && !JSON.stringify(registrations).includes(B.token));
     return { readOnlyVerification: true, cancellationLeavesNoAccounts: true, registeredNodes: 2 };
   });
+  if (onlyFleet) {
+    await reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner });
+    await page.send('Network.setBlockedURLs', { urls: [] });
+    return;
+  }
   await step('Control plane: select two nodes without another sign-in; monitoring and account routes remain separate', async () => {
     for (const label of ['First private node', 'Second private node']) {
       await page.eval('location.hash="#/nodes"'); await text(label);
       await until(() => page.eval(`!![...document.querySelectorAll('button')].find(e=>e.getAttribute('aria-label')===${q('Open ' + label)})`), 'registered-node open action');
       await ready(); await page.eval(`[...document.querySelectorAll('button')].find(e=>e.getAttribute('aria-label')===${q('Open ' + label)}).click()`);
-      await until(() => page.eval('!!document.querySelector("main h1") && document.querySelector("main h1").textContent.includes("Overview")'), 'selected-node overview');
+      // Accepted fleet behavior: the overview is central even while a node is selected.
+      await until(() => page.eval('!!document.querySelector("main h1") && document.querySelector("main h1").textContent.includes("All nodes")'), 'central overview with selected node');
     }
     const requests = fixture.stats().paths;
     for (const row of registrations) assert.ok(requests.some(request => request.path === '/api/overview' && request.registration === row.id));
@@ -507,7 +517,8 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     for (const [role, tokens] of Object.entries(current)) for (const token of tokens) assert.ok(!oldRoles[role].has(token), `${role} credential was replaced`);
     assert.deepEqual(await nodeFacts(), before, 'same node identity, role accounts and monitors');
     await page.eval('location.hash="#/overview"');
-    await until(() => page.eval(`(() => { const snap=document.querySelector('.topbar .snap'); return (document.querySelector('main h1')?.textContent ?? '').includes('Overview') && !!snap && !snap.classList.contains('bad') && ![...document.querySelectorAll('.banner')].some(b=>/Updating node access|answering \\(/.test(b.innerText)); })()`), 'monitoring answers again', 60000);
+    // Same accepted central overview; preserve the original recovery and freshness checks.
+    await until(() => page.eval(`(() => { const snap=document.querySelector('.topbar .snap'); return (document.querySelector('main h1')?.textContent ?? '').includes('All nodes') && !!snap && !snap.classList.contains('bad') && ![...document.querySelectorAll('.banner')].some(b=>/Updating node access|answering \\(/.test(b.innerText)); })()`), 'monitoring answers again', 60000);
     await viewing('Renamed private node');
     const after = fixture.stats().paths.slice(begin);
     const retried = after.indexOf(retry);
@@ -1251,6 +1262,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     }
     return { cachedReads:true, syntheticMetadata:'UI only; real server authenticates GET and refuses disabled POST', roles:true, explicitManualOnce:true, sameSourceRebuild:true, installs:0, layouts:6 };
   });
+  await reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner, includeOutbound: true });
   await step('Control plane: every browser API request stays at the dashboard origin; no node credential is persisted', async () => {
     const calls = report.requests.slice(start).filter(value => /^\/(api|public)\//u.test(new URL(value.url).pathname));
     assert.ok(calls.length > 10);

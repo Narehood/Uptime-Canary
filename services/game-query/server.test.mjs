@@ -21,11 +21,12 @@ async function service(t) {
 }
 
 async function minecraft(t, mode) {
-  const sockets = new Set(); let connections = 0;
+  const sockets = new Set(); let connections = 0, firstRequestAt = null;
   const server = createServer(socket => {
     connections++; sockets.add(socket); socket.once('close', () => sockets.delete(socket)); socket.on('error', () => {});
     let bytes = 0;
     socket.once('data', input => {
+      firstRequestAt ??= performance.now();
       bytes += input.length; assert.ok(bytes <= 1024 && input.length > 7, 'bounded Minecraft status handshake required');
       if (mode.value === 'stall') return;
       if (mode.value === 'bad') { socket.end(Buffer.from([8, 0, 6, ...Buffer.from('broken')])); return; }
@@ -36,7 +37,7 @@ async function minecraft(t, mode) {
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)); });
-  return { port: server.address().port, sockets, get connections() { return connections; } };
+  return { port: server.address().port, sockets, get connections() { return connections; }, get firstRequestAt() { return firstRequestAt; } };
 }
 
 test('exact primitive query admission rejects ambiguity, malformed Unicode and unsupported options', () => {
@@ -54,7 +55,10 @@ test('exact primitive query admission rejects ambiguity, malformed Unicode and u
 
 test('actual locked GameDig queries private Minecraft and returns only fixed evidence', { timeout: 10000 }, async t => {
   const fixture = await minecraft(t, { value: 'ok' }), api = await service(t);
+  const started = performance.now();
   const result = await api.query({ ...base, port: fixture.port });
+  t.diagnostic(JSON.stringify({ budgetMs: base.timeoutMs, elapsedMs: Math.round(performance.now() - started),
+    firstTCPMs: fixture.firstRequestAt === null ? null : Math.round(fixture.firstRequestAt - started), connections: fixture.connections }));
   assert.equal(result.status, 200); assert.equal(result.body.profile, PROFILE); assert.equal(result.body.id, base.id); assert.equal(result.body.state, 'up');
   assert.ok(Number.isFinite(result.body.latencyMs) && result.body.latencyMs >= 0);
   assert.deepEqual(Object.keys(result.body).sort(), ['id', 'latencyMs', 'profile', 'state']);
@@ -68,6 +72,16 @@ test('query service never accepts a browser Origin or an absent credential', asy
     const response = await fetch(api.origin + '/v1/query', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(base) });
     assert.equal(response.status, 401);
   }
+});
+
+test('short-budget Minecraft keeps a successful TCP reply while silent UDP attempts settle', { timeout: 10000 }, async t => {
+  const fixture = await minecraft(t, { value: 'ok' }), api = await service(t);
+  const result = await api.query({ ...base, port: fixture.port, timeoutMs: 1500 });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.state, 'up');
+  assert.ok(fixture.connections >= 1, 'the real vanilla query must reach the owned TCP server');
+  assert.ok(Number.isFinite(result.body.latencyMs) && result.body.latencyMs >= 0);
+  assert.deepEqual(Object.keys(result.body).sort(), ['id', 'latencyMs', 'profile', 'state']);
 });
 
 test('canceling one of two occupied workers joins it before replacement admission', { timeout: 15000 }, async t => {

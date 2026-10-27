@@ -255,6 +255,15 @@ async function functionsUnderReview() {
 async function review() {
   for (const n of state.nodes) secrets.add(n.token);
   report = { startedAt: new Date().toISOString(), runtime:process.version, harnessHash:sha(readFileSync(fileURLToPath(import.meta.url))), runDir, sourceHash: state.sourceHash, binaryHash: state.binaryHash, artifacts: state.artifacts, checks: [], exceptions: [], blocked: [], requests: [] }; save();
+  // Same production executable, assets, browser and assertions; a focused entry
+  // keeps fleet recovery diagnostics independent of the unrelated form corpus.
+  if (args.includes('--fleet-only')) {
+    assert.ok(dashboardControlPlaneFixture, '--fleet-only needs --dashboard-control-plane');
+    await launchBrowser();
+    const [A, B] = state.nodes;
+    await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet: true });
+    return finishReview();
+  }
   const f = await functionsUnderReview(), [A, B] = state.nodes;
   const base = (type, options = {}) => ({ name: `Review ${type}`, type, target: type === 'manual' ? 'manual' : '127.0.0.1', intervalMs: 60000, timeoutMs: 1000, nodeIds: [A.id], enabled: false, ...options });
   const configs = {
@@ -661,6 +670,9 @@ async function review() {
   await browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows });
   if (proxyAuthFixture) await reviewProxyAuth({ fixture: proxyAuthFixture, state, A, B, page, step, signIn, until, text, ready, report });
   if (dashboardControlPlaneFixture) await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets });
+  return finishReview();
+}
+async function finishReview() {
   await stopInterceptions?.();
   const manifest = json(join(runDir, 'source-manifest.json'));
   report.sourceChangedAfterSnapshot = manifest.files.filter(v => !existsSync(join(root, v.path)) || sha(readFileSync(join(root, v.path))) !== v.sha256).map(v => v.path);

@@ -173,7 +173,7 @@ function GroupBranch({ node }: { node: GroupNode }) {
 }
 
 export function GroupsView() {
-  const { groups, editable, endpoint, search } = useCanary();
+  const { groups, editable, endpoint, search, controlPlane } = useCanary();
   if (groups === null) return <div className="view"><PageHead title="Groups" /><GroupsUnsupported /></div>;
   const q = search.trim().toLowerCase();
   const live = groups.filter(view => !view.group.deleted);
@@ -184,7 +184,7 @@ export function GroupsView() {
   return (
     <div className="view">
       <PageHead
-        title="Groups"
+        title={controlPlane ? 'Outage dependencies' : 'Groups'}
         sub={<>Defined by you, shared by every node. As known to <span className="mono">{endpoint}</span>.</>}
         actions={editable ? <a className="btn primary" href={href('groups', 'new')}><Icon name="plus" />New group</a> : <ReadOnly>Viewers can’t edit groups</ReadOnly>}
       />
@@ -232,7 +232,7 @@ export function GroupFormView({ id }: { id?: string }) {
 }
 
 function GroupFormBody({ id }: { id?: string }) {
-  const { groups, groupMap, monitorMap, nodes, endpoint, overview, editable, api, refresh, assessed } = useCanary();
+  const { groups, groupMap, monitorMap, nodes, endpoint, overview, editable, api, refresh, assessed, controlPlane } = useCanary();
   const existing = id ? groupMap.get(id) : undefined;
   const [draft, setDraft] = useState<GroupDraft>(() => groupDraft(existing?.group, [endpoint]));
   const [baseRevision, setBaseRevision] = useState(existing?.group.revision);
@@ -300,7 +300,7 @@ function GroupFormBody({ id }: { id?: string }) {
       const saved = current && baseRevision ? await api.updateGroup(current.id, { ...input, revision: baseRevision }) : await api.createGroup(input);
       notify(`${current ? 'Saved' : 'Created'} group “${saved.name}” on ${endpoint} (revision ${shortRev(saved.revision)}). Peers pick it up when they next sync.`);
       refresh();
-      navigate(href('groups'));
+      navigate(href(controlPlane ? 'outage-groups' : 'groups'));
     } catch (error) {
       const stale = error instanceof ApiFailure && error.status === 409;
       setFailure({ message: stale ? 'Someone saved a newer revision first, or nodes now hold conflicting versions.' : describeFailure(error), stale });
@@ -314,7 +314,7 @@ function GroupFormBody({ id }: { id?: string }) {
   return (
     <div className="view">
       <PageHead
-        crumbs={<a href={href('groups')}>Groups</a>}
+        crumbs={<a href={href(controlPlane ? 'outage-groups' : 'groups')}>{controlPlane ? 'Outage dependencies' : 'Groups'}</a>}
         title={current ? `Edit ${current.name}` : 'New group'}
         sub={current ? <>Editing revision <Rev revision={baseRevision ?? current.revision} />. Saving writes a new revision on <span className="mono">{endpoint}</span>.</> : <>Creates a group on <span className="mono">{endpoint}</span>, which shares it with every peer.</>}
       />
@@ -377,7 +377,7 @@ function GroupFormBody({ id }: { id?: string }) {
             <button type="submit" className="btn primary" disabled={saving || existing?.configConflict}>
               <Icon name={current ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current ? 'Save changes' : 'Create group'}
             </button>
-            <a className="btn" href={href('groups')}>Cancel</a>
+            <a className="btn" href={href(controlPlane ? 'outage-groups' : 'groups')}>Cancel</a>
             {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : null}
           </div>
         </form>

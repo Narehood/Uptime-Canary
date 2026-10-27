@@ -7,10 +7,13 @@ export type Route =
   | { name: 'monitor-new' }
   | { name: 'monitor'; id: string }
   | { name: 'monitor-edit'; id: string }
+  | { name: 'fleet-monitor-edit'; id: string }
   /** A new monitor starting from a copy of `id`. Only the source's ID is in the URL, never a copied setting. */
   | { name: 'monitor-clone'; id: string }
   | { name: 'tags' }
   | { name: 'groups' }
+  | { name: 'node-groups' }
+  | { name: 'outage-groups' }
   | { name: 'group-new' }
   | { name: 'group-edit'; id: string }
   | { name: 'incidents' }
@@ -51,6 +54,9 @@ export function parseRoute(hash: string): Route {
   }
   if (query) return { name: 'not-found', path: raw };
   switch (section) {
+    case 'fleet-monitors':
+      if (id && action === 'edit' && parts.length === 3) return { name: 'fleet-monitor-edit', id };
+      break;
     case undefined:
     case 'overview': return parts.length <= 1 ? { name: 'overview' } : { name: 'not-found', path: raw };
     case 'monitors':
@@ -84,7 +90,7 @@ export function parseRoute(hash: string): Route {
       if (id === 'new' && !action) return { name: 'status-page-new' };
       if (action === 'edit' && parts.length === 3) return { name: 'status-page-edit', id };
       break;
-    case 'incidents': case 'nodes': case 'config': case 'accounts': case 'account': case 'tags':
+    case 'outage-groups': case 'node-groups': case 'incidents': case 'nodes': case 'config': case 'accounts': case 'account': case 'tags':
       if (parts.length === 1) return { name: section };
       break;
   }
@@ -122,8 +128,8 @@ export function useRoute(): Route {
 /** Top-level section for rail highlighting. */
 export function sectionOf(route: Route): string {
   switch (route.name) {
-    case 'monitor': case 'monitor-new': case 'monitor-edit': case 'monitor-clone': case 'tags': return 'monitors';
-    case 'group-new': case 'group-edit': return 'groups';
+    case 'monitor': case 'monitor-new': case 'monitor-edit': case 'fleet-monitor-edit': case 'monitor-clone': case 'tags': return 'monitors';
+    case 'group-new': case 'group-edit': case 'outage-groups': case 'node-groups': return 'groups';
     case 'deliveries': case 'receipts': case 'channel-new': case 'channel-edit': return 'notifications';
     case 'maintenance-new': case 'maintenance-edit': return 'maintenance';
     case 'status-page-new': case 'status-page-edit': return 'status-pages';

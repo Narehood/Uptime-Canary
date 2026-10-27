@@ -42,6 +42,13 @@ func connectionNodePath(method, raw, registration string) bool {
 	if p == "/api/auth/status" || p == "/api/auth/me" || p == "/api/accounts" {
 		return method == "GET" && u.RawQuery == "" && !u.ForceQuery
 	}
+	if strings.HasPrefix(p, "/api/fleet-placements/") {
+		parts := strings.Split(strings.TrimPrefix(p, "/api/fleet-placements/"), "/")
+		if u.RawQuery != "" || u.ForceQuery || !fleetPlacementID(parts[0]) {
+			return false
+		}
+		return len(parts) == 1 && (method == "GET" || method == "PUT") || len(parts) == 2 && parts[1] == "validate" && method == "POST"
+	}
 	if dashboardMonitoringPath(p) {
 		return true
 	}

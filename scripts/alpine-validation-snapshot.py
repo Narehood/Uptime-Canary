@@ -38,6 +38,7 @@ ROOT_FILES = (
     "scripts/registry-maintenance-pure.mjs",
     "scripts/node-onboarding-pure.mjs",
     "scripts/node-setup-fields-pure.mjs",
+    "scripts/fleet-pure.mjs", "scripts/fleet-management-pure.mjs",
     "scripts/alert-templates-pure.mjs", "scripts/update-notice-pure.mjs",
     "scripts/cdp-interception.mjs", "scripts/cdp-interception-test.mjs", "scripts/tls-fixture.mjs", "scripts/tls-fixture-test.mjs",
     "scripts/package-release.py", "scripts/package_release_test.py",

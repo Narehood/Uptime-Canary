@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type {
-  HTTPMonitorOptions, JSONQueryOptions, Monitor, MonitorInput, MonitorTag, MonitorType, MonitorView, NotificationChannelView, RequestCredentials, TLSMonitorOptions,
+  FleetTargetReferences, HTTPMonitorOptions, JSONQueryOptions, Monitor, MonitorInput, MonitorTag, MonitorType, MonitorView, NotificationChannelView, RequestCredentials, TLSMonitorOptions,
 } from '@uptime-canary/shared';
 import { API_BODY_LIMIT, ApiFailure, describeFailure, jsonBytes } from '../api';
 import { BROWSER_FIELD_LABEL, browserDraftFrom, browserMasked, buildBrowser, type BrowserDraft, type BrowserField } from '../browser';
@@ -9,11 +9,15 @@ import {
   statusCodesText, tlsApplies, typeLabel, type CheckCategory, type DnsRecord, type SmtpMode,
 } from '../checks';
 import { useCanary } from '../context';
+import { FleetPlacementFields } from './FleetPlacementFields';
+import { FleetReferenceFields } from './FleetReferenceFields';
+import { useReferenceProfiles } from '../fleetReferences';
+import { managedMonitor } from '../fleet';
 import { pushCommands } from '../dashboard';
 import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shortId, shortRev, span } from '../format';
 import { GAMEDIG_FIELD_LABEL, buildGameDig, gamedigDraftFrom, gamedigMasked, type GameDigDraft, type GameDigField } from '../gamedig';
 import { GP_FIELD_LABEL, GP_SECTION, buildGlobalping, gpDraftFrom, gpMasked, type GpDraft, type GpField } from '../globalping';
-import { groupPath } from '../model';
+import { canEdit, groupPath } from '../model';
 import {
   DNS_EXPECTED_BYTES, DNS_EXPECTED_MAX, DNS_EXPECTED_TOTAL, DNS_RECORD_SHAPE, descriptionProblem, dnsNeedsServer, extendedRecordProblem, isExtendedRecord, parseSubprotocols,
   subprotocolProblem, subprotocolsText,
@@ -1086,15 +1090,17 @@ function OAuthFields({ d, set, stored, error, disabled, websocket }: { d: OAuthD
  * The edit form mounts only once the stored item is known, so its draft, initial values and base revision come from
  * that item. A route opened before the overview caught up shows "not found" and then mounts fresh, never a blank draft.
  */
-export function MonitorFormView({ id, cloneOf }: { id?: string; cloneOf?: string }) {
-  const { monitorMap, editable } = useCanary();
+export function MonitorFormView({ id, cloneOf, fleetId }: { id?: string; cloneOf?: string; fleetId?: string }) {
+  const { monitorMap, editable, controlPlane, fleet } = useCanary();
+  if (controlPlane && fleet && (!fleet.ready || fleet.denied)) return <Card><EmptyState title={fleet.loading ? 'Loading saved placements' : 'Saved placements could not be read'} action={fleet.loading ? undefined : <button className="btn" type="button" onClick={fleet.reload}>Try again</button>}>The saved fleet configuration must be read before this form can change a monitor.</EmptyState></Card>;
+  if (fleetId && !fleet?.deployments.some(item => item.id === fleetId && item.state !== 'removed')) return <Card><EmptyState title="Fleet monitor not found">Reload All nodes to read its current placement.</EmptyState></Card>;
   const existing = id ? monitorMap.get(id) : undefined;
   const source = cloneOf ? monitorMap.get(cloneOf) : undefined;
   // A copy is taken once, when its form mounts. It's taken again only if the source, the role or the source's conflict
   // state changes, never because the source is edited meanwhile.
   const key = existing ? `edit-${existing.monitor.id}` : id ? 'missing'
     : source ? `clone-${source.monitor.id}-${editable ? 'rw' : 'ro'}-${source.configConflict ? 'conflict' : 'one'}` : cloneOf ? 'clone-missing' : 'new';
-  return <MonitorFormBody key={key} id={id} cloneOf={cloneOf} />;
+  return <MonitorFormBody key={fleetId ? `fleet-${fleetId}` : key} id={id} cloneOf={cloneOf} fleetId={fleetId} />;
 }
 
 /**
@@ -1102,19 +1108,27 @@ export function MonitorFormView({ id, cloneOf }: { id?: string; cloneOf?: string
  * the form is saved, the source isn't changed, and the copy lives only in this component's state, never in the URL
  * (which names the source alone), browser storage or the console.
  */
-function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
-  const { overview, monitorMap, nodes, nodeMap, endpoint, editable, api, refresh, groups, groupMap, stillCurrent, channels } = useCanary();
+function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: string; fleetId?: string }) {
+  const { overview, monitorMap, nodes, nodeMap, endpoint, editable: nodeEditable, api, refresh, groups, groupMap, stillCurrent, channels, controlPlane, fleet, registry, selection, connection, role } = useCanary();
+  const editable = fleetId && controlPlane ? canEdit(role) && connection.link !== 'rejected' : nodeEditable;
   const existing = id ? monitorMap.get(id) : undefined;
   const source = cloneOf ? monitorMap.get(cloneOf) : undefined;
   const defaultNodes = nodes.filter(node => node.state !== 'unlisted').map(node => node.id);
+  const fleetEnabled = controlPlane && Boolean(fleet) && Boolean(selection || fleetId);
+  const [fleetBase, setFleetBase] = useState(() => fleetId ? fleet?.deployments.find(item => item.id === fleetId) : existing ? managedMonitor(fleet?.deployments ?? [], selection?.id, existing.monitor.id) : undefined);
   // Only editors copy: a viewer's monitor has its private settings removed. A monitor whose nodes hold different
   // versions isn't copied, because one version would be picked silently; nor is a type this dashboard doesn't know.
   const [copy] = useState<MonitorInput | undefined>(() => editable && source && !source.configConflict && checkType(source.monitor.type) ? cloneInput(source.monitor, newPushToken) : undefined);
   // The copy is the base of a create, never of an update, so it never needs an ID or revision.
-  const start = existing?.monitor ?? (copy as Monitor | undefined);
+  const start = fleetBase ? { ...fleetBase.monitor, id: existing?.monitor.id ?? fleetBase.monitor.id, revision: existing?.monitor.revision ?? fleetBase.revision } : existing?.monitor ?? (copy as Monitor | undefined);
   const [draft, setDraft] = useState<Draft>(() => draftFrom(start, defaultNodes));
+  const [targetReferences, setTargetReferences] = useState<Record<string,FleetTargetReferences>>(() => fleetBase?.references ?? {});
+  const [fleetRequestId] = useState(() => fleetEnabled ? newPushToken().slice(0, 32) : '');
+  const [fleetTargets, setFleetTargets] = useState<string[]>(() => !fleetEnabled ? [] : fleetBase ? [...fleetBase.registrationIds]
+    : (start?.nodeIds ?? [endpoint]).map(nodeId => registry.list?.find(row => row.nodeId === nodeId)?.id ?? `unregistered:${nodeId}`));
   const [initial, setInitial] = useState<Draft | undefined>(() => start ? draftFrom(start, defaultNodes) : undefined);
   const [baseMonitor, setBaseMonitor] = useState<Monitor | undefined>(start);
+  const profiles = useReferenceProfiles(api, fleetEnabled ? (registry.list ?? []).filter(node => fleetTargets.includes(node.id)) : [], `${connection?.identity ?? 'direct'}|${role}`, fleetEnabled && editable);
   const [version, setVersion] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1162,7 +1176,7 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
   if (cloneOf && !source) {
     return <div className="view"><PageHead crumbs={<a href={href('monitors')}>Monitors</a>} title="Copy monitor" /><Card><EmptyState title="Monitor not found">{endpoint} doesn’t know the monitor to copy. It may have been deleted.</EmptyState></Card></div>;
   }
-  const known = existing ?? source;
+  const known = existing ?? source ?? (fleetBase ? { monitor: fleetBase.monitor } : undefined);
   if (known && !checkType(known.monitor.type)) {
     return (
       <div className="view">
@@ -1193,7 +1207,8 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
   const visibleServiceErrors = showErrors ? serviceErrors : {};
   const set = <K extends keyof Draft>(key: K, value: Draft[K]): void => setDraft(current => ({ ...current, [key]: value }));
   const current = existing?.monitor;
-  const changedElsewhere = Boolean(current && baseMonitor && current.revision !== baseMonitor.revision);
+  const latestFleet = fleetBase ? fleet?.deployments.find(item => item.id === fleetBase.id) : undefined;
+  const changedElsewhere = fleetBase ? latestFleet?.revision !== fleetBase.revision : Boolean(current && baseMonitor && current.revision !== baseMonitor.revision);
   const conflicted = Boolean(existing?.configConflict);
   const group = draft.groupId ? groupMap.get(draft.groupId) : undefined;
   const groupList = (groups ?? []).filter(view => !view.group.deleted);
@@ -1216,6 +1231,11 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
     if (saving) return;
     setShowErrors(true);
     setFailure(null);
+    if (fleetEnabled && fleet?.error) { setFailure({ message: 'Refresh the saved fleet placements before saving. Your draft is kept here.', stale: false }); setAttempts(n => n + 1); return; }
+    if (fleetEnabled && (!fleetTargets.length || fleetTargets.some(id => !registry.map.has(id)))) {
+      setFailure({ message: 'Choose at least one registered node. Register or explicitly remove any missing selections before saving.', stale: false });
+      setAttempts(n => n + 1); return;
+    }
     if (!input) {
       const sections = Object.keys(errors).map(field => SECTION_OF[field as Field]).filter(Boolean) as string[];
       if (sections.length) setOpen(state => ({ ...state, ...Object.fromEntries(sections.map(section => [section, true])) }));
@@ -1224,6 +1244,14 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
     }
     setSaving(true);
     try {
+      if (fleetEnabled) {
+        await api.saveFleetMonitor({ requestId: fleetRequestId, monitor: input, registrationIds: fleetTargets,
+          references: Object.fromEntries(Object.entries(targetReferences).filter(([id]) => fleetTargets.includes(id))),
+          ...(!fleetBase && current && baseMonitor && selection ? { source: { registrationId: selection.id, monitorId: current.id, revision: baseMonitor.revision } } : {}) }, fleetBase || undefined);
+        if (!stillCurrent()) return;
+        notify(`Saved placement for “${input.name}”. Each node's confirmation appears in All nodes.`);
+        fleet?.reload(); refresh(); navigate(href('overview')); return;
+      }
       if (current && baseMonitor) {
         const saved = await api.updateMonitor(current.id, { ...input, revision: baseMonitor.revision });
         if (!stillCurrent()) return;
@@ -1240,7 +1268,7 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
     } catch (error) {
       if (!stillCurrent()) return;
       const stale = error instanceof ApiFailure && error.status === 409;
-      setFailure({ message: stale ? 'Someone saved a newer revision first, or nodes now hold conflicting versions.' : describeFailure(error), stale });
+      setFailure({ message: stale ? fleetEnabled ? 'The saved deployment changed, is still running, or needs review. Refresh All nodes before saving again.' : 'Someone saved a newer revision first, or nodes now hold conflicting versions.' : describeFailure(error), stale });
       setAttempts(n => n + 1);
     } finally {
       setSaving(false);
@@ -1248,10 +1276,16 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
   };
 
   const loadLatest = (): void => {
-    if (!current) return;
-    setDraft(draftFrom(current, defaultNodes));
-    setInitial(draftFrom(current, defaultNodes));
-    setBaseMonitor(current);
+    const latest = fleetBase ? latestFleet?.monitor : current;
+    if (!latest) return;
+    if (fleetBase && latestFleet) {
+      setFleetBase(latestFleet);
+      setFleetTargets([...latestFleet.registrationIds]);
+      setTargetReferences(latestFleet.references ?? {});
+    }
+    setDraft(draftFrom(latest, defaultNodes));
+    setInitial(draftFrom(latest, defaultNodes));
+    setBaseMonitor(latest);
     setVersion(v => v + 1);
     setFailure(null);
     setShowErrors(false);
@@ -1260,7 +1294,7 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
   const importJson = (value: Partial<Monitor>): string | null => {
     if (typeof value.type !== 'string' || !checkType(value.type)) return 'The JSON needs a known "type", such as "http".';
     // A copy fills over its own settings, as an edit fills over the stored ones; a pasted push token is still checked.
-    const filled = draftFrom({ ...(current ?? copy ?? {}), ...value, nodeIds: Array.isArray(value.nodeIds) ? value.nodeIds : draft.nodeIds } as Monitor, defaultNodes);
+    const filled = draftFrom({ ...(fleetBase?.monitor ?? current ?? copy ?? {}), ...value, nodeIds: Array.isArray(value.nodeIds) ? value.nodeIds : draft.nodeIds } as Monitor, defaultNodes);
     // On a new monitor, JSON without a channel list keeps the form's current channels (and their defaults) as they are.
     const next = !current && !copy && !Array.isArray(value.notificationIds) ? { ...filled, channelIds: draft.channelIds, channelsMode: draft.channelsMode } : filled;
     setDraft(next);
@@ -1283,8 +1317,8 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
     <div className="view">
       <PageHead
         crumbs={<><a href={href('monitors')}>Monitors</a>{current ? <><Icon name="chevRight" /><a href={href('monitors', current.id)}>{current.name}</a></> : copy && source ? <><Icon name="chevRight" /><a href={href('monitors', source.monitor.id)}>{source.monitor.name}</a></> : null}</>}
-        title={current ? 'Edit monitor' : copy ? 'Copy monitor' : 'New monitor'}
-        sub={current
+        title={current || fleetBase ? 'Edit monitor' : copy ? 'Copy monitor' : 'New monitor'}
+        sub={fleetEnabled ? <>Saves one dashboard placement across the registered nodes chosen below. Each independent placement keeps its own monitoring history.</> : current
           ? <>Editing revision <Rev revision={baseMonitor?.revision ?? current.revision} />{changedElsewhere ? null : <>, saved <Time at={current.updatedAt} now={overview.now} /></>}. Saving writes a new revision on <span className="mono">{endpoint}</span>.</>
           : copy && source
           ? <>Creates a new monitor with its own stable ID on <span className="mono">{endpoint}</span>, starting from a copy of “{source.monitor.name}”. Nothing is created until you select Create monitor, and “{source.monitor.name}” stays as it is.</>
@@ -1296,13 +1330,13 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
         </Banner>
       ) : changedElsewhere ? (
         <Banner tone="warn" title={<>This monitor changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" onClick={loadLatest}><Icon name="refresh" />Load latest (discards your edits)</button>}>
-          It’s now revision <Rev revision={current!.revision} />. Saving your version will be rejected because it’s based on <Rev revision={baseMonitor!.revision} />.
+          It’s now revision <Rev revision={latestFleet?.revision ?? current?.revision ?? ''} />. Saving your version will be rejected because it’s based on <Rev revision={fleetBase?.revision ?? baseMonitor?.revision ?? ''} />.
         </Banner>
       ) : null}
       <Card>
         <form id={formId} key={version} className="form" onSubmit={event => { void submit(event); }} noValidate aria-busy={saving}>
           <ErrorSummary ref={summaryRef} title={failure ? (failure.stale ? 'Not saved: the monitor changed or has a conflict' : 'Not saved') : 'Check these fields'} errors={failure ? [] : errorList}>
-            {failure ? <p>{failure.message}{failure.stale && current ? <> <button type="button" className="linkbtn" onClick={loadLatest}>Load the latest version</button> and apply your change again.</> : null}</p> : null}
+            {failure ? <p>{failure.message}{failure.stale && (current || latestFleet) ? <> <button type="button" className="linkbtn" onClick={loadLatest}>Load the latest version</button> and apply your change again.</> : null}</p> : null}
           </ErrorSummary>
           {copy ? (
             <div className="full svc-note copy-note" role="note">
@@ -1528,7 +1562,8 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
           <CheckField label="Active" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Turn off to pause: no node checks it, and no alerts are sent." />
 
           <h3 className="fsec full">Placement</h3>
-          <NodePicker
+          {fleetEnabled ? <FleetPlacementFields nodes={registry.list ?? []} groups={fleet?.groups ?? []} selectedRegistrationIds={fleetTargets} onChange={setFleetTargets} disabled={saving}
+            error={showErrors && !fleetTargets.length ? 'Choose at least one registered node.' : undefined} /> : <NodePicker
             legend="Run on" nodes={nodes} selected={draft.nodeIds} onChange={ids => set('nodeIds', ids)} endpoint={endpoint} now={overview.now}
             error={visibleErrors.nodes} disabled={saving}
             hint={type === 'system-service'
@@ -1544,11 +1579,14 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
               : type === 'gamedig'
               ? 'Each chosen node sends its queries to the query service at the address above, so every one must reach it. The game server is queried from the service’s network, not the node’s: with one shared service every node measures from the same place, so give each location its own nearby service under the same name to compare locations. Out-of-view nodes receive the monitor when they reconnect.'
               : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
-          />
+          />}
+          {fleetEnabled ? <FleetReferenceFields profiles={profiles.profiles} base={{ notificationIds: input?.notificationIds ?? draft.channelIds, groupId: input?.groupId ?? draft.groupId,
+            tags: input?.tags ?? draft.tags.map(tag => ({ tagId: tag.tagId, ...(tag.value ? { value: tag.value } : {}), ...(tag.isPublic ? { public: true } : {}) })) }}
+            overrides={targetReferences} onChange={setTargetReferences} onRetry={profiles.reload} disabled={saving} /> : null}
           <div className="fld full">
             <span className="flabel">Notification order if it goes down</span>
-            <CandidateOrder ids={draft.nodeIds} nodes={nodeMap} />
-            <small>Selected nodes in ID order. Nodes take turns per destination; a node that sees another’s receipt stands down. Partitions can still produce duplicates.</small>
+            {fleetEnabled ? <small>Existing HA peers can coordinate within their shared placement. Independent nodes run separate copies and may each send alerts. The JSON preview describes node settings; the registered-node selection above is saved separately.</small> : <><CandidateOrder ids={draft.nodeIds} nodes={nodeMap} />
+            <small>Selected nodes in ID order. Nodes take turns per destination; a node that sees another’s receipt stands down. Partitions can still produce duplicates.</small></>}
           </div>
 
           <h3 className="fsec full">Alerts</h3>
@@ -1589,7 +1627,7 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
                 {draft.groupId && !group ? <option value={draft.groupId}>Missing group ({draft.groupId.slice(0, 8)})</option> : null}
               </select>
               <small id={`${formId}-group-h`}>
-                {!draft.groupId ? <>Groups let one outage alert stand in for its dependent monitors. <a href={href('groups')}>Manage groups</a></>
+                {!draft.groupId ? <>Groups let one outage alert stand in for its dependent monitors. <a href={href(controlPlane ? 'outage-groups' : 'groups')}>Manage groups</a></>
                   : !group ? 'This group no longer exists. Alerts are sent normally.'
                   : group.group.outageMonitorId === current?.id ? 'This monitor is the group’s outage monitor. Its own alerts are never held back by its group.'
                   : group.group.outageMonitorId ? <>While <b>{monitorMap.get(group.group.outageMonitorId)?.monitor.name ?? 'its outage monitor'}</b> is down and its own alert reached a destination, this monitor’s alerts to that destination are held back after the group’s grace period. Other destinations fail open. Checks and incidents are still recorded.</>
@@ -1615,7 +1653,7 @@ function MonitorFormBody({ id, cloneOf }: { id?: string; cloneOf?: string }) {
           ) : null}
           <div className="full form-acts">
             <button type="submit" className="btn primary" disabled={saving || conflicted}>
-              <Icon name={current ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current ? 'Save changes' : 'Create monitor'}
+              <Icon name={current || fleetBase ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current || fleetBase ? 'Save changes' : 'Create monitor'}
             </button>
             <a className="btn" href={current ? href('monitors', current.id) : copy && source ? href('monitors', source.monitor.id) : href('monitors')}>Cancel</a>
             {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : null}

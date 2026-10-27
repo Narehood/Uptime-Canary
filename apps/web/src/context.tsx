@@ -3,6 +3,7 @@ import type { AccountView, GroupView, MaintenanceView, MonitorView, Notification
 import type { CanaryApi } from './api';
 import type { Assessed, Assessment, NodeColumn } from './model';
 import type { Connection, NodeSelection } from './session';
+import type { FleetCatalog } from './fleetState';
 
 export interface SwitchRequest {
   url?: string;
@@ -64,6 +65,7 @@ export interface Canary {
   controlPlane: boolean;
   selection: NodeSelection | null;
   registry: RegistryState;
+  fleet?: FleetCatalog;
   /** Read another registered node, or none, with the same sign-in. Monitoring state from the previous one is dropped. */
   select: (node: Pick<RegisteredNode, 'id' | 'label' | 'nodeId' | 'nodeName' | 'local'> | null) => void;
   /** Where accounts and sign-in live, for copy: "this dashboard" on the control plane, otherwise the endpoint's ID. */

@@ -6,10 +6,12 @@ import type {
   StatusPage, StatusPageInput, StatusPageView, PublicStatusPage, Tag, TagInput, TagView,
   DashboardOwnerInput, NodeVerification, NodeVerificationInput, RegisteredNode, BrowserScreenshot,
   NodeInvitation, NodeInvitationCreated, NodeInvitationInput, NodeOnboardingCapabilities,
+  FleetNodeGroup, FleetNodeGroupInput, FleetDeployment, FleetDeploymentInput,
 } from '@uptime-canary/shared';
 import { readAvailability } from './availability';
 import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
 import { readScreenshot } from './screenshot';
+import { readFleetDeployment, readFleetGroup } from './fleetApi';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
@@ -660,6 +662,30 @@ export class CanaryApi {
     return controlPlaneMode() && this.registeredNode === null ? normalizeDashboardOverview(value) : normalizeOverview(value);
   }
   monitors(signal?: AbortSignal): Promise<MonitorView[]> { return this.call('/api/monitors', 'GET', undefined, signal); }
+  async nodeGroups(signal?: AbortSignal): Promise<FleetNodeGroup[]> {
+    const value = await this.own<unknown>('/api/dashboard/node-groups', 'GET', undefined, signal);
+    if (!Array.isArray(value) || value.length > 200) throw new ApiFailure(200, 'Invalid dashboard node groups.');
+    return value.map(readFleetGroup);
+  }
+  async saveNodeGroup(input: FleetNodeGroupInput, existing?: FleetNodeGroup): Promise<FleetNodeGroup> {
+    return readFleetGroup(await this.own(`/api/dashboard/node-groups${existing ? `/${encodeURIComponent(existing.id)}` : ''}`, existing ? 'PUT' : 'POST', { ...input, ...(existing ? { revision: existing.revision } : {}) }));
+  }
+  removeNodeGroup(group: FleetNodeGroup): Promise<void> { return this.own(`/api/dashboard/node-groups/${encodeURIComponent(group.id)}`, 'DELETE', { revision: group.revision }); }
+  async fleetMonitors(signal?: AbortSignal): Promise<FleetDeployment[]> {
+    const value = await this.own<unknown>('/api/dashboard/fleet/monitors', 'GET', undefined, signal);
+    if (!Array.isArray(value) || value.length > 200) throw new ApiFailure(200, 'Invalid dashboard fleet.');
+    return value.map(readFleetDeployment);
+  }
+  async saveFleetMonitor(input: FleetDeploymentInput, existing?: FleetDeployment): Promise<FleetDeployment> {
+    return readFleetDeployment(await this.own(`/api/dashboard/fleet/monitors${existing ? `/${encodeURIComponent(existing.id)}` : ''}`, existing ? 'PUT' : 'POST', { ...input, ...(existing ? { revision: existing.revision } : {}) }));
+  }
+  async retryFleetMonitor(existing: FleetDeployment): Promise<FleetDeployment> {
+    return readFleetDeployment(await this.own(`/api/dashboard/fleet/monitors/${encodeURIComponent(existing.id)}/retry`, 'POST', { revision: existing.revision }));
+  }
+  async reconcileFleetMonitor(existing: FleetDeployment, observedRevisions: Record<string, string>): Promise<FleetDeployment> {
+    return readFleetDeployment(await this.own(`/api/dashboard/fleet/monitors/${encodeURIComponent(existing.id)}/reconcile`, 'POST', { revision: existing.revision, observedRevisions }));
+  }
+  removeFleetMonitor(existing: FleetDeployment): Promise<unknown> { return this.own(`/api/dashboard/fleet/monitors/${encodeURIComponent(existing.id)}`, 'DELETE', { revision: existing.revision }); }
   createMonitor(input: MonitorInput): Promise<Monitor> { return this.call('/api/monitors', 'POST', input); }
   updateMonitor(id: string, input: MonitorInput & { revision: string }): Promise<Monitor> {
     return this.call(`/api/monitors/${encodeURIComponent(id)}`, 'PUT', input);

@@ -5,12 +5,11 @@
 Uptime-Canary runs as a small group of independent, headless Go nodes. Each node runs your checks, keeps its own history in SQLite, opens incidents and sends alerts. Nodes that can reach each other coordinate, so you normally get one alert per outage and destination instead of one per node. Nothing central has to stay up: there is no shared database, no quorum and no required dashboard. An optional React dashboard and public status pages read from any node you choose.
 
 > [!IMPORTANT]
-> **Published development builds: 32 monitor types, peer protocol 19.**
-> [PR #12](https://github.com/Narehood/Uptime-Canary/pull/12) merged as
-> [`34442cc`](https://github.com/Narehood/Uptime-Canary/commit/34442cc040f2b00f17ba45b3a6bfb338d0552b14)
-> on 2026-10-25 after its native, container, race, upgrade and image-build gates
-> passed. Matching node, dashboard and optional GameDig images are published on
-> GHCR for **Linux amd64**. Upgrade peers together; protocol 18 and 19 cannot sync.
+> **Verified published baseline: 32 monitor types, peer protocol 20.**
+> This baseline is the [PR #18 merge](https://github.com/Narehood/Uptime-Canary/commit/a4392c20dd9a39e4595c7879f8b937e5df757fea).
+> Its main-branch native, container and image workflows passed, and matching
+> node, dashboard and optional GameDig image revisions were verified on GHCR for
+> **Linux amd64**. Upgrade peers together; different peer protocols cannot sync.
 > These are development builds, with no tagged release or completed release
 > certification. [Validation and review limits](#checks-and-validation),
 > [remaining work](#not-yet-implemented), [historical results](docs/validation-history.md).
@@ -18,12 +17,18 @@ Uptime-Canary runs as a small group of independent, headless Go nodes. Each node
 
 [What it does](#what-it-does) · [How it works](#how-it-works) · [Quickstart](#quickstart) · [Dashboard](#the-dashboard) · [Checks](#check-types) · [Alerts](#alerts-and-channels) · [Groups](#one-alert-for-a-shared-outage) · [Status pages](#status-pages) · [Several nodes](#run-several-nodes) · [When things fail](#when-things-fail) · [Headless](#manage-it-headless) · [Validation](#checks-and-validation) · [Not yet](#not-yet-implemented)
 
-**Protocol-20 candidate:** native node TLS with retained ten-year certificates,
+**Protocol 20, merged:** native node TLS with retained ten-year certificates,
 verified fingerprint trust, alert message presets with Discord card previews,
-and centrally cached container update notices. This branch is still undergoing
-validation; these changes are not a published release. See
+and centrally cached container update notices are in the published development
+images. See
 [encrypted connections](docs/transport-tls.md), [message presets](docs/notifications.md#message-presets-and-previews-protocol-20)
 and [software updates](docs/software-updates.md). Upgrade every peer together.
+
+**Central fleet management:** one monitor view across registered
+nodes, saved node groups and placement on independent nodes, with explicit
+per-node resource choices and durable recovery. Use matching node and dashboard
+builds containing this feature; the PR #18 baseline predates it.
+[Workflow and validation limits](docs/fleet-management.md).
 
 ## What it does
 
@@ -58,7 +63,7 @@ and [software updates](docs/software-updates.md). Upgrade every peer together.
 - **Peers share current state, not history.** Configuration revisions and tombstones (monitors, groups, channels, maintenance, status pages, tags), latest observations, incidents, receipts and push heartbeats travel in bounded, resumable pages. Raw history and accounts never leave a node.
 - **Monitors run where you place them.** A monitor keeps one stable ID across its nodes, so "down everywhere" and "down from one location" are different, visible facts.
 - **Delivery comes first.** Nodes take turns per destination; one that sees another's receipt stands down. If nobody's receipt arrives, the next node sends. Duplicates are possible; missed alerts are what the design avoids.
-- **The dashboard is a guest.** Nodes never depend on it, and it shows one node at a time. The development dashboard talks to a node directly. The dashboard container runs a server with its own accounts and a shared list of registered nodes, which it reaches itself, so browsers need only the dashboard's address. Either way the tab keeps your sign-in in memory only, and the dashboard stores no monitoring data.
+- **The dashboard is a guest.** Nodes never depend on it. The static development dashboard reads a node directly. The dashboard server has its own accounts and registered-node list, so browsers need only its address. The fleet candidate adds a central view and encrypted placement plans; nodes retain their own monitoring history and keep working when the dashboard stops. Sign-in stays in the tab's memory.
 
 ## Quickstart
 
@@ -92,6 +97,12 @@ npm run dev:web   # http://127.0.0.1:5173, while npm run dev is running
 Sign in with the node address (`http://127.0.0.1:3100`) and a password or account token. The token or session stays in the tab's memory; only the last node address and theme are stored in the browser. Everything you see is "as known to" that node, and switching nodes is always your choice.
 
 This development server runs the dashboard in **direct mode**, like the built files on any other static host: the browser calls the node you name. The dashboard container instead runs the **dashboard server** (merged through PR #11; not a release): you create and sign in with a dashboard account, not a node account, choose among the nodes registered with that dashboard, and the browser never contacts a node ([deployment options](#deployment-options)).
+
+With the [fleet-management candidate](docs/fleet-management.md), Overview and
+Monitors show all registered nodes, and Run on and Node groups use the whole
+registry. A managed monitor has one row with per-node results. Independent
+nodes receive separate copies; configured HA peers keep their shared
+configuration and alert coordination. Registration does not create HA peering.
 
 ![Dashboard overview in the dark theme from a local two-node test: the headline reads that Payments API and Redis cache are down everywhere and Release gate is pending from 2 of 2 locations. Tiles count 2 down, 0 unknown, 4 of 8 up (1 paused, 1 pending), 1 of 1 peer in view, 1 notification, 1 of 1 maintenance window holding alerts for 1 monitor, and 0 of 4 groups holding alerts. A matrix shows each monitor's result from fixture-a and fixture-b; Payments API carries a "maintenance: Patch window" tag.](docs/assets/dashboard-overview.png)
 
@@ -562,7 +573,17 @@ Edits carry the revision they change; a stale one is rejected with HTTP 409. Con
 
 ## Checks and validation
 
-The protocol-20 candidate passed three workspace typechecks, **338** pure/control
+Local Windows amd64 records include **4,518** passing Go test events, four
+platform skips, all-package vet, three workspace typechecks, every configured
+pure/control fixture, and **220/220** production-build/browser checks including
+placement through a node-initiated connection. The browser checkpoint precedes
+the later journal and probe repairs, covered by updated Go and service tests.
+Source reviews approved the fleet implementation
+and the project-wide probe deadline fixes. Exact checkpoints, retained failures
+and platform/deployment limits are recorded with their
+[source scopes](docs/fleet-management.md#persistence-limits-and-validation).
+
+The earlier protocol-20 checkpoint passed three workspace typechecks, **338** pure/control
 groups, **213/213** browser checks and **25/25** regular process proofs locally
 on Windows amd64 at v3 source `61ea890b…` (2026-10-26). These are local candidate
 results, with hosted platform/image gates and real deployment checks still

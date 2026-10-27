@@ -279,6 +279,12 @@ func (n *Node) ensureCausalFacts() error {
 // applySnapshot stages every map, evidence index and derived projection before
 // one SQL transaction. No in-memory authority changes on a failed commit.
 func (n *Node) applySnapshot(s Snapshot) error {
+	return n.applySnapshotLocal(s, nil)
+}
+
+// A local management receipt can commit with its configuration revision. The
+// callback is never supplied by peer input and must not publish memory state.
+func (n *Node) applySnapshotLocal(s Snapshot, local func(dbExec) error) error {
 	if err := n.validateCausalFacts(s); err != nil {
 		return err
 	}
@@ -611,6 +617,9 @@ func (n *Node) applySnapshot(s Snapshot) error {
 	}
 	if err == nil && headChanged {
 		err = purgeBrowserScreenshots(tx, n.heads, heads)
+	}
+	if err == nil && local != nil {
+		err = local(tx)
 	}
 	if err == nil {
 		err = tx.Commit()
