@@ -5,8 +5,8 @@
 Uptime-Canary runs as a small group of independent, headless Go nodes. Each node runs your checks, keeps its own history in SQLite, opens incidents and sends alerts. Nodes that can reach each other coordinate, so you normally get one alert per outage and destination instead of one per node. Nothing central has to stay up: there is no shared database, no quorum and no required dashboard. An optional React dashboard and public status pages read from any node you choose.
 
 > [!IMPORTANT]
-> **Published development builds: 32 monitor types, peer protocol 20.**
-> Current published source is the [PR #18 merge](https://github.com/Narehood/Uptime-Canary/commit/a4392c20dd9a39e4595c7879f8b937e5df757fea).
+> **Verified published baseline: 32 monitor types, peer protocol 20.**
+> This baseline is the [PR #18 merge](https://github.com/Narehood/Uptime-Canary/commit/a4392c20dd9a39e4595c7879f8b937e5df757fea).
 > Its main-branch native, container and image workflows passed, and matching
 > node, dashboard and optional GameDig image revisions were verified on GHCR for
 > **Linux amd64**. Upgrade peers together; different peer protocols cannot sync.
@@ -24,10 +24,11 @@ images. See
 [encrypted connections](docs/transport-tls.md), [message presets](docs/notifications.md#message-presets-and-previews-protocol-20)
 and [software updates](docs/software-updates.md). Upgrade every peer together.
 
-**Fleet-management candidate:** one central monitor view across registered
+**Central fleet management:** one monitor view across registered
 nodes, saved node groups and placement on independent nodes, with explicit
-per-node resource choices and durable recovery. This is not in the published
-PR #18 images. [Workflow and validation limits](docs/fleet-management.md).
+per-node resource choices and durable recovery. Use matching node and dashboard
+builds containing this feature; the PR #18 baseline predates it.
+[Workflow and validation limits](docs/fleet-management.md).
 
 ## What it does
 
@@ -572,11 +573,15 @@ Edits carry the revision they change; a stale one is rejected with HTTP 409. Con
 
 ## Checks and validation
 
-The fleet-management candidate passed all three workspace typechecks, all
-configured pure/control fixtures and **220/220** production-build/browser checks
-locally on Windows amd64, including placement through a node-initiated
-connection. Go and vet results, original failures and platform/deployment
-limits are recorded with their [exact source scopes](docs/fleet-management.md#persistence-limits-and-validation).
+Local Windows amd64 records include **4,518** passing Go test events, four
+platform skips, all-package vet, three workspace typechecks, every configured
+pure/control fixture, and **220/220** production-build/browser checks including
+placement through a node-initiated connection. The browser checkpoint precedes
+the later journal and probe repairs, covered by updated Go and service tests.
+Source reviews approved the fleet implementation
+and the project-wide probe deadline fixes. Exact checkpoints, retained failures
+and platform/deployment limits are recorded with their
+[source scopes](docs/fleet-management.md#persistence-limits-and-validation).
 
 The earlier protocol-20 checkpoint passed three workspace typechecks, **338** pure/control
 groups, **213/213** browser checks and **25/25** regular process proofs locally

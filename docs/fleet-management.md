@@ -1,8 +1,9 @@
 # Manage monitors across registered nodes
 
-Status: fleet management is a development candidate on
-`feature/fleet-monitor-management`. It is not in the published PR #18 images.
-Use matching node and dashboard builds when testing it. An older node refuses
+Use matching feature-capable node and dashboard builds. The verified PR #18
+published baseline predates fleet management. Check the source revision of
+the image tag you deploy; see [software updates](software-updates.md).
+An older node refuses
 placement preflight; the dashboard does not fall back to an unsafe create.
 
 ## View every node
@@ -120,6 +121,10 @@ Limits are 200 retained logical definitions, 200 dashboard node groups and 64
 registered destinations per definition or group. Each node's own monitor and
 resource limits still apply. Network loss after preflight can leave some
 placements applied and others pending; this is not a transaction across nodes.
+
+The fleet source review approved its implementation after three Sol rounds;
+the separate project-wide review approved the probe repairs after two rounds.
+Neither source review replaces the platform, image or deployment gates below.
 
 The separate project-wide Sol review found two probe deadline bugs: GameDig's
 socket deadline could discard a successful Minecraft reply, and the scheduler's
