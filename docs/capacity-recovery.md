@@ -559,3 +559,58 @@ non-object JSON; the proof's own saved result preserves its pass, and a
 separate bounded evidence check verifies the component results. This is not
 an aggregate runner pass, an Alpine acceptance or a measured speedup. The
 collector is corrected without rerunning the application tests.
+
+## Main after PR #21: intermittent Alpine recovery failure
+
+At main commit `d03fd6a13f0b45407519031274ea3fa25e1ee18d`, the
+[Alpine proof job](https://github.com/Narehood/Uptime-Canary/actions/runs/40595560956/job/122510463717)
+passes 24 of 25 process proofs. The unchanged capacity proof fails after
+75.683 seconds at its 45-second all-observer recovery gate. Both processes
+remain alive. The last successful capacity-a overview reports 93 up and 35
+unknown observations; the sampled remote observations are approximately
+7.3 seconds old, while the corresponding local observations are up and about
+1.3 seconds old. Capacity-b separately returns all 128 observations up. Some
+overview requests reach their two-second deadline. The other Alpine phases
+pass; the remaining recovery and receipt-converged quietness checks do not.
+The uploaded proof log retains the original failure and detailed diagnostics.
+
+The same unchanged source passes the fixed workload on Windows amd64 in
+76.828 seconds, including three timed-out capacity-a overview requests and
+eleven timed-out capacity-b requests. All retained obligations settle. Its
+source fingerprint is
+`358a06dbe84b8894da0906c939bf937893cd38fec9ec8cd98dd16fc6d220a5bf`;
+the guard passes in 212.360 seconds, with sampled scratch peak 462,291,671
+bytes cleaned to zero. This Windows result does not clear the Alpine failure.
+
+A separate run of the existing recovery-profile benchmark identifies repeated
+JSON encoding and allocation among the work performed under the state mutex.
+Its Windows filesystem-sync costs are platform-specific; the profile does not
+establish the complete cause of the Alpine timeout. The candidate adds positive
+equality shortcuts for unchanged attempts, notification intents, samples and
+incident records. Other comparisons retain the original JSON fallback. Private
+uncertainties remain excluded from JSON equality and independently checked by
+the existing proof comparisons. Signed floating-point zero retains JSON's
+distinction. No wire format, durability, scheduling, freshness, workload or
+acceptance deadline changes.
+
+Differential controls compare the shortcuts with the previous JSON algorithm,
+including exported-field changes, independently decoded pointers, nil/empty
+collections, private proof and non-finite/signed-zero sample values. The focused
+Go test and comparison benchmarks pass on Windows. In these small benchmarks,
+unchanged attempt/sample comparisons allocate no JSON buffers; the incident
+comparison drops from 12 allocations to two. These are comparison microbenchmarks,
+not application throughput or an end-to-end recovery improvement.
+
+The focused command's outer guard encounters a transient Windows directory
+access failure after its Go tests pass; cleanup still returns scratch to zero.
+The subsequent full-package validation is stopped by the guard because the
+separate default Go cache grows beyond its 16 MiB limit. Phoenix builds are
+then paused, and the user approves clearing the remaining default compiler
+cache. This restores the guard's budget without deleting modules or application
+data. The resumed Windows package test is interrupted at the user's request
+after its temporary executable triggers Windows Firewall. Scratch returns to
+zero. Further Docker-image validation uses Linux/container CI; native Windows
+application/test executables must not be launched on this workstation. No
+broader package, candidate process-proof or candidate Alpine pass is claimed.
+The candidate remains unverified for the original failure until hosted checks
+complete.

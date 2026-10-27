@@ -575,6 +575,9 @@ func (n *Node) currentGroup(id string) *Group {
 	return &g
 }
 func equalJSON(a, b any) bool {
+	if sameRecord(a, b) {
+		return true
+	}
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)

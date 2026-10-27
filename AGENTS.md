@@ -9,6 +9,9 @@ that goal or describe component checks as a complete release validation.
 - Run agent builds/tests through `python scripts/bounded_validation.py`.
   Root coordinates all commands that produce build or runtime artifacts;
   other agents inspect source and write small fixtures until root runs them.
+- For Docker-image work, use Linux/container or hosted Linux validation. Do
+  not launch native Windows application or test executables on this workstation;
+  they trigger unwanted Windows Firewall prompts.
 - Only one validation command may run at a time. Reuse the one owned Go cache.
   Never copy build/module caches or create per-task source snapshots, binary
   archives, browser-profile collections or persistent validation VMs.
