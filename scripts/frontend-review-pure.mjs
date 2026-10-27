@@ -70,7 +70,7 @@ await check('M1 Mailgun: a new channel leaves the default US region out', () => 
 const OVERVIEW = { node: { id: 'review-a' }, user: { name: 'review', role: 'admin' }, monitors: [] };
 const ACCOUNT = { id: 'review-account', name: 'review', role: 'admin', passwordEnabled: true, mfaEnabled: false };
 const fakeApi = ({ credential = 'token', overview = async () => OVERVIEW, me = async () => ACCOUNT } = {}) => {
-  const fake = { credential, logouts: 0, overview, me, logout: async () => { fake.logouts++; }, sameCredential: other => other === fake };
+  const fake = { credential, logouts: 0, overview, me, remember() {}, logout: async () => { fake.logouts++; }, sameCredential: other => other === fake };
   return fake;
 };
 const failing = status => async () => { throw new api.ApiFailure(status, `Review failure ${status}.`); };

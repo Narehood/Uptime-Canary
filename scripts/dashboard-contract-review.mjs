@@ -1413,10 +1413,14 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
     await reviewPublishedAvailability({ api, A, B, state, page, nav, heading, text, click, choose, fill,
       until, step, sleep, report, setHook: value => { requestHook = value; } });
   }
-  await step('Browser: storage contains only endpoint/theme; reload forgets credential', async () => {
-    const storage = await page.eval(`({local:{...localStorage},session:{...sessionStorage},cookie:document.cookie})`); assert.ok(Object.keys(storage.local).every(k => ['uptime-canary.endpoint','uptime-canary.theme'].includes(k))); assert.deepEqual(storage.session, {}); assert.equal(storage.cookie, '');
-    for (const s of secrets) assert.ok(!JSON.stringify(storage).includes(s));
-    await page.send('Page.reload'); await until(() => page.eval(`!document.querySelector('nav.rail') && document.body.innerText.includes('Sign in')`), 'reload signs out'); await ready(); await signIn(A); return { keys: Object.keys(storage.local), noSessionOrCookies: true };
+  await step('Browser: reload restores the tab sign-in while passwords and node enrollment credentials stay unsaved', async () => {
+    const storage = await page.eval(`({local:{...localStorage},session:{...sessionStorage},cookie:document.cookie})`);
+    assert.ok(Object.keys(storage.local).every(k => ['uptime-canary.endpoint','uptime-canary.theme'].includes(k)));
+    assert.deepEqual(Object.keys(storage.session), ['uptime-canary.sign-in']); assert.equal(storage.cookie, '');
+    const saved=JSON.parse(storage.session['uptime-canary.sign-in']);
+    for (const s of secrets) if(s!==saved.token) assert.ok(!JSON.stringify(storage).includes(s));
+    await page.send('Page.reload'); await until(() => page.eval(`!!document.querySelector('nav.rail')`), 'reload preserves sign-in'); await ready();
+    return { keys: Object.keys(storage.local), tabSignInRestored:true, noPersistentCredentialsOrCookies:true };
   });
 }
 

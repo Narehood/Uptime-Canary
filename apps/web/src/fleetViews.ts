@@ -8,6 +8,7 @@ import type { FleetNodeGroup, FleetNodeGroupInput } from '@uptime-canary/shared'
 
 /** Presentation contracts only. Root owns reads, permissions, writes and durable deployment state. */
 export interface FleetOverviewProps {
+  view?: 'overview' | 'monitors';
   sources: readonly FleetSource[];
   rows: readonly FleetMonitorRow[];
   now: number;

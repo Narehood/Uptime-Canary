@@ -12,7 +12,7 @@ import { FleetNodeGroupsView } from './FleetNodeGroups';
 import { Modal, Rev } from '../ui/bits';
 
 /** Integration only: all traffic is same-origin and the presentation receives no credentials. */
-export function FleetController({ groups = false }: { groups?: boolean }) {
+export function FleetController({ groups = false, view = 'overview' }: { groups?: boolean; view?: 'overview' | 'monitors' }) {
   const { api, registry, fleet, connection, role, select, selection, search, setSearch } = useCanary();
   useNow(1000);
   const now = Date.now();
@@ -55,7 +55,7 @@ export function FleetController({ groups = false }: { groups?: boolean }) {
         catch (error) { setFailure('The removal was not confirmed. Reload the saved groups before retrying.'); fleet?.reload(); throw error; }
       }} />;
   }
-  return <><FleetOverviewView sources={reader.sources} rows={fleetMonitorRows(reader.sources, now, live ? fleet?.deployments : [])}
+  return <><FleetOverviewView view={view} sources={reader.sources} rows={fleetMonitorRows(reader.sources, now, live ? fleet?.deployments : [])}
     now={now} loading={registry.loading && !registry.list || reader.loading} refreshing={reader.refreshing}
     error={failure ?? reader.error ?? fleet?.error ?? (registry.error ? 'The node registry could not be refreshed; some nodes may be missing.' : undefined)}
     search={search} onSearchChange={setSearch} onRefresh={refresh}

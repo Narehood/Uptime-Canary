@@ -21,7 +21,7 @@ export const DEFAULT_ENDPOINT = 'http://127.0.0.1:3100';
 const LAST_ENDPOINT_KEY = 'uptime-canary.endpoint';
 
 /**
- * Only the address is remembered between visits; names, passwords, codes and tokens never touch browser storage.
+ * The address is remembered between visits; verified sign-ins survive reloads in tab session storage. Passwords and codes are never saved.
  * In gateway mode the address is always this page's origin: a remembered one (perhaps a private node's) is ignored.
  */
 export function lastEndpoint(): string {
@@ -266,7 +266,7 @@ export function SignInForm({ initialUrl, initialName = '', current, submitLabel,
               />
               {secretToggle('password')}
             </div>
-            <small id={`${id}-password-h`}><Icon name="lock" className="inline" />The 12-hour session stays only in this tab’s memory. Reloading asks you to sign in again.</small>
+            <small id={`${id}-password-h`}><Icon name="lock" className="inline" />Your 12-hour session survives reloads in this tab. Sign out to clear it.</small>
             <ErrorText id={`${id}-password-e`}>{errors.password}</ErrorText>
           </div>
         </>
@@ -305,7 +305,7 @@ export function SignInForm({ initialUrl, initialName = '', current, submitLabel,
             />
             {secretToggle('token')}
           </div>
-          <small id={`${id}-token-h`}><Icon name="lock" className="inline" />For headless and first-time access. Kept only in this tab’s memory; reloading asks again.</small>
+          <small id={`${id}-token-h`}><Icon name="lock" className="inline" />For headless and first-time access. Saved for this tab so reloads keep you signed in. Sign out to clear it.</small>
           <ErrorText id={`${id}-token-e`}>{errors.token}</ErrorText>
         </div>
       ) : null}
@@ -359,7 +359,7 @@ export function ConnectScreen({ theme }: { theme: ThemeControl }) {
           {gateway
             ? <li><Icon name="nodes" /><span><b>Many nodes, one address.</b> Your browser talks only to this dashboard. Its server reaches its node privately, and that node shows its peers too, each fact as it knows it.</span></li>
             : <li><Icon name="nodes" /><span><b>Many nodes, one view.</b> The node you sign in to shows its peers too, each fact as that node knows it.</span></li>}
-          <li><Icon name="lock" /><span>Your sign-in stays <b>in this tab’s memory</b>. Nothing is saved in the browser, so a reload asks again.</span></li>
+          <li><Icon name="lock" /><span>Your sign-in <b>survives reloads in this tab</b>. Sign out to clear it. Your password and verification codes are never saved.</span></li>
           <li><Icon name="pulse" /><span><b>Optional.</b> Nodes keep monitoring and alerting whether this page is open or not.</span></li>
         </ul>
       </section>
@@ -501,7 +501,7 @@ function DashboardBrand() {
       <ul className="connect-facts">
         <li><Icon name="users" /><span><b>Accounts live on this dashboard,</b> not on a monitoring node. There’s nothing to sign in to on each node.</span></li>
         <li><Icon name="nodes" /><span><b>Nodes come after sign-in.</b> This dashboard’s server reaches them at their private addresses; your browser never does.</span></li>
-        <li><Icon name="lock" /><span>Your sign-in stays <b>in this tab’s memory</b>. Nothing is saved in the browser, so a reload asks again.</span></li>
+        <li><Icon name="lock" /><span>Your sign-in <b>survives reloads in this tab</b>. Sign out to clear it. Your password and verification codes are never saved.</span></li>
         <li><Icon name="pulse" /><span><b>Optional.</b> Nodes keep monitoring and alerting whether this page is open or not.</span></li>
       </ul>
     </section>

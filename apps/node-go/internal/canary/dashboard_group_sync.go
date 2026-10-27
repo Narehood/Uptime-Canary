@@ -170,6 +170,10 @@ func (d *Dashboard) syncNodeGroup(ctx context.Context, id string, job dashboardG
 	if e != nil || !ok || current.ID != id || current.Revision != group.Revision || d.verifyNodeGroup(current) != nil {
 		return
 	}
+	if d.groupWaitsForLegacyCreate(id) {
+		d.finishGroupSyncLocked(group, job, "pending", "Waiting to confirm an older node's saved monitor creation before collecting more monitors")
+		return
+	}
 	for _, registration := range ids {
 		for _, item := range views[registration].Monitors {
 			monitor := item.Monitor
@@ -254,6 +258,23 @@ func (d *Dashboard) syncNodeGroup(ctx context.Context, id string, job dashboardG
 	for _, row := range d.fleet {
 		if !slices.Contains(row.GroupIDs, id) || row.State == "removed" {
 			continue
+		}
+		if row.State == "blocked" && job.RetryAt == 0 && !d.fleetBusy[row.ID] {
+			plan, err := d.openFleet(row)
+			if err != nil {
+				return
+			}
+			// An explicit group sync may retry preflight. Never replace an
+			// already prepared command whose write can still be unresolved.
+			if !plan.Prepared && !plan.Deleted {
+				row = copyFleet(row)
+				row.ActorID, row.ActorRole, row.ActorVersion = job.ActorID, job.ActorRole, job.ActorVersion
+				row.Revision, row.UpdatedAt, row.RetryAt = newID(), time.Now().UnixMilli(), 0
+				row.State, row.Reason = "pending", ""
+				if d.saveFleet(nil, AccountView{}, row, plan) != nil {
+					return
+				}
+			}
 		}
 		if row.State == "applied" && !d.fleetBusy[row.ID] && !d.fleetAuthorized(row) {
 			plan, err := d.openFleet(row)

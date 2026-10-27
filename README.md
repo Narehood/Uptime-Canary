@@ -63,7 +63,7 @@ builds containing this feature; the PR #18 baseline predates it.
 - **Peers share current state, not history.** Configuration revisions and tombstones (monitors, groups, channels, maintenance, status pages, tags), latest observations, incidents, receipts and push heartbeats travel in bounded, resumable pages. Raw history and accounts never leave a node.
 - **Monitors run where you place them.** A monitor keeps one stable ID across its nodes, so "down everywhere" and "down from one location" are different, visible facts.
 - **Delivery comes first.** Nodes take turns per destination; one that sees another's receipt stands down. If nobody's receipt arrives, the next node sends. Duplicates are possible; missed alerts are what the design avoids.
-- **The dashboard is a guest.** Nodes never depend on it. The static development dashboard reads a node directly. The dashboard server has its own accounts and registered-node list, so browsers need only its address. The fleet candidate adds a central view and encrypted placement plans; nodes retain their own monitoring history and keep working when the dashboard stops. Sign-in stays in the tab's memory.
+- **The dashboard is a guest.** Nodes never depend on it. The static development dashboard reads a node directly. The dashboard server has its own accounts and registered-node list, so browsers need only its address. The fleet candidate adds a central view and encrypted placement plans; nodes retain their own monitoring history and keep working when the dashboard stops. Sign-in survives reloads in tab session storage; signing out clears it.
 
 ## Quickstart
 
@@ -94,7 +94,7 @@ The CLI reads its token from `.env`. Only `/healthz`, sign-in (`/api/auth/status
 npm run dev:web   # http://127.0.0.1:5173, while npm run dev is running
 ```
 
-Sign in with the node address (`http://127.0.0.1:3100`) and a password or account token. The token or session stays in the tab's memory; only the last node address and theme are stored in the browser. Everything you see is "as known to" that node, and switching nodes is always your choice.
+Sign in with the node address (`http://127.0.0.1:3100`) and a password or account token. The token or session is kept in tab session storage so refreshing keeps you signed in. Signing out clears it; passwords and MFA codes are never stored. Only the last node address and theme use persistent local storage. Everything you see is "as known to" that node, and switching nodes is always your choice.
 
 This development server runs the dashboard in **direct mode**, like the built files on any other static host: the browser calls the node you name. The dashboard container instead runs the **dashboard server** (merged through PR #11; not a release): you create and sign in with a dashboard account, not a node account, choose among the nodes registered with that dashboard, and the browser never contacts a node ([deployment options](#deployment-options)).
 

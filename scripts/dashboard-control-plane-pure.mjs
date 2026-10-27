@@ -429,7 +429,7 @@ await check('form rules: node addresses are origins other than the dashboard; cr
   assert.deepEqual(['credential-refused', 'different-node', 'enrolling', 'removing'].map(state => dashboard.nodeStateInfo({ ...ENTRY, state }).readable), [false, false, false, false]);
 });
 
-await check('source: credentials, tickets and selections never reach browser storage, cookies or addresses', () => {
+await check('source: enrollment credentials, tickets and node selections stay outside the tab sign-in persistence', () => {
   for (const path of ['src/views/Registry.tsx', 'src/dashboard.ts', 'src/session.ts', 'src/api.ts']) {
     assert.doesNotMatch(readFileSync(resolve(web, path), 'utf8'), /localStorage|sessionStorage|indexedDB|document\.cookie/u, path);
   }

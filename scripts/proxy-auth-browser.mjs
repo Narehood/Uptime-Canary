@@ -78,6 +78,9 @@ export async function reviewProxyAuth({ fixture, state, A, B, page, step, signIn
   const q = JSON.stringify;
   fixture.enable();
   try {
+    // Start this transport fixture signed out. Navigation now restores a
+    // retained sign-in, which the reauthentication step below tests separately.
+    await page.eval("sessionStorage.removeItem('uptime-canary.sign-in')");
     await page.send('Page.navigate', { url: state.origin + '/fixture/proxy-login' });
     await until(() => page.eval('location.pathname === "/" && !!document.querySelector("form") && !document.querySelector("nav.rail")'), 'private proxy page');
     await ready();
@@ -125,17 +128,17 @@ export async function reviewProxyAuth({ fixture, state, A, B, page, step, signIn
       assert.ok(await page.eval('!!document.querySelector("nav.rail")'), 'retained data stays visibly stale');
       return { staleConnectionShown: true, redirectsNotFollowed: true };
     });
-    await step('Proxy auth: full-page proxy reauthentication restores sign-in without persisting Canary credentials', async () => {
+    await step('Proxy auth: full-page proxy reauthentication restores the saved tab sign-in', async () => {
       await page.send('Page.navigate', { url: state.origin + '/fixture/proxy-login' });
-      await until(() => page.eval('!!document.querySelector("form") && !document.querySelector("nav.rail")'), 'fresh proxy session page');
+      await until(() => page.eval('!!document.querySelector("nav.rail")'), 'proxy and Canary sign-in restored');
       await ready();
-      await signIn({ ...A, url: state.origin });
       const storage = await page.eval('({local:{...localStorage},session:{...sessionStorage}})');
       assert.ok(Object.keys(storage.local).every(key => ['uptime-canary.endpoint', 'uptime-canary.theme'].includes(key)));
-      assert.deepEqual(storage.session, {});
-      assert.ok(!JSON.stringify(storage).includes(A.token));
+      assert.deepEqual(Object.keys(storage.session), ['uptime-canary.sign-in']);
+      assert.equal(JSON.parse(storage.session['uptime-canary.sign-in']).token,A.token);
+      assert.ok(!JSON.stringify(storage.local).includes(A.token));
       assert.ok(!JSON.stringify(storage).includes(B.token));
-      return { proxyReauthentication: true, canaryCredentialsRemainInMemory: true };
+      return { proxyReauthentication: true, canaryCredentialsRetainedInTab: true };
     });
     await step('Dashboard gateway: sign-in uses its server origin and never sends browser requests to private nodes', async () => {
       fixture.enableGateway();

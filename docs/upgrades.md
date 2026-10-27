@@ -23,7 +23,9 @@ does not override an operator's digest pin or prove that an image was deployed.
 ## Before deployment
 
 1. Read the change's accepted platform evidence and operating limits. Use the
-   same source version for every node and its dashboard. For containers, pin
+   compatible peer protocols for HA nodes. Dashboard management supports different
+   builds through their shared APIs, including older channel/tag APIs when a node
+   lacks bundled settings (see [control-plane compatibility](dashboard-control-plane.md#reloads-and-mixed-node-builds)). For containers, pin
    image digests when identical bytes matter; a `sha-<commit>` tag can be rebuilt
    by the publisher and `latest` can move.
 2. Record each node ID, database and retained identity directory, peer addresses,

@@ -81,7 +81,7 @@ function SignedInCard({ account }: { account: Account | null }) {
         ) : (
           <><dt>Valid</dt><dd>Until an admin replaces the token or removes the account</dd></>
         )}
-        <dt>Kept</dt><dd>In this tab’s memory only. Reloading or closing the tab asks you to sign in again.</dd>
+        <dt>Kept</dt><dd>In this tab’s session storage. Reloading keeps you signed in; signing out clears it.</dd>
         {account ? <><dt>Account ID</dt><dd><span className="mono">{account.id}</span></dd></> : null}
       </dl>
       <div className="row-wrap card-acts">

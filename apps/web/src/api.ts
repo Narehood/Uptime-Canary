@@ -12,6 +12,7 @@ import { readAvailability } from './availability';
 import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
 import { readScreenshot } from './screenshot';
 import { readFleetDeployment, readFleetGroup } from './fleetApi';
+import { rememberSignIn, savedSignIn } from './browserSession';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
@@ -601,8 +602,8 @@ export type Credential = 'token' | 'session';
 export const jsonBytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
 
 /**
- * The credential (an account token or a 12-hour password session) stays inside this client instance in memory:
- * never in browser storage, URLs, logs or error text.
+ * The credential stays inside this client. Verified sign-ins can be retained in tab session storage for reloads;
+ * passwords and MFA codes are never retained, and credentials never enter URLs, logs or error text.
  */
 export class CanaryApi {
   readonly baseUrl: string;
@@ -647,6 +648,17 @@ export class CanaryApi {
 
   /** Whether `other` carries the same credential (used to avoid signing out a session that's still in use). A node selection doesn't count. */
   sameCredential(other: CanaryApi): boolean { return other.token === this.token && other.baseUrl === this.baseUrl; }
+
+  remember(): void {
+    rememberSignIn({ baseUrl: this.baseUrl, token: this.token, credential: this.credential, expiresAt: this.expiresAt });
+  }
+
+  static remembered(): CanaryApi | null {
+    const saved = savedSignIn();
+    if (!saved) return null;
+    try { return new CanaryApi(saved.baseUrl, saved.token, { credential: saved.credential, ...(saved.expiresAt === null ? {} : { expiresAt: saved.expiresAt }) }); }
+    catch { rememberSignIn(null); return null; }
+  }
 
   /** Monitoring routes: to the selected registration when there is one. */
   private call<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<T> {

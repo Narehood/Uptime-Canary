@@ -16,6 +16,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
     && TSX_DISABLE_CACHE=1 node scripts/node-login-copy-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/dashboard-gateway-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/dashboard-control-plane-pure.mjs \
+    && TSX_DISABLE_CACHE=1 node scripts/session-restore-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/push-commands-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/frontend-review-pure.mjs \
     && TSX_DISABLE_CACHE=1 node scripts/editor-preservation-pure.mjs \

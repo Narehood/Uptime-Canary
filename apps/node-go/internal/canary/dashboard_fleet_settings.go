@@ -90,15 +90,16 @@ func (d *Dashboard) prepareFleetSettings(ctx context.Context, row dashboardFleet
 			}
 			data, _ := json.Marshal(found.ChannelInput)
 			origin, originalID := plan.NotificationSourceRegistrationID, id
-			if source, original := d.canonicalFleetResource(*plan, resourceChannel, id); source != "" {
+			mapped := fleetResourceID(view.Node.ID, resourceChannel, id)
+			if source, original, canonical := d.canonicalFleetResource(*plan, resourceChannel, id); source != "" {
 				origin, originalID = source, original
+				mapped = canonical
 				data, err = d.readCanonicalFleetResource(ctx, row, source, resourceChannel, original)
 				if err != nil {
 					return err
 				}
 			}
 			rememberNative(origin, resourceChannel, id, originalID)
-			mapped := fleetResourceID(view.Node.ID, resourceChannel, id)
 			mappings[resourceKey(resourceChannel, id)] = mapped
 			resources = append(resources, fleetResourceInput{ID: mapped, Kind: resourceChannel, Data: data})
 		}
@@ -123,15 +124,16 @@ func (d *Dashboard) prepareFleetSettings(ctx context.Context, row dashboardFleet
 			}
 			data, _ := json.Marshal(found.TagInput)
 			origin, originalID := plan.NotificationSourceRegistrationID, selected.TagID
-			if source, original := d.canonicalFleetResource(*plan, resourceTag, selected.TagID); source != "" {
+			mapped := fleetResourceID(view.Node.ID, resourceTag, selected.TagID)
+			if source, original, canonical := d.canonicalFleetResource(*plan, resourceTag, selected.TagID); source != "" {
 				origin, originalID = source, original
+				mapped = canonical
 				data, err = d.readCanonicalFleetResource(ctx, row, source, resourceTag, original)
 				if err != nil {
 					return err
 				}
 			}
 			rememberNative(origin, resourceTag, selected.TagID, originalID)
-			mapped := fleetResourceID(view.Node.ID, resourceTag, selected.TagID)
 			mappings[resourceKey(resourceTag, selected.TagID)] = mapped
 			resources = append(resources, fleetResourceInput{ID: mapped, Kind: resourceTag, Data: data})
 		}
@@ -146,17 +148,17 @@ func (d *Dashboard) prepareFleetSettings(ctx context.Context, row dashboardFleet
 
 // A default channel on a destination may itself be a synced copy. Follow its
 // recorded origin so a second monitor cannot push an older copy back upstream.
-func (d *Dashboard) canonicalFleetResource(consumer dashboardFleetPlan, kind, id string) (string, string) {
-	if !strings.HasPrefix(id, "fleet-") {
-		return "", ""
-	}
-	for registration, ids := range consumer.NativeResourceIDs {
-		if original := ids[resourceKey(kind, id)]; original != "" && original != id {
-			return registration, original
-		}
-	}
+func (d *Dashboard) canonicalFleetResource(consumer dashboardFleetPlan, kind, id string) (string, string, string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	origin := func(source, original string) (string, string, string) {
+		return source, original, fleetResourceID(d.registry[source].NodeID, kind, original)
+	}
+	for registration, ids := range consumer.NativeResourceIDs {
+		if original := ids[resourceKey(kind, id)]; original != "" && (original != id || registration != consumer.NotificationSourceRegistrationID) {
+			return origin(registration, original)
+		}
+	}
 	for _, row := range d.fleet {
 		if row.State == "removed" {
 			continue
@@ -165,23 +167,39 @@ func (d *Dashboard) canonicalFleetResource(consumer dashboardFleetPlan, kind, id
 		if err != nil || !plan.SyncNotifications {
 			continue
 		}
+		mappedID := id
+		if !strings.HasPrefix(id, "fleet-") {
+			// Ordinary resource IDs belong to one registration. Resolve that
+			// node's saved copy before consulting its canonical source mapping.
+			prefix := consumer.NotificationSourceRegistrationID + "/" + kind + "/"
+			mappedID = ""
+			for key, receipt := range plan.LegacyResources {
+				if receipt.ID == id && !receipt.NativeReuse && strings.HasPrefix(key, prefix) {
+					mappedID = strings.TrimPrefix(key, prefix)
+					break
+				}
+			}
+			if mappedID == "" {
+				continue
+			}
+		}
 		for registration, ids := range plan.NativeResourceIDs {
 			for key, original := range ids {
-				if original != "" && original != id && strings.HasPrefix(key, kind+"/") && (key == resourceKey(kind, id) || plan.ResourceIDs[key] == id) {
-					return registration, original
+				if original != "" && strings.HasPrefix(key, kind+"/") && (key == resourceKey(kind, mappedID) || plan.ResourceIDs[key] == mappedID) {
+					return origin(registration, original)
 				}
 			}
 		}
 		for key, mapped := range plan.ResourceIDs {
-			if mapped == id && strings.HasPrefix(key, kind+"/") {
+			if mapped == mappedID && strings.HasPrefix(key, kind+"/") {
 				original := strings.TrimPrefix(key, kind+"/")
-				if original != id {
-					return plan.NotificationSourceRegistrationID, original
+				if original != mappedID {
+					return origin(plan.NotificationSourceRegistrationID, original)
 				}
 			}
 		}
 	}
-	return "", ""
+	return "", "", ""
 }
 func (d *Dashboard) readCanonicalFleetResource(ctx context.Context, row dashboardFleetRecord, source, kind, id string) (json.RawMessage, error) {
 	_, target, err := d.fleetRead(ctx, source, row.ActorRole)
