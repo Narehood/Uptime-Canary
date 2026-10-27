@@ -99,8 +99,9 @@ export function FleetPlacementFields({ nodes, groups, selectedRegistrationIds, o
       <p className="fl-peer-note" id={`${id}-h`}>
         <Icon name="info" />
         <span>
-          A monitor placed on these nodes runs as a separate copy on each. Nodes registered here separately aren’t HA peers: each checks and alerts on its own.
-          Coordinated alerts need HA peering configured between the nodes.{shortcuts.length ? ' Adding a node group only ticks its nodes; it saves nothing by itself.' : ''}
+          Nodes configured as HA peers share one monitor configuration and coordinate its alerts. Independent nodes, registered here without
+          peering, each receive a separate copy and check and alert on their own. Registering nodes or putting them in a node group doesn’t peer them.
+          {shortcuts.length ? ' Adding a node group only ticks its nodes here; it saves nothing by itself.' : ''}
         </span>
       </p>
       <ErrorText id={`${id}-e`}>{error}</ErrorText>

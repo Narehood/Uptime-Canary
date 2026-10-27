@@ -148,6 +148,17 @@ function OpenChoices({ row, now, onOpen }: { row: FleetMonitorRow; now: number; 
   return <div className="fl-open" role="group" aria-label={`Open ${row.monitor.name} on`}><span className="fl-open-k" aria-hidden="true">Open on</span>{buttons}</div>;
 }
 
+/** Root-wired actions on a managed row, unchanged, grouped so they wrap under Open and name the monitor for assistive tech. */
+function PlacementActions({ row, props }: { row: FleetMonitorRow; props: FleetOverviewProps }) {
+  if (!row.deployment) return null;
+  const edit = row.deployment && props.onEditDeployment ? <button type="button" className="btn sm" onClick={() => props.onEditDeployment?.(row.deployment!)}>Edit placement<span className="vh"> of {row.monitor.name}</span></button> : null;
+  const retry = row.deployment && row.deployment.state !== 'applied' && props.onRetryDeployment ? <button type="button" className="btn sm" onClick={() => props.onRetryDeployment?.(row.deployment!)}>Retry placement<span className="vh"> of {row.monitor.name}</span></button> : null;
+  const remove = (row.deployment.state === 'applied' || row.deployment.canCancel || row.deployment.canRemove) && props.onRemoveDeployment ? <button type="button" className="btn sm danger" onClick={() => props.onRemoveDeployment?.(row.deployment!)}>{row.deployment.canCancel ? 'Cancel placement' : 'Remove everywhere'}<span className="vh">: {row.monitor.name}</span></button> : null;
+  const reconcile = (row.differingViews || row.deployment.state === 'blocked') && props.onReconcileDeployment ? <button type="button" className="btn sm" onClick={() => props.onReconcileDeployment?.(row.deployment!)}>Review node edits<span className="vh"> of {row.monitor.name}</span></button> : null;
+  if (!edit && !retry && !remove && !reconcile) return null;
+  return <div className="fl-dep-acts" role="group" aria-label={`Placement of ${row.monitor.name}`}>{edit}{retry}{remove}{reconcile}</div>;
+}
+
 function Kpi({ label, tone, value, of, sub }: { label: string; tone?: Tone; value: number; of?: number; sub: ReactNode }) {
   return (
     <div className="kpi">
@@ -322,9 +333,7 @@ export function FleetOverviewView(props: FleetOverviewProps) {
                         : <span className="muted small">No node runs it.</span>}
                     </td>
                     <td className="fl-open-c"><OpenChoices row={row} now={now} onOpen={onOpen} />
-                      {row.deployment && props.onEditDeployment ? <button type="button" className="btn sm" onClick={() => props.onEditDeployment?.(row.deployment!)}>Edit placement</button> : null}
-                      {row.deployment && row.deployment.state !== 'applied' && props.onRetryDeployment ? <button type="button" className="btn sm" onClick={() => props.onRetryDeployment?.(row.deployment!)}>Retry placement</button> : null}
-                      {row.deployment && (row.deployment.state === 'applied' || row.deployment.canCancel) && props.onRemoveDeployment ? <button type="button" className="btn sm danger" onClick={() => props.onRemoveDeployment?.(row.deployment!)}>{row.deployment.canCancel ? 'Cancel placement' : 'Remove everywhere'}</button> : null}
+                      <PlacementActions row={row} props={props} />
                     </td>
                   </tr>
                 ))}

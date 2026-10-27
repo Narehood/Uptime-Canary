@@ -24,6 +24,7 @@ export interface FleetOverviewProps {
   onRetryDeployment?: (deployment: FleetDeployment) => void;
   onRemoveDeployment?: (deployment: FleetDeployment) => void;
   onEditDeployment?: (deployment: FleetDeployment) => void;
+  onReconcileDeployment?: (deployment: FleetDeployment) => void;
 }
 
 export interface FleetPlacementFieldsProps {

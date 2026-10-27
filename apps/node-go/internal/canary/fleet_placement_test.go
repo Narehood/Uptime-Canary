@@ -173,6 +173,25 @@ func TestFleetPlacementRetirementCannotResurrect(t *testing.T) {
 	placementFixtureWrite(t, n, placementFixtureCommand(t, 3, deleted.Revision, false), 409)
 }
 
+func TestFleetPlacementRetiresNativeDeletionWithoutAnotherRevision(t *testing.T) {
+	n := placementFixtureNode(t, ":memory:")
+	first := placementFixtureWrite(t, n, placementFixtureCommand(t, 1, "", false), 201)
+	deleted, err := n.writeMonitor(n.heads[first.MonitorID][0].Monitor.MonitorInput, n.heads[first.MonitorID], first.MonitorID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges := len(n.revisionEdges)
+	command := placementFixtureCommand(t, 2, first.Revision, true)
+	result := placementFixtureWrite(t, n, command, 200)
+	if !result.Deleted || result.Revision != deleted.Revision || n.current(first.MonitorID) != nil || len(n.revisionEdges) != edges {
+		t.Fatal("acknowledging a native deletion rewrote or revived the monitor")
+	}
+	if retry := placementFixtureWrite(t, n, command, 200); retry != result {
+		t.Fatal("native deletion acknowledgement is not stable")
+	}
+	placementFixtureWrite(t, n, placementFixtureCommand(t, 3, result.Revision, false), 409)
+}
+
 func TestFleetPlacementAuthorityAndBodyValidation(t *testing.T) {
 	n := placementFixtureNode(t, ":memory:")
 	path := "/api/fleet-placements/" + placementFixtureID

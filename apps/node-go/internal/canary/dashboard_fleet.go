@@ -59,10 +59,11 @@ type dashboardFleetRecord struct {
 	RetryAt         int64                     `json:"retryAt"`
 }
 type dashboardFleetPlan struct {
-	References map[string]fleetTargetReferences `json:"references,omitempty"`
-	Monitor    MonitorInput                     `json:"monitor"`
-	Prepared   bool                             `json:"prepared"`
-	Deleted    bool                             `json:"deleted"`
+	ObservedRevisions map[string]string                `json:"observedRevisions,omitempty"`
+	References        map[string]fleetTargetReferences `json:"references,omitempty"`
+	Monitor           MonitorInput                     `json:"monitor"`
+	Prepared          bool                             `json:"prepared"`
+	Deleted           bool                             `json:"deleted"`
 	// Monitor settings are held once, rather than copied into 64 encrypted commands.
 	Commands map[string]fleetPlacementCommand `json:"commands"`
 }
@@ -240,6 +241,7 @@ func (d *Dashboard) publicFleet(row dashboardFleetRecord, role string) (any, err
 		Reason          string                           `json:"reason,omitempty"`
 		Monitor         Monitor                          `json:"monitor"`
 		CanCancel       bool                             `json:"canCancel"`
+		CanRemove       bool                             `json:"canRemove"`
 		References      map[string]fleetTargetReferences `json:"references,omitempty"`
 	}{row.ID, row.Revision, row.UpdatedAt, slices.Clone(row.RegistrationIDs), func() *fleetSourceReference {
 		if row.SourceCompleted {
@@ -247,7 +249,7 @@ func (d *Dashboard) publicFleet(row dashboardFleetRecord, role string) (any, err
 		}
 		return row.Source
 	}(), slices.Clone(row.Placements), row.State, row.Reason,
-		publicMonitor(Monitor{MonitorInput: plan.Monitor, ID: row.ID, Revision: row.Revision, UpdatedAt: row.UpdatedAt, Deleted: plan.Deleted}, role), fleetCanCancel(row, plan), func() map[string]fleetTargetReferences {
+		publicMonitor(Monitor{MonitorInput: plan.Monitor, ID: row.ID, Revision: row.Revision, UpdatedAt: row.UpdatedAt, Deleted: plan.Deleted}, role), fleetCanCancel(row, plan), fleetWritesConfirmed(row, plan) && !plan.Deleted && row.State != "removed", func() map[string]fleetTargetReferences {
 			if role == "viewer" {
 				return nil
 			}
@@ -317,14 +319,15 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 		return
 	}
 	var in struct {
-		RequestID       string                     `json:"requestId"`
-		Revision        string                     `json:"revision"`
-		Monitor         json.RawMessage            `json:"monitor"`
-		RegistrationIDs []string                   `json:"registrationIds"`
-		Source          *fleetSourceReference      `json:"source"`
-		References      map[string]json.RawMessage `json:"references"`
+		RequestID         string                     `json:"requestId"`
+		Revision          string                     `json:"revision"`
+		Monitor           json.RawMessage            `json:"monitor"`
+		RegistrationIDs   []string                   `json:"registrationIds"`
+		Source            *fleetSourceReference      `json:"source"`
+		References        map[string]json.RawMessage `json:"references"`
+		ObservedRevisions map[string]string          `json:"observedRevisions"`
 	}
-	if err = dashboardJSON(b, &in, "requestId", "revision", "monitor", "registrationIds", "source", "references"); err != nil {
+	if err = dashboardJSON(b, &in, "requestId", "revision", "monitor", "registrationIds", "source", "references", "observedRevisions"); err != nil {
 		errorReply(w, err)
 		return
 	}
@@ -332,15 +335,46 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 		errorReply(w, fail(409, "Fleet configuration changed; reload before saving"))
 		return
 	}
-	if id != "" && (r.Method == "DELETE" || action == "retry" && r.Method == "POST") {
+	if id != "" && (r.Method == "DELETE" && action == "" || (action == "retry" || action == "reconcile") && r.Method == "POST") {
 		plan, e := d.openFleet(row)
 		if e != nil {
 			errorReply(w, fail(503, "Fleet configuration unavailable"))
 			return
 		}
+		if action == "reconcile" {
+			if !fleetWritesConfirmed(row, plan) || row.State == "removed" || len(in.ObservedRevisions) < 1 || len(in.ObservedRevisions) > 64 {
+				errorReply(w, fail(409, "Resolve the saved command before reviewing node edits"))
+				return
+			}
+			for placement, revision := range in.ObservedRevisions {
+				found := false
+				for _, p := range row.Placements {
+					if p.ID == placement && p.State != "removed" && (p.Sequence > 0 || row.Source != nil && p.MonitorID == row.Source.MonitorID && p.RegistrationID == row.Source.RegistrationID) {
+						found = true
+					}
+				}
+				if !found || identifier(revision, "observed revision") != nil {
+					errorReply(w, fail(400, "Review only this deployment's active placement revisions"))
+					return
+				}
+			}
+			plan.ObservedRevisions = in.ObservedRevisions
+			plan.Prepared, plan.Commands = false, nil
+		}
 		if r.Method == "DELETE" {
 			if row.State == "removed" {
 				reply(w, 204, nil)
+				return
+			}
+			if plan.Deleted {
+				// Retrying removal after a lost answer must retain the original
+				// deletion, including acknowledged anchors and offline members.
+				v, err := d.publicFleet(row, actor.Role)
+				if err != nil {
+					errorReply(w, err)
+					return
+				}
+				reply(w, 202, v)
 				return
 			}
 			if fleetCanCancel(row, plan) {
@@ -367,6 +401,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 			plan.Deleted = true
 			plan.Prepared = false
 			plan.Commands = nil
+			plan.ObservedRevisions = nil
 		}
 		row.Revision = newID()
 		row.State = "pending"
@@ -386,6 +421,10 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	}
 	if action != "" || !(id == "" && r.Method == "POST" || id != "" && r.Method == "PUT") {
 		errorReply(w, fail(404, "Not found"))
+		return
+	}
+	if len(in.ObservedRevisions) > 0 {
+		errorReply(w, fail(400, "Observed revisions require explicit reconciliation"))
 		return
 	}
 	if len(in.RegistrationIDs) < 1 || !validIDs(in.RegistrationIDs, 64) || len(unique(in.RegistrationIDs)) != len(in.RegistrationIDs) {
@@ -610,6 +649,22 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 			return
 		}
 	}
+	for otherID, existing := range all {
+		if otherID == id || existing.Name != g.Name {
+			continue
+		}
+		left, right := slices.Clone(existing.RegistrationIDs), slices.Clone(g.RegistrationIDs)
+		slices.Sort(left)
+		slices.Sort(right)
+		// A lost create response is recoverable without duplicating a saved
+		// selection. Equal names with different membership require an explicit edit.
+		if id == "" && slices.Equal(left, right) {
+			reply(w, 200, existing)
+			return
+		}
+		errorReply(w, fail(409, "A node group already uses this name; reload and edit that group"))
+		return
+	}
 	if id == "" {
 		if len(all) >= 200 {
 			errorReply(w, fail(409, "Node group capacity exceeded"))
@@ -780,6 +835,56 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	commands := map[string]fleetPlacementCommand{}
 	for i := range placements {
 		p := &placements[i]
+		var current *MonitorView
+		for _, view := range views[p.RegistrationID].Monitors {
+			if view.Monitor.ID == p.MonitorID {
+				current = &view
+				break
+			}
+		}
+		if observed, ok := plan.ObservedRevisions[p.ID]; ok {
+			if current == nil || current.ConfigConflict || current.Monitor.Revision != observed {
+				return fail(409, "A reviewed node revision changed again; refresh before reconciling")
+			}
+			if p.Sequence > 0 {
+				d.mu.Lock()
+				target := d.registry[p.RegistrationID]
+				d.mu.Unlock()
+				secret, err := d.openSecrets(target)
+				if err != nil {
+					return err
+				}
+				response, b, err := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "GET", "/api/fleet-placements/"+p.ID, nil)
+				var receipt fleetPlacementResult
+				if err != nil || response.StatusCode != 200 || json.Unmarshal(b, &receipt) != nil || receipt.PlacementID != p.ID || receipt.MonitorID != p.MonitorID || receipt.Sequence != p.Sequence || receipt.Deleted {
+					return fail(409, "The saved placement receipt differs; resolve its original command first")
+				}
+			}
+			p.Revision = observed
+		}
+		if current != nil && (p.Sequence == 0 && p.MonitorID != "fleet-"+p.ID || plan.ObservedRevisions[p.ID] != "") {
+			// Adoption or explicit reconciliation may replace a native assignment
+			// wider than the last dashboard plan. Track every former runner; an
+			// unregistered runner cannot honestly be confirmed stopped here.
+			for _, nodeID := range current.Monitor.NodeIDs {
+				if slices.Contains(p.NodeIDs, nodeID) {
+					continue
+				}
+				d.mu.Lock()
+				registration := ""
+				for id, node := range d.registry {
+					if node.NodeID == nodeID {
+						registration = id
+						break
+					}
+				}
+				d.mu.Unlock()
+				if registration == "" {
+					return fail(409, "Register every original runner before replacing its existing monitor assignment")
+				}
+				p.RetiringRegistrationIDs = unique(append(p.RetiringRegistrationIDs, registration))
+			}
+		}
 		command := fleetPlacementCommand{Sequence: p.Sequence + 1, Revision: p.Revision, Deleted: plan.Deleted || len(p.NodeIDs) == 0}
 		if p.Sequence == 0 && p.MonitorID != "fleet-"+p.ID {
 			command.Adopt = true
@@ -819,6 +924,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		}
 	}
 	plan.Prepared = true
+	plan.ObservedRevisions = nil
 	return nil
 }
 func (d *Dashboard) finishFleet(ctx context.Context, id string) {

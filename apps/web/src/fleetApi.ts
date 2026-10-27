@@ -46,6 +46,7 @@ export function readFleetDeployment(value: unknown): FleetDeployment {
   return { id: value.id, revision: value.revision, updatedAt: value.updatedAt, registrationIds: [...value.registrationIds], placements,
     ...(value.references !== undefined ? {references} : {}),
     canCancel: value.canCancel === true,
+    canRemove: value.canRemove === true,
     state: value.state as FleetDeployment['state'], monitor: { ...value.monitor, nodeIds: [...value.monitor.nodeIds] } as unknown as Monitor,
     ...(source ? { source } : {}), ...(text(value.reason, 1024) ? { reason: value.reason } : {}) };
 }

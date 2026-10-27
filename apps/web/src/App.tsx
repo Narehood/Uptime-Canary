@@ -170,7 +170,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const endpoint = overview.node.id;
   // Control plane: the account, its role and its session are the dashboard's, whichever node is selected.
   const controlPlane = controlPlaneMode();
-  const fleetRoute = controlPlane && ['overview', 'monitors', 'node-groups'].includes(route.name);
+  const fleetRoute = controlPlane && ['overview', 'monitors', 'groups', 'node-groups', 'fleet-monitor-edit'].includes(route.name);
   const role = controlPlane ? account?.role ?? overview.user.role : overview.user.role;
   const userName = controlPlane ? account?.name ?? overview.user.name : overview.user.name;
   const accountHome = controlPlane ? 'this dashboard' : endpoint;
@@ -185,6 +185,11 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const tags = useCatalog<TagView>(`${connection.identity}|${api.baseUrl}|tags`, signal => nodeScope ? api.tags(signal) : Promise.resolve([]), view => view.tag.id);
   const registry = useCatalog<RegisteredNode>(`${connection.identity}|${api.baseUrl}|registry`, signal => controlPlane ? api.registeredNodes(signal) : Promise.resolve([]), node => node.id, 15_000);
   const fleetCatalog = useFleetCatalog(api, `${connection.identity}|${role}`, controlPlane && connection.link !== 'rejected');
+  // First sign-in still leads to Add node. Once registered, overview reads the
+  // complete fleet without requiring a node selection or another sign-in.
+  useEffect(() => {
+    if (controlPlane && route.name === 'overview' && registry.list?.length === 0) navigate(href('nodes'));
+  }, [controlPlane, route.name, registry.list?.length]);
   // The selected registration as the list shows it now. A rename or an address move keeps the registration and its
   // node, so the selection follows it without dropping anything. When an operation on it finishes, it is read again at
   // once rather than after the poll's back-off.
@@ -401,6 +406,7 @@ const DASHBOARD_ROUTES: ReadonlySet<Route['name']> = new Set<Route['name']>(['no
  * do instead of an empty stand-in that could read as "no monitors". Nodes and accounts never wait for a node.
  */
 function ControlPlaneView({ route, connection }: { route: Route; connection: Connection }) {
+  if (route.name === 'fleet-monitor-edit') return <View route={route} />;
   if (route.name === 'node-groups' || route.name === 'groups') return <FleetController groups />;
   if (route.name === 'overview' || route.name === 'monitors') return <FleetController />;
   if (DASHBOARD_ROUTES.has(route.name)) return <View route={route} />;

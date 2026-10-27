@@ -13,6 +13,7 @@ export interface FleetPlacement {
 export interface FleetDeployment {
   references?: Record<string, FleetTargetReferences>;
   canCancel?: boolean;
+  canRemove?: boolean;
   id: string; revision: string; updatedAt: number; registrationIds: string[]; source?: FleetSourceReference;
   placements: FleetPlacement[]; state: 'pending' | 'applied' | 'blocked' | 'unauthorized' | 'removed'; reason?: string;
   monitor: Monitor;

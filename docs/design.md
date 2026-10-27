@@ -1,5 +1,18 @@
 # Uptime-Canary dashboard design
 
+## Fleet-management candidate, 2026-10-26
+
+The candidate adds a central Overview/Monitors view across dashboard registrations,
+saved node groups and placement on independent nodes. A logical monitor retains
+per-node results and separate physical history where nodes are not HA peers.
+Explicit destination resource choices avoid guessing channel, dependency-group
+or tag identities. Durable encrypted commands, revision checks and member
+confirmation keep retries, direct node edits and offline removals visible.
+See [Fleet management](fleet-management.md) for workflow and validation limits.
+This feature is not yet in published images. The following dated sections retain
+their earlier source scope; protocol-20 TLS, alert previews and update notices
+have since merged and are in the published development builds.
+
 ## Protocol-20 candidate, 2026-10-26
 
 The current feature branch adds verified native TLS onboarding, message presets

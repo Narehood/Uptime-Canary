@@ -17,6 +17,7 @@ const { readReferenceProfiles } = await load('fleetReferences.ts');
 const { FleetOverviewView } = await load('views/FleetOverview.tsx');
 const { FleetPlacementFields } = await load('views/FleetPlacementFields.tsx');
 const { FleetNodeGroupsView } = await load('views/FleetNodeGroups.tsx');
+const { FleetReferenceFields } = await load('views/FleetReferenceFields.tsx');
 const React = await import('react');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const h = React.createElement;
@@ -141,6 +142,32 @@ await check('an old healthy result cannot confirm a pending write or a different
     assert.equal(result.state, 'unknown'); assert.match(result.message, /not confirmed/u);
   }
 });
+await check('reference controls retain stored missing IDs, values and flags without mutating or sending them', () => {
+  const base = { notificationIds: ['missing-channel'], groupId: 'missing-group', tags: [{ tagId: 'missing-tag', value: 'preserved tag value', public: false }] };
+  const overrides = { [B.id]: { ...base, tags: base.tags.map(tag => Object.freeze({ ...tag })) } };
+  Object.freeze(base.tags); Object.freeze(base); Object.freeze(overrides[B.id]); Object.freeze(overrides);
+  const before = JSON.stringify({ base, overrides }); let writes = 0;
+  const profiles = [{ registrationId: B.id, label: B.label, nodeId: B.nodeId, status: 'ready', channels: [], tags: [], groups: [] }];
+  const html = render(FleetReferenceFields, { base, overrides, profiles, onChange() { writes++; }, onRetry() {} });
+  for (const expected of ['missing-channel', 'missing-group', 'missing-tag', 'preserved tag value', 'Outage dependency group on this node', 'Remove']) assert.ok(html.includes(expected));
+  assert.equal(writes, 0); assert.equal(JSON.stringify({ base, overrides }), before);
+});
+await check('unread profiles preserve choices, expose Retry and disable their controls during save', () => {
+  const profiles = [{ registrationId: A.id, label: A.label, nodeId: A.nodeId, status: 'unavailable', channels: [], tags: [], groups: [] }];
+  const html = render(FleetReferenceFields, { profiles, base: {}, overrides: { [A.id]: { notificationIds: [], groupId: '', tags: [] } }, disabled: true, onChange() { assert.fail('render wrote choices'); }, onRetry() {} });
+  assert.match(html, /<fieldset[^>]*disabled/u); assert.match(html, /Retry/); assert.match(html, /Choices.*stay as they are/u);
+  assert.match(html, /HA peers/u); assert.match(html, /independent nodes/u);
+});
+await check('reconciliation sends only explicitly reviewed revisions to the dashboard itself', async () => {
+  const d = deployment(); let sent;
+  globalThis.fetch = async (url, init) => { sent = { url, ...init }; return new Response(JSON.stringify({ ...d, canRemove: true }), { headers: { 'Content-Type': 'application/json' } }); };
+  const api = new CanaryApi(location.origin, token, { credential: 'session', registeredNode: B.id });
+  const observedRevisions = { [d.placements[0].id]: 'reviewed-node-revision' };
+  const result = await api.reconcileFleetMonitor(d, observedRevisions);
+  assert.equal(result.canRemove, true); assert.ok(String(sent.url).endsWith(`/${d.id}/reconcile`)); assert.equal(sent.method, 'POST');
+  assert.equal(sent.headers['X-Canary-Registered-Node'], undefined);
+  assert.deepEqual(JSON.parse(sent.body), { revision: d.revision, observedRevisions });
+});
 scope.unregister();
-console.log(`${15 - failed}/15 fleet management groups passed`);
+console.log(`${18 - failed}/18 fleet management groups passed`);
 if (failed) process.exitCode = 1;

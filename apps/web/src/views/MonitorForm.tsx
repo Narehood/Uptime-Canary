@@ -10,12 +10,14 @@ import {
 } from '../checks';
 import { useCanary } from '../context';
 import { FleetPlacementFields } from './FleetPlacementFields';
+import { FleetReferenceFields } from './FleetReferenceFields';
+import { useReferenceProfiles } from '../fleetReferences';
 import { managedMonitor } from '../fleet';
 import { pushCommands } from '../dashboard';
 import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shortId, shortRev, span } from '../format';
 import { GAMEDIG_FIELD_LABEL, buildGameDig, gamedigDraftFrom, gamedigMasked, type GameDigDraft, type GameDigField } from '../gamedig';
 import { GP_FIELD_LABEL, GP_SECTION, buildGlobalping, gpDraftFrom, gpMasked, type GpDraft, type GpField } from '../globalping';
-import { groupPath } from '../model';
+import { canEdit, groupPath } from '../model';
 import {
   DNS_EXPECTED_BYTES, DNS_EXPECTED_MAX, DNS_EXPECTED_TOTAL, DNS_RECORD_SHAPE, descriptionProblem, dnsNeedsServer, extendedRecordProblem, isExtendedRecord, parseSubprotocols,
   subprotocolProblem, subprotocolsText,
@@ -1107,24 +1109,26 @@ export function MonitorFormView({ id, cloneOf, fleetId }: { id?: string; cloneOf
  * (which names the source alone), browser storage or the console.
  */
 function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: string; fleetId?: string }) {
-  const { overview, monitorMap, nodes, nodeMap, endpoint, editable, api, refresh, groups, groupMap, stillCurrent, channels, controlPlane, fleet, registry, selection } = useCanary();
+  const { overview, monitorMap, nodes, nodeMap, endpoint, editable: nodeEditable, api, refresh, groups, groupMap, stillCurrent, channels, controlPlane, fleet, registry, selection, connection, role } = useCanary();
+  const editable = fleetId && controlPlane ? canEdit(role) && connection.link !== 'rejected' : nodeEditable;
   const existing = id ? monitorMap.get(id) : undefined;
   const source = cloneOf ? monitorMap.get(cloneOf) : undefined;
   const defaultNodes = nodes.filter(node => node.state !== 'unlisted').map(node => node.id);
-  const fleetEnabled = controlPlane && Boolean(fleet) && Boolean(selection);
-  const [fleetBase] = useState(() => fleetId ? fleet?.deployments.find(item => item.id === fleetId) : existing ? managedMonitor(fleet?.deployments ?? [], selection?.id, existing.monitor.id) : undefined);
+  const fleetEnabled = controlPlane && Boolean(fleet) && Boolean(selection || fleetId);
+  const [fleetBase, setFleetBase] = useState(() => fleetId ? fleet?.deployments.find(item => item.id === fleetId) : existing ? managedMonitor(fleet?.deployments ?? [], selection?.id, existing.monitor.id) : undefined);
   // Only editors copy: a viewer's monitor has its private settings removed. A monitor whose nodes hold different
   // versions isn't copied, because one version would be picked silently; nor is a type this dashboard doesn't know.
   const [copy] = useState<MonitorInput | undefined>(() => editable && source && !source.configConflict && checkType(source.monitor.type) ? cloneInput(source.monitor, newPushToken) : undefined);
   // The copy is the base of a create, never of an update, so it never needs an ID or revision.
   const start = fleetBase ? { ...fleetBase.monitor, id: existing?.monitor.id ?? fleetBase.monitor.id, revision: existing?.monitor.revision ?? fleetBase.revision } : existing?.monitor ?? (copy as Monitor | undefined);
   const [draft, setDraft] = useState<Draft>(() => draftFrom(start, defaultNodes));
-  const [targetReferences] = useState<Record<string,FleetTargetReferences>>(() => fleetBase?.references ?? {});
+  const [targetReferences, setTargetReferences] = useState<Record<string,FleetTargetReferences>>(() => fleetBase?.references ?? {});
   const [fleetRequestId] = useState(() => fleetEnabled ? newPushToken().slice(0, 32) : '');
   const [fleetTargets, setFleetTargets] = useState<string[]>(() => !fleetEnabled ? [] : fleetBase ? [...fleetBase.registrationIds]
     : (start?.nodeIds ?? [endpoint]).map(nodeId => registry.list?.find(row => row.nodeId === nodeId)?.id ?? `unregistered:${nodeId}`));
   const [initial, setInitial] = useState<Draft | undefined>(() => start ? draftFrom(start, defaultNodes) : undefined);
   const [baseMonitor, setBaseMonitor] = useState<Monitor | undefined>(start);
+  const profiles = useReferenceProfiles(api, fleetEnabled ? (registry.list ?? []).filter(node => fleetTargets.includes(node.id)) : [], `${connection?.identity ?? 'direct'}|${role}`, fleetEnabled && editable);
   const [version, setVersion] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1203,7 +1207,8 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
   const visibleServiceErrors = showErrors ? serviceErrors : {};
   const set = <K extends keyof Draft>(key: K, value: Draft[K]): void => setDraft(current => ({ ...current, [key]: value }));
   const current = existing?.monitor;
-  const changedElsewhere = Boolean(current && baseMonitor && current.revision !== baseMonitor.revision);
+  const latestFleet = fleetBase ? fleet?.deployments.find(item => item.id === fleetBase.id) : undefined;
+  const changedElsewhere = fleetBase ? latestFleet?.revision !== fleetBase.revision : Boolean(current && baseMonitor && current.revision !== baseMonitor.revision);
   const conflicted = Boolean(existing?.configConflict);
   const group = draft.groupId ? groupMap.get(draft.groupId) : undefined;
   const groupList = (groups ?? []).filter(view => !view.group.deleted);
@@ -1271,10 +1276,16 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
   };
 
   const loadLatest = (): void => {
-    if (!current) return;
-    setDraft(draftFrom(current, defaultNodes));
-    setInitial(draftFrom(current, defaultNodes));
-    setBaseMonitor(current);
+    const latest = fleetBase ? latestFleet?.monitor : current;
+    if (!latest) return;
+    if (fleetBase && latestFleet) {
+      setFleetBase(latestFleet);
+      setFleetTargets([...latestFleet.registrationIds]);
+      setTargetReferences(latestFleet.references ?? {});
+    }
+    setDraft(draftFrom(latest, defaultNodes));
+    setInitial(draftFrom(latest, defaultNodes));
+    setBaseMonitor(latest);
     setVersion(v => v + 1);
     setFailure(null);
     setShowErrors(false);
@@ -1283,7 +1294,7 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
   const importJson = (value: Partial<Monitor>): string | null => {
     if (typeof value.type !== 'string' || !checkType(value.type)) return 'The JSON needs a known "type", such as "http".';
     // A copy fills over its own settings, as an edit fills over the stored ones; a pasted push token is still checked.
-    const filled = draftFrom({ ...(current ?? copy ?? {}), ...value, nodeIds: Array.isArray(value.nodeIds) ? value.nodeIds : draft.nodeIds } as Monitor, defaultNodes);
+    const filled = draftFrom({ ...(fleetBase?.monitor ?? current ?? copy ?? {}), ...value, nodeIds: Array.isArray(value.nodeIds) ? value.nodeIds : draft.nodeIds } as Monitor, defaultNodes);
     // On a new monitor, JSON without a channel list keeps the form's current channels (and their defaults) as they are.
     const next = !current && !copy && !Array.isArray(value.notificationIds) ? { ...filled, channelIds: draft.channelIds, channelsMode: draft.channelsMode } : filled;
     setDraft(next);
@@ -1319,13 +1330,13 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
         </Banner>
       ) : changedElsewhere ? (
         <Banner tone="warn" title={<>This monitor changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" onClick={loadLatest}><Icon name="refresh" />Load latest (discards your edits)</button>}>
-          It’s now revision <Rev revision={current!.revision} />. Saving your version will be rejected because it’s based on <Rev revision={baseMonitor!.revision} />.
+          It’s now revision <Rev revision={latestFleet?.revision ?? current?.revision ?? ''} />. Saving your version will be rejected because it’s based on <Rev revision={fleetBase?.revision ?? baseMonitor?.revision ?? ''} />.
         </Banner>
       ) : null}
       <Card>
         <form id={formId} key={version} className="form" onSubmit={event => { void submit(event); }} noValidate aria-busy={saving}>
           <ErrorSummary ref={summaryRef} title={failure ? (failure.stale ? 'Not saved: the monitor changed or has a conflict' : 'Not saved') : 'Check these fields'} errors={failure ? [] : errorList}>
-            {failure ? <p>{failure.message}{failure.stale && current ? <> <button type="button" className="linkbtn" onClick={loadLatest}>Load the latest version</button> and apply your change again.</> : null}</p> : null}
+            {failure ? <p>{failure.message}{failure.stale && (current || latestFleet) ? <> <button type="button" className="linkbtn" onClick={loadLatest}>Load the latest version</button> and apply your change again.</> : null}</p> : null}
           </ErrorSummary>
           {copy ? (
             <div className="full svc-note copy-note" role="note">
@@ -1569,6 +1580,9 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
               ? 'Each chosen node sends its queries to the query service at the address above, so every one must reach it. The game server is queried from the service’s network, not the node’s: with one shared service every node measures from the same place, so give each location its own nearby service under the same name to compare locations. Out-of-view nodes receive the monitor when they reconnect.'
               : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
           />}
+          {fleetEnabled ? <FleetReferenceFields profiles={profiles.profiles} base={{ notificationIds: input?.notificationIds ?? draft.channelIds, groupId: input?.groupId ?? draft.groupId,
+            tags: input?.tags ?? draft.tags.map(tag => ({ tagId: tag.tagId, ...(tag.value ? { value: tag.value } : {}), ...(tag.isPublic ? { public: true } : {}) })) }}
+            overrides={targetReferences} onChange={setTargetReferences} onRetry={profiles.reload} disabled={saving} /> : null}
           <div className="fld full">
             <span className="flabel">Notification order if it goes down</span>
             {fleetEnabled ? <small>Existing HA peers can coordinate within their shared placement. Independent nodes run separate copies and may each send alerts. The JSON preview describes node settings; the registered-node selection above is saved separately.</small> : <><CandidateOrder ids={draft.nodeIds} nodes={nodeMap} />
@@ -1613,7 +1627,7 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
                 {draft.groupId && !group ? <option value={draft.groupId}>Missing group ({draft.groupId.slice(0, 8)})</option> : null}
               </select>
               <small id={`${formId}-group-h`}>
-                {!draft.groupId ? <>Groups let one outage alert stand in for its dependent monitors. <a href={href('groups')}>Manage groups</a></>
+                {!draft.groupId ? <>Groups let one outage alert stand in for its dependent monitors. <a href={href(controlPlane ? 'outage-groups' : 'groups')}>Manage groups</a></>
                   : !group ? 'This group no longer exists. Alerts are sent normally.'
                   : group.group.outageMonitorId === current?.id ? 'This monitor is the group’s outage monitor. Its own alerts are never held back by its group.'
                   : group.group.outageMonitorId ? <>While <b>{monitorMap.get(group.group.outageMonitorId)?.monitor.name ?? 'its outage monitor'}</b> is down and its own alert reached a destination, this monitor’s alerts to that destination are held back after the group’s grace period. Other destinations fail open. Checks and incidents are still recorded.</>

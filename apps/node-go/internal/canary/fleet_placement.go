@@ -143,6 +143,24 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 		return 0, nil, fail(409, "This placement was retired; create a new placement")
 	}
 	heads := n.heads[monitorID]
+	// A native delete can finish before the dashboard retires its owned copy.
+	// Acknowledge that ready tombstone without creating another revision or
+	// reviving the monitor. Live or conflicted heads still require the normal CAS.
+	if exists && command.Deleted && len(heads) == 1 && heads[0].Monitor.Deleted && n.monitorVersionReady(heads[0]) &&
+		(command.Revision == previous.Revision || command.Revision == heads[0].Monitor.Revision) {
+		if r.Context().Err() != nil {
+			return 0, nil, fail(408, "Placement request cancelled")
+		}
+		if validate {
+			return 200, map[string]bool{"valid": true}, nil
+		}
+		result := fleetPlacementResult{PlacementID: id, MonitorID: monitorID, Sequence: command.Sequence, Revision: heads[0].Monitor.Revision, Deleted: true}
+		receipt := fleetPlacementReceipt{Owner: owner, CommandHash: hash, fleetPlacementResult: result}
+		if err = n.applySnapshotLocal(Snapshot{}, func(e dbExec) error { return put(e, fleetPlacementCategory, monitorID, receipt) }); err != nil {
+			return 0, nil, err
+		}
+		return 200, result, nil
+	}
 	if !exists {
 		if command.Adopt {
 			if len(heads) != 1 || heads[0].Monitor.Deleted || command.Revision != heads[0].Monitor.Revision || !n.monitorVersionReady(heads[0]) {

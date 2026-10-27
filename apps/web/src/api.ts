@@ -682,6 +682,9 @@ export class CanaryApi {
   async retryFleetMonitor(existing: FleetDeployment): Promise<FleetDeployment> {
     return readFleetDeployment(await this.own(`/api/dashboard/fleet/monitors/${encodeURIComponent(existing.id)}/retry`, 'POST', { revision: existing.revision }));
   }
+  async reconcileFleetMonitor(existing: FleetDeployment, observedRevisions: Record<string, string>): Promise<FleetDeployment> {
+    return readFleetDeployment(await this.own(`/api/dashboard/fleet/monitors/${encodeURIComponent(existing.id)}/reconcile`, 'POST', { revision: existing.revision, observedRevisions }));
+  }
   removeFleetMonitor(existing: FleetDeployment): Promise<unknown> { return this.own(`/api/dashboard/fleet/monitors/${encodeURIComponent(existing.id)}`, 'DELETE', { revision: existing.revision }); }
   createMonitor(input: MonitorInput): Promise<Monitor> { return this.call('/api/monitors', 'POST', input); }
   updateMonitor(id: string, input: MonitorInput & { revision: string }): Promise<Monitor> {

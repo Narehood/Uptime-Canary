@@ -1,9 +1,11 @@
 # Dashboard account and node enrollment contract
 
-Status: the dashboard-first shared-registry workflow was accepted and merged
-in PR #11 at `103f5c4`. The protocol-19 completion candidate adds registry
-maintenance and credential rotation; its focused Windows checks do not
-establish current hosted, image, platform or release acceptance.
+Status: the dashboard-first shared-registry workflow merged in PR #11 at
+`103f5c4`; later merged development builds add registry maintenance, node-initiated
+connections and verified native TLS. The current fleet-management candidate
+adds a central inventory, dashboard node groups and durable placement across
+independent registrations. Its workflow and separate validation limits are in
+[Fleet management](fleet-management.md); it is not in the published PR #18 images.
 
 ## User workflow
 
@@ -31,6 +33,11 @@ establish current hosted, image, platform or release acceptance.
 - Monitoring nodes retain their independent databases, identity reservations,
   checks, incidents, alert delivery and peer coordination. Stopping the
   dashboard must not stop that work.
+- In the fleet candidate, the dashboard also retains encrypted logical monitor
+  settings, destination-local reference choices and deployment journals. It
+  does not take ownership of nodes' raw history or coordinate alerts between
+  independent HA scopes. Dashboard node groups are saved selections, separate
+  from a node's outage dependency groups.
 - Adding a node to the dashboard registry does not silently merge unrelated
   HA clusters or rotate a node's identity, credentials or cluster secret. Peer
   membership remains an explicit operational configuration.

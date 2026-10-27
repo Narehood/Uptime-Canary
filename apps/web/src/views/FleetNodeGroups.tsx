@@ -140,7 +140,7 @@ function GroupCard({ group, nodes, editable, canEdit, canRemove, onEdit, onRemov
   );
 }
 
-export function FleetNodeGroupsView({ nodes, groups, loading, editable, error, onSave, onRemove, onRefresh }: FleetNodeGroupsProps) {
+export function FleetNodeGroupsView({ nodes, groups, loading, editable, error, onSave, onRemove, onRefresh, onOpenDependencies }: FleetNodeGroupsProps) {
   const [editing, setEditing] = useState<{ base?: FleetNodeGroup } | null>(null);
   const [removing, setRemoving] = useState<FleetNodeGroup | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -204,9 +204,11 @@ export function FleetNodeGroupsView({ nodes, groups, loading, editable, error, o
           {editable ? newButton : <ReadOnly>Viewers can’t change node groups</ReadOnly>}
         </>}
       />
-      <Banner tone="info" role="note" title="Not the same as Groups">
+      <Banner tone="info" role="note" title="Not the same as Groups"
+        actions={onOpenDependencies ? <button type="button" className="btn sm" onClick={onOpenDependencies}><Icon name="groups" />Outage dependencies</button> : undefined}>
         Node groups belong to this dashboard and only pick nodes for Run on. They don’t peer nodes, hold back alerts or define outage dependencies; Groups on each node do that.
         Nodes picked together still run separate copies unless they’re configured as HA peers.
+        {onOpenDependencies ? ' Outage dependencies opens the dependency groups of the monitoring node selected now; they apply on that node only.' : ''}
       </Banner>
       {error ? <Banner tone="down" role="alert" title="Node groups couldn’t be read">{error}</Banner> : null}
       {editor && !inPlace ? editor : null}

@@ -1230,3 +1230,64 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .fl-node, .fl-r, .fl-snap, .fl-missing, .fl-members li, .fl-peer-note { border: 1px solid CanvasText; }
   .fl-gchip.on { outline: 2px solid Highlight; }
 }
+/* Fleet references: each selected node's own channels, outage dependency group and tags. IDs belong to one node, and
+   reading a node is transport, so its status reuses the snapshot treatment (accent, dashes, hatching), never health colours. */
+.fl-refs { gap: 10px; }
+.fl-refs[disabled] .chanpick label, .fl-refs[disabled] .check { cursor: not-allowed; }
+.fl-ref-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fl-ref { display: flex; flex-direction: column; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: 11px; padding: 12px; background: var(--surface); }
+.fl-ref.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.fl-ref-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.fl-ref-id { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+.fl-ref-id b { font-size: 13.5px; font-weight: 650; color: var(--text-1); overflow-wrap: anywhere; }
+.fl-ref-id .mono { font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
+.fl-ref-st { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-2); border-radius: 6px; padding: 1px 7px; font-size: 11.5px; font-weight: 650; color: var(--text-1); background: var(--surface); white-space: nowrap; }
+.fl-ref-st .ic { width: 12px; height: 12px; color: var(--text-3); }
+.fl-ref.s-ready .fl-ref-st { background: var(--accent-wash); border-color: transparent; }
+.fl-ref.s-ready .fl-ref-st .ic { color: var(--accent-text); }
+.fl-ref.s-loading .fl-ref-st { border-style: dashed; }
+.fl-ref.s-unavailable .fl-ref-st { background-image: repeating-linear-gradient(135deg, var(--hatch-soft) 0 1px, transparent 1px 5px); }
+.fl-ref-t { margin: 0; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.fl-ref-inh { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; border-radius: 9px; padding: 8px 10px; background: var(--surface-2); font-size: 12.5px; }
+.fl-ref-inh dt { color: var(--text-3); }
+.fl-ref-inh dd { margin: 0; min-width: 0; color: var(--text-1); overflow-wrap: anywhere; }
+.fl-ref-inh .mono { font-size: 11.5px; }
+.fl-ref-gone { font-size: 12px; color: var(--text-3); }
+.fl-ref-b { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--grid); }
+.fl-ref-pick { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); }
+.fl-ref-pick label:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.fl-ref-pick .nm-sub .g { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; }
+.fl-ref-miss { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.fl-ref-miss li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0; border: 1px dashed var(--border-2); border-radius: 9px; padding: 6px 10px; font-size: 12.5px; }
+.fl-ref-miss li .g { width: 14px; height: 14px; }
+.fl-ref-miss li .mono { min-width: 0; color: var(--text-1); overflow-wrap: anywhere; }
+.fl-tagv { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fl-tagv li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto 40px; gap: 8px; align-items: center; }
+.fl-tagv-n { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; color: var(--text-1); overflow-wrap: anywhere; }
+.fl-tagv-n b { font-weight: 650; }
+.fl-tagv-n .g { width: 14px; height: 14px; flex: none; }
+.fl-tagv li.gone .fl-tagv-n b { font-size: 11.5px; font-weight: 600; }
+.fl-tagv .icon-btn.sm { width: 40px; height: 40px; }
+.fl-ref-retry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border: 1px solid var(--warning); border-radius: 10px; padding: 8px 12px; background: var(--warning-wash); color: var(--text-1); font-size: 12.5px; }
+.fl-ref-retry > span { display: flex; align-items: flex-start; gap: 6px; flex: 1 1 240px; min-width: 0; font-weight: 550; }
+.fl-ref-retry .g { width: 14px; height: 14px; margin-top: 1px; flex: none; }
+.fl-dep-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.fl-dep-acts:not(:first-child) { margin-top: 8px; }
+.fl-dep-acts .btn { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+@container app (max-width: 1059px) {
+  .fl-dep-acts { justify-content: flex-start; }
+}
+@container app (max-width: 699px) {
+  .fl-ref { padding: 10px; }
+  .fl-ref-inh { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .fl-ref-inh dd + dt { margin-top: 6px; }
+  .fl-tagv li { grid-template-columns: minmax(0, 1fr) 44px; gap: 6px 8px; padding-bottom: 8px; border-bottom: 1px solid var(--grid); }
+  .fl-tagv li:last-child { padding-bottom: 0; border-bottom: 0; }
+  .fl-tagv li > .fl-tagv-n, .fl-tagv li > input[type="text"], .fl-tagv li > .tag-pub { grid-column: 1; }
+  .fl-tagv li > button { grid-column: 2; grid-row: 1; }
+  .fl-tagv .icon-btn.sm { width: 44px; height: 44px; }
+}
+@media (forced-colors: active) {
+  .fl-ref, .fl-ref-st, .fl-ref-retry, .fl-ref-miss li { border: 1px solid CanvasText; }
+  .fl-ref.on { outline: 2px solid Highlight; }
+}

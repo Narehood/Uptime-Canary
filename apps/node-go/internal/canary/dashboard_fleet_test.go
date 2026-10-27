@@ -3,13 +3,176 @@ package canary
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
+
+type fleetAuthorityBody struct {
+	reader io.Reader
+	once   sync.Once
+	change func()
+}
+
+func (body *fleetAuthorityBody) Read(b []byte) (int, error) {
+	body.once.Do(body.change)
+	return body.reader.Read(b)
+}
+func (*fleetAuthorityBody) Close() error { return nil }
+
+func revokeFleetFixtureAccount(d *Dashboard, id string) {
+	n := d.accounts.node
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	a := n.accounts[id]
+	a.AuthVersion++
+	n.accounts[id] = a
+}
+
+func TestDashboardFleetReauthorizesAfterBodyAndBeforeWorker(t *testing.T) {
+	for _, path := range []string{"/api/dashboard/fleet/monitors", "/api/dashboard/node-groups"} {
+		t.Run(path, func(t *testing.T) {
+			d, owner, _ := dashboardRegistryFixture(t)
+			node := dashboardRemoteFixture(t, "node-a")
+			server := httptest.NewServer(node)
+			defer server.Close()
+			reg := enrollDashboardNode(t, d, owner, server.URL)
+			actor, err := d.accounts.Authenticate(func() *http.Request {
+				r := httptest.NewRequest("GET", "/api/auth/me", nil)
+				r.Header.Set("Authorization", "Bearer "+owner)
+				return r
+			}())
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := map[string]any{"name": "Revoked selection", "registrationIds": []string{reg.ID}}
+			if strings.Contains(path, "/fleet/") {
+				body = map[string]any{"requestId": placementFixtureID, "registrationIds": []string{reg.ID}, "monitor": placementFixtureInput()}
+			}
+			b, _ := json.Marshal(body)
+			r := httptest.NewRequest("POST", path, nil)
+			r.Body = &fleetAuthorityBody{reader: strings.NewReader(string(b)), change: func() { revokeFleetFixtureAccount(d, actor.ID) }}
+			r.Header.Set("Authorization", "Bearer "+owner)
+			w := httptest.NewRecorder()
+			d.ServeHTTP(w, r)
+			groups, _ := loadAll[dashboardNodeGroup](d.accounts.node.store, "dashboardNodeGroups")
+			if w.Code != 401 || len(d.fleet) != 0 || len(groups) != 0 || len(node.heads) != 0 {
+				t.Fatalf("revoked body committed a change: %d", w.Code)
+			}
+		})
+	}
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	row := fleetCreateFixture(t, d, owner, []string{reg.ID}, nil)
+	revokeFleetFixtureAccount(d, row.ActorID)
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State != "unauthorized" || len(node.heads) != 0 {
+		t.Fatal("worker used revoked saved authority")
+	}
+	newOwner := dashboardPasswordLogin(t, d.accounts, "owner", dashboardPasswordFixture)
+	row = d.fleet[row.ID]
+	if w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/retry", newOwner, "", map[string]string{"revision": row.Revision}); w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State != "applied" || len(node.heads) != 1 {
+		t.Fatal("explicit current-authority retry did not finish")
+	}
+}
+
+func TestDashboardFleetJournalFailureSendsNoRemoteWrite(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	row := fleetCreateFixture(t, d, owner, []string{reg.ID}, nil)
+	if _, err := d.accounts.node.store.db.Exec(`CREATE TRIGGER fleet_journal_failure BEFORE INSERT ON records WHEN NEW.category='dashboardFleet' BEGIN SELECT RAISE(ABORT,'private fixture failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	if len(node.heads) != 0 {
+		t.Fatal("remote mutation preceded the prepared journal commit")
+	}
+	stored, ok, err := loadOne[dashboardFleetRecord](d.accounts.node.store, "dashboardFleet", row.ID)
+	if err != nil || !ok || stored.Revision != row.Revision || !equalJSON(stored, d.fleet[row.ID]) {
+		t.Fatal("failed journal commit published new state")
+	}
+}
+
+func TestDashboardFleetHAReferenceMismatchPreflightWritesNothing(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", map[string]any{"requestId": placementFixtureID, "registrationIds": []string{ra.ID, rb.ID}, "monitor": placementFixtureInput(), "references": map[string]any{rb.ID: map[string]any{"notificationIds": []string{"different-reference"}}}})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), placementFixtureID)
+	if d.fleet[placementFixtureID].State != "blocked" || len(a.heads) != 0 || len(b.heads) != 0 {
+		t.Fatal("mismatched HA references were dropped or partially written")
+	}
+}
+
+func TestDashboardFleetAdoptionTracksFormerRunners(t *testing.T) {
+	for _, registerPeer := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unregistered runner refuses replacement", true: "former registered runner must confirm"}[registerPeer], func(t *testing.T) {
+			d, owner, _ := dashboardRegistryFixture(t)
+			a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+			in := input([]string{"a", "b"}, "http://127.0.0.1:9", "")
+			in.Enabled = false
+			m, err := a.writeMonitor(in, nil, "former-runner", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, page := range causalCapacityPages(t, a) {
+				if err := b.applySnapshot(page); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+			defer sa.Close()
+			defer sb.Close()
+			ra := enrollDashboardNode(t, d, owner, sa.URL)
+			var rb RegisteredNode
+			if registerPeer {
+				rb = enrollDashboardNode(t, d, owner, sb.URL)
+			}
+			row := fleetCreateFixture(t, d, owner, []string{ra.ID}, &fleetSourceReference{ra.ID, m.ID, m.Revision})
+			d.finishFleet(context.Background(), row.ID)
+			row = d.fleet[row.ID]
+			if !registerPeer {
+				if row.State != "blocked" || a.current(m.ID).Revision != m.Revision {
+					t.Fatal("unregistered runner silently lost its assignment")
+				}
+				return
+			}
+			if row.State != "pending" || !slices.Contains(row.Placements[0].RetiringRegistrationIDs, rb.ID) || !slices.Contains(b.current(m.ID).NodeIDs, "b") {
+				t.Fatal("the adoption lost its former peer before confirmation")
+			}
+			for _, page := range causalCapacityPages(t, a) {
+				if err := b.applySnapshot(page); err != nil {
+					t.Fatal(err)
+				}
+			}
+			d.finishFleet(context.Background(), row.ID)
+			if d.fleet[row.ID].State != "applied" || slices.Contains(b.current(m.ID).NodeIDs, "b") {
+				t.Fatal("former runner did not confirm the new assignment")
+			}
+		})
+	}
+}
 
 func fleetCreateFixture(t *testing.T, d *Dashboard, owner string, ids []string, source *fleetSourceReference) dashboardFleetRecord {
 	t.Helper()
@@ -271,6 +434,9 @@ func TestDashboardFleetHAOfflineRemovalStaysVisibleUntilPeerConfirms(t *testing.
 	if row.State != "pending" || a.current(m.ID) != nil || b.current(m.ID) == nil || !slices.Contains(row.Placements[0].RetiringRegistrationIDs, rb.ID) {
 		t.Fatal("offline peer deletion was falsely complete")
 	}
+	if repeated := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision}); repeated.Code != 202 || !equalJSON(row, d.fleet[row.ID]) {
+		t.Fatal("repeated removal replaced an acknowledged deletion while a peer was offline")
+	}
 	syncPeer()
 	offline.Store(false)
 	d.finishFleet(context.Background(), row.ID)
@@ -345,6 +511,11 @@ func TestDashboardNodeGroupsRolesAndRevisionChecks(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &group) != nil {
 		t.Fatalf("group create: %d", w.Code)
 	}
+	again := dashboardHTTP(d, "POST", "/api/dashboard/node-groups", owner, "", map[string]any{"name": "All locations", "registrationIds": []string{reg.ID}})
+	var recovered dashboardNodeGroup
+	if again.Code != 200 || json.Unmarshal(again.Body.Bytes(), &recovered) != nil || recovered.ID != group.ID || recovered.Revision != group.Revision {
+		t.Fatal("a retried group create duplicated or revised its saved selection")
+	}
 	if w = dashboardHTTP(d, "PUT", "/api/dashboard/node-groups/"+group.ID, owner, "", map[string]any{"name": "Renamed", "registrationIds": []string{reg.ID}, "revision": "stale"}); w.Code != 409 {
 		t.Fatal("stale group save accepted")
 	}
@@ -362,6 +533,67 @@ func TestDashboardNodeGroupsRolesAndRevisionChecks(t *testing.T) {
 		if out.Code != 400 {
 			t.Fatal("invalid group accepted")
 		}
+	}
+}
+
+func TestDashboardFleetReconciliationUsesOnlyReviewedCurrentRevision(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	row := fleetCreateFixture(t, d, owner, []string{reg.ID}, nil)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	p := row.Placements[0]
+	input := node.current(p.MonitorID).MonitorInput
+	input.Name = "Direct edit to preserve until reviewed"
+	local, err := node.writeMonitor(input, node.heads[p.MonitorID], p.MonitorID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(revision string) {
+		row = d.fleet[row.ID]
+		w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{"revision": row.Revision, "observedRevisions": map[string]string{p.ID: revision}})
+		if w.Code != 202 {
+			t.Fatalf("review: %d %s", w.Code, w.Body.String())
+		}
+	}
+	request(p.Revision)
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State != "blocked" || node.current(p.MonitorID).Revision != local.Revision {
+		t.Fatal("reconciliation overwrote a revision the user had not reviewed")
+	}
+	request(local.Revision)
+	input.Name = "Another edit after the review"
+	later, err := node.writeMonitor(input, node.heads[p.MonitorID], p.MonitorID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State != "blocked" || node.current(p.MonitorID).Revision != later.Revision {
+		t.Fatal("a node edit racing the reviewed snapshot was overwritten")
+	}
+	request(later.Revision)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "applied" || row.Placements[0].Sequence != 2 || node.current(p.MonitorID).Name == input.Name {
+		t.Fatalf("explicit current review did not restore the saved template: %s %s", row.State, row.Reason)
+	}
+	// A later native deletion can be retired globally without rewriting its
+	// tombstone or requiring a live monitor snapshot that cannot exist.
+	deleted, err := node.writeMonitor(node.current(p.MonitorID).MonitorInput, node.heads[p.MonitorID], p.MonitorID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "removed" || row.Placements[0].Revision != deleted.Revision || row.Placements[0].Sequence != 3 {
+		t.Fatal("a native deletion left the global record permanently stuck")
 	}
 }
 
@@ -462,9 +694,16 @@ func TestDashboardFleetUpdatesRetiresAndReloadsJournal(t *testing.T) {
 	if row.State != "applied" || row.Placements[0].Sequence != 2 || node.current(row.Placements[0].MonitorID).Name != "Edited globally" {
 		t.Fatal("saved update did not survive journal reload")
 	}
+	if wrongRoute := dashboardHTTP(reloaded, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID+"/retry", owner, "", map[string]string{"revision": row.Revision}); wrongRoute.Code != 404 || !equalJSON(row, reloaded.fleet[row.ID]) {
+		t.Fatal("DELETE on a retry subroute changed the deployment")
+	}
 	w = dashboardHTTP(reloaded, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision})
 	if w.Code != 202 {
 		t.Fatal(w.Code)
+	}
+	queued := reloaded.fleet[row.ID]
+	if repeated := dashboardHTTP(reloaded, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": queued.Revision}); repeated.Code != 202 || !equalJSON(queued, reloaded.fleet[row.ID]) {
+		t.Fatal("repeated queued deletion changed its saved identity")
 	}
 	reloaded.finishFleet(context.Background(), row.ID)
 	row = reloaded.fleet[row.ID]
