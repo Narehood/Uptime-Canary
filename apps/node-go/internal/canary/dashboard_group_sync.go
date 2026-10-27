@@ -255,6 +255,18 @@ func (d *Dashboard) syncNodeGroup(ctx context.Context, id string, job dashboardG
 		if !slices.Contains(row.GroupIDs, id) || row.State == "removed" {
 			continue
 		}
+		if row.State == "applied" && !d.fleetBusy[row.ID] && !d.fleetAuthorized(row) {
+			plan, err := d.openFleet(row)
+			if err != nil {
+				return
+			}
+			row = copyFleet(row)
+			row.ActorID, row.ActorRole, row.ActorVersion = job.ActorID, job.ActorRole, job.ActorVersion
+			row.Revision, row.UpdatedAt, row.RetryAt = newID(), time.Now().UnixMilli(), 0
+			if d.saveFleet(nil, AccountView{}, row, plan) != nil {
+				return
+			}
+		}
 		if row.State == "blocked" || row.State == "unauthorized" {
 			d.finishGroupSyncLocked(group, job, "blocked", row.Reason)
 			return

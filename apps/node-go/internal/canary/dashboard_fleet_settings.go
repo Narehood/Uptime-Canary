@@ -52,6 +52,9 @@ func (d *Dashboard) prepareFleetSettings(ctx context.Context, row dashboardFleet
 	id := plan.NotificationSourceRegistrationID
 	view, target, err := d.fleetRead(ctx, id, row.ActorRole)
 	if err != nil {
+		if target.ID == "" {
+			return fail(409, "The notification source is no longer registered; choose its replacement")
+		}
 		return fail(502, "The notification source cannot be read yet")
 	}
 	secret, err := d.openSecrets(target)
@@ -183,6 +186,9 @@ func (d *Dashboard) canonicalFleetResource(consumer dashboardFleetPlan, kind, id
 func (d *Dashboard) readCanonicalFleetResource(ctx context.Context, row dashboardFleetRecord, source, kind, id string) (json.RawMessage, error) {
 	_, target, err := d.fleetRead(ctx, source, row.ActorRole)
 	if err != nil {
+		if target.ID == "" {
+			return nil, fail(409, "The original notification or tag source is no longer registered; choose its replacement")
+		}
 		return nil, fail(502, "The original notification or tag source cannot be read yet")
 	}
 	secret, err := d.openSecrets(target)

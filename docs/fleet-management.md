@@ -198,7 +198,33 @@ picker assertion now reads the selected Nodes card's h3. Group creation's earlie
 adoption adds one placement revision to the existing browser scenario. Its
 history, explicit-choice, recovery and removal assertions are retained.
 
-The group-first implementation was approved after four Sol rounds with
+CodeRabbit follow-up regressions reproduced empty-group create replay failing
+after reload, an unused removed source blocking edits, a removed configured
+source retrying forever, and applied monitors not resuming group maintenance
+after their saved author was revoked. The fixes preserve nil/empty group
+semantics, allow a resource-free edit to select a registered source, distinguish
+permanent source removal from temporary rotation, and let an explicit authorized
+group sync rebind only idle applied rows with a new revision. Resource-bearing
+monitors still require explicit source replacement; node-local IDs are not
+reinterpreted automatically. Per-pass caching remains a performance follow-up.
+Affected Go tests, core vet and 11 focused browser checks passed on unchanged
+v3 fingerprint
+`1142676a4b1143c7f74b084b9ee32dd40c1696ff25e26909e8c22f938199c10f`
+(356.953 seconds guarded); scratch returned to zero and module cache stayed fixed.
+
+The fifth source-review round resolved the source and replay fixes, but found
+that replacing every member with empty nodes bypassed collection-time actor
+renewal. The guarded renewal now runs over linked definitions instead. Both
+addition and complete replacement regressions pass, including former-runner
+retirement and the group's final applied state. The replacement case failed
+before this move. Affected Go tests, core vet and all 11 focused browser checks
+passed on unchanged v3 fingerprint
+`7ccf71cde820c01cb95cd0b8444f3c79db476a663f9dcc5386eb9cda672be2a6`
+(301.860 seconds guarded), with scratch back at zero and unchanged module cache.
+The final move was approved in the sixth Sol review, explicitly authorized by
+the user. All nine correctness findings are resolved; the caching nit is deferred.
+
+The initial group-first implementation was approved after four Sol rounds with
 gpt-6.1-sol on xhigh. All six correctness findings were resolved.
 
 The earlier fleet source review approved its implementation after three Sol rounds;

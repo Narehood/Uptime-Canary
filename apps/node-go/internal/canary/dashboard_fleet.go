@@ -572,12 +572,6 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 			in.NotificationSourceRegistrationID = d.fleetNotificationSource(row, previousPlan, in.RegistrationIDs[0])
 		}
 	}
-	if in.NotificationSourceRegistrationID != "" {
-		if _, ok := d.registry[in.NotificationSourceRegistrationID]; !ok {
-			errorReply(w, fail(400, "The notification source is no longer registered"))
-			return
-		}
-	}
 	var input MonitorInput
 	if json.Unmarshal(in.Monitor, &input) != nil {
 		errorReply(w, fail(400, "Invalid monitor configuration"))
@@ -591,6 +585,17 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	if err != nil {
 		errorReply(w, err)
 		return
+	}
+	if _, explicit := fields["notificationSourceRegistrationId"]; !explicit && id != "" && in.SyncNotifications && len(input.NotificationIDs) == 0 && len(input.Tags) == 0 {
+		if _, registered := d.registry[in.NotificationSourceRegistrationID]; !registered {
+			in.NotificationSourceRegistrationID = in.RegistrationIDs[0]
+		}
+	}
+	if in.NotificationSourceRegistrationID != "" {
+		if _, ok := d.registry[in.NotificationSourceRegistrationID]; !ok {
+			errorReply(w, fail(400, "The notification source is no longer registered"))
+			return
+		}
 	}
 	var references map[string]fleetTargetReferences
 	if len(in.References) > 0 {
@@ -628,7 +633,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 				errorReply(w, fail(503, "Fleet configuration unavailable"))
 				return
 			}
-			if prior.ActorID != actor.ID || !equalJSON(plan.Monitor, input) || !equalJSON(plan.References, references) || !equalJSON(prior.RegistrationIDs, in.RegistrationIDs) || !equalJSON(prior.Source, in.Source) || !equalJSON(prior.GroupIDs, in.GroupIDs) || plan.SyncNotifications != in.SyncNotifications || plan.SyncNotificationsSet != copyingSet || plan.NotificationSourceRegistrationID != in.NotificationSourceRegistrationID {
+			if prior.ActorID != actor.ID || !equalJSON(plan.Monitor, input) || !equalJSON(plan.References, references) || !equalJSON(prior.RegistrationIDs, in.RegistrationIDs) || !equalJSON(prior.Source, in.Source) || !sameFleetIDs(prior.GroupIDs, in.GroupIDs) || plan.SyncNotifications != in.SyncNotifications || plan.SyncNotificationsSet != copyingSet || plan.NotificationSourceRegistrationID != in.NotificationSourceRegistrationID {
 				errorReply(w, fail(409, "That request already created a different fleet monitor; reload All nodes"))
 				return
 			}

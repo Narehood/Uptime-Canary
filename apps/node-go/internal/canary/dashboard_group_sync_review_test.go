@@ -284,3 +284,153 @@ func TestGroupNativeOutsideReferencesAreVerifiedBeforePlacement(t *testing.T) {
 		})
 	}
 }
+
+func TestGroupCreateReplayEmptyGroupsAfterReload(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	body := map[string]any{"requestId": placementFixtureID, "registrationIds": []string{reg.ID}, "groupIds": []string{}, "monitor": placementFixtureInput()}
+	if w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", body); w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.finishFleet(context.Background(), placementFixtureID)
+	if err := d.loadFleet(); err != nil {
+		t.Fatal(err)
+	}
+	if w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", body); w.Code != 202 {
+		t.Fatal("empty groups broke exact create replay after reload", w.Code, w.Body.String())
+	}
+	if len(node.heads) != 1 {
+		t.Fatal("replay duplicated its monitor")
+	}
+}
+
+func TestGroupNotificationSourceRemovalAndRotation(t *testing.T) {
+	for _, mode := range []string{"empty edit", "removed source", "rotating source"} {
+		t.Run(mode, func(t *testing.T) {
+			d, owner, _ := dashboardRegistryFixture(t)
+			a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+			sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+			defer sa.Close()
+			defer sb.Close()
+			ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+			in := placementFixtureInput()
+			if mode != "empty edit" {
+				in.NotificationIDs = []string{groupChannelFixture(t, a).ID}
+			}
+			w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", map[string]any{"requestId": placementFixtureID, "registrationIds": []string{rb.ID}, "monitor": in, "syncNotifications": true, "notificationSourceRegistrationId": ra.ID})
+			if w.Code != 202 {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			if mode == "empty edit" {
+				d.finishFleet(context.Background(), placementFixtureID)
+			}
+			if mode == "rotating source" {
+				row := d.registry[ra.ID]
+				row.State = "rotating"
+				d.registry[ra.ID] = row
+			} else if w = dashboardHTTP(d, "DELETE", "/api/dashboard/nodes/"+ra.ID, owner, "", nil); w.Code != 204 {
+				t.Fatal("source removal", w.Code, w.Body.String())
+			}
+			if mode == "empty edit" {
+				row := d.fleet[placementFixtureID]
+				in.Name = "Edited without notification resources"
+				w = dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": row.Revision, "registrationIds": row.RegistrationIDs, "monitor": in})
+				if w.Code != 202 {
+					t.Fatal("unused removed source blocked edit", w.Code, w.Body.String())
+				}
+			}
+			d.finishFleet(context.Background(), placementFixtureID)
+			row := d.fleet[placementFixtureID]
+			switch mode {
+			case "empty edit":
+				if row.State != "applied" {
+					t.Fatal(row.State, row.Reason)
+				}
+			case "removed source":
+				if row.State != "blocked" || len(b.heads) != 0 {
+					t.Fatal("a removed source should require explicit replacement before node writes", row.State, row.Reason)
+				}
+			case "rotating source":
+				if row.State != "pending" || len(b.heads) != 0 {
+					t.Fatal("temporary rotation must remain retryable", row.State, row.Reason)
+				}
+			}
+		})
+	}
+}
+
+func TestGroupSyncReauthorizesAppliedMonitor(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(map[bool]string{false: "add member", true: "replace members"}[replace], func(t *testing.T) {
+			d, owner, _ := dashboardRegistryFixture(t)
+			a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+			sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+			defer sa.Close()
+			defer sb.Close()
+			ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+			channel := groupChannelFixture(t, a)
+			in := placementFixtureInput()
+			in.NotificationIDs = []string{channel.ID}
+			native := groupMonitorFixture(t, a, in)
+			group := groupSyncFixture(t, d, owner, []string{ra.ID})
+			finishGroupFixture(t, d)
+			var before dashboardFleetRecord
+			for _, row := range d.fleet {
+				before = row
+			}
+			if before.State != "applied" {
+				t.Fatal(before.State, before.Reason)
+			}
+			revokeFleetFixtureAccount(d, before.ActorID)
+			freshOwner := dashboardPasswordLogin(t, d.accounts, "owner", dashboardPasswordFixture)
+			members := []string{ra.ID, rb.ID}
+			if replace {
+				members = []string{rb.ID}
+			}
+			w := dashboardHTTP(d, "PUT", "/api/dashboard/node-groups/"+group.ID, freshOwner, "", map[string]any{"revision": group.Revision, "name": group.Name, "registrationIds": members})
+			if w.Code != 200 {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			d.runGroupSyncs(context.Background())
+			row := d.fleet[before.ID]
+			if !d.fleetAuthorized(row) || row.Revision == before.Revision {
+				t.Fatal("explicit current-authority group sync did not rebind an idle applied monitor")
+			}
+			updated := channel.ChannelInput
+			updated.Config.Webhook.BearerToken = "rebound-fixture-value"
+			if _, err := a.writeResource(resourceChannel, channel.ID, updated, false); err != nil {
+				t.Fatal(err)
+			}
+			d.refreshGroupPlacements(context.Background())
+			d.finishFleet(context.Background(), row.ID)
+			row = d.fleet[row.ID]
+			if row.State != "applied" || !sameFleetIDs(row.RegistrationIDs, members) {
+				t.Fatal("reauthorized monitor missed changed membership", row.State, row.Reason)
+			}
+			for _, placement := range row.Placements {
+				if placement.RegistrationID == rb.ID {
+					monitor := b.current(placement.MonitorID)
+					resource := b.currentResource(resourceChannel, monitor.NotificationIDs[0])
+					if channelOf(*resource, "admin").Config.Webhook.BearerToken != "rebound-fixture-value" {
+						t.Fatal("reauthorized monitor missed source channel updates")
+					}
+				}
+			}
+			if replace && a.current(native.ID) != nil {
+				t.Fatal("the former group member did not retire its monitor")
+			}
+			job, exists, err := loadOne[dashboardGroupSync](d.accounts.node.store, "dashboardGroupSyncs", group.ID)
+			if err != nil || !exists {
+				t.Fatal("membership sync job missing", err)
+			}
+			d.syncNodeGroup(context.Background(), group.ID, job)
+			current, _, _ := loadOne[dashboardNodeGroup](d.accounts.node.store, "dashboardNodeGroups", group.ID)
+			if current.SyncState != "applied" {
+				t.Fatal("reauthorized group did not confirm sync", current.SyncState, current.SyncReason)
+			}
+		})
+	}
+}
