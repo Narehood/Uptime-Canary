@@ -86,17 +86,30 @@ func TestFleetManualToGroupEditPreservesOutsideAssignment(t *testing.T) {
 }
 
 func TestGroupCopiedChannelRetainsOriginAfterOriginalDefinitionChanges(t *testing.T) {
-	for _, change := range []string{"remove", "reselect"} {
-		t.Run(change, func(t *testing.T) {
+	for _, scenario := range []string{"remove/current", "remove/placements", "remove/pre-fleet", "reselect/current", "reselect/placements", "reselect/pre-fleet"} {
+		t.Run(scenario, func(t *testing.T) {
+			change, version, _ := strings.Cut(scenario, "/")
 			d, owner, _ := dashboardRegistryFixture(t)
 			a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
-			sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+			var creates, unsupported atomic.Int32
+			var handler http.Handler = b
+			if version == "placements" {
+				handler = legacyFleetFixture(b, &creates, nil)
+			} else if version == "pre-fleet" {
+				handler = preFleetFixture(b, &creates, &unsupported, nil, nil)
+			}
+			sa, sb := httptest.NewServer(a), httptest.NewServer(handler)
 			defer sa.Close()
 			defer sb.Close()
 			ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
 			channel := groupChannelFixture(t, a)
+			tag, err := a.writeResource(resourceTag, "", TagInput{Name: "Origin tag", Color: "#336699"}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
 			in := placementFixtureInput()
 			in.NotificationIDs = []string{channel.ID}
+			in.Tags = []MonitorTag{{TagID: tag.ID, Value: "kept"}}
 			makeDefinition := func(id, source string, monitor MonitorInput) {
 				t.Helper()
 				w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", map[string]any{"requestId": id, "registrationIds": []string{ra.ID, rb.ID}, "monitor": monitor, "syncNotifications": true, "notificationSourceRegistrationId": source})
@@ -109,16 +122,21 @@ func TestGroupCopiedChannelRetainsOriginAfterOriginalDefinitionChanges(t *testin
 				}
 			}
 			makeDefinition(placementFixtureID, ra.ID, in)
-			var copied string
+			var copied, copiedTag string
 			for _, p := range d.fleet[placementFixtureID].Placements {
 				if p.RegistrationID == rb.ID {
 					copied = b.current(p.MonitorID).NotificationIDs[0]
+					copiedTag = b.current(p.MonitorID).Tags[0].TagID
 				}
 			}
 			second := strings.Repeat("f", 32)
 			in.Name = "Origin consumer"
 			in.NotificationIDs = []string{copied}
+			in.Tags = []MonitorTag{{TagID: copiedTag, Value: "kept"}}
 			makeDefinition(second, rb.ID, in)
+			if len(a.channelViews("admin")) != 1 || len(b.channelViews("admin")) != 1 || len(a.tagViews()) != 1 || len(b.tagViews()) != 1 {
+				t.Fatal("a consumer of a copied resource duplicated its canonical identity")
+			}
 			first := d.fleet[placementFixtureID]
 			firstPlan, _ := d.openFleet(first)
 			if change == "remove" {
@@ -128,6 +146,7 @@ func TestGroupCopiedChannelRetainsOriginAfterOriginalDefinitionChanges(t *testin
 				}
 			} else {
 				firstPlan.Monitor.NotificationIDs = []string{}
+				firstPlan.Monitor.Tags = []MonitorTag{}
 				w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+first.ID, owner, "", map[string]any{"revision": first.Revision, "registrationIds": first.RegistrationIDs, "monitor": firstPlan.Monitor})
 				if w.Code != 202 {
 					t.Fatal(w.Code, w.Body.String())
@@ -152,6 +171,11 @@ func TestGroupCopiedChannelRetainsOriginAfterOriginalDefinitionChanges(t *testin
 			if _, err := a.writeResource(resourceChannel, channel.ID, updated, false); err != nil {
 				t.Fatal(err)
 			}
+			updatedTag := tagOf(tag).TagInput
+			updatedTag.Name = "Updated original tag"
+			if _, err := a.writeResource(resourceTag, tag.ID, updatedTag, false); err != nil {
+				t.Fatal(err)
+			}
 			d.refreshGroupPlacements(context.Background())
 			d.finishFleet(context.Background(), second)
 			d.finishFleet(context.Background(), third)
@@ -165,8 +189,64 @@ func TestGroupCopiedChannelRetainsOriginAfterOriginalDefinitionChanges(t *testin
 				if resource == nil || channelOf(*resource, "admin").Config.Webhook.BearerToken != "new-original-fixture-value" {
 					t.Fatal("the surviving consumer lost its original channel source")
 				}
+				resource = node.currentResource(resourceTag, m.Tags[0].TagID)
+				if resource == nil || tagOf(*resource).Name != updatedTag.Name {
+					t.Fatal("the surviving consumer lost its original tag source")
+				}
 			}
 		})
+	}
+}
+
+func TestGroupExplicitSyncRetriesEveryBlockedPreflight(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	var refuse atomic.Bool
+	refuse.Store(true)
+	sa := httptest.NewServer(a)
+	sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if refuse.Load() && r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/validate") {
+			w.Header().Set("X-Canary-Node-Id", b.ID)
+			errorReply(w, fail(400, "Fixture preflight refusal"))
+			return
+		}
+		b.ServeHTTP(w, r)
+	}))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	in := placementFixtureInput()
+	groupMonitorFixture(t, a, in)
+	in.Name = "Second blocked monitor"
+	groupMonitorFixture(t, a, in)
+	group := groupSyncFixture(t, d, owner, []string{ra.ID, rb.ID})
+	finishGroupFixture(t, d)
+	for _, row := range d.fleet {
+		if row.State != "blocked" {
+			t.Fatal("fixture did not block every monitor", row.State, row.Reason)
+		}
+	}
+	refuse.Store(false)
+	w := dashboardHTTP(d, "POST", "/api/dashboard/node-groups/"+group.ID+"/sync", owner, "", map[string]string{"revision": group.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.runGroupSyncs(context.Background())
+	for _, row := range d.fleet {
+		if row.State != "pending" {
+			t.Fatal("one explicit sync failed to reset every blocked definition", row.State, row.Reason)
+		}
+	}
+	for id := range d.fleet {
+		d.finishFleet(context.Background(), id)
+	}
+	for _, row := range d.fleet {
+		if row.State != "applied" {
+			t.Fatal(row.State, row.Reason)
+		}
+	}
+	if len(b.monitorViews("admin")) != 2 {
+		t.Fatal("group did not deploy both retried monitors")
 	}
 }
 

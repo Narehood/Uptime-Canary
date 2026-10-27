@@ -1295,7 +1295,11 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .fl-sync.s-blocked .fl-sync-st { background: var(--warning-wash); border-color: var(--warning); }
 .fl-sync-n { color: var(--text-3); }
 .fl-sync-r { flex: 1 1 100%; min-width: 0; color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
-.fl-gcard .acts { flex-wrap: wrap; justify-content: flex-end; }
+/* The name keeps a readable width and the actions wrap below it on a narrow card, rather than squeezing the heading. */
+.fl-gcard .gcard-h { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
+.fl-gcard-t { flex: 1 1 12rem; min-width: 0; }
+.fl-gcard .acts { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-start; max-width: 100%; }
+.fl-gcard .acts .btn { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .fl-gerr { margin: 0; font-size: 12.5px; }
 .fl-gchange { display: flex; flex-direction: column; gap: 6px; }
 .fl-gchange p { margin: 0; display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--text-1); }
@@ -1340,4 +1344,28 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 @media (forced-colors: active) {
   .fl-sync-st, .fl-src, .fl-gsel-l label, .fl-gsel-off, .cp-scope { border: 1px solid CanvasText; }
   .fl-gsel-l label:has(input:checked) { outline: 2px solid Highlight; }
+}
+/* Fleet overview: what needs a look, then each node. Monitors keeps the full inventory and its actions. Only per-node
+   results colour an edge; reading a node never does. */
+.fl-ats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fl-at { display: flex; flex-direction: column; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px 10px 14px; background: var(--surface); box-shadow: inset 3px 0 0 var(--neutral); }
+.fl-at.t-down { box-shadow: inset 3px 0 0 var(--critical); }
+.fl-at.t-serious { box-shadow: inset 3px 0 0 var(--serious); }
+.fl-at-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.fl-at-n { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.fl-at-n b { font-weight: 650; color: var(--text-1); overflow-wrap: anywhere; min-width: 0; }
+.fl-at-h .chip { max-width: 100%; white-space: normal; }
+.fl-at .fl-res { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); }
+.fl-at-m { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12px; color: var(--text-3); }
+.fl-at-f { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text-1); }
+.fl-at-f .ic, .fl-at-f .g { flex: none; width: 13px; height: 13px; }
+.fl-at-f .ic { color: var(--text-3); }
+.fl-at > .btn, .fl-at > .fl-open-off { align-self: flex-start; }
+.fl-at .fl-open { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.fl-at .fl-open-more { align-items: flex-start; }
+.fl-at-more { margin: 10px 0 0; font-size: 12.5px; color: var(--text-2); }
+.fl-node.attn { box-shadow: inset 3px 0 0 var(--critical); }
+@media (forced-colors: active) {
+  .fl-at { border: 1px solid CanvasText; }
+  .fl-at.t-down, .fl-node.attn { border-left-width: 4px; }
 }

@@ -13,7 +13,7 @@ import { dismiss, useNotices } from './notices';
 import { href, navigate, sectionOf, useRoute, type Route } from './router';
 import { forget, POLL_MS, session, signOut, useSession, type Connection } from './session';
 import { ThemeButton, useTheme, type ThemeControl } from './theme';
-import { Banner, Card, EmptyState, PageHead } from './ui/bits';
+import { Banner, Card, EmptyState, PageHead, Spinner } from './ui/bits';
 import { CanaryMark, EndpointMark, Glyph, Icon, type IconName } from './ui/icons';
 import { AccountView } from './views/Account';
 import { AccountsView } from './views/Accounts';
@@ -35,9 +35,10 @@ import { TagsView } from './views/Tags';
 import { UpdateBanner, UpdatesButton, UpdatesDialog, useUpdates } from './views/Updates';
 
 export function App() {
-  const { connection } = useSession();
+  const { connection, restoring } = useSession();
   const theme = useTheme();
   const route = useRoute();
+  useEffect(() => { if (route.name !== 'public-status') void session.restore(); }, [route.name]);
   return (
     <div className="uc">
       <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
@@ -46,6 +47,7 @@ export function App() {
         ? <PublicStatusView key={`${route.slug}|${route.registration ?? ''}`} slug={route.slug} nodes={route.nodes} registration={route.registration} theme={theme} signedIn={Boolean(connection)} />
         : connection ? <Shell key={connection.identity} connection={connection} theme={theme} route={route} />
         // The control plane signs in to the dashboard itself (or creates its first owner); no node is involved.
+        : restoring ? <Spinner label="Restoring sign-in..." />
         : controlPlaneMode() ? <DashboardConnectScreen theme={theme} /> : <ConnectScreen theme={theme} />}
       <TooltipLayer />
       <Toasts />
@@ -398,7 +400,7 @@ const DASHBOARD_ROUTES: ReadonlySet<Route['name']> = new Set<Route['name']>(['no
 function ControlPlaneView({ route, connection, onChoose }: { route: Route; connection: Connection; onChoose: () => void }) {
   if (route.name === 'fleet-monitor-edit') return <View route={route} />;
   if (route.name === 'node-groups' || route.name === 'groups') return <FleetController groups />;
-  if (route.name === 'overview' || route.name === 'monitors') return <FleetController />;
+  if (route.name === 'overview' || route.name === 'monitors') return <FleetController view={route.name} />;
   if (DASHBOARD_ROUTES.has(route.name)) return <View route={route} />;
   if (!connection.selection) return <ChooseNodeView section={sectionOf(route)} />;
   if (connection.awaiting) return <><NodeScope route={route} onChoose={onChoose} /><NodePendingView /></>;

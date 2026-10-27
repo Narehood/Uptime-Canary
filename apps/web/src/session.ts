@@ -2,10 +2,12 @@ import { useSyncExternalStore } from 'react';
 import type { AccountView, Overview, RegisteredNode } from '@uptime-canary/shared';
 import { ApiFailure, CanaryApi, DASHBOARD_PLACE, isAbort } from './api';
 import { controlPlaneMode } from './gateway';
+import { rememberSignIn, type SignInIssuer } from './browserSession';
 import { clearNotices, notify } from './notices';
 
 export const POLL_MS = 5_000;
 const MAX_BACKOFF_MS = 30_000;
+class RestoredIssuerChanged extends Error {}
 
 /**
  * live: the last overview request succeeded.
@@ -57,12 +59,12 @@ export interface Farewell {
 export interface SessionSnapshot {
   connection: Connection | null;
   farewell: Farewell | null;
+  restoring?: boolean;
 }
 
 /**
- * Holds the only copy of the credential (inside `CanaryApi`) in memory. Nothing is written to browser storage;
- * reloading or closing the tab forgets it and asks for a sign-in again. Polls never overlap and are aborted on
- * switch or sign-out.
+ * Keeps a verified sign-in across reloads using tab session storage. Restoration revalidates it with its issuer;
+ * passwords, MFA codes and selected-node data are not stored. Polls never overlap and stop on switch or sign-out.
  */
 export class Session {
   private snapshot: SessionSnapshot = { connection: null, farewell: null };
@@ -75,6 +77,8 @@ export class Session {
   private queued = false;
   private waitingForVisible = false;
   private failures = 0;
+  private restoreAttempted = false;
+  private issuer: SignInIssuer | null = null;
 
   constructor() {
     document.addEventListener('visibilitychange', () => {
@@ -98,6 +102,7 @@ export class Session {
   }
 
   private emit(connection: Connection | null, farewell: Farewell | null = null): void {
+    if (!connection) this.issuer = null;
     this.snapshot = { connection, farewell };
     for (const listener of this.listeners) listener();
   }
@@ -105,12 +110,33 @@ export class Session {
     if (this.snapshot.connection) this.emit({ ...this.snapshot.connection, ...changes });
   }
 
+  async restore(): Promise<void> {
+    if (this.restoreAttempted || this.snapshot.connection) return;
+    this.restoreAttempted = true;
+    const saved = CanaryApi.remembered();
+    if (!saved) return;
+    const { api, issuer } = saved;
+    const generation = this.generation;
+    this.snapshot = { ...this.snapshot, restoring: true };
+    for (const listener of this.listeners) listener();
+    try { await this.connect(api, undefined, issuer); }
+    catch (error) {
+      if (generation !== this.generation) return;
+      if (error instanceof RestoredIssuerChanged || error instanceof ApiFailure && error.status === 401) rememberSignIn(null);
+      this.emit(null, { url: api.baseUrl, message: error instanceof RestoredIssuerChanged ? error.message : error instanceof ApiFailure && error.status === 401
+        ? 'This sign-in expired or was revoked. Sign in again.'
+        : 'Your saved sign-in could not be checked. Reload to retry, or sign in below.', tone: 'warn' });
+    }
+  }
+
   /**
    * Verifies the node first; the current connection (if any) stays untouched unless the new one answers.
    * A replaced password session is signed out on its node, since this tab can never use it again. So is a new
    * password session whose connect fails or is cancelled: the caller drops it.
    */
-  async connect(api: CanaryApi, signal?: AbortSignal): Promise<Overview> {
+  async connect(api: CanaryApi, signal?: AbortSignal, restoredIssuer?: SignInIssuer): Promise<Overview> {
+    const restoring = restoredIssuer !== undefined;
+    const generation = this.generation;
     let overview: Overview;
     let account: AccountView | null;
     try {
@@ -120,14 +146,20 @@ export class Session {
         api.me(signal).catch(error => { if (error instanceof ApiFailure && error.status === 404) return null; throw error; }),
       ]);
       signal?.throwIfAborted();
+      if (restoring && generation !== this.generation) throw new DOMException('Sign-in superseded', 'AbortError');
+      if (restoredIssuer && (overview.node.id !== restoredIssuer.nodeId || (account?.id ?? null) !== restoredIssuer.accountId)) {
+        throw new RestoredIssuerChanged('The issuing node or account changed. Sign in again to choose this endpoint.');
+      }
     } catch (error) {
-      if (api.credential === 'session' && !this.snapshot.connection?.api.sameCredential(api)) void api.logout().catch(() => undefined);
+      if (!restoring && api.credential === 'session' && !this.snapshot.connection?.api.sameCredential(api)) void api.logout().catch(() => undefined);
       throw error;
     }
     const previous = this.snapshot.connection;
     this.stop();
     clearNotices();
     const fetchedAt = Date.now();
+    this.issuer = { nodeId: overview.node.id, accountId: account?.id ?? null };
+    api.remember(this.issuer);
     this.emit({
       identity: ++this.nextIdentity, api, overview, account, fetchedAt, link: 'live', failure: null, failingSince: null,
       selection: null, awaiting: false, issuerSkew: controlPlaneMode() ? overview.now - fetchedAt : null,
@@ -145,6 +177,7 @@ export class Session {
   async signOut(): Promise<'ended' | 'forgotten' | 'unconfirmed' | 'superseded'> {
     const connection = this.snapshot.connection;
     if (!connection) return 'forgotten';
+    rememberSignIn(null);
     this.stop();
     let result: 'ended' | 'forgotten' | 'unconfirmed' = 'forgotten';
     if (connection.api.credential === 'session') {
@@ -159,6 +192,7 @@ export class Session {
   /** Ends the connection without calling the node, after an action the node already revoked it for. */
   end(farewell: Farewell, expected: Connection): void {
     if (!this.isCurrent(expected)) return;
+    rememberSignIn(null);
     this.stop();
     this.emit(null, farewell);
   }
@@ -169,7 +203,9 @@ export class Session {
     if (!connection || !this.isCurrent(expected) || connection.api.credential !== 'token') return;
     // Invalidate any poll made with the replaced token without remounting the one-time token panel.
     this.stop();
-    this.patch({ api: connection.api.withToken(token) });
+    const api = connection.api.withToken(token);
+    if (this.issuer) api.remember(this.issuer);
+    this.patch({ api });
     this.refresh();
   }
 
@@ -278,6 +314,7 @@ export class Session {
       const failure = error instanceof ApiFailure ? error : new ApiFailure(0, 'The overview could not be loaded.');
       const failingSince = this.snapshot.connection?.failingSince ?? Date.now();
       if (failure.status === 401) {
+        rememberSignIn(null);
         keepPolling = false;
         this.patch({ link: 'rejected', failure, failingSince });
       } else {

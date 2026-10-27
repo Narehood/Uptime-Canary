@@ -111,6 +111,24 @@ await check('central summary does not render private targets, addresses or raw r
   for (const secret of ['private-monitor-target', 'private-node-address', 'private-raw-read-error']) assert.ok(!html.includes(secret));
   assert.match(html, /Unknown/);
 });
+await check('Overview is a health summary and Monitors owns the full searchable inventory', () => {
+  const sources = [source(A, 'physical-a', 'revision-a'), source(B, 'physical-b', 'revision-b', 'down')];
+  const props = { sources, rows: fleetMonitorRows(sources, now, [deployment()]), now, loading: false, refreshing: false, search: '', onSearchChange() {}, onRefresh() {}, onOpen() {}, onEditDeployment() {} };
+  const overview = render(FleetOverviewView, { ...props, view: 'overview' });
+  const monitors = render(FleetOverviewView, { ...props, view: 'monitors' });
+  assert.match(overview, /Needs attention/); assert.match(overview, /Nodes on this dashboard/);
+  assert.ok(!overview.includes('<table')); assert.ok(!overview.includes('Edit placement'));
+  assert.match(monitors, /<table/); assert.match(monitors, /Search monitors and nodes/); assert.match(monitors, /Edit placement/);
+  assert.ok(!monitors.includes('Nodes on this dashboard')); assert.ok(!monitors.includes('Needs attention'));
+  const paused=source(B,'physical-b','revision-b','paused'); paused.overview.monitors[0].monitor.enabled=false;
+  const mixed=[sources[0],paused];
+  const attention=render(FleetOverviewView,{...props,sources:mixed,rows:fleetMonitorRows(mixed,now,[deployment()])})
+    .match(/<ul class="fl-res" aria-label="Nodes where Service[^"]*">([\s\S]*?)<\/ul>/)?.[1];
+  assert.ok(attention?.includes('Cloud')&&attention.includes('Paused'),'unknown attention must identify the paused node');
+  const pausedA=source(A,'physical-a','revision-a','paused'); pausedA.overview.monitors[0].monitor.enabled=false;
+  const allPaused=[pausedA,paused];
+  assert.ok(!render(FleetOverviewView,{...props,sources:allPaused,rows:fleetMonitorRows(allPaused,now,[deployment()])}).includes('class="fl-at '));
+});
 await check('placement checkboxes use the complete registry and keep missing selections', () => {
   const html = render(FleetPlacementFields, { nodes: [A, B], groups: [], selectedRegistrationIds: [A.id, 'missing-registration'], onChange() {} });
   assert.match(html, new RegExp(`value="${A.id}"`)); assert.match(html, new RegExp(`value="${B.id}"`)); assert.match(html, /missing-registration/);
@@ -239,5 +257,5 @@ await check('node groups have their own section and individual node fields have 
   assert.ok(!nodes.includes('Add a node group'));assert.ok(!nodes.includes('fl-gpick'));
 });
 scope.unregister();
-console.log(`${24 - failed}/24 fleet management groups passed`);
+console.log(`${25 - failed}/25 fleet management groups passed`);
 if (failed) process.exitCode = 1;

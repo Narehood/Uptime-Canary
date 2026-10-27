@@ -78,7 +78,7 @@ check('the heading and subtitle lead with one dashboard for several nodes', () =
 check('the brand panel no longer says the dashboard sees one node at a time', () => {
   assert.equal(facts.length, 3);
   assert.equal(facts[0], 'Many nodes, one view. The node you sign in to shows its peers too, each fact as that node knows it.');
-  assert.ok(facts[1].includes('in this tab’s memory'), facts[1]);
+  assert.ok(facts[1].includes('survives reloads in this tab'), facts[1]);
   assert.ok(facts[2].startsWith('Optional.'), facts[2]);
   assert.ok(brand.includes('<b>Many nodes, one view.</b>'), 'the multi-node point should be the emphasized lead');
   for (const old of [/one node at a time/i, /on any Uptime-Canary node/i, /Talks to/]) assert.doesNotMatch(screen, old);

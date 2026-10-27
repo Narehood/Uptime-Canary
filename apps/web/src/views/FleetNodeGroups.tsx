@@ -173,7 +173,7 @@ function GroupCard({ group, nodes, count, editable, canEdit, canAct, syncing, sy
   return (
     <article className="gcard fl-gcard" aria-labelledby={headingId}>
       <div className="gcard-h">
-        <div>
+        <div className="fl-gcard-t">
           <h2 id={headingId}>{group.name}</h2>
           <span className="muted small">{plural(members.length, 'registered node')}{gone.length ? ` · ${gone.length} no longer registered` : ''}</span>
         </div>

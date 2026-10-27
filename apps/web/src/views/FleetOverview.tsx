@@ -4,6 +4,7 @@ import { FLEET_SNAPSHOT_MAX_AGE_MS, fleetSourceCurrent, type FleetMonitorRow, ty
 import type { FleetOverviewProps } from '../fleetViews';
 import { ago, elapsed, hasLatency, latencyOf, plural, utc } from '../format';
 import { matchesFilter, stateTone, stateWord, type StateFilter, type Tone } from '../model';
+import { href } from '../router';
 import { Banner, Card, EmptyState, FilterChips, PageHead, Rev, Spinner, StateChip, Tag, TypeTag } from '../ui/bits';
 import { Glyph, Icon, type IconName } from '../ui/icons';
 
@@ -179,8 +180,10 @@ const COUNTED: { tone: Tone; word: string }[] = [
 function NodeTile({ source, now, counts }: { source: FleetSource; now: number; counts: Map<Tone, number> | undefined }) {
   const snapshot = snapshotOf(source, now);
   const total = counts ? [...counts.values()].reduce((sum, n) => sum + n, 0) : 0;
+  // The edge comes from the node's own down results, never from whether the dashboard could read it.
+  const down = Boolean(counts?.get('down'));
   return (
-    <li className={`fl-node s-${snapshot.kind}`}>
+    <li className={`fl-node s-${snapshot.kind}${down ? ' attn' : ''}`}>
       <div className="fl-node-h">
         <b>{source.node.label}</b>
         {source.node.local ? <Tag tone="accent">local</Tag> : null}
@@ -197,8 +200,75 @@ function NodeTile({ source, now, counts }: { source: FleetSource; now: number; c
   );
 }
 
+/** Placement is the dashboard's own process, not health. Only a placement that stopped puts a monitor on the attention list. */
+const PLACEMENT_WAIT: Partial<Record<NonNullable<FleetMonitorRow['deployment']>['state'], string>> = {
+  pending: 'Placement in progress', blocked: 'Placement stopped', unauthorized: 'Placement waits for an editor to retry it',
+};
+
+const ATTENTION_SHOWN = 8;
+const RESULTS_SHOWN = 4;
+
+interface Attention { item: ShapedRow; troubled: ShapedResult[]; placement?: string }
+
+/** Down, unknown or pending on at least one node, differing revisions, or a stopped placement. Most serious first. */
+function attentionOf(shaped: readonly ShapedRow[]): Attention[] {
+  const list: Attention[] = [];
+  for (const item of shaped) {
+    const { row } = item;
+    const state = row.deployment?.state;
+    const stuck = state === 'blocked' || state === 'unauthorized';
+    if (!matchesFilter(row.assessment, 'failing') && !matchesFilter(row.assessment, 'unknown') && !row.differingViews && !stuck) continue;
+    list.push({ item, placement: state ? PLACEMENT_WAIT[state] : undefined, troubled: item.results.filter(({ shape }) => shape.tone !== 'up') });
+  }
+  return list.sort((a, b) => a.item.row.assessment.severity - b.item.row.assessment.severity
+    || a.item.row.monitor.name.localeCompare(b.item.row.monitor.name) || a.item.row.key.localeCompare(b.item.row.key));
+}
+
+/** One monitor that needs a look: only the nodes where it isn't up, then a way in. Managing it stays on Monitors. */
+function AttentionItem({ entry, now, onOpen }: { entry: Attention; now: number; onOpen: FleetOverviewProps['onOpen'] }) {
+  const { item: { row, results }, troubled, placement } = entry;
+  const shown = troubled.slice(0, RESULTS_SHOWN);
+  const more = troubled.length - shown.length;
+  const up = results.filter(({ shape }) => shape.tone === 'up').length;
+  const notes: string[] = [];
+  if (more) notes.push(`${more} more ${more === 1 ? 'node isn’t' : 'nodes aren’t'} up`);
+  if (up) notes.push(`${notes.length ? 'up' : 'Up'} on ${plural(up, troubled.length ? 'other node' : 'node')}`);
+  return (
+    <li className={`fl-at t-${row.assessment.tone}`}>
+      <div className="fl-at-h">
+        <span className="fl-at-n"><b>{row.monitor.name}</b><TypeTag type={row.monitor.type} /></span>
+        <StateChip a={row.assessment} />
+      </div>
+      {shown.length ? (
+        <ul className="fl-res" aria-label={`Nodes where ${row.monitor.name} isn’t up`}>{shown.map(item => <ResultItem key={item.result.nodeId} item={item} now={now} />)}</ul>
+      ) : null}
+      {placement || row.differingViews || notes.length ? (
+        <p className="fl-at-m">
+          {placement ? <span className="fl-at-f"><Icon name="clock" />{placement}</span> : null}
+          {row.differingViews ? <span className="fl-at-f"><Glyph tone="warn" />Nodes report different revisions</span> : null}
+          {notes.length ? <span>{notes.join(' · ')}</span> : null}
+        </p>
+      ) : null}
+      <OpenChoices row={row} now={now} onOpen={onOpen} />
+    </li>
+  );
+}
+
+function NotCurrentBanner({ notCurrent, total }: { notCurrent: number; total: number }) {
+  return (
+    <Banner tone="warn" title={`${notCurrent} of ${plural(total, 'node')} ${notCurrent === 1 ? 'isn’t' : 'aren’t'} current`}>
+      Monitors only {notCurrent === 1 ? 'that node knows' : 'those nodes know'} about may be missing here, and results {notCurrent === 1 ? 'it' : 'they'} would report show as unknown. A node keeps checking and alerting on its own while the dashboard can’t read it.
+    </Banner>
+  );
+}
+
+/**
+ * Overview is the fleet's health at a glance: totals, what needs a look and how each node is doing. Monitors is the
+ * complete, searchable inventory with every management action. Both read the same rows; neither picks a node.
+ */
 export function FleetOverviewView(props: FleetOverviewProps) {
   const { sources, rows, now, loading, refreshing, error, search, onSearchChange, onRefresh, onOpen, onAdd, onManageGroups } = props;
+  const view = props.view ?? 'overview';
   const [filter, setFilter] = useState<StateFilter>('all');
   const byId = new Map(sources.map(source => [source.node.id, source]));
   const ordered = [...sources].sort(sourceOrder);
@@ -244,36 +314,46 @@ export function FleetOverviewView(props: FleetOverviewProps) {
     : notCurrent ? <>No monitor is down in the snapshots received, but {notCurrent} of {plural(sources.length, 'node')} {notCurrent === 1 ? 'isn’t' : 'aren’t'} current.</>
     : <>Every monitor is up or paused on every assigned node.</>;
 
-  return (
-    <div className="view fleet">
-      <PageHead
-        title="All nodes"
-        sub={firstRead ? 'Reading the nodes registered with this dashboard…' : <>{plural(rows.length, 'monitor')} across {plural(sources.length, 'node')} registered with this dashboard · {current} of {sources.length} read now</>}
-        actions={<>
-          <span className="vh" role="status">{loading ? 'Reading the registered nodes.' : refreshing ? 'Reading every registered node again.' : ''}</span>
-          <button type="button" className="btn" onClick={onRefresh} disabled={loading || refreshing}>
-            <Icon name="refresh" />{loading ? 'Reading…' : refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
-          {onManageGroups ? <button type="button" className="btn" onClick={onManageGroups}><Icon name="nodes" />Node groups</button> : null}
-          {onAdd ? <button type="button" className="btn primary" onClick={onAdd}><Icon name="plus" />New monitor</button> : null}
-        </>}
-      />
-      {error ? <Banner tone="down" role="alert" title="Monitors couldn’t be read">{error}</Banner> : null}
+  const head = (
+    <PageHead
+      title={view === 'monitors' ? 'Monitors' : 'All nodes'}
+      sub={firstRead ? 'Reading the nodes registered with this dashboard…'
+        : view === 'monitors' ? <>{plural(rows.length, 'monitor')} on {plural(sources.length, 'registered node')} · {current} of {sources.length} read now</>
+        : <>{plural(rows.length, 'monitor')} across {plural(sources.length, 'node')} registered with this dashboard · {current} of {sources.length} read now</>}
+      actions={<>
+        <span className="vh" role="status">{loading ? 'Reading the registered nodes.' : refreshing ? 'Reading every registered node again.' : ''}</span>
+        <button type="button" className="btn" onClick={onRefresh} disabled={loading || refreshing}>
+          <Icon name="refresh" />{loading ? 'Reading…' : refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+        {onManageGroups ? <button type="button" className="btn" onClick={onManageGroups}><Icon name="nodes" />Node groups</button> : null}
+        {onAdd ? <button type="button" className="btn primary" onClick={onAdd}><Icon name="plus" />New monitor</button> : null}
+      </>}
+    />
+  );
+  const failed = error ? <Banner tone="down" role="alert" title="Monitors couldn’t be read">{error}</Banner> : null;
+  const noMonitors = loading || reading ? <div className="fl-wait"><Spinner label="Reading monitors from every node…" /></div>
+    : !sources.length ? <EmptyState title="No monitors yet">Monitors appear here once monitoring nodes are registered with this dashboard.</EmptyState>
+    : notCurrent === sources.length ? (
+      <EmptyState title="No monitor data received">
+        No registered node has a current snapshot yet, so this doesn’t mean {sources.length === 1 ? 'it has' : 'they have'} no monitors.
+      </EmptyState>
+    )
+    : notCurrent ? (
+      <EmptyState title="No monitors received">
+        The nodes read now report none, but {notCurrent} of {plural(sources.length, 'registered node')} {notCurrent === 1 ? 'has' : 'have'} no current snapshot, so {notCurrent === 1 ? 'its' : 'their'} monitors may be missing here.
+      </EmptyState>
+    )
+    : <EmptyState title="No monitors on any node yet" action={onAdd ? <button type="button" className="btn primary" onClick={onAdd}><Icon name="plus" />New monitor</button> : undefined}>
+        {onAdd ? 'Add a monitor and choose which nodes run it.' : 'An editor or administrator can add monitors.'}
+      </EmptyState>;
 
-      {rows.length ? (
-        <Card className="situation fl-sum">
-          <h2 className="vh">Summary of every node</h2>
-          <p className="headline">{headline}</p>
-          <div className="kpis">
-            <Kpi label="Down" tone={failing.length ? 'down' : undefined} value={failing.length} sub={failing.length ? `${everywhere} on every node · ${failing.length - everywhere} on some` : 'No failures reported'} />
-            <Kpi label="Unknown" tone={unknown.length ? 'unknown' : undefined} value={unknown.length} sub={unknownSub || 'No current result from every node'} />
-            <Kpi label="Up" tone={up ? 'up' : undefined} value={up} of={rows.length} sub={`${paused} paused`} />
-            <Kpi label="Nodes read now" value={current} of={sources.length} sub={notCurrent ? [reading ? `${reading} reading` : '', unavailable ? `${unavailable} unavailable` : '', notCurrent - reading - unavailable > 0 ? `${notCurrent - reading - unavailable} not current` : ''].filter(Boolean).join(' · ') : 'Reading a node isn’t a monitoring result'} />
-          </div>
-        </Card>
-      ) : null}
-
-      <Card title="Nodes on this dashboard" className={refreshing ? 'refetching' : undefined} hint="What the dashboard’s server could read from each registration. Reading a node says nothing about the monitors it checks.">
+  if (view === 'overview') {
+    const attention = attentionOf(shaped);
+    const listed = attention.slice(0, ATTENTION_SHOWN);
+    const rest = attention.length - listed.length;
+    const nodesCard = (
+      <Card title="Nodes on this dashboard" className={refreshing ? 'refetching' : undefined} hint="What the dashboard’s server could read from each registration. Reading a node says nothing about the monitors it checks."
+        actions={<a className="btn sm" href={href('nodes')}>Details<Icon name="chevRight" /></a>}>
         {ordered.length ? (
           <ul className="fl-nodes">
             {ordered.map(source => <NodeTile key={source.node.id} source={source} now={now} counts={counts.get(source.node.nodeId)} />)}
@@ -281,6 +361,63 @@ export function FleetOverviewView(props: FleetOverviewProps) {
         ) : loading ? <div className="fl-wait"><Spinner label="Loading nodes…" /></div>
           : <EmptyState title="No nodes on this dashboard yet">Monitors appear here once monitoring nodes are registered with this dashboard.</EmptyState>}
       </Card>
+    );
+    return (
+      <div className="view fleet">
+        {head}
+        {failed}
+        {q && rows.length ? (
+          <Banner tone="info" role="note" title={`${plural(searched.length, 'monitor')} ${searched.length === 1 ? 'matches' : 'match'} “${search.trim()}”`}
+            actions={<a className="btn sm" href={href('monitors')}>Show in Monitors<Icon name="chevRight" /></a>}>
+            This overview always summarizes every monitor. Search results are listed on Monitors.
+          </Banner>
+        ) : null}
+
+        <Card className="situation fl-sum">
+          <h2 className="vh">Summary of every node</h2>
+          {rows.length ? (
+            <>
+              <p className="headline">{headline}</p>
+              <div className="kpis">
+                <Kpi label="Down" tone={failing.length ? 'down' : undefined} value={failing.length} sub={failing.length ? `${everywhere} on every node · ${failing.length - everywhere} on some` : 'No failures reported'} />
+                <Kpi label="Unknown" tone={unknown.length ? 'unknown' : undefined} value={unknown.length} sub={unknownSub || 'No current result from every node'} />
+                <Kpi label="Up" tone={up ? 'up' : undefined} value={up} of={rows.length} sub={`${paused} paused`} />
+                <Kpi label="Nodes read now" value={current} of={sources.length} sub={notCurrent ? [reading ? `${reading} reading` : '', unavailable ? `${unavailable} unavailable` : '', notCurrent - reading - unavailable > 0 ? `${notCurrent - reading - unavailable} not current` : ''].filter(Boolean).join(' · ') : 'Reading a node isn’t a monitoring result'} />
+              </div>
+            </>
+          ) : noMonitors}
+        </Card>
+
+        {rows.length ? (
+          <div className="g2 fl-ov">
+            <Card title="Needs attention" className={`fl-attn${refreshing ? ' refetching' : ''}`}
+              hint={attention.length ? 'Most serious first, with each node’s own result where the monitor isn’t up.' : 'Monitors down, unknown or pending on any node appear here.'}
+              actions={<a className="btn sm" href={href('monitors')}>All monitors<Icon name="chevRight" /></a>}>
+              {notCurrent ? <NotCurrentBanner notCurrent={notCurrent} total={sources.length} /> : null}
+              {listed.length ? (
+                <ul className="fl-ats" aria-label="Monitors that need attention" aria-busy={refreshing || undefined}>
+                  {listed.map(entry => <AttentionItem key={entry.item.row.key} entry={entry} now={now} onOpen={onOpen} />)}
+                </ul>
+              ) : (
+                <EmptyState title="Nothing needs attention">
+                  {notCurrent ? 'No monitor is down, unknown or pending in the snapshots received.' : 'Every monitor is up or paused on every assigned node.'}
+                </EmptyState>
+              )}
+              {rest > 0 ? (
+                <p className="fl-at-more">{rest} more {rest === 1 ? 'monitor needs' : 'monitors need'} attention. <a href={href('monitors')}>See every monitor</a></p>
+              ) : null}
+            </Card>
+            {nodesCard}
+          </div>
+        ) : nodesCard}
+      </div>
+    );
+  }
+
+  return (
+    <div className="view fleet">
+      {head}
+      {failed}
 
       <Card
         title="Monitors on every node" className={`fl-mons${refreshing ? ' refetching' : ''}`}
@@ -294,11 +431,7 @@ export function FleetOverviewView(props: FleetOverviewProps) {
           </label>
         )}
       >
-        {rows.length && notCurrent ? (
-          <Banner tone="warn" title={`${notCurrent} of ${plural(sources.length, 'node')} ${notCurrent === 1 ? 'isn’t' : 'aren’t'} current`}>
-            Monitors only {notCurrent === 1 ? 'that node' : 'those nodes'} know about may be missing here, and results {notCurrent === 1 ? 'it' : 'they'} would report show as unknown. A node keeps checking and alerting on its own while the dashboard can’t read it.
-          </Banner>
-        ) : null}
+        {rows.length && notCurrent ? <NotCurrentBanner notCurrent={notCurrent} total={sources.length} /> : null}
         {rows.length ? <FilterChips<StateFilter> label="Filter monitors by state" value={filter} onChange={setFilter} options={[
           { value: 'all', label: 'All', count: count('all') },
           { value: 'failing', label: 'Failing', count: count('failing') },
@@ -340,22 +473,7 @@ export function FleetOverviewView(props: FleetOverviewProps) {
               </tbody>
             </table>
           </div>
-        ) : rows.length ? <EmptyState title="Nothing matches">Try another filter or search.</EmptyState>
-          : loading || reading ? <div className="fl-wait"><Spinner label="Reading monitors from every node…" /></div>
-          : !sources.length ? <EmptyState title="No monitors yet">Monitors appear here once monitoring nodes are registered with this dashboard.</EmptyState>
-          : notCurrent === sources.length ? (
-            <EmptyState title="No monitor data received">
-              No registered node has a current snapshot yet, so this doesn’t mean {sources.length === 1 ? 'it has' : 'they have'} no monitors.
-            </EmptyState>
-          )
-          : notCurrent ? (
-            <EmptyState title="No monitors received">
-              The nodes read now report none, but {notCurrent} of {plural(sources.length, 'registered node')} {notCurrent === 1 ? 'has' : 'have'} no current snapshot, so {notCurrent === 1 ? 'its' : 'their'} monitors may be missing here.
-            </EmptyState>
-          )
-          : <EmptyState title="No monitors on any node yet" action={onAdd ? <button type="button" className="btn primary" onClick={onAdd}><Icon name="plus" />New monitor</button> : undefined}>
-              {onAdd ? 'Add a monitor and choose which nodes run it.' : 'An editor or administrator can add monitors.'}
-            </EmptyState>}
+        ) : rows.length ? <EmptyState title="Nothing matches">Try another filter or search.</EmptyState> : noMonitors}
         {shown.length ? (
           <div className="legend" aria-label="Legend">
             <span><Glyph tone="up" />Up</span><span><Glyph tone="down" />Down</span><span><Glyph tone="pending" />Pending</span>

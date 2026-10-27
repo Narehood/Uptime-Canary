@@ -647,7 +647,8 @@ await check('source: no storage, no requests of its own, no registry or GitHub c
     assert.doesNotMatch(source, /^import\s+(?:[^;]*from\s+)?['"][^'"]+\.css['"]/mu, name);
   }
   assert.match(component, /useEffect\(\(\) => \{\s+if \(!feed\) return;[\s\S]{0,200}void import\('\.\.\/updates\.css'\)/u, 'loaded inside the control-plane effect');
-  assert.deepEqual(storageWrites, [], 'nothing was written to browser storage');
+  // Refresh now retains the sign-in (user-requested); the update feature still stores nothing of its own.
+  assert.deepEqual(storageWrites.filter(([key]) => key !== 'uptime-canary.sign-in'), [], 'updates wrote no browser state');
 });
 
 await check('rebuild provenance: equal source requires both build times and refuses inconsistent or implausible claims', () => {

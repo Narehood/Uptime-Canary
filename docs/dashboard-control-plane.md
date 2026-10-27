@@ -242,3 +242,37 @@ even for a real node named `pending`. Sampled scratch peaked at 393,994,666
 bytes and returned to zero; source and the module cache stayed unchanged.
 The earlier 170 browser checks retain their original source scope. Fresh
 hosted checks are required for this repair; it is not release acceptance.
+
+## Reloads and mixed node builds
+
+Verified sign-ins are retained in tab session storage and revalidated with the
+issuing dashboard after a reload. Sign out clears that record. Passwords, MFA
+codes, node enrollment credentials and selected-node snapshots are never saved.
+Persistent local storage continues to hold only the endpoint and theme.
+
+Overview summarizes fleet health and nodes needing attention. Monitors holds
+the complete searchable inventory and monitor placement actions.
+
+The dashboard supports the management APIs from the two preceding main builds
+(PRs #18 and #19), as well as the current node. Nodes advertise placement support;
+older outbound nodes use their existing management routes so a new wire route
+does not interrupt their connection. A node without placement routes uses its
+ordinary revision-checked monitor API. Existing IDs and history are retained,
+and a create is journaled before dispatch, then read back after a lost answer
+instead of blindly repeated. Existing equal monitors are excluded from recovery;
+a non-unique new result stays pending for review. A node without a preflight API
+can refuse its operation after another node has applied, so the dashboard keeps
+that deployment incomplete until every node confirms. Such old APIs do not
+provide the node-side ownership receipt of a current placement endpoint.
+
+The dashboard also interoperates with the preceding revision-fenced placement
+API. When a node rejects bundled channel/tag settings, the dashboard
+uses that node's existing resource APIs and records the generated IDs in its
+encrypted plan. It matches complete settings, preserves native resources and
+direct edits, and reads back an unconfirmed create instead of repeating it.
+Those older APIs stage settings separately before deploying monitors, so an
+interrupted sync can leave an unused copied channel or tag. If a create cannot
+be confirmed, the plan stays pending for review; it does not create duplicates.
+New monitor types/providers still require a node that understands those fields,
+and HA replication still requires a compatible peer protocol. Equal build
+commits are not required for dashboard management.

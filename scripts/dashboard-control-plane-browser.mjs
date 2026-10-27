@@ -405,7 +405,10 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await text('sign-in proxy', 25000);
     assert.ok(!await page.eval('location.pathname.includes("sign-in-required")'), 'API redirects were not followed');
     await page.send('Page.navigate', { url: fixture.origin + '/fixture/sign-in' });
-    await until(() => page.eval('!!document.querySelector("form") && !document.querySelector("nav.rail")'), 'dashboard sign-in after proxy authentication');
+    await until(() => page.eval('!!document.querySelector("nav.rail")'), 'dashboard sign-in restored after proxy authentication');
+    // The viewer sign-in now survives navigation. Explicitly switch accounts
+    // for the administrator maintenance checks that follow.
+    await click('Sign out'); await until(()=>page.eval('!document.querySelector("nav.rail")'),'restored viewer signs out');
     await signIn('fixture-owner', fixture.password); await text('First private node');
     return { expiryVisible: true, redirectFollowedByAPI: false, proxyReauthentication: true };
   });
@@ -1225,6 +1228,8 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     for (const [name, role, token] of [['updates-admin','admin',adminToken],['updates-viewer','viewer',viewerToken]])
       assert.equal((await fixture.api('/api/accounts','POST',{name,role,token},owner)).status,201);
     const enter = async token => {
+      // Explicit account switch: refresh itself now restores the sign-in.
+      await page.eval("sessionStorage.removeItem('uptime-canary.sign-in')");
       await page.send('Page.reload'); await text('Sign in'); await ready();
       await page.eval('(() => { const choices=[...document.querySelectorAll("label")].filter(l=>l.querySelector("input[type=radio]")&&__norm(l.innerText)==="Account token");if(choices.length!==1)throw Error("token choice missing");choices[0].querySelector("input").click(); })()');
       await fill('Account token',token); await click('Sign in');
@@ -1276,12 +1281,14 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.ok(calls.length > 10);
     assert.ok(calls.every(value => new URL(value.url).origin === fixture.origin));
     const storage = await page.eval('({local:{...localStorage},session:{...sessionStorage},cookie:document.cookie})');
-    assert.deepEqual(storage.session, {});
+    assert.deepEqual(Object.keys(storage.session), ['uptime-canary.sign-in']);
+    const retained = JSON.parse(storage.session['uptime-canary.sign-in']);
+    assert.equal(retained.origin, fixture.origin); assert.equal(retained.mode, 'dashboard');
     assert.ok(Object.keys(storage.local).every(key => ['uptime-canary.endpoint', 'uptime-canary.theme'].includes(key)));
-    for (const secret of [A.token, B.token, fixture.code, fixture.password, owner]) assert.ok(!JSON.stringify(storage).includes(secret));
+    for (const secret of [A.token, B.token, fixture.code, fixture.password, owner]) if (secret !== retained.token) assert.ok(!JSON.stringify(storage).includes(secret));
     assert.ok(!storage.cookie.includes(fixture.proxyCookie), 'proxy cookie is HttpOnly');
     assert.ok(fixture.stats().authenticated > 0 && fixture.stats().denied > 0);
-    return { browserAPIOrigins: [fixture.origin], privateNodeBrowserRequests: 0, persistedCanaryCredentials: false };
+    return { browserAPIOrigins: [fixture.origin], privateNodeBrowserRequests: 0, persistedCanaryCredentials: 'tab session only' };
   });
   await step('Control plane: the shared node list fits desktop and narrow screens', async () => {
     for (const width of [728, 390]) {

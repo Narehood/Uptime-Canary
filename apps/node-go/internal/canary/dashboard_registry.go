@@ -94,6 +94,7 @@ type Dashboard struct {
 	updates                  *dashboardUpdates
 	accounts                 *DashboardAccounts
 	mu                       sync.Mutex
+	fleetSettingsMu          sync.Mutex
 	registry                 map[string]registeredNodeRecord
 	tickets                  map[string]nodeVerification
 	busy                     map[string]bool

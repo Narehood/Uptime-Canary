@@ -64,19 +64,23 @@ type dashboardFleetRecord struct {
 	RetryAt               int64                     `json:"retryAt"`
 }
 type dashboardFleetPlan struct {
-	SyncNotifications                bool                             `json:"syncNotifications,omitempty"`
-	SyncNotificationsSet             bool                             `json:"syncNotificationsSet,omitempty"`
-	NotificationSourceRegistrationID string                           `json:"notificationSourceRegistrationId,omitempty"`
-	Resources                        []fleetResourceInput             `json:"resources,omitempty"`
-	ResourceIDs                      map[string]string                `json:"resourceIds,omitempty"`
-	NativeResourceIDs                map[string]map[string]string     `json:"nativeResourceIds,omitempty"`
-	ObservedRevisions                map[string]string                `json:"observedRevisions,omitempty"`
-	References                       map[string]fleetTargetReferences `json:"references,omitempty"`
-	Monitor                          MonitorInput                     `json:"monitor"`
-	Prepared                         bool                             `json:"prepared"`
-	Deleted                          bool                             `json:"deleted"`
-	Rejected                         map[string]bool                  `json:"rejected,omitempty"`
-	Unsent                           map[string]bool                  `json:"unsent,omitempty"`
+	LegacyMonitors                   map[string]bool                    `json:"legacyMonitors,omitempty"`
+	LegacyMonitorAttempts            map[string]legacyMonitorAttempt    `json:"legacyMonitorAttempts,omitempty"`
+	LegacyRegistrations              map[string]bool                    `json:"legacyRegistrations,omitempty"`
+	LegacyResources                  map[string]dashboardLegacyResource `json:"legacyResources,omitempty"`
+	SyncNotifications                bool                               `json:"syncNotifications,omitempty"`
+	SyncNotificationsSet             bool                               `json:"syncNotificationsSet,omitempty"`
+	NotificationSourceRegistrationID string                             `json:"notificationSourceRegistrationId,omitempty"`
+	Resources                        []fleetResourceInput               `json:"resources,omitempty"`
+	ResourceIDs                      map[string]string                  `json:"resourceIds,omitempty"`
+	NativeResourceIDs                map[string]map[string]string       `json:"nativeResourceIds,omitempty"`
+	ObservedRevisions                map[string]string                  `json:"observedRevisions,omitempty"`
+	References                       map[string]fleetTargetReferences   `json:"references,omitempty"`
+	Monitor                          MonitorInput                       `json:"monitor"`
+	Prepared                         bool                               `json:"prepared"`
+	Deleted                          bool                               `json:"deleted"`
+	Rejected                         map[string]bool                    `json:"rejected,omitempty"`
+	Unsent                           map[string]bool                    `json:"unsent,omitempty"`
 	// Monitor settings are held once, rather than copied into 64 encrypted commands.
 	Commands map[string]fleetPlacementCommand `json:"commands"`
 }
@@ -701,8 +705,14 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	row.Reason = ""
 	row.RetryAt = 0
 	plan := dashboardFleetPlan{Monitor: input, References: references, SyncNotifications: in.SyncNotifications, SyncNotificationsSet: copyingSet, NotificationSourceRegistrationID: in.NotificationSourceRegistrationID}
+	// API support and saved write attempts belong to the placement, regardless
+	// of which notification source (or copying preference) the editor chooses.
+	plan.LegacyMonitors = previousPlan.LegacyMonitors
+	plan.LegacyMonitorAttempts = previousPlan.LegacyMonitorAttempts
+	plan.LegacyRegistrations = previousPlan.LegacyRegistrations
 	if plan.SyncNotifications && previousPlan.SyncNotifications && plan.NotificationSourceRegistrationID == previousPlan.NotificationSourceRegistrationID {
 		plan.NativeResourceIDs = previousPlan.NativeResourceIDs
+		plan.LegacyResources = previousPlan.LegacyResources
 	}
 	if err = d.saveFleet(r, actor, row, plan); err != nil {
 		errorReply(w, err)
@@ -966,19 +976,32 @@ func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]by
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(input)
-		if err != nil {
-			return nil, err
-		}
-		command.Monitor = b
 		for _, resource := range plan.Resources {
 			used := resource.Kind == resourceChannel && slices.Contains(input.NotificationIDs, resource.ID)
 			for _, tag := range input.Tags {
 				used = used || resource.Kind == resourceTag && tag.TagID == resource.ID
 			}
 			if used {
-				command.Resources = append(command.Resources, resource)
+				if plan.LegacyRegistrations[p.RegistrationID] {
+					local := plan.LegacyResources[legacyFleetResourceKey(p.RegistrationID, resource)].ID
+					for i, id := range input.NotificationIDs {
+						if id == resource.ID && local != "" {
+							input.NotificationIDs[i] = local
+						}
+					}
+					for i, tag := range input.Tags {
+						if tag.TagID == resource.ID && local != "" {
+							input.Tags[i].TagID = local
+						}
+					}
+				} else {
+					command.Resources = append(command.Resources, resource)
+				}
 			}
+		}
+		command.Monitor, err = json.Marshal(input)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return json.Marshal(command)
@@ -1001,6 +1024,18 @@ func (d *Dashboard) fleetRead(ctx context.Context, registration, role string) (O
 	return view, row, err
 }
 func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord, plan *dashboardFleetPlan) error {
+	if plan.LegacyMonitors == nil {
+		plan.LegacyMonitors = map[string]bool{}
+	}
+	if plan.LegacyMonitorAttempts == nil {
+		plan.LegacyMonitorAttempts = map[string]legacyMonitorAttempt{}
+	}
+	if plan.LegacyRegistrations == nil {
+		plan.LegacyRegistrations = map[string]bool{}
+	}
+	if plan.LegacyResources == nil {
+		plan.LegacyResources = map[string]dashboardLegacyResource{}
+	}
 	if plan.SyncNotifications && !plan.Deleted {
 		if err := d.prepareFleetSettings(ctx, *row, plan); err != nil {
 			return err
@@ -1183,7 +1218,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			if current == nil || current.ConfigConflict || current.Monitor.Revision != observed {
 				return fail(409, "A reviewed node revision changed again; refresh before reconciling")
 			}
-			if p.Sequence > 0 {
+			if p.Sequence > 0 && !plan.LegacyMonitors[p.RegistrationID] {
 				d.mu.Lock()
 				target := d.registry[p.RegistrationID]
 				d.mu.Unlock()
@@ -1232,8 +1267,9 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	}
 	candidatePlan := *plan
 	candidatePlan.Commands = commands
-	// Validate the complete plan on every anchor before journaling or applying
-	// any remote changes. Missing node-local channels/tags/groups are not dropped.
+	// Validate every anchor before any monitor writes. Older nodes validate copied
+	// references again after staging settings through their original resource APIs.
+	// Missing explicit node-local channels/tags/groups are never dropped.
 	for _, p := range placements {
 		if !d.fleetAuthorized(*row) {
 			return fail(403, "Deployment authorization changed")
@@ -1248,6 +1284,87 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		if err != nil {
 			return err
 		}
+		// Old outbound clients reject unknown routes before dispatch. Read a
+		// common capability endpoint instead of disrupting their connection.
+		if target.Connection == "outbound" && p.Sequence == 0 && !plan.LegacyMonitors[p.RegistrationID] {
+			response, data, err := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "GET", "/api/auth/status", nil)
+			var capability struct {
+				FleetPlacements bool `json:"fleetPlacements"`
+			}
+			if err != nil || response.StatusCode != 200 || json.Unmarshal(data, &capability) != nil {
+				return fail(502, "Waiting for node management capabilities")
+			}
+			if !capability.FleetPlacements {
+				plan.LegacyMonitors[p.RegistrationID], plan.LegacyRegistrations[p.RegistrationID] = true, true
+			}
+		}
+		if plan.LegacyMonitors[p.RegistrationID] {
+			if err := d.validateLegacyMonitor(ctx, *row, candidatePlan, p, true); err != nil {
+				return err
+			}
+			continue
+		}
+		body, err := fleetCommandBytes(candidatePlan, p)
+		if err != nil {
+			return err
+		}
+		if plan.LegacyRegistrations[p.RegistrationID] {
+			body, err = legacyFleetPreflightBytes(candidatePlan, p)
+			if err != nil {
+				return err
+			}
+		}
+		response, rejection, err := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "POST", "/api/fleet-placements/"+p.ID+"/validate", body)
+		if err != nil {
+			return fail(502, "A selected node cannot be reached yet")
+		}
+		if response.StatusCode == 404 {
+			plan.LegacyMonitors[p.RegistrationID], plan.LegacyRegistrations[p.RegistrationID] = true, true
+			if err := d.validateLegacyMonitor(ctx, *row, candidatePlan, p, true); err != nil {
+				return err
+			}
+			continue
+		}
+		var problem struct {
+			Error string `json:"error"`
+		}
+		var envelope fleetPlacementCommand
+		if response.StatusCode == 400 && json.Unmarshal(rejection, &problem) == nil && problem.Error == "Invalid dashboard request" && json.Unmarshal(body, &envelope) == nil && len(envelope.Resources) > 0 {
+			// The previous node release supports placements but not bundled settings.
+			plan.LegacyRegistrations[p.RegistrationID] = true
+			body, err = legacyFleetPreflightBytes(candidatePlan, p)
+			if err != nil {
+				return err
+			}
+			response, _, err = d.nodeRequest(ctx, target, secret.token(row.ActorRole), "POST", "/api/fleet-placements/"+p.ID+"/validate", body)
+			if err != nil {
+				return fail(502, "A selected node cannot be reached yet")
+			}
+		}
+		if response.StatusCode != 200 {
+			return fail(response.StatusCode, "A node refused the deployment preflight; check its version, revision and local channel, tag or group references")
+		}
+	}
+	if err := d.prepareLegacyFleetResources(ctx, *row, plan, placements); err != nil {
+		return err
+	}
+	for _, p := range placements {
+		if !plan.LegacyRegistrations[p.RegistrationID] {
+			continue
+		}
+		if plan.LegacyMonitors[p.RegistrationID] {
+			if err := d.validateLegacyMonitor(ctx, *row, candidatePlan, p, false); err != nil {
+				return err
+			}
+			continue
+		}
+		d.mu.Lock()
+		target := d.registry[p.RegistrationID]
+		d.mu.Unlock()
+		secret, err := d.openSecrets(target)
+		if err != nil {
+			return err
+		}
 		body, err := fleetCommandBytes(candidatePlan, p)
 		if err != nil {
 			return err
@@ -1257,7 +1374,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			return fail(502, "A selected node cannot be reached yet")
 		}
 		if response.StatusCode != 200 {
-			return fail(response.StatusCode, "A node refused the deployment preflight; check its version, revision and local channel, tag or group references")
+			return fail(response.StatusCode, "A node refused the monitor after notification settings were copied; review its local references")
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -1362,25 +1479,49 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 		if !save() {
 			return
 		}
-		response, b, e := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "PUT", "/api/fleet-placements/"+p.ID, body)
 		var result fleetPlacementResult
 		command := plan.Commands[p.ID]
-		if e != nil || response.StatusCode != 200 && response.StatusCode != 201 || json.Unmarshal(b, &result) != nil || result.PlacementID != p.ID || result.MonitorID != p.MonitorID || result.Sequence != command.Sequence || result.Deleted != command.Deleted || identifier(result.Revision, "revision") != nil {
-			row.State = "pending"
-			row.Reason = "A placement has not confirmed the saved command; it will be retried safely"
-			if e == nil && (response.StatusCode == 400 || response.StatusCode == 404 || response.StatusCode == 409) {
-				row.State = "blocked"
-				row.Reason = "A placement needs review on its node; its version, references or monitor revision differs"
-			}
-			if e == nil && response.StatusCode == 409 {
-				if plan.Rejected == nil {
-					plan.Rejected = map[string]bool{}
+		if plan.LegacyMonitors[p.RegistrationID] {
+			result, e = d.applyLegacyMonitor(ctx, &row, &plan, p, body)
+			if e != nil {
+				row.State, row.Reason = "pending", dashboardErrorMessage(e)
+				var problem *apiError
+				if errors.As(e, &problem) && (problem.Status == 400 || problem.Status == 404 || problem.Status == 409) {
+					row.State = "blocked"
+					if plan.Rejected == nil {
+						plan.Rejected = map[string]bool{}
+					}
+					plan.Rejected[p.ID] = true
+					// A definite refusal plus only acknowledged/unsent commands can
+					// be edited safely. An uncertain POST remains prepared forever
+					// until read-back confirms it; it is never issued again.
+					if plan.Unsent[p.ID] && fleetCanReconcile(row, plan, map[string]string{}) {
+						plan.Prepared, plan.Commands = false, nil
+					}
 				}
-				plan.Rejected[p.ID] = true
+				row.RetryAt = time.Now().Add(30 * time.Second).UnixMilli()
+				save()
+				return
 			}
-			row.RetryAt = time.Now().Add(30 * time.Second).UnixMilli()
-			save()
-			return
+		} else {
+			response, b, e := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "PUT", "/api/fleet-placements/"+p.ID, body)
+			if e != nil || response.StatusCode != 200 && response.StatusCode != 201 || json.Unmarshal(b, &result) != nil || result.PlacementID != p.ID || result.MonitorID != p.MonitorID || result.Sequence != command.Sequence || result.Deleted != command.Deleted || identifier(result.Revision, "revision") != nil {
+				row.State = "pending"
+				row.Reason = "A placement has not confirmed the saved command; it will be retried safely"
+				if e == nil && (response.StatusCode == 400 || response.StatusCode == 404 || response.StatusCode == 409) {
+					row.State = "blocked"
+					row.Reason = "A placement needs review on its node; its version, references or monitor revision differs"
+				}
+				if e == nil && response.StatusCode == 409 {
+					if plan.Rejected == nil {
+						plan.Rejected = map[string]bool{}
+					}
+					plan.Rejected[p.ID] = true
+				}
+				row.RetryAt = time.Now().Add(30 * time.Second).UnixMilli()
+				save()
+				return
+			}
 		}
 		p.Sequence, p.Revision = result.Sequence, result.Revision
 		p.State = "syncing"

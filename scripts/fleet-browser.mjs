@@ -18,8 +18,8 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
     await page.eval(`(() => {const card=${card};if(!card.classList.contains('ep')){const button=[...card.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===${q('Open ' + node.label)}&&!b.disabled);if(!button)throw Error('expected registration Open missing');button.click()}})()`);
   };
   const refresh = async () => {
-    await nav('#/overview');
-    await until(() => page.eval('document.querySelector("main h1")?.textContent==="All nodes"'), 'central fleet heading');
+    await nav('#/monitors');
+    await until(() => page.eval('document.querySelector("main h1")?.textContent==="Monitors"'), 'central fleet heading');
     await until(() => page.eval('[...document.querySelectorAll("main button")].some(b=>__norm(b.innerText)==="Refresh"&&!b.disabled)'), 'fleet finished its current read', 25000);
     await click('Refresh', 'main');
     await until(() => page.eval('[...document.querySelectorAll("main button")].some(b=>__norm(b.innerText)==="Refresh"&&!b.disabled)'), 'new fleet read completed', 25000);
@@ -39,6 +39,10 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
         await page.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await page.eval(`document.documentElement.dataset.mode=${q(mode)};new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
         assert.ok(await page.eval('document.documentElement.scrollWidth<=innerWidth'), `${label} overflow at ${width} in ${mode}`);
+        assert.ok(await page.eval(`Array.from(document.querySelectorAll('.fl-gcard')).every(card=>{
+          const heading=card.querySelector('.fl-gcard-t h2')?.getBoundingClientRect(), box=card.getBoundingClientRect(), actions=card.querySelector('.acts')?.getBoundingClientRect();
+          return heading && heading.width>=120 && heading.right<=box.right+1 && (!actions || actions.left>=box.left-1&&actions.right<=box.right+1);
+        })`), `${label} group heading or actions squeezed at ${width} in ${mode}`);
       }
     } finally {
       await page.send('Emulation.clearDeviceMetricsOverride');
@@ -66,6 +70,16 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
     for(const box of field.querySelectorAll('input[type=checkbox]'))if(box.checked!==chosen.includes(box.value))box.click();
   })()`);
 
+  await step('Fleet: refreshing restores the dashboard password session without another sign-in', async () => {
+    await nav('#/overview');
+    const logins=fixture.stats().paths.filter(r=>r.path==='/api/auth/login').length;
+    await page.send('Page.reload');
+    await until(()=>page.eval('!!document.querySelector("nav.rail")'),'saved dashboard sign-in restored',25000); await ready();
+    assert.equal(fixture.stats().paths.filter(r=>r.path==='/api/auth/login').length,logins);
+    assert.equal(await page.eval('!!document.querySelector("input[type=password]")'),false);
+    return {restored:true,passwordResubmitted:false};
+  });
+
   await step('Fleet: central inventory reads independent nodes and preserves unrelated equal-name monitors', async () => {
     const registrations = (await api('/api/dashboard/nodes')).value;
     a = registrations.find(n => n.nodeId === A.id); b = registrations.find(n => n.nodeId === B.id);
@@ -87,6 +101,17 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
     return { independentNodes: 2, equalNameRows: 2, browserNodeRequests: 0 };
   });
 
+  await step('Fleet: Overview summarizes health while Monitors keeps the searchable management inventory', async () => {
+    await nav('#/overview'); await text('Needs attention');
+    assert.equal(await page.eval('!!document.querySelector("main .fl-tbl")'),false);
+    assert.ok(await page.eval('!!document.querySelector("main .fl-nodes")'));
+    await layout('Overview summary');
+    await refresh();
+    assert.ok(await page.eval('!!document.querySelector("main .fl-tbl")'));
+    assert.equal(await page.eval('!!document.querySelector("main .fl-nodes")'),false);
+    return { distinctPages:true };
+  });
+
   await step('Fleet: dashboard node groups list the full registry and change no outage dependency group', async () => {
     await nav('#/groups');
     await until(() => page.eval('document.querySelector("main h1")?.textContent==="Node groups"'), 'dashboard node groups heading');
@@ -97,6 +122,8 @@ export async function reviewFleet({ fixture, A, B, page, step, until, fill, clic
     assert.ok(choices.includes(a.id) && choices.includes(b.id));
     await choose('.fl-editor .fl-place', [a.id, b.id]); await layout('node group editor'); await click('Create and sync', '.fl-editor');
     await until(async () => (await api('/api/dashboard/node-groups')).value.some(g => g.name === groupName && g.registrationIds.length === 2), 'group persisted');
+    await until(()=>page.eval('!!document.querySelector(".fl-gcard-t h2")'),'saved group card');
+    await layout('node group cards');
     const groupsA = (await api('/api/groups', 'GET', undefined, a.id)).value;
     assert.ok(!groupsA.some(g => g.group.name === groupName), 'dashboard groups are not outage dependency groups');
     // The previous update-notice proof signs in afresh. Dependency navigation

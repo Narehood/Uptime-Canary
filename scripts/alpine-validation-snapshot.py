@@ -22,6 +22,7 @@ ROOT_FILES = (
     "scripts/proxy-auth-pure.mjs", "scripts/node-login-copy-pure.mjs",
     "scripts/dashboard-gateway-pure.mjs",
     "scripts/dashboard-control-plane-pure.mjs",
+    "scripts/session-restore-pure.mjs",
     "scripts/push-commands-pure.mjs",
     "scripts/frontend-review-pure.mjs",
     "scripts/editor-preservation-pure.mjs",
