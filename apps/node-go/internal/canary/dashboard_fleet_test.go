@@ -333,8 +333,16 @@ func TestDashboardFleetAdoptsExistingAndKeepsOnePeerPlacement(t *testing.T) {
 func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	d, owner, _ := dashboardRegistryFixture(t)
 	node := dashboardRemoteFixture(t, "node-a")
-	var lose atomic.Bool
+	var lose, refuse atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && refuse.Swap(false) {
+			// Model a recoverable refusal at the owned proxy. The next attempt
+			// really commits on the node and may lose its response below.
+			// nodeCall authenticates this identity header before trusting status.
+			w.Header().Set("X-Canary-Node-Id", node.ID)
+			errorReply(w, fail(409, "private fixture recoverable refusal"))
+			return
+		}
 		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && lose.Load() {
 			capture := httptest.NewRecorder()
 			node.ServeHTTP(capture, r)
@@ -388,12 +396,26 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	if w.Code != 202 {
 		t.Fatal(w.Code)
 	}
+	refuse.Store(true)
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	plan, err = d.openFleet(row)
+	if err != nil || row.State != "blocked" || !plan.Rejected[p.ID] {
+		t.Fatal("the recoverable refusal was not retained")
+	}
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/retry", owner, "", map[string]string{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code)
+	}
 	lose.Store(true)
 	d.finishFleet(context.Background(), row.ID)
 	row = d.fleet[row.ID]
 	plan, err = d.openFleet(row)
 	if err != nil || row.Placements[0].Sequence != 1 || !plan.Prepared {
 		t.Fatal("the unknown update was not retained")
+	}
+	if plan.Rejected[p.ID] || plan.Unsent[p.ID] {
+		t.Fatal("a previous refusal stayed authoritative after another attempt")
 	}
 	input.Name = "Later direct edit must also survive exact replay"
 	local, err := node.writeMonitor(input, node.heads[p.MonitorID], p.MonitorID, false)
@@ -406,6 +428,9 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	after, err = d.openFleet(d.fleet[row.ID])
 	if w.Code != 409 || err != nil || !equalJSON(plan, after) {
 		t.Fatal("review discarded an unknown update after a later direct edit")
+	}
+	if err = d.loadFleet(); err != nil {
+		t.Fatal(err)
 	}
 	lose.Store(false)
 	d.finishFleet(context.Background(), row.ID)

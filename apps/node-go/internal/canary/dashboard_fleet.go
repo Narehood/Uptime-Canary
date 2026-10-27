@@ -1035,12 +1035,12 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			save()
 			return
 		}
-		if plan.Unsent[p.ID] {
-			// Persist the unknown-outcome boundary before any request can leave.
-			delete(plan.Unsent, p.ID)
-			if !save() {
-				return
-			}
+		// Every attempt becomes unknown before it leaves, including a retry
+		// after a refusal that may now succeed but lose its acknowledgement.
+		delete(plan.Unsent, p.ID)
+		delete(plan.Rejected, p.ID)
+		if !save() {
+			return
 		}
 		response, b, e := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "PUT", "/api/fleet-placements/"+p.ID, body)
 		var result fleetPlacementResult

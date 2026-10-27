@@ -143,6 +143,15 @@ The first failure-injection fixture incorrectly retried a faulted runtime withou
 restarting; it now follows the persistence-error restart contract. Its original
 failure is retained. Scratch returned to zero and the module cache was unchanged.
 
+The second feature-review repair clears a previous refusal before every new
+attempt, so a later lost acknowledgement still requires exact replay. The same
+Go test selection passed again (35.203 seconds guarded, package-cwd fingerprint
+`6c13b634c958f97d8f9987660d471778ab45d81ab2d3c30dba67b620dd20b4ba`).
+Its regression injects a recoverable refusal through the owned loopback proxy,
+then commits a real node update while losing its response. The fixture initially
+omitted the required node-identity header; the header was corrected and all
+assertions retained. This did not change the earlier browser/static source scope.
+
 Before those review repairs, a Windows amd64 checkpoint passed these local checks on unchanged v3
 source fingerprint
 `99e4de603f4acee625223121e89eeec613c92055dd3e03b2394079725fe36450`:
