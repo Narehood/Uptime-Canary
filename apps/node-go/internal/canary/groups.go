@@ -5,6 +5,10 @@ import "slices"
 // Configuration references are strict on local management changes. Replication
 // may arrive out of order; unknown/conflicting/cyclic dependencies fail open.
 func (n *Node) validateReferences(m *Monitor, g *Group) error {
+	return n.validateFleetReferences(m, g, nil)
+}
+
+func (n *Node) validateFleetReferences(m *Monitor, g *Group, bundled map[string]bool) error {
 	if m != nil {
 		if m.Type == "push" && m.Push != nil {
 			if matches(n.clusterHash, m.Push.Token) {
@@ -31,12 +35,12 @@ func (n *Node) validateReferences(m *Monitor, g *Group) error {
 			}
 		}
 		for _, tag := range m.Tags {
-			if n.currentResource(resourceTag, tag.TagID) == nil {
+			if !bundled[resourceKey(resourceTag, tag.TagID)] && n.currentResource(resourceTag, tag.TagID) == nil {
 				return fail(400, "tags must reference existing unconflicted tags")
 			}
 		}
 		for _, id := range m.NotificationIDs {
-			if n.currentResource(resourceChannel, id) == nil {
+			if !bundled[resourceKey(resourceChannel, id)] && n.currentResource(resourceChannel, id) == nil {
 				return fail(400, "notificationIds must reference existing unconflicted channels")
 			}
 		}

@@ -14,11 +14,14 @@ import (
 )
 
 type dashboardNodeGroup struct {
+	Proof           string   `json:"proof,omitempty"`
 	ID              string   `json:"id"`
 	Name            string   `json:"name"`
 	RegistrationIDs []string `json:"registrationIds"`
 	Revision        string   `json:"revision"`
 	UpdatedAt       int64    `json:"updatedAt"`
+	SyncState       string   `json:"syncState,omitempty"`
+	SyncReason      string   `json:"syncReason,omitempty"`
 }
 type fleetSourceReference struct {
 	RegistrationID string `json:"registrationId"`
@@ -43,29 +46,37 @@ type dashboardFleetPlacement struct {
 	State                   string   `json:"state"`
 }
 type dashboardFleetRecord struct {
-	ID              string                    `json:"id"`
-	Revision        string                    `json:"revision"`
-	UpdatedAt       int64                     `json:"updatedAt"`
-	RegistrationIDs []string                  `json:"registrationIds"`
-	Source          *fleetSourceReference     `json:"source,omitempty"`
-	SourceCompleted bool                      `json:"sourceCompleted,omitempty"`
-	Placements      []dashboardFleetPlacement `json:"placements"`
-	State           string                    `json:"state"`
-	Reason          string                    `json:"reason,omitempty"`
-	Private         string                    `json:"private"`
-	ActorID         string                    `json:"actorId"`
-	ActorRole       string                    `json:"actorRole"`
-	ActorVersion    uint64                    `json:"actorVersion"`
-	RetryAt         int64                     `json:"retryAt"`
+	ID                    string                    `json:"id"`
+	Revision              string                    `json:"revision"`
+	UpdatedAt             int64                     `json:"updatedAt"`
+	RegistrationIDs       []string                  `json:"registrationIds"`
+	GroupIDs              []string                  `json:"groupIds,omitempty"`
+	PinnedRegistrationIDs []string                  `json:"pinnedRegistrationIds,omitempty"`
+	Source                *fleetSourceReference     `json:"source,omitempty"`
+	SourceCompleted       bool                      `json:"sourceCompleted,omitempty"`
+	Placements            []dashboardFleetPlacement `json:"placements"`
+	State                 string                    `json:"state"`
+	Reason                string                    `json:"reason,omitempty"`
+	Private               string                    `json:"private"`
+	ActorID               string                    `json:"actorId"`
+	ActorRole             string                    `json:"actorRole"`
+	ActorVersion          uint64                    `json:"actorVersion"`
+	RetryAt               int64                     `json:"retryAt"`
 }
 type dashboardFleetPlan struct {
-	ObservedRevisions map[string]string                `json:"observedRevisions,omitempty"`
-	References        map[string]fleetTargetReferences `json:"references,omitempty"`
-	Monitor           MonitorInput                     `json:"monitor"`
-	Prepared          bool                             `json:"prepared"`
-	Deleted           bool                             `json:"deleted"`
-	Rejected          map[string]bool                  `json:"rejected,omitempty"`
-	Unsent            map[string]bool                  `json:"unsent,omitempty"`
+	SyncNotifications                bool                             `json:"syncNotifications,omitempty"`
+	SyncNotificationsSet             bool                             `json:"syncNotificationsSet,omitempty"`
+	NotificationSourceRegistrationID string                           `json:"notificationSourceRegistrationId,omitempty"`
+	Resources                        []fleetResourceInput             `json:"resources,omitempty"`
+	ResourceIDs                      map[string]string                `json:"resourceIds,omitempty"`
+	NativeResourceIDs                map[string]map[string]string     `json:"nativeResourceIds,omitempty"`
+	ObservedRevisions                map[string]string                `json:"observedRevisions,omitempty"`
+	References                       map[string]fleetTargetReferences `json:"references,omitempty"`
+	Monitor                          MonitorInput                     `json:"monitor"`
+	Prepared                         bool                             `json:"prepared"`
+	Deleted                          bool                             `json:"deleted"`
+	Rejected                         map[string]bool                  `json:"rejected,omitempty"`
+	Unsent                           map[string]bool                  `json:"unsent,omitempty"`
 	// Monitor settings are held once, rather than copied into 64 encrypted commands.
 	Commands map[string]fleetPlacementCommand `json:"commands"`
 }
@@ -88,6 +99,34 @@ func fleetReferencedInput(plan dashboardFleetPlan, p dashboardFleetPlacement) (M
 		}
 		if ref.Tags != nil {
 			in.Tags = slices.Clone(*ref.Tags)
+		}
+		if plan.SyncNotifications {
+			mappedID := func(kind, original string) string {
+				key := resourceKey(kind, original)
+				// Independent origins reuse their native settings even when the
+				// monitor was created from a destination's already-synced copy.
+				if len(p.RegistrationIDs) == 1 {
+					if native := plan.NativeResourceIDs[id][key]; native != "" {
+						return native
+					}
+				}
+				if mapped := plan.ResourceIDs[key]; mapped != "" {
+					return mapped
+				}
+				return original
+			}
+			if ref.NotificationIDs == nil {
+				in.NotificationIDs = slices.Clone(in.NotificationIDs)
+				for i, id := range in.NotificationIDs {
+					in.NotificationIDs[i] = mappedID(resourceChannel, id)
+				}
+			}
+			if ref.Tags == nil {
+				in.Tags = slices.Clone(in.Tags)
+				for i, tag := range in.Tags {
+					in.Tags[i].TagID = mappedID(resourceTag, tag.TagID)
+				}
+			}
 		}
 		in.NodeIDs = slices.Clone(p.NodeIDs)
 		return in
@@ -156,6 +195,8 @@ func (d *Dashboard) loadFleet() error {
 }
 func copyFleet(row dashboardFleetRecord) dashboardFleetRecord {
 	row.RegistrationIDs = slices.Clone(row.RegistrationIDs)
+	row.GroupIDs = slices.Clone(row.GroupIDs)
+	row.PinnedRegistrationIDs = slices.Clone(row.PinnedRegistrationIDs)
 	row.Placements = slices.Clone(row.Placements)
 	for i := range row.Placements {
 		row.Placements[i].RegistrationIDs = slices.Clone(row.Placements[i].RegistrationIDs)
@@ -253,18 +294,22 @@ func (d *Dashboard) publicFleet(row dashboardFleetRecord, role string) (any, err
 		return nil, fail(503, "Fleet configuration unavailable")
 	}
 	return struct {
-		ID              string                           `json:"id"`
-		Revision        string                           `json:"revision"`
-		UpdatedAt       int64                            `json:"updatedAt"`
-		RegistrationIDs []string                         `json:"registrationIds"`
-		Source          *fleetSourceReference            `json:"source,omitempty"`
-		Placements      []dashboardFleetPlacement        `json:"placements"`
-		State           string                           `json:"state"`
-		Reason          string                           `json:"reason,omitempty"`
-		Monitor         Monitor                          `json:"monitor"`
-		CanCancel       bool                             `json:"canCancel"`
-		CanRemove       bool                             `json:"canRemove"`
-		References      map[string]fleetTargetReferences `json:"references,omitempty"`
+		ID                               string                           `json:"id"`
+		Revision                         string                           `json:"revision"`
+		UpdatedAt                        int64                            `json:"updatedAt"`
+		RegistrationIDs                  []string                         `json:"registrationIds"`
+		Source                           *fleetSourceReference            `json:"source,omitempty"`
+		Placements                       []dashboardFleetPlacement        `json:"placements"`
+		State                            string                           `json:"state"`
+		Reason                           string                           `json:"reason,omitempty"`
+		Monitor                          Monitor                          `json:"monitor"`
+		CanCancel                        bool                             `json:"canCancel"`
+		CanRemove                        bool                             `json:"canRemove"`
+		References                       map[string]fleetTargetReferences `json:"references,omitempty"`
+		GroupIDs                         []string                         `json:"groupIds,omitempty"`
+		SyncNotifications                *bool                            `json:"syncNotifications,omitempty"`
+		NotificationSourceRegistrationID string                           `json:"notificationSourceRegistrationId,omitempty"`
+		PinnedRegistrationIDs            []string                         `json:"pinnedRegistrationIds,omitempty"`
 	}{row.ID, row.Revision, row.UpdatedAt, slices.Clone(row.RegistrationIDs), func() *fleetSourceReference {
 		if row.SourceCompleted {
 			return nil
@@ -276,7 +321,13 @@ func (d *Dashboard) publicFleet(row dashboardFleetRecord, role string) (any, err
 				return nil
 			}
 			return plan.References
-		}()}, nil
+		}(), slices.Clone(row.GroupIDs), func() *bool {
+			if !plan.SyncNotificationsSet {
+				return nil
+			}
+			copy := plan.SyncNotifications
+			return &copy
+		}(), d.fleetNotificationSource(row, plan, ""), slices.Clone(row.PinnedRegistrationIDs)}, nil
 }
 func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor AccountView) {
 	if r.URL.RawQuery != "" || r.URL.ForceQuery {
@@ -341,15 +392,18 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 		return
 	}
 	var in struct {
-		RequestID         string                     `json:"requestId"`
-		Revision          string                     `json:"revision"`
-		Monitor           json.RawMessage            `json:"monitor"`
-		RegistrationIDs   []string                   `json:"registrationIds"`
-		Source            *fleetSourceReference      `json:"source"`
-		References        map[string]json.RawMessage `json:"references"`
-		ObservedRevisions map[string]string          `json:"observedRevisions"`
+		RequestID                        string                     `json:"requestId"`
+		Revision                         string                     `json:"revision"`
+		Monitor                          json.RawMessage            `json:"monitor"`
+		RegistrationIDs                  []string                   `json:"registrationIds"`
+		Source                           *fleetSourceReference      `json:"source"`
+		References                       map[string]json.RawMessage `json:"references"`
+		ObservedRevisions                map[string]string          `json:"observedRevisions"`
+		GroupIDs                         []string                   `json:"groupIds"`
+		SyncNotifications                bool                       `json:"syncNotifications"`
+		NotificationSourceRegistrationID string                     `json:"notificationSourceRegistrationId"`
 	}
-	if err = dashboardJSON(b, &in, "requestId", "revision", "monitor", "registrationIds", "source", "references", "observedRevisions"); err != nil {
+	if err = dashboardJSON(b, &in, "requestId", "revision", "monitor", "registrationIds", "source", "references", "observedRevisions", "groupIds", "syncNotifications", "notificationSourceRegistrationId"); err != nil {
 		errorReply(w, err)
 		return
 	}
@@ -449,6 +503,58 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 		errorReply(w, fail(400, "Observed revisions require explicit reconciliation"))
 		return
 	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(b, &fields)
+	_, copyingSet := fields["syncNotifications"]
+	var previousPlan dashboardFleetPlan
+	if id != "" {
+		previous, e := d.openFleet(row)
+		if e != nil {
+			errorReply(w, fail(503, "Fleet configuration unavailable"))
+			return
+		}
+		previousPlan = previous
+		if _, present := fields["groupIds"]; !present {
+			in.GroupIDs = slices.Clone(row.GroupIDs)
+		}
+		if !copyingSet {
+			in.SyncNotifications = previous.SyncNotifications
+			copyingSet = previous.SyncNotificationsSet
+		}
+		if _, present := fields["notificationSourceRegistrationId"]; !present && in.SyncNotifications {
+			in.NotificationSourceRegistrationID = previous.NotificationSourceRegistrationID
+		}
+	}
+	if !in.SyncNotifications {
+		in.NotificationSourceRegistrationID = ""
+	}
+	if in.GroupIDs != nil && (!validIDs(in.GroupIDs, 64) || len(unique(in.GroupIDs)) != len(in.GroupIDs)) {
+		errorReply(w, fail(400, "Choose distinct node groups"))
+		return
+	}
+	pins := slices.Clone(row.PinnedRegistrationIDs)
+	if len(in.GroupIDs) > 0 {
+		in.RegistrationIDs, err = d.groupTargetsLocked(in.GroupIDs)
+		if err != nil {
+			errorReply(w, err)
+			return
+		}
+		// Pins predate the group assignment and are independent of membership.
+		// An ordinary edit must not silently retire those original runners.
+		if id != "" {
+			if len(row.GroupIDs) == 0 {
+				for _, original := range row.RegistrationIDs {
+					if !slices.Contains(in.RegistrationIDs, original) {
+						pins = unique(append(pins, original))
+					}
+				}
+			}
+		} else if prior, exists := d.fleet[in.RequestID]; exists {
+			pins = slices.Clone(prior.PinnedRegistrationIDs)
+		}
+		in.RegistrationIDs = unique(append(in.RegistrationIDs, pins...))
+		slices.Sort(in.RegistrationIDs)
+	}
 	if len(in.RegistrationIDs) < 1 || !validIDs(in.RegistrationIDs, 64) || len(unique(in.RegistrationIDs)) != len(in.RegistrationIDs) {
 		errorReply(w, fail(400, "Choose one to 64 distinct registered nodes"))
 		return
@@ -456,6 +562,19 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	for _, registration := range in.RegistrationIDs {
 		if _, ok := d.registry[registration]; !ok {
 			errorReply(w, fail(400, "A selected node is no longer registered"))
+			return
+		}
+	}
+	if in.SyncNotifications && in.NotificationSourceRegistrationID == "" {
+		if in.Source != nil {
+			in.NotificationSourceRegistrationID = in.Source.RegistrationID
+		} else {
+			in.NotificationSourceRegistrationID = d.fleetNotificationSource(row, previousPlan, in.RegistrationIDs[0])
+		}
+	}
+	if in.NotificationSourceRegistrationID != "" {
+		if _, ok := d.registry[in.NotificationSourceRegistrationID]; !ok {
+			errorReply(w, fail(400, "The notification source is no longer registered"))
 			return
 		}
 	}
@@ -477,8 +596,12 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	if len(in.References) > 0 {
 		references = map[string]fleetTargetReferences{}
 	}
+	// Native adoption verifies original runners in preparation, before any write.
+	// Defer their reference membership check until those proved pins are included.
+	nativeAdoption := id == "" && in.Source != nil && len(in.GroupIDs) > 0
 	for registration, raw := range in.References {
-		if !slices.Contains(in.RegistrationIDs, registration) {
+		_, registered := d.registry[registration]
+		if !slices.Contains(in.RegistrationIDs, registration) && (!nativeAdoption || !registered || len(in.References) > 64) {
 			errorReply(w, fail(400, "References must name selected registrations only"))
 			return
 		}
@@ -505,7 +628,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 				errorReply(w, fail(503, "Fleet configuration unavailable"))
 				return
 			}
-			if prior.ActorID != actor.ID || !equalJSON(plan.Monitor, input) || !equalJSON(plan.References, references) || !equalJSON(prior.RegistrationIDs, in.RegistrationIDs) || !equalJSON(prior.Source, in.Source) {
+			if prior.ActorID != actor.ID || !equalJSON(plan.Monitor, input) || !equalJSON(plan.References, references) || !equalJSON(prior.RegistrationIDs, in.RegistrationIDs) || !equalJSON(prior.Source, in.Source) || !equalJSON(prior.GroupIDs, in.GroupIDs) || plan.SyncNotifications != in.SyncNotifications || plan.SyncNotificationsSet != copyingSet || plan.NotificationSourceRegistrationID != in.NotificationSourceRegistrationID {
 				errorReply(w, fail(409, "That request already created a different fleet monitor; reload All nodes"))
 				return
 			}
@@ -562,12 +685,20 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	}
 	row = copyFleet(row)
 	row.RegistrationIDs = slices.Clone(in.RegistrationIDs)
+	row.GroupIDs = slices.Clone(in.GroupIDs)
+	row.PinnedRegistrationIDs = pins
+	if len(in.GroupIDs) == 0 {
+		row.PinnedRegistrationIDs = nil
+	}
 	row.Revision = newID()
 	row.UpdatedAt = time.Now().UnixMilli()
 	row.State = "pending"
 	row.Reason = ""
 	row.RetryAt = 0
-	plan := dashboardFleetPlan{Monitor: input, References: references}
+	plan := dashboardFleetPlan{Monitor: input, References: references, SyncNotifications: in.SyncNotifications, SyncNotificationsSet: copyingSet, NotificationSourceRegistrationID: in.NotificationSourceRegistrationID}
+	if plan.SyncNotifications && previousPlan.SyncNotifications && plan.NotificationSourceRegistrationID == previousPlan.NotificationSourceRegistrationID {
+		plan.NativeResourceIDs = previousPlan.NativeResourceIDs
+	}
 	if err = d.saveFleet(r, actor, row, plan); err != nil {
 		errorReply(w, err)
 		return
@@ -591,6 +722,10 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 		}
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/dashboard/node-groups")
+	syncNow := strings.HasSuffix(id, "/sync")
+	if syncNow {
+		id = strings.TrimSuffix(id, "/sync")
+	}
 	if id != "" {
 		if !strings.HasPrefix(id, "/") {
 			errorReply(w, fail(404, "Not found"))
@@ -601,6 +736,10 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 			errorReply(w, fail(404, "Not found"))
 			return
 		}
+	}
+	if syncNow && (id == "" || r.Method != "POST") {
+		errorReply(w, fail(404, "Not found"))
+		return
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -621,10 +760,24 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 		errorReply(w, fail(503, "Node groups unavailable"))
 		return
 	}
+	for key, group := range all {
+		if group.ID != key {
+			errorReply(w, fail(503, "Invalid saved node-group identity"))
+			return
+		}
+		if err := d.verifyNodeGroup(group); err != nil {
+			errorReply(w, err)
+			return
+		}
+	}
 	if r.Method == "GET" && id == "" {
 		out := []dashboardNodeGroup{}
 		for _, g := range all {
-			out = append(out, g)
+			if err := d.verifyNodeGroup(g); err != nil {
+				errorReply(w, err)
+				return
+			}
+			out = append(out, publicNodeGroup(g))
 		}
 		reply(w, 200, out)
 		return
@@ -648,13 +801,91 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 			errorReply(w, fail(409, "Node group changed; reload before saving"))
 			return
 		}
-	}
-	if id != "" && r.Method == "DELETE" {
-		if err = n.identityTransactionLocked(func(e dbExec) error { return remove(e, "dashboardNodeGroups", id) }); err != nil {
+		if err := d.verifyNodeGroup(old); err != nil {
 			errorReply(w, err)
 			return
 		}
+	}
+	if id != "" && r.Method == "DELETE" {
+		detached := map[string]dashboardFleetRecord{}
+		for key, row := range d.fleet {
+			if !slices.Contains(row.GroupIDs, id) {
+				continue
+			}
+			if d.fleetBusy[key] {
+				errorReply(w, fail(409, "Wait for this group's monitor deployment before removing it"))
+				return
+			}
+			plan, e := d.openFleet(row)
+			if e != nil {
+				errorReply(w, fail(503, "Fleet configuration unavailable"))
+				return
+			}
+			row = copyFleet(row)
+			row.GroupIDs = slices.DeleteFunc(row.GroupIDs, func(other string) bool { return other == id })
+			if len(row.GroupIDs) > 0 {
+				remaining, e := groupTargets(all, row.GroupIDs)
+				if e != nil {
+					errorReply(w, e)
+					return
+				}
+				for _, registration := range row.RegistrationIDs {
+					if !slices.Contains(remaining, registration) {
+						row.PinnedRegistrationIDs = unique(append(row.PinnedRegistrationIDs, registration))
+					}
+				}
+			}
+			row.Revision = newID()
+			row.Private, e = d.sealFleet(row, plan)
+			if e != nil {
+				errorReply(w, e)
+				return
+			}
+			detached[key] = row
+		}
+		if err = n.identityTransactionLocked(func(e dbExec) error {
+			for key, row := range detached {
+				if err := put(e, "dashboardFleet", key, row); err != nil {
+					return err
+				}
+			}
+			if err := remove(e, "dashboardGroupSyncs", id); err != nil {
+				return err
+			}
+			return remove(e, "dashboardNodeGroups", id)
+		}); err != nil {
+			errorReply(w, err)
+			return
+		}
+		for key, row := range detached {
+			d.fleet[key] = row
+		}
 		reply(w, 204, nil)
+		return
+	}
+	if syncNow {
+		g = all[id]
+		g.Revision = newID()
+		g.SyncState, g.SyncReason = "pending", ""
+		job := dashboardGroupSync{GroupID: id, Revision: g.Revision, ActorID: a.ID, ActorRole: a.Role, ActorVersion: a.AuthVersion}
+		if err = d.signNodeGroup(&g); err != nil {
+			errorReply(w, err)
+			return
+		}
+		if err = d.signGroupJob(&job); err != nil {
+			errorReply(w, err)
+			return
+		}
+		if err = n.identityTransactionLocked(func(e dbExec) error {
+			if err := put(e, "dashboardNodeGroups", id, g); err != nil {
+				return err
+			}
+			return put(e, "dashboardGroupSyncs", id, job)
+		}); err != nil {
+			errorReply(w, err)
+			return
+		}
+		reply(w, 202, publicNodeGroup(g))
 		return
 	}
 	if !(id == "" && r.Method == "POST" || id != "" && r.Method == "PUT") {
@@ -681,7 +912,7 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 		// A lost create response is recoverable without duplicating a saved
 		// selection. Equal names with different membership require an explicit edit.
 		if id == "" && slices.Equal(left, right) {
-			reply(w, 200, existing)
+			reply(w, 200, publicNodeGroup(existing))
 			return
 		}
 		errorReply(w, fail(409, "A node group already uses this name; reload and edit that group"))
@@ -697,15 +928,30 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 	g.ID = id
 	g.Revision = newID()
 	g.UpdatedAt = time.Now().UnixMilli()
+	g.SyncState, g.SyncReason = "pending", ""
 	if r.Context().Err() != nil {
 		errorReply(w, fail(408, "Request cancelled"))
 		return
 	}
-	if err = n.identityTransactionLocked(func(e dbExec) error { return put(e, "dashboardNodeGroups", id, g) }); err != nil {
+	job := dashboardGroupSync{GroupID: id, Revision: g.Revision, ActorID: a.ID, ActorRole: a.Role, ActorVersion: a.AuthVersion}
+	if err = d.signNodeGroup(&g); err != nil {
 		errorReply(w, err)
 		return
 	}
-	reply(w, 200, g)
+	if err = d.signGroupJob(&job); err != nil {
+		errorReply(w, err)
+		return
+	}
+	if err = n.identityTransactionLocked(func(e dbExec) error {
+		if err := put(e, "dashboardNodeGroups", id, g); err != nil {
+			return err
+		}
+		return put(e, "dashboardGroupSyncs", id, job)
+	}); err != nil {
+		errorReply(w, err)
+		return
+	}
+	reply(w, 200, publicNodeGroup(g))
 }
 
 func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]byte, error) {
@@ -720,6 +966,15 @@ func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]by
 			return nil, err
 		}
 		command.Monitor = b
+		for _, resource := range plan.Resources {
+			used := resource.Kind == resourceChannel && slices.Contains(input.NotificationIDs, resource.ID)
+			for _, tag := range input.Tags {
+				used = used || resource.Kind == resourceTag && tag.TagID == resource.ID
+			}
+			if used {
+				command.Resources = append(command.Resources, resource)
+			}
+		}
 	}
 	return json.Marshal(command)
 }
@@ -741,11 +996,19 @@ func (d *Dashboard) fleetRead(ctx context.Context, registration, role string) (O
 	return view, row, err
 }
 func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord, plan *dashboardFleetPlan) error {
+	if plan.SyncNotifications && !plan.Deleted {
+		if err := d.prepareFleetSettings(ctx, *row, plan); err != nil {
+			return err
+		}
+	}
 	desired := row.RegistrationIDs
 	if plan.Deleted {
 		desired = nil
 	}
 	ids := slices.Clone(desired)
+	if len(row.GroupIDs) > 0 && row.Source != nil && !row.SourceCompleted && !plan.Deleted {
+		ids = append(ids, row.Source.RegistrationID)
+	}
 	for _, p := range row.Placements {
 		if p.State != "removed" && (!plan.Deleted || p.Sequence > 0) {
 			ids = append(ids, p.RegistrationID)
@@ -785,6 +1048,50 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	}
 	if first != nil {
 		return fail(502, "A selected node cannot be read yet")
+	}
+	if len(row.GroupIDs) > 0 && row.Source != nil && !row.SourceCompleted && !plan.Deleted {
+		var original *MonitorView
+		for _, item := range views[row.Source.RegistrationID].Monitors {
+			if item.Monitor.ID == row.Source.MonitorID {
+				copy := item
+				original = &copy
+				break
+			}
+		}
+		if original == nil || original.ConfigConflict || original.Monitor.Revision != row.Source.Revision {
+			return fail(409, "The original monitor changed before group adoption")
+		}
+		d.mu.Lock()
+		originalIDs, err := d.originalFleetRegistrations(original.Monitor.NodeIDs)
+		d.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		for _, id := range originalIDs {
+			if !slices.Contains(row.RegistrationIDs, id) {
+				row.PinnedRegistrationIDs = unique(append(row.PinnedRegistrationIDs, id))
+				row.RegistrationIDs = append(row.RegistrationIDs, id)
+			}
+		}
+		if len(row.RegistrationIDs) > 64 {
+			return fail(400, "Groups and original runners can include at most 64 nodes")
+		}
+		slices.Sort(row.RegistrationIDs)
+		desired = row.RegistrationIDs
+		for registration := range plan.References {
+			if !slices.Contains(desired, registration) {
+				return fail(400, "References must name selected registrations only")
+			}
+		}
+		for _, id := range desired {
+			if _, read := views[id]; !read {
+				view, _, err := d.fleetRead(ctx, id, row.ActorRole)
+				if err != nil {
+					return fail(502, "An original runner cannot be read yet")
+				}
+				views[id] = view
+			}
+		}
 	}
 	placements := []dashboardFleetPlacement{}
 	claimed := map[string]bool{}

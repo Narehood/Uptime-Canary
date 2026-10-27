@@ -671,6 +671,9 @@ export class CanaryApi {
     return readFleetGroup(await this.own(`/api/dashboard/node-groups${existing ? `/${encodeURIComponent(existing.id)}` : ''}`, existing ? 'PUT' : 'POST', { ...input, ...(existing ? { revision: existing.revision } : {}) }));
   }
   removeNodeGroup(group: FleetNodeGroup): Promise<void> { return this.own(`/api/dashboard/node-groups/${encodeURIComponent(group.id)}`, 'DELETE', { revision: group.revision }); }
+  async syncNodeGroup(group: FleetNodeGroup): Promise<FleetNodeGroup> {
+    return readFleetGroup(await this.own(`/api/dashboard/node-groups/${encodeURIComponent(group.id)}/sync`, 'POST', { revision: group.revision }));
+  }
   async fleetMonitors(signal?: AbortSignal): Promise<FleetDeployment[]> {
     const value = await this.own<unknown>('/api/dashboard/fleet/monitors', 'GET', undefined, signal);
     if (!Array.isArray(value) || value.length > 200) throw new ApiFailure(200, 'Invalid dashboard fleet.');

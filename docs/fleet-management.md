@@ -27,16 +27,29 @@ Fleet controls require the dashboard server and its registered-node list.
 
 ## Choose where a monitor runs
 
-1. Create a monitor, or open an existing monitor and choose **Edit**.
-2. Under **Run on**, select any registered nodes. These may be independent
-   nodes with no HA peering between them.
-3. Review the channels, dependency group and tags for each destination.
-4. Save. The dashboard keeps a durable plan and reports its progress in the
-   central view. A saved plan is not confirmation that every node has applied it.
+1. Create a node group and select its registered nodes. **Create and sync**
+   collects existing monitors from every member and copies missing monitors
+   across the group. It works in both directions.
+2. Create a monitor and choose its **Node groups**. A sole group is selected
+   automatically; with several groups, choose which ones should run it.
+3. Choose its notification channels and save. Channels and tags are copied
+   automatically from the form's source node, including their later edits.
+4. Check each node's confirmation in **All nodes**. A saved plan is not
+   confirmation that every node has applied it.
 
-The original monitor keeps its ID and history when first adopted. An independent
-destination receives a separate physical copy and keeps its own history. The
-dashboard records which copies belong to the same logical monitor.
+Changing group membership updates the monitors that follow it. Added nodes
+receive them; removing a member retires the group's copies on that node.
+**Sync monitors** on a group card or in its editor collects any additional
+monitors created directly on member nodes. Saving an edited group starts a
+sync as well. An offline member leaves collection pending until it answers.
+
+The original monitor keeps its ID and history when first adopted. Independent
+destinations receive separate physical copies and keep their own histories.
+Equal names or equal IDs on unrelated nodes do not merge unrelated monitors.
+Repeated sync uses the recorded ownership and does not create duplicate copies.
+Existing assignments outside a newly adopted group are kept as explicit pins;
+an ordinary monitor edit preserves them. Use individual-node mode to change them.
+Removing a group preserves its deployed monitors and their assignments.
 
 Configured HA peers share one configuration and retain their existing alert
 coordination. Independent nodes check and alert separately. Registering nodes,
@@ -44,37 +57,39 @@ placing a monitor or adding a node group never peers them automatically.
 There is no cross-cluster exactly-once alert guarantee.
 
 Before replacing an existing assignment, register every former runner that
-would be removed. The dashboard must be able to confirm that each has stopped
-running the old configuration. It does not silently forget an unregistered
-former runner.
+would be removed. The dashboard must confirm that each has stopped running
+the old configuration. It does not silently forget an unregistered runner.
 
-## Node groups and dependency groups
+## Advanced settings and notification sources
 
-**Node groups** are saved selections of dashboard registrations. Their editor
-lists the whole registry, including independent nodes. A group button under
-**Run on** adds its members to the selection; saving the monitor applies it.
-Changing a saved group's membership does not automatically move existing
-monitors. Removing a group removes only that saved selection.
+**Advanced settings** contains individual-node placement, automatic channel/tag
+copying and per-node reference overrides. Existing monitors without group links
+keep their node assignments until a group is explicitly chosen. A saved copying
+off setting remains off during group sync. Older definitions with no saved
+copying preference adopt the automatic default when they join a group, including
+an old missing-channel preflight that never sent a command. Per-node overrides retain their own
+exact resource IDs and are not replaced by later edits to the form's selection.
 
-**Outage dependencies** opens the selected monitoring node's existing Groups.
-Those groups control hierarchy and alert suppression on that node and its HA
-peers. They are separate from dashboard node groups.
+Channel credentials travel only through authenticated server-to-node requests
+and the encrypted deployment journal. Destinations receive managed identities
+rather than matching channels or tags by name. The independent source retains
+its native identities. Channel and tag updates normally follow within about
+30 seconds while sources and destinations answer; unresolved writes replay the
+original saved command before a new revision is prepared. Direct edits to a
+managed destination channel stop replacement and require review.
 
-## Channels, dependency groups and tags
+The monitor form reads its saved source's channels and tags without switching
+the page or discarding its draft. For new monitors it prefers a member of the
+chosen group. The dashboard has no global Viewing-node button: Overview and
+Monitors remain fleet-wide. Pages that operate on one node, such as notification
+channels and outage dependencies, show that node with **Change node**.
 
-Resource IDs belong to their monitoring nodes. A channel named “Operations” on
-one independent node is not automatically the channel with that name on another.
-Fleet management neither copies resource settings nor guesses mappings by name.
-
-By default, destinations use the monitor form's settings. Enable **Choose
-references on this node** to select that destination's own channels, dependency
-group and tags, including tag values and public flags. Enabling it takes a copy
-of the form's selection; later form changes do not replace that explicit choice.
-Unknown IDs remain visible until you explicitly remove them.
-
-Members of one HA placement must select matching references, because they
-share one monitor configuration. Independent placements can use different IDs.
-Missing or conflicted references block preflight instead of being dropped.
+**Outage dependency groups** remain a special node-local setting. They control
+alert suppression and are separate from dashboard node groups. Their monitor
+dependencies are not automatically copied or mapped. If a destination lacks the
+selected dependency group, choose its group or None under Advanced settings;
+preflight reports the mismatch instead of silently removing the dependency.
+HA members sharing one monitor must use matching references.
 
 ## Pending changes and recovery
 
@@ -112,7 +127,10 @@ configuration while the dashboard is stopped.
 ## Persistence, limits and validation
 
 The dashboard stores encrypted logical configurations and deployment journals
-with its retained identity key. Keep its data and identity volumes together.
+with its retained identity key. Group membership and queued worker authority are
+authenticated with the same key and bound to their storage identities. Legacy
+inert selections can migrate; active membership cannot bypass verification by
+removing its proof. Keep data and identity volumes together.
 Node receipts stay local and do not enter peer snapshots. Central viewer
 responses use the node's existing monitor redaction and omit destination
 reference overrides. Node credentials stay on the dashboard server.
@@ -122,7 +140,68 @@ registered destinations per definition or group. Each node's own monitor and
 resource limits still apply. Network loss after preflight can leave some
 placements applied and others pending; this is not a transaction across nodes.
 
-The fleet source review approved its implementation after three Sol rounds;
+The group-first candidate was checked on Windows amd64 with CGO disabled.
+A complete Go checkpoint passed 4,527 test events with four skips and all-package
+vet. Later affected-package checks cover the group-record identity guards,
+channel-source reuse, rollback and legacy migration changes. All three workspace
+typechecks and all 27 configured frontend fixture scripts pass. The complete
+production browser harness passed 221/221 with no exceptions or blocked requests
+at v3 source fingerprint
+`ea8855a887dc6258a73d51d5215180e9d789deaa15d73ebe1d5a38b2d581b0cf`.
+After the legacy preference migration, the affected Go checks, core vet,
+typechecks, 27 frontend scripts and nine focused browser checks passed at
+`bed711a6a95c97b0f1c2701f88b601de7083eda001c4a74e27a6c9028aed49c3`.
+The group-first review fixes preserve original runners outside an adopted
+group, retain copied-channel origins after other monitors are removed or edited,
+wait for actual membership deployment before reporting a group in sync, and
+keep a clone's reference source. Their regressions reproduced the original
+failures. The simulated preflight refusal supplies the required node identity;
+the clone fixture waits for its source overview before editing.
+
+After those fixes, affected Go tests, core vet, all three workspace typechecks,
+all 27 frontend scripts and the complete production browser harness passed:
+**222/222**, zero page exceptions and zero blocked requests, on unchanged v3
+source fingerprint
+`d4174f5634fdcfdb9329cf04e3a9122a7ea61d7acba44263de67c74cb1b5d889`
+(491.516 seconds guarded). Scratch returned to zero; the shared module cache
+did not grow. These checks do not certify a release or replace hosted
+Linux/image gates.
+
+The follow-up conversion fix also retains outside runners in the form's target
+profiles and save payload, preserving explicit per-node channels, tags and
+outage dependency choices. Its browser regression failed before the fix; the
+fixture first needed the API's omitted empty-list/false-field representation.
+A direct-mode rendering guard was retained after the existing fixture caught it.
+All three typechecks, 27 frontend scripts and 11 focused production browser
+checks then passed at unchanged v3 fingerprint
+`3fad34cc0234b76e247f344c9f9a95c11edb60959d8ba43494055c44f103a3b4`
+(131.281 seconds guarded). The 222-check full browser checkpoint above precedes
+this frontend-only fix and the native-adoption repair below.
+
+Native adoption defers outside-reference membership checks until the source's
+original assignments have been read and verified, before any node writes.
+Regressions cover accepted original-runner overrides, unrelated-node refusal
+without monitor changes, and idempotent create replay after verified pins.
+The original valid-override request failed with HTTP 400 before the fix.
+Affected Go tests, core vet and 11 focused browser checks passed at unchanged
+v3 fingerprint
+`ac3b501f7751647d7df4cc03975138d11a6eb8ce375ad4895b9290d20eb32720`
+(314.454 seconds guarded). Scratch returned to zero; module cache unchanged.
+
+The first complete Go attempt exceeded 512 MiB of disposable scratch; the guard
+stopped it and reclaimed its scratch to zero. The same tests passed with debugger
+metadata stripped, using the existing browser-build flags and the same cache
+and storage limits. Original fixture failures remain explained: clone rendering
+needed its optional connection guard, the channel-choice source assertion now
+also recognizes remembering the reference source, and the removed global-node
+picker assertion now reads the selected Nodes card's h3. Group creation's earlier
+adoption adds one placement revision to the existing browser scenario. Its
+history, explicit-choice, recovery and removal assertions are retained.
+
+The group-first implementation was approved after four Sol rounds with
+gpt-6.1-sol on xhigh. All six correctness findings were resolved.
+
+The earlier fleet source review approved its implementation after three Sol rounds;
 the separate project-wide review approved the probe and preparation repairs
 after three rounds.
 Neither source review replaces the platform, image or deployment gates below.

@@ -8,10 +8,13 @@ import {
   CATEGORY_LABEL, CHECK_TYPES, DNS_RECORDS, SMTP_MODES, TYPED_TARGET_TYPES, checkChangeWords, checkChanges, checkType, cloneInput, inputOf, isServiceType, rangesText,
   statusCodesText, tlsApplies, typeLabel, type CheckCategory, type DnsRecord, type SmtpMode,
 } from '../checks';
-import { useCanary } from '../context';
+import { useCanary, type ChannelState, type TagState } from '../context';
+import { useMonitorReferenceCatalogs } from '../fleetMonitorCatalogs';
+import { FleetGroupTargets } from './FleetGroupTargets';
 import { FleetPlacementFields } from './FleetPlacementFields';
 import { FleetReferenceFields } from './FleetReferenceFields';
 import { useReferenceProfiles } from '../fleetReferences';
+import type { FleetReferenceSync } from '../fleetViews';
 import { managedMonitor } from '../fleet';
 import { pushCommands } from '../dashboard';
 import { MASK, maskSecretNamed, maskedPath, maskedUrl, plural, secretNamed, shortId, shortRev, span } from '../format';
@@ -804,8 +807,11 @@ export function defaultChannels(list: readonly NotificationChannelView[] | null 
   return { ids: ids.slice(0, 16), conflicted: marked.filter(view => view.configConflict).map(view => view.channel.name), tooMany: ids.length > 16 };
 }
 
-function ChannelPicker({ selected, onChange, disabled, error, mode }: { selected: string[]; onChange: (ids: string[]) => void; disabled: boolean; error?: string; mode: Draft['channelsMode'] }) {
-  const { channels, endpoint } = useCanary();
+function ChannelPicker({ selected, onChange, disabled, error, mode, catalog, sourceLabel, sourceRegistrationId }: { selected: string[]; onChange: (ids: string[]) => void; disabled: boolean; error?: string; mode: Draft['channelsMode']; catalog?: ChannelState; sourceLabel?: string; sourceRegistrationId?: string }) {
+  const current = useCanary();
+  const channels = catalog ?? current.channels;
+  const endpoint = sourceLabel ?? current.endpoint;
+  const manage = (): void => { const node = sourceRegistrationId ? current.registry?.map.get(sourceRegistrationId) : undefined; if (node && node.id !== current.selection?.id) current.select(node); };
   const id = useId();
   const list = [...(channels.list ?? [])].sort((a, b) => a.channel.name.localeCompare(b.channel.name));
   const missing = selected.filter(channelId => !channels.map.has(channelId));
@@ -838,8 +844,8 @@ function ChannelPicker({ selected, onChange, disabled, error, mode }: { selected
             </label>
           ))}
         </div>
-      ) : <p className="muted small">{channels.list ? <>No channels yet. <a href={href('channels', 'new')}>Add a channel</a> for Discord, email or webhooks.</> : channels.error ? `Channels couldn’t be loaded: ${describeFailure(channels.error)}` : 'Loading channels…'}</p>}
-      <small id={`${id}-h`}>Each email recipient is a separate destination with its own retries and outcome. Channels can be shared by many monitors. <a href={href('notifications')}>Manage channels</a></small>
+      ) : <p className="muted small">{channels.list ? <>No channels yet. <a href={href('channels', 'new')} onClick={manage}>Add a channel</a> for Discord, email or webhooks.</> : channels.error ? `Channels couldn’t be loaded: ${describeFailure(channels.error)}` : 'Loading channels…'}</p>}
+      <small id={`${id}-h`}>Each email recipient is a separate destination with its own retries and outcome. Channels can be shared by many monitors. <a href={href('notifications')} onClick={manage}>Manage channels</a></small>
       {mode === 'defaults' && selected.length ? <small>Preselected: this node’s enabled default channels. Clear any you don’t want; the monitor is created with exactly the channels checked here.</small> : null}
       {mode === 'node' && !channels.list ? <small>Until the channel list loads, a monitor created without a channel gets this node’s enabled default channels, if it has any.</small> : null}
       {mode !== 'chosen' && defaults.conflicted.length ? <small className="fwarn"><Glyph tone="warn" />Default {defaults.conflicted.length === 1 ? 'channel' : 'channels'} {defaults.conflicted.join(', ')} {defaults.conflicted.length === 1 ? 'has' : 'have'} a configuration conflict, so {defaults.conflicted.length === 1 ? 'it isn’t' : 'they aren’t'} preselected. Resolve it in Configuration, or check it here once resolved.</small> : null}
@@ -849,8 +855,10 @@ function ChannelPicker({ selected, onChange, disabled, error, mode }: { selected
   );
 }
 
-function TagEditor({ rows, onChange, disabled, error }: { rows: TagDraft[]; onChange: (rows: TagDraft[]) => void; disabled: boolean; error?: string }) {
-  const { tags } = useCanary();
+function TagEditor({ rows, onChange, disabled, error, source, sourceRegistrationId }: { rows: TagDraft[]; onChange: (rows: TagDraft[]) => void; disabled: boolean; error?: string; source?: TagState; sourceRegistrationId?: string }) {
+  const current = useCanary();
+  const tags = source ?? current.tags;
+  const manage = (): void => { const node = sourceRegistrationId ? current.registry?.map.get(sourceRegistrationId) : undefined; if (node && node.id !== current.selection?.id) current.select(node); };
   const id = useId();
   const catalog = [...(tags.list ?? [])].filter(view => !view.tag.deleted).sort((a, b) => a.tag.name.localeCompare(b.tag.name));
   const used = new Set(rows.map(row => row.tagId));
@@ -885,7 +893,7 @@ function TagEditor({ rows, onChange, disabled, error }: { rows: TagDraft[]; onCh
           ? <button type="button" className="linkbtn" disabled={!next} onClick={() => next && onChange([...rows, { key: ++tagKey, tagId: next.tag.id, value: '', isPublic: false }])}><Icon name="plus" />Add tag</button>
           : <span className="muted">{tags.list ? 'No tags exist yet.' : 'Loading tags…'}</span>}
         <span aria-hidden="true" className="muted">·</span>
-        <a href={href('tags')}>Manage tags</a>
+        <a href={href('tags')} onClick={manage}>Manage tags</a>
       </div>
       <small id={`${id}-h`}>Tags label and filter monitors; changing them never changes what’s checked. “Public” only allows a status page that turns on tags for this monitor to show it.</small>
       <ErrorText id={`${id}-e`}>{error}</ErrorText>
@@ -1109,7 +1117,7 @@ export function MonitorFormView({ id, cloneOf, fleetId }: { id?: string; cloneOf
  * (which names the source alone), browser storage or the console.
  */
 function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: string; fleetId?: string }) {
-  const { overview, monitorMap, nodes, nodeMap, endpoint, editable: nodeEditable, api, refresh, groups, groupMap, stillCurrent, channels, controlPlane, fleet, registry, selection, connection, role } = useCanary();
+  const { overview, monitorMap, nodes, nodeMap, endpoint, editable: nodeEditable, api, refresh, groups, groupMap, stillCurrent, channels: nodeChannels, tags: nodeTags, controlPlane, fleet, registry, selection, connection, role } = useCanary();
   const editable = fleetId && controlPlane ? canEdit(role) && connection.link !== 'rejected' : nodeEditable;
   const existing = id ? monitorMap.get(id) : undefined;
   const source = cloneOf ? monitorMap.get(cloneOf) : undefined;
@@ -1128,7 +1136,27 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
     : (start?.nodeIds ?? [endpoint]).map(nodeId => registry.list?.find(row => row.nodeId === nodeId)?.id ?? `unregistered:${nodeId}`));
   const [initial, setInitial] = useState<Draft | undefined>(() => start ? draftFrom(start, defaultNodes) : undefined);
   const [baseMonitor, setBaseMonitor] = useState<Monitor | undefined>(start);
-  const profiles = useReferenceProfiles(api, fleetEnabled ? (registry.list ?? []).filter(node => fleetTargets.includes(node.id)) : [], `${connection?.identity ?? 'direct'}|${role}`, fleetEnabled && editable);
+  // A new monitor follows node groups (the only one, when there's just one). A monitor already placed without groups,
+  // or one that lives on a node so far, keeps its own nodes until a group is chosen.
+  const fleetGroups = fleet?.groups ?? [];
+  const [placeMode, setPlaceMode] = useState<'groups' | 'nodes'>(() => fleetBase ? (fleetBase.groupIds?.length ? 'groups' : 'nodes') : existing ? 'nodes' : 'groups');
+  const [groupIds, setGroupIds] = useState<string[]>(() => fleetBase ? [...(fleetBase.groupIds ?? [])] : !existing && fleetGroups.length === 1 ? [fleetGroups[0].id] : []);
+  const [syncNotifications, setSyncNotifications] = useState(() => fleetBase?.syncNotifications ?? true);
+  const [advanced, setAdvanced] = useState(() => (Boolean(fleetBase || existing) && !fleetBase?.groupIds?.length)
+    || Object.keys(fleetBase?.references ?? {}).length > 0 || fleetBase?.syncNotifications === false);
+  const groupById = new Map(fleetGroups.map(group => [group.id, group]));
+  const groupTargets = [...new Set(groupIds.flatMap(groupId => groupById.get(groupId)?.registrationIds ?? []))].sort();
+  const retainedTargets = !fleetEnabled ? [] : fleetBase
+    ? fleetBase.groupIds?.length ? fleetBase.pinnedRegistrationIds ?? [] : fleetBase.registrationIds
+    : existing ? (baseMonitor?.nodeIds ?? []).map(nodeId => registry.list?.find(row => row.nodeId === nodeId)?.id ?? `unregistered:${nodeId}`) : [];
+  const targets = placeMode === 'groups' ? [...new Set([...groupTargets, ...retainedTargets])].sort() : fleetTargets;
+  const [referenceSource, setReferenceSource] = useState<string | undefined>(() => fleetBase?.notificationSourceRegistrationId ?? (existing || source ? selection?.id : undefined));
+  const preferredSource = groupTargets.includes(selection?.id ?? '') ? selection?.id : groupTargets[0] ?? selection?.id;
+  const referenceSourceId = fleetEnabled && syncNotifications ? referenceSource ?? (placeMode === 'groups' ? preferredSource : selection?.id) : selection?.id;
+  const catalogs = useMonitorReferenceCatalogs(api, fleetEnabled ? referenceSourceId : undefined, selection?.id, `${connection?.identity ?? 'direct'}|${role}`, nodeChannels, nodeTags);
+  const channels = catalogs.channels;
+  const tagCatalog = catalogs.tags;
+  const profiles = useReferenceProfiles(api, fleetEnabled ? (registry.list ?? []).filter(node => targets.includes(node.id)) : [], `${connection?.identity ?? 'direct'}|${role}`, fleetEnabled && editable);
   const [version, setVersion] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1226,15 +1254,70 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
   const openIncident = current ? overview.incidents.find(incident => incident.monitorId === current.id && incident.resolvedAt === null) : undefined;
   const changes = current && input && baseMonitor ? checkChanges(inputOf(baseMonitor), input) : [];
 
+  // Where it runs. Groups resolve to their members now; the dashboard resolves them again when it saves.
+  const byGroups = placeMode === 'groups';
+  const missingGroups = groupIds.filter(groupId => !groupById.has(groupId));
+  const outside = byGroups ? retainedTargets.filter(registrationId => !groupTargets.includes(registrationId)) : [];
+  const adopting = !fleetBase && current && baseMonitor && selection ? selection : null;
+  const groupError = !showErrors || !byGroups ? undefined
+    : missingGroups.length ? 'Remove node groups that no longer exist.'
+    : !groupIds.length ? fleetGroups.length ? 'Choose a node group, or choose nodes one by one under Advanced settings.' : 'Create a node group, or choose nodes one by one under Advanced settings.'
+    : !groupTargets.length ? 'The chosen node groups have no nodes yet.'
+    : groupTargets.some(registrationId => !registry.map.has(registrationId)) ? 'A chosen node group lists a node that’s no longer registered. Edit the group first.'
+    : adopting && !groupTargets.includes(adopting.id) ? `Choose a group that includes ${adopting.label}, where this monitor runs now.`
+    : undefined;
+  // Channels and tags always come from the source whose catalogues the form reads, independently of page selection.
+  const sourceId = referenceSourceId;
+  const sourceLabel = (sourceId ? registry.map.get(sourceId)?.label : undefined) ?? (selection?.id === sourceId ? selection?.label : undefined) ?? (fleetEnabled ? 'the source node' : endpoint);
+  const needsSource = syncNotifications && Boolean(draft.channelIds.length || draft.tags.length);
+  // The form's outage dependency group isn't copied: nodes that don't list it refuse the monitor unless they choose their own.
+  const groupGaps = fleetEnabled && draft.groupId ? profiles.profiles.filter(profile => profile.status === 'ready' && profile.registrationId !== sourceId
+    && !profile.groups.some(option => option.id === draft.groupId) && targetReferences[profile.registrationId]?.groupId === undefined) : [];
+  const referenceSync: FleetReferenceSync | undefined = fleetEnabled && syncNotifications && sourceId ? {
+    sourceRegistrationId: sourceId, sourceLabel,
+    channelNames: Object.fromEntries((channels.list ?? []).map(view => [view.channel.id, view.channel.name])),
+    tagNames: Object.fromEntries((tagCatalog.list ?? []).map(view => [view.tag.id, view.tag.name])),
+    ...(draft.groupId && groupMap.get(draft.groupId) ? { groupName: groupMap.get(draft.groupId)!.group.name } : {}),
+  } : undefined;
+  const chooseNodes = (): void => {
+    // Start from the nodes it would run on now, so switching drops nothing.
+    if (byGroups && (groupTargets.length || outside.length)) setFleetTargets([...new Set([...groupTargets, ...outside])]);
+    setPlaceMode('nodes');
+    setAdvanced(true);
+  };
+  const ownReferences = Object.keys(targetReferences).filter(registrationId => targets.includes(registrationId)).length;
+  const advancedSummary = [byGroups ? '' : `${plural(fleetTargets.length, 'node')} chosen one by one`, syncNotifications ? '' : 'channels and tags not copied',
+    ownReferences ? `${plural(ownReferences, 'node')} with own settings` : ''].filter(Boolean).join(' · ') || 'Nodes one by one, channels and tags per node';
+
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (saving) return;
     setShowErrors(true);
     setFailure(null);
     if (fleetEnabled && fleet?.error) { setFailure({ message: 'Refresh the saved fleet placements before saving. Your draft is kept here.', stale: false }); setAttempts(n => n + 1); return; }
-    if (fleetEnabled && (!fleetTargets.length || fleetTargets.some(id => !registry.map.has(id)))) {
+    if (fleetEnabled && byGroups) {
+      const problem = missingGroups.length ? 'Remove the node groups that no longer exist, or choose nodes one by one under Advanced settings.'
+        : !groupIds.length ? fleetGroups.length ? 'Choose a node group for this monitor, or choose nodes one by one under Advanced settings.' : 'Create a node group first, or choose nodes one by one under Advanced settings.'
+        : !groupTargets.length ? 'The chosen node groups have no nodes yet. Add nodes to a group, or choose nodes one by one under Advanced settings.'
+        : groupTargets.some(registrationId => !registry.map.has(registrationId)) ? 'A chosen node group lists a node that’s no longer registered. Edit the group on Node groups before saving.'
+        : adopting && !groupTargets.includes(adopting.id) ? `Choose a node group that includes ${adopting.label}, where this monitor runs now, or choose nodes one by one under Advanced settings.`
+        : null;
+      if (problem) { setFailure({ message: problem, stale: false }); setAttempts(n => n + 1); return; }
+    }
+    if (fleetEnabled && !byGroups && (!fleetTargets.length || fleetTargets.some(id => !registry.map.has(id)))) {
       setFailure({ message: 'Choose at least one registered node. Register or explicitly remove any missing selections before saving.', stale: false });
       setAttempts(n => n + 1); return;
+    }
+    if (fleetEnabled && !byGroups && adopting && !fleetTargets.includes(adopting.id)) {
+      setFailure({ message: `Keep ${adopting.label} among the chosen nodes: this monitor runs there now.`, stale: false });
+      setAttempts(n => n + 1); return;
+    }
+    if (fleetEnabled && needsSource && !(sourceId && registry.map.has(sourceId))) {
+      setFailure({ message: 'The node these channels and tags come from is no longer registered. Choose a node from Nodes and open this form again, or turn off copying under Advanced settings.', stale: false });
+      setAttempts(n => n + 1); return;
+    }
+    if (fleetEnabled && !start && draft.channelsMode !== 'chosen' && !channels.list) {
+      setFailure({ message: 'Wait for the notification channels to load before saving this monitor.', stale: false }); setAttempts(n => n + 1); return;
     }
     if (!input) {
       const sections = Object.keys(errors).map(field => SECTION_OF[field as Field]).filter(Boolean) as string[];
@@ -1245,11 +1328,13 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
     setSaving(true);
     try {
       if (fleetEnabled) {
-        await api.saveFleetMonitor({ requestId: fleetRequestId, monitor: input, registrationIds: fleetTargets,
-          references: Object.fromEntries(Object.entries(targetReferences).filter(([id]) => fleetTargets.includes(id))),
-          ...(!fleetBase && current && baseMonitor && selection ? { source: { registrationId: selection.id, monitorId: current.id, revision: baseMonitor.revision } } : {}) }, fleetBase || undefined);
+        await api.saveFleetMonitor({ requestId: fleetRequestId, monitor: input, registrationIds: [...targets],
+          groupIds: byGroups ? [...groupIds] : [], syncNotifications,
+          ...(syncNotifications && sourceId && registry.map.has(sourceId) ? { notificationSourceRegistrationId: sourceId } : {}),
+          references: Object.fromEntries(Object.entries(targetReferences).filter(([id]) => targets.includes(id))),
+          ...(adopting && current && baseMonitor ? { source: { registrationId: adopting.id, monitorId: current.id, revision: baseMonitor.revision } } : {}) }, fleetBase || undefined);
         if (!stillCurrent()) return;
-        notify(`Saved placement for “${input.name}”. Each node's confirmation appears in All nodes.`);
+        notify(`Saved “${input.name}”. Each node’s copy is confirmed in All nodes.`);
         fleet?.reload(); refresh(); navigate(href('overview')); return;
       }
       if (current && baseMonitor) {
@@ -1268,7 +1353,7 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
     } catch (error) {
       if (!stillCurrent()) return;
       const stale = error instanceof ApiFailure && error.status === 409;
-      setFailure({ message: stale ? fleetEnabled ? 'The saved deployment changed, is still running, or needs review. Refresh All nodes before saving again.' : 'Someone saved a newer revision first, or nodes now hold conflicting versions.' : describeFailure(error), stale });
+      setFailure({ message: stale ? fleetEnabled ? 'The saved monitor changed, is still being placed, or needs review, or a chosen node group was removed. Refresh All nodes before saving again.' : 'Someone saved a newer revision first, or nodes now hold conflicting versions.' : describeFailure(error), stale });
       setAttempts(n => n + 1);
     } finally {
       setSaving(false);
@@ -1282,6 +1367,11 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
       setFleetBase(latestFleet);
       setFleetTargets([...latestFleet.registrationIds]);
       setTargetReferences(latestFleet.references ?? {});
+      setGroupIds([...(latestFleet.groupIds ?? [])]);
+      setPlaceMode(latestFleet.groupIds?.length ? 'groups' : 'nodes');
+      setSyncNotifications(latestFleet.syncNotifications ?? true);
+      setReferenceSource(latestFleet.notificationSourceRegistrationId);
+      if (!latestFleet.groupIds?.length || Object.keys(latestFleet.references ?? {}).length || latestFleet.syncNotifications === false) setAdvanced(true);
     }
     setDraft(draftFrom(latest, defaultNodes));
     setInitial(draftFrom(latest, defaultNodes));
@@ -1318,7 +1408,9 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
       <PageHead
         crumbs={<><a href={href('monitors')}>Monitors</a>{current ? <><Icon name="chevRight" /><a href={href('monitors', current.id)}>{current.name}</a></> : copy && source ? <><Icon name="chevRight" /><a href={href('monitors', source.monitor.id)}>{source.monitor.name}</a></> : null}</>}
         title={current || fleetBase ? 'Edit monitor' : copy ? 'Copy monitor' : 'New monitor'}
-        sub={fleetEnabled ? <>Saves one dashboard placement across the registered nodes chosen below. Each independent placement keeps its own monitoring history.</> : current
+        sub={fleetEnabled ? byGroups
+          ? <>Runs on every node in the node groups you choose, and follows changes to those groups. Each node keeps its own history.</>
+          : <>Runs on the nodes chosen under Advanced settings. Each node keeps its own history.</> : current
           ? <>Editing revision <Rev revision={baseMonitor?.revision ?? current.revision} />{changedElsewhere ? null : <>, saved <Time at={current.updatedAt} now={overview.now} /></>}. Saving writes a new revision on <span className="mono">{endpoint}</span>.</>
           : copy && source
           ? <>Creates a new monitor with its own stable ID on <span className="mono">{endpoint}</span>, starting from a copy of “{source.monitor.name}”. Nothing is created until you select Create monitor, and “{source.monitor.name}” stays as it is.</>
@@ -1329,7 +1421,7 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
           Nodes hold different versions. Edits are rejected until someone resolves the conflict.
         </Banner>
       ) : changedElsewhere ? (
-        <Banner tone="warn" title={<>This monitor changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" onClick={loadLatest}><Icon name="refresh" />Load latest (discards your edits)</button>}>
+        <Banner tone="warn" title={fleetBase ? 'This monitor changed while you were editing' : <>This monitor changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" onClick={loadLatest}><Icon name="refresh" />Load latest (discards your edits)</button>}>
           It’s now revision <Rev revision={latestFleet?.revision ?? current?.revision ?? ''} />. Saving your version will be rejected because it’s based on <Rev revision={fleetBase?.revision ?? baseMonitor?.revision ?? ''} />.
         </Banner>
       ) : null}
@@ -1561,9 +1653,31 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
           </div>
           <CheckField label="Active" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Turn off to pause: no node checks it, and no alerts are sent." />
 
-          <h3 className="fsec full">Placement</h3>
-          {fleetEnabled ? <FleetPlacementFields nodes={registry.list ?? []} groups={fleet?.groups ?? []} selectedRegistrationIds={fleetTargets} onChange={setFleetTargets} disabled={saving}
-            error={showErrors && !fleetTargets.length ? 'Choose at least one registered node.' : undefined} /> : <NodePicker
+          <h3 className="fsec full">{fleetEnabled ? 'Where it runs' : 'Placement'}</h3>
+          {fleetEnabled ? (
+            <>
+              <FleetGroupTargets groups={fleetGroups} nodes={registry.list ?? []} selected={groupIds} active={byGroups} disabled={saving} error={groupError} outside={outside}
+                onChange={ids => { setGroupIds(ids); setPlaceMode('groups'); }} onChooseNodes={chooseNodes} />
+              <Disclosure title="Advanced settings" summary={advancedSummary} open={advanced} onToggle={() => setAdvanced(value => !value)}>
+                <div className="full fl-adv">
+                  <CheckField label="Choose nodes one by one instead of node groups" checked={!byGroups} disabled={saving}
+                    onChange={on => { if (on) chooseNodes(); else { if (!groupIds.length && fleetGroups.length === 1) setGroupIds([fleetGroups[0].id]); setPlaceMode('groups'); } }}
+                    hint="For a monitor that should run on only some nodes. Nodes chosen this way don’t follow changes to node groups." />
+                  {!byGroups ? <FleetPlacementFields nodes={registry.list ?? []} selectedRegistrationIds={fleetTargets} onChange={setFleetTargets} disabled={saving}
+                    error={showErrors && !fleetTargets.length ? 'Choose at least one registered node.' : undefined} /> : null}
+                  <CheckField label="Copy notification channels and tags to every node" checked={syncNotifications} onChange={setSyncNotifications} disabled={saving}
+                    hint={syncNotifications ? `Copied from ${sourceLabel}, including later edits to them there.` : 'Off: every node needs channels and tags with these exact IDs already, or its own choices below.'} />
+                  <FleetReferenceFields profiles={profiles.profiles} base={{ notificationIds: input?.notificationIds ?? draft.channelIds, groupId: input?.groupId ?? draft.groupId,
+                    tags: input?.tags ?? draft.tags.map(tag => ({ tagId: tag.tagId, ...(tag.value ? { value: tag.value } : {}), ...(tag.isPublic ? { public: true } : {}) })) }}
+                    overrides={targetReferences} onChange={setTargetReferences} onRetry={profiles.reload} disabled={saving} sync={referenceSync} />
+                  <div className="fld full">
+                    <span className="flabel">Notification order if it goes down</span>
+                    <small>HA peers that share this monitor take turns per destination. Independent nodes each run their own copy and may each send an alert. The JSON preview shows the monitor’s settings; where it runs is saved separately.</small>
+                  </div>
+                </div>
+              </Disclosure>
+            </>
+          ) : <NodePicker
             legend="Run on" nodes={nodes} selected={draft.nodeIds} onChange={ids => set('nodeIds', ids)} endpoint={endpoint} now={overview.now}
             error={visibleErrors.nodes} disabled={saving}
             hint={type === 'system-service'
@@ -1580,17 +1694,19 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
               ? 'Each chosen node sends its queries to the query service at the address above, so every one must reach it. The game server is queried from the service’s network, not the node’s: with one shared service every node measures from the same place, so give each location its own nearby service under the same name to compare locations. Out-of-view nodes receive the monitor when they reconnect.'
               : 'Out-of-view nodes can be chosen; they receive the monitor when they reconnect. More locations tell a service failure from a path problem.'}
           />}
-          {fleetEnabled ? <FleetReferenceFields profiles={profiles.profiles} base={{ notificationIds: input?.notificationIds ?? draft.channelIds, groupId: input?.groupId ?? draft.groupId,
-            tags: input?.tags ?? draft.tags.map(tag => ({ tagId: tag.tagId, ...(tag.value ? { value: tag.value } : {}), ...(tag.isPublic ? { public: true } : {}) })) }}
-            overrides={targetReferences} onChange={setTargetReferences} onRetry={profiles.reload} disabled={saving} /> : null}
-          <div className="fld full">
-            <span className="flabel">Notification order if it goes down</span>
-            {fleetEnabled ? <small>Existing HA peers can coordinate within their shared placement. Independent nodes run separate copies and may each send alerts. The JSON preview describes node settings; the registered-node selection above is saved separately.</small> : <><CandidateOrder ids={draft.nodeIds} nodes={nodeMap} />
-            <small>Selected nodes in ID order. Nodes take turns per destination; a node that sees another’s receipt stands down. Partitions can still produce duplicates.</small></>}
-          </div>
+          {fleetEnabled ? null : (
+            <div className="fld full">
+              <span className="flabel">Notification order if it goes down</span>
+              <CandidateOrder ids={draft.nodeIds} nodes={nodeMap} />
+              <small>Selected nodes in ID order. Nodes take turns per destination; a node that sees another’s receipt stands down. Partitions can still produce duplicates.</small>
+            </div>
+          )}
 
           <h3 className="fsec full">Alerts</h3>
-          <ChannelPicker selected={draft.channelIds} onChange={ids => setDraft(d => ({ ...d, channelIds: ids, channelsMode: 'chosen' }))} disabled={saving} error={visibleErrors.channels} mode={draft.channelsMode} />
+          <ChannelPicker selected={draft.channelIds} onChange={ids => { setReferenceSource(referenceSourceId); setDraft(d => ({ ...d, channelIds: ids, channelsMode: 'chosen' })); }} disabled={saving} error={visibleErrors.channels} mode={draft.channelsMode} catalog={channels} sourceLabel={sourceLabel} sourceRegistrationId={referenceSourceId} />
+          {fleetEnabled && syncNotifications ? (
+            <p className="full fl-src"><Icon name="copy" /><span>Channels and tags come from {sourceLabel} and are copied to every node this monitor runs on, along with later edits to them on {sourceLabel}.</span></p>
+          ) : null}
           <Disclosure title="Legacy webhook URL" summary={draft.webhookUrl ? maskedUrl(draft.webhookUrl) : 'None'} open={Boolean(open.legacy)} onToggle={() => toggle('legacy')}>
             <div className="fld full">
               <label htmlFor={`${formId}-hook`}>Webhook URL <span className="muted">(optional)</span></label>
@@ -1617,7 +1733,7 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
           {!draft.channelIds.length && !draft.webhookUrl.trim() ? <p className="fld muted small"><Icon name="info" className="inline" />No destination: checks and incidents are recorded without notifications.</p> : <span />}
 
           <h3 className="fsec full">Organize</h3>
-          <TagEditor rows={draft.tags} onChange={rows => set('tags', rows)} disabled={saving} error={visibleErrors.tags} />
+          <TagEditor rows={draft.tags} onChange={rows => { setReferenceSource(referenceSourceId); set('tags', rows); }} disabled={saving} error={visibleErrors.tags} source={tagCatalog} sourceRegistrationId={referenceSourceId} />
           {groups !== null ? (
             <div className="fld full">
               <label htmlFor={`${formId}-group`}>Group <span className="muted">(optional)</span></label>
@@ -1632,7 +1748,17 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
                   : group.group.outageMonitorId === current?.id ? 'This monitor is the group’s outage monitor. Its own alerts are never held back by its group.'
                   : group.group.outageMonitorId ? <>While <b>{monitorMap.get(group.group.outageMonitorId)?.monitor.name ?? 'its outage monitor'}</b> is down and its own alert reached a destination, this monitor’s alerts to that destination are held back after the group’s grace period. Other destinations fail open. Checks and incidents are still recorded.</>
                   : 'This group has no outage monitor yet, so nothing is held back.'}
+                {fleetEnabled && draft.groupId ? ' Groups stay on their own node and aren’t copied, so a node that doesn’t have this one needs its own choice.' : ''}
               </small>
+              {groupGaps.length ? (
+                <small className="fwarn">
+                  <Glyph tone="warn" />
+                  <span>
+                    {groupGaps.length === 1 ? `${groupGaps[0].label} doesn’t have this group, so it refuses` : `${groupGaps.length} nodes don’t have this group, so they refuse`} the monitor.
+                    Choose their own group or None under Advanced settings. {advanced ? null : <button type="button" className="linkbtn" onClick={() => setAdvanced(true)}>Open Advanced settings</button>}
+                  </span>
+                </small>
+              ) : null}
             </div>
           ) : null}
 
@@ -1653,10 +1779,10 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
           ) : null}
           <div className="full form-acts">
             <button type="submit" className="btn primary" disabled={saving || conflicted}>
-              <Icon name={current || fleetBase ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current || fleetBase ? 'Save changes' : 'Create monitor'}
+              <Icon name={current || fleetBase ? 'check' : 'plus'} />{saving ? fleetEnabled ? 'Saving…' : `Saving to ${endpoint}…` : current || fleetBase ? 'Save changes' : 'Create monitor'}
             </button>
             <a className="btn" href={current ? href('monitors', current.id) : copy && source ? href('monitors', source.monitor.id) : href('monitors')}>Cancel</a>
-            {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : null}
+            {saving ? <span className="muted small" role="status">{fleetEnabled ? 'Waiting for the dashboard to confirm…' : <>Waiting for {endpoint} to acknowledge…</>}</span> : null}
           </div>
         </form>
       </Card>

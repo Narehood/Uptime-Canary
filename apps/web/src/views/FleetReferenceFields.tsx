@@ -1,6 +1,7 @@
 import { Fragment, useId } from 'react';
 import type { FleetTargetReferences, MonitorTag } from '@uptime-canary/shared';
 import type { FleetReferenceFieldsProps, FleetReferenceOption, FleetReferenceProfile } from '../fleetReferences';
+import type { FleetReferenceSync } from '../fleetViews';
 import { plural } from '../format';
 import { Glyph, Icon, type IconName } from '../ui/icons';
 
@@ -10,6 +11,11 @@ import { Glyph, Icon, type IconName } from '../ui/icons';
  * or picks defaults. A node without its own entry uses this form's settings. Choosing references copies those exactly,
  * unknown IDs, tag values and public flags included, so later edits to the form don't reach that node. IDs a node
  * doesn't list stay selected and visible until they're removed here. Profiles carry names, IDs and flags only.
+ *
+ * With `sync`, the dashboard copies the form's channels and tags from the source node to the others, so a node only
+ * needs its own entry for something different, and each field is chosen on its own: an entry holds just the fields
+ * set here. Channel and tag IDs from the form aren't expected on other nodes then. An outage dependency group is never
+ * copied, so a node that doesn't list the form's group is pointed out.
  */
 
 const MAX_CHANNELS = 16;
@@ -245,7 +251,86 @@ function NodeReferences({ profile, base, own, onEnable, onDisable, onWrite }: {
   );
 }
 
-export function FleetReferenceFields({ profiles, base, overrides, onChange, disabled, onRetry }: FleetReferenceFieldsProps) {
+type SyncField = keyof FleetTargetReferences;
+
+/** Names as the source node gives them; IDs it doesn't name are only counted, since they're copied by ID anyway. */
+function namedList(ids: readonly string[], named: Readonly<Record<string, string>>, noun: string): string {
+  const known = ids.flatMap(id => named[id] ?? []);
+  const rest = ids.length - known.length;
+  return [...known, rest ? plural(rest, known.length ? `other ${noun}` : noun) : ''].filter(Boolean).join(', ') || 'None';
+}
+
+function SyncedReferences({ profile, base, own, sync, onSet, onClear }: {
+  profile: FleetReferenceProfile; base: Base; own: FleetTargetReferences | undefined; sync: FleetReferenceSync;
+  onSet: (patch: FleetTargetReferences) => void; onClear: (field: SyncField) => void;
+}) {
+  const id = useId();
+  const { status, label } = profile;
+  const shown = STATUS[status];
+  const source = profile.registrationId === sync.sourceRegistrationId;
+  const channels = base.notificationIds ?? [];
+  const tags = base.tags ?? [];
+  const group = base.groupId ?? '';
+  const ownChannels = own?.notificationIds;
+  const ownTags = own?.tags;
+  const ownGroup = own?.groupId;
+  const listed = group ? find(profile.groups, group) : undefined;
+  const groupName = sync.groupName ?? (listed ? nameOf(listed) : group);
+  const gap = group !== '' && !source && ownGroup === undefined && status === 'ready' && !listed;
+  const from = source ? 'Its own' : `Copied from ${sync.sourceLabel}`;
+  const tagText = tags.length
+    ? tags.map(tag => `${sync.tagNames[tag.tagId] ?? 'a tag'}${tag.value ? `: ${tag.value}` : ''}${tag.public ? ' (public)' : ''}`).join(', ') : 'None';
+  const detail = source ? 'The form’s channels and tags are this node’s own, and they’re copied from here.'
+    : status === 'ready' ? `${plural(profile.channels.length, 'channel')} · ${plural(profile.groups.length, 'group')} · ${plural(profile.tags.length, 'tag')} on this node`
+    : status === 'loading' ? 'Reading this node’s channels, groups and tags…'
+    : 'This node’s channels, groups and tags couldn’t be read. Choices here stay as they are.';
+  const choose = <span className="vh"> for {label}</span>;
+  return (
+    <div className={`fl-ref s-${status}${own ? ' on' : ''}${gap ? ' gap' : ''}`} role="group" aria-labelledby={`${id}-n`}>
+      <div className="fl-ref-h">
+        <span className="fl-ref-id" id={`${id}-n`}><b>{label}</b> <span className="mono">{profile.nodeId || 'node ID not read yet'}</span></span>
+        <span className="fl-ref-st"><Icon name={source ? 'copy' : shown.icon} />{source ? 'Source' : shown.label}</span>
+      </div>
+      <p className="fl-ref-t">{detail}</p>
+      <dl className="fl-ref-inh fl-ref-sync">
+        <dt>Channels</dt>
+        <dd>
+          <span>{ownChannels ? 'This node’s own, chosen below' : `${from}: ${namedList(channels, sync.channelNames, 'channel')}`}</span>
+          <button type="button" className="linkbtn" onClick={() => ownChannels ? onClear('notificationIds') : onSet({ notificationIds: source ? [...channels] : [] })}>
+            {ownChannels ? source ? 'Use the form’s channels' : `Copy from ${sync.sourceLabel} again` : 'Choose for this node'}{choose}
+          </button>
+        </dd>
+        <dt>Tags</dt>
+        <dd>
+          <span>{ownTags ? 'This node’s own, chosen below' : `${from}: ${tagText}`}</span>
+          <button type="button" className="linkbtn" onClick={() => ownTags ? onClear('tags') : onSet({ tags: source ? copyTags(tags) : [] })}>
+            {ownTags ? source ? 'Use the form’s tags' : `Copy from ${sync.sourceLabel} again` : 'Choose for this node'}{choose}
+          </button>
+        </dd>
+        <dt>Outage dependency group</dt>
+        <dd>
+          {ownGroup !== undefined ? <span>Chosen for this node below</span>
+            : !group ? <span>None</span>
+            : source || listed ? <span>{groupName}</span>
+            : gap ? <span className="fl-ref-gap"><Glyph tone="warn" /><span>{groupName} isn’t on this node, so this node refuses the monitor. Choose one of its own groups or None.</span></span>
+            : <span>{groupName}, only if this node has the same group</span>}
+          <button type="button" className="linkbtn" onClick={() => ownGroup !== undefined ? onClear('groupId') : onSet({ groupId: listed ? group : '' })}>
+            {ownGroup !== undefined ? 'Use the form’s group' : 'Choose for this node'}{choose}
+          </button>
+        </dd>
+      </dl>
+      {ownChannels || ownTags || ownGroup !== undefined ? (
+        <div className="fl-ref-b">
+          {ownChannels ? <ChannelChoices profile={profile} selected={ownChannels} inherited={false} onChange={notificationIds => onSet({ notificationIds })} /> : null}
+          {ownGroup !== undefined ? <GroupChoice profile={profile} value={ownGroup} inherited={false} onChange={groupId => onSet({ groupId })} /> : null}
+          {ownTags ? <TagChoices profile={profile} selected={ownTags} inherited={false} onChange={next => onSet({ tags: next })} /> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function FleetReferenceFields({ profiles, base, overrides, onChange, disabled, onRetry, sync }: FleetReferenceFieldsProps & { sync?: FleetReferenceSync }) {
   const id = useId();
   const listed = new Set(profiles.map(profile => profile.registrationId));
   const ownCount = profiles.filter(profile => Object.hasOwn(overrides, profile.registrationId)).length;
@@ -268,6 +353,19 @@ export function FleetReferenceFields({ profiles, base, overrides, onChange, disa
     if (disabled || !Object.hasOwn(overrides, registrationId)) return;
     onChange({ ...overrides, [registrationId]: { ...overrides[registrationId], ...patch } });
   };
+  // Copying: one field at a time. A node's entry holds only the fields set for it, and goes once none are left.
+  const set = (registrationId: string, patch: FleetTargetReferences): void => {
+    if (disabled) return;
+    onChange({ ...overrides, [registrationId]: { ...(Object.hasOwn(overrides, registrationId) ? overrides[registrationId] : {}), ...patch } });
+  };
+  const clear = (registrationId: string, field: SyncField): void => {
+    if (disabled || !Object.hasOwn(overrides, registrationId)) return;
+    const entry: FleetTargetReferences = { ...overrides[registrationId] };
+    delete entry[field];
+    const next: Record<string, FleetTargetReferences> = { ...overrides };
+    if (Object.keys(entry).length) next[registrationId] = entry; else delete next[registrationId];
+    onChange(next);
+  };
 
   return (
     <fieldset className="fld full fl-refs" disabled={disabled} aria-describedby={`${id}-h`}>
@@ -276,11 +374,18 @@ export function FleetReferenceFields({ profiles, base, overrides, onChange, disa
       </legend>
       <p className="fl-peer-note" id={`${id}-h`}>
         <Icon name="info" />
-        <span>
-          Each node uses the notification channels, group and tags set in this form unless you choose references on that node here.
-          These IDs belong to one node, so nothing is matched or copied to another node by name. HA peers that share one monitor
-          configuration need matching references; independent nodes can each use their own.
-        </span>
+        {sync ? (
+          <span>
+            Every node gets the form’s channels and tags, copied from {sync.sourceLabel}. Choose something else here only for a node that needs it.
+            Outage dependency groups aren’t copied: each node can only use one of its own. HA peers that share one monitor configuration need the same choices.
+          </span>
+        ) : (
+          <span>
+            Each node uses the notification channels, group and tags set in this form unless you choose references on that node here.
+            These IDs belong to one node, so nothing is matched or copied to another node by name. HA peers that share one monitor
+            configuration need matching references; independent nodes can each use their own.
+          </span>
+        )}
       </p>
       <span className="vh" role="status">{reading ? `Reading channels, groups and tags from ${reading} of ${plural(profiles.length, 'node')}.` : ''}</span>
       {unread.length ? (
@@ -294,14 +399,19 @@ export function FleetReferenceFields({ profiles, base, overrides, onChange, disa
       ) : null}
       {profiles.length ? (
         <div className="fl-ref-list">
-          {profiles.map(profile => (
-            <NodeReferences key={profile.registrationId} profile={profile} base={base}
-              own={Object.hasOwn(overrides, profile.registrationId) ? overrides[profile.registrationId] : undefined}
-              onEnable={() => enable(profile.registrationId)} onDisable={() => disable(profile.registrationId)}
-              onWrite={patch => write(profile.registrationId, patch)} />
-          ))}
+          {profiles.map(profile => {
+            const own = Object.hasOwn(overrides, profile.registrationId) ? overrides[profile.registrationId] : undefined;
+            return sync ? (
+              <SyncedReferences key={profile.registrationId} profile={profile} base={base} own={own} sync={sync}
+                onSet={patch => set(profile.registrationId, patch)} onClear={field => clear(profile.registrationId, field)} />
+            ) : (
+              <NodeReferences key={profile.registrationId} profile={profile} base={base} own={own}
+                onEnable={() => enable(profile.registrationId)} onDisable={() => disable(profile.registrationId)}
+                onWrite={patch => write(profile.registrationId, patch)} />
+            );
+          })}
         </div>
-      ) : <p className="fl-none">Choose nodes under Run on to set channels, a group and tags for each.</p>}
+      ) : <p className="fl-none">{sync ? 'Choose where this monitor runs to see each node here.' : 'Choose nodes under Run on to set channels, a group and tags for each.'}</p>}
       {hidden ? <small>{hidden === 1 ? '1 node not listed here keeps its' : `${hidden} nodes not listed here keep their`} own references as they are.</small> : null}
     </fieldset>
   );

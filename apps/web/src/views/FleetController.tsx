@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FleetDeployment } from '@uptime-canary/shared';
 import { useCanary } from '../context';
 import { fleetMonitorRows } from '../fleet';
@@ -24,16 +24,37 @@ export function FleetController({ groups = false }: { groups?: boolean }) {
   const reader = useFleetReader(api, registry.list ?? [], role, `${connection.identity}|${role}`, live && !groups && registry.list !== null);
   const refresh = (): void => { setFailure(undefined); registry.reload(); fleet?.reload(); reader.reload(); };
   const editable = live && canEdit(role) && !operation;
-  if (groups) return <FleetNodeGroupsView nodes={live ? registry.list ?? [] : []} groups={live ? fleet?.groups ?? [] : []}
-    onOpenDependencies={selection ? () => navigate(href('outage-groups')) : undefined}
-    loading={registry.loading || Boolean(fleet?.loading)} editable={editable} error={failure ?? fleet?.error}
-    onRefresh={refresh} onSave={async (input, existing) => {
-      try { await api.saveNodeGroup(input, existing); fleet?.reload(); }
-      catch (error) { setFailure('The group was not confirmed. Reload to check its latest revision and membership before retrying.'); fleet?.reload(); throw error; }
-    }} onRemove={async group => {
-      try { await api.removeNodeGroup(group); fleet?.reload(); }
-      catch (error) { setFailure('The removal was not confirmed. Reload the saved groups before retrying.'); fleet?.reload(); throw error; }
-    }} />;
+  // While a group is collecting monitors, read its progress 5 s after each answer rather than the catalogue's usual 15 s.
+  // Re-armed by each new answer only, so a slow read is never cut short.
+  const syncing = groups && live && Boolean(fleet?.groups.some(group => group.syncState === 'pending'));
+  const reloadFleet = fleet?.reload;
+  const answered = fleet?.groups;
+  useEffect(() => {
+    if (!syncing || !reloadFleet) return;
+    const timer = setTimeout(reloadFleet, 5000);
+    return () => clearTimeout(timer);
+  }, [syncing, reloadFleet, answered]);
+  if (groups) {
+    const counts: Record<string, number> = {};
+    for (const deployment of live ? fleet?.deployments ?? [] : []) {
+      if (deployment.state === 'removed') continue;
+      for (const id of new Set(deployment.groupIds ?? [])) counts[id] = (counts[id] ?? 0) + 1;
+    }
+    // Outage dependencies belong to one node; with none selected yet, that page asks which.
+    return <FleetNodeGroupsView nodes={live ? registry.list ?? [] : []} groups={live ? fleet?.groups ?? [] : []} monitorCounts={live && fleet?.ready ? counts : undefined}
+      onOpenDependencies={() => navigate(href('outage-groups'))}
+      loading={registry.loading || Boolean(fleet?.loading)} editable={editable} error={failure ?? fleet?.error}
+      onRefresh={refresh} onSave={async (input, existing) => {
+        try { await api.saveNodeGroup(input, existing); fleet?.reload(); }
+        catch (error) { setFailure('The group was not confirmed. Reload to check its latest revision and membership before retrying.'); fleet?.reload(); throw error; }
+      }} onSync={async group => {
+        // A sync gives the group a new revision, so the catalogue is read again either way.
+        try { await api.syncNodeGroup(group); } finally { fleet?.reload(); }
+      }} onRemove={async group => {
+        try { await api.removeNodeGroup(group); fleet?.reload(); }
+        catch (error) { setFailure('The removal was not confirmed. Reload the saved groups before retrying.'); fleet?.reload(); throw error; }
+      }} />;
+  }
   return <><FleetOverviewView sources={reader.sources} rows={fleetMonitorRows(reader.sources, now, live ? fleet?.deployments : [])}
     now={now} loading={registry.loading && !registry.list || reader.loading} refreshing={reader.refreshing}
     error={failure ?? reader.error ?? fleet?.error ?? (registry.error ? 'The node registry could not be refreshed; some nodes may be missing.' : undefined)}
@@ -57,7 +78,9 @@ export function FleetController({ groups = false }: { groups?: boolean }) {
       setReconciling({ deployment, ...reviewed });
     } : undefined}
     onEditDeployment={editable ? deployment => {
-      const node = fleetEditingRegistration(deployment, registry.map);
+      // The form lists the selected node's channels and tags, so open it through the node they're copied from.
+      const source = deployment.syncNotifications && deployment.notificationSourceRegistrationId ? registry.map.get(deployment.notificationSourceRegistrationId) : undefined;
+      const node = source ?? fleetEditingRegistration(deployment, registry.map);
       if (!node) { setFailure('Register a destination node before editing this placement.'); return; }
       if (selection?.id !== node.id) select(node);
       navigate(href('fleet-monitors', deployment.id, 'edit'));
