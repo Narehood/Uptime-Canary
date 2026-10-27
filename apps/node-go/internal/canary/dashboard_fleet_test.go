@@ -361,7 +361,12 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	lose.Store(true)
 	d.finishFleet(context.Background(), row.ID)
 	row = d.fleet[row.ID]
-	if row.State != "pending" || len(node.heads) != 1 {
+	// A lost HTTP answer does not synchronize this test with the node's
+	// handler. Inspect its state under the same lock used by ServeHTTP.
+	node.mu.Lock()
+	monitorCount := len(node.heads)
+	node.mu.Unlock()
+	if row.State != "pending" || monitorCount != 1 {
 		t.Fatal("lost answer was not retained as an unknown saved outcome")
 	}
 	if w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]string{"revision": row.Revision}); w.Code != 409 {
@@ -372,24 +377,32 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := row.Placements[0]
+	node.mu.Lock()
+	observedRevision := node.current(p.MonitorID).Revision
+	node.mu.Unlock()
 	w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{
-		"revision": row.Revision, "observedRevisions": map[string]string{p.ID: node.current(p.MonitorID).Revision},
+		"revision": row.Revision, "observedRevisions": map[string]string{p.ID: observedRevision},
 	})
 	after, err := d.openFleet(d.fleet[row.ID])
 	if w.Code != 409 || err != nil || !equalJSON(plan, after) {
 		t.Fatal("review discarded an unknown saved command instead of retaining exact replay")
 	}
 	var revision string
+	node.mu.Lock()
 	for _, heads := range node.heads {
 		revision = heads[0].Monitor.Revision
 	}
+	node.mu.Unlock()
 	lose.Store(false)
 	d.finishFleet(context.Background(), row.ID)
 	row = d.fleet[row.ID]
-	if row.State != "applied" || len(node.heads) != 1 || row.Placements[0].Revision != revision {
+	node.mu.Lock()
+	monitorCount = len(node.heads)
+	input := node.current(p.MonitorID).MonitorInput
+	node.mu.Unlock()
+	if row.State != "applied" || monitorCount != 1 || row.Placements[0].Revision != revision {
 		t.Fatal("retry duplicated or replaced an already committed monitor")
 	}
-	input := node.current(p.MonitorID).MonitorInput
 	input.Name = "Update whose acknowledgement is lost"
 	w = dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{
 		"revision": row.Revision, "monitor": input, "registrationIds": row.RegistrationIDs,
@@ -419,7 +432,9 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 		t.Fatal("a previous refusal stayed authoritative after another attempt")
 	}
 	input.Name = "Later direct edit must also survive exact replay"
+	node.mu.Lock()
 	local, err := node.writeMonitor(input, node.heads[p.MonitorID], p.MonitorID, false)
+	node.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +451,10 @@ func TestDashboardFleetLostWriteResponseRetriesSavedCommand(t *testing.T) {
 	lose.Store(false)
 	d.finishFleet(context.Background(), row.ID)
 	row = d.fleet[row.ID]
-	if row.Placements[0].Sequence != 2 || node.current(p.MonitorID).Revision != local.Revision {
+	node.mu.Lock()
+	observedRevision = node.current(p.MonitorID).Revision
+	node.mu.Unlock()
+	if row.Placements[0].Sequence != 2 || observedRevision != local.Revision {
 		t.Fatal("unknown update did not recover its original receipt without overwriting the direct edit")
 	}
 }

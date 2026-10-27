@@ -123,7 +123,8 @@ resource limits still apply. Network loss after preflight can leave some
 placements applied and others pending; this is not a transaction across nodes.
 
 The fleet source review approved its implementation after three Sol rounds;
-the separate project-wide review approved the probe repairs after two rounds.
+the separate project-wide review approved the probe and preparation repairs
+after three rounds.
 Neither source review replaces the platform, image or deployment gates below.
 
 The separate project-wide Sol review found two probe deadline bugs: GameDig's
@@ -155,6 +156,15 @@ outbound-connection tests then passed (57.016 seconds guarded, package-cwd
 fingerprint
 `7f575469af8fb2546e23ce8383d48c49f4891c486bc7aa74073363692f2c942d`).
 This follow-up changes no frontend or GameDig timeout policy.
+
+The earlier PR head `5ce67459` failed Alpine race validation with two warnings
+in the lost-response fixture. It read node internals without the mutex held by
+the HTTP handler; a deliberately lost response provides no synchronization.
+The fixture now locks those reads and its direct edit, preserving the original
+assertions. The same targeted Windows tests passed again (48.797 seconds
+guarded, package-cwd fingerprint
+`98c32aaecfac32123eac47ceb3053efe670e10ea62b466898c89f2e60c26e744`).
+This is a test-only repair; hosted race validation must pass on the updated head.
 
 After the first fleet Sol review, the recovery and destination-selection repairs
 passed all three workspace typechecks and every configured pure/control fixture,
