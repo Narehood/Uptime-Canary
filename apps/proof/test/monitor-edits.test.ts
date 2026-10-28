@@ -15,7 +15,7 @@ test('editing an ongoing outage preserves its notification identity across peers
   const secondGroup = await cluster.createGroup({ name: 'Second user group', nodeIds: cluster.nodes.map(peer => peer.id), graceMs: 0 });
   let input: MonitorInput = {
     name: 'Continuous outage', type: 'http', target: target.url,
-    intervalMs: 1_000, timeoutMs: 500, nodeIds: cluster.nodes.map(peer => peer.id),
+    internalOnly: true, intervalMs: 1_000, timeoutMs: 500, nodeIds: cluster.nodes.map(peer => peer.id),
     enabled: true, expectedStatusCodes: [200], webhookUrl: cluster.webhookUrl,
     repeatAfterMs: 0, groupId: firstGroup.id,
   };
@@ -44,7 +44,7 @@ test('editing an ongoing outage preserves its notification identity across peers
 
   for (const change of [
     { groupId: secondGroup.id },
-    { name: 'Renamed during the same outage', intervalMs: 1_100 },
+    { name: 'Renamed during the same outage', internalOnly: true, intervalMs: 1_100 },
   ]) {
     input = { ...input, ...change };
     const editedAt = Date.now();

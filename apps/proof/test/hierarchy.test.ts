@@ -13,7 +13,7 @@ function group(overview: Overview, id: string): GroupView {
 function monitorInput(c: Cluster, target: HttpTarget, groupId: string): MonitorInput {
   return {
     name: `Hierarchy leaf ${randomUUID()}`, type: 'http', target: target.url,
-    intervalMs: CHECK_INTERVAL_MS, timeoutMs: 500, nodeIds: c.nodes.map(n => n.id),
+    internalOnly: true, intervalMs: CHECK_INTERVAL_MS, timeoutMs: 500, nodeIds: c.nodes.map(n => n.id),
     enabled: true, expectedStatusCodes: [200], groupId, repeatAfterMs: 0,
     webhookUrl: c.webhookUrl,
   };

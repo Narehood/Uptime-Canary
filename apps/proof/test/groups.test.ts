@@ -6,7 +6,7 @@ import { CHECK_INTERVAL_MS, Cluster, QUIET_MS, type Alert, type ApiResponse, typ
 
 function input(cluster: Cluster, target: HttpTarget, name: string, groupId?: string): MonitorInput {
   return {
-    name, type: 'http', target: target.url, intervalMs: CHECK_INTERVAL_MS, timeoutMs: 500,
+    name, type: 'http', target: target.url, internalOnly: true, intervalMs: CHECK_INTERVAL_MS, timeoutMs: 500,
     nodeIds: cluster.nodes.map((node) => node.id), enabled: true, expectedStatusCodes: [200],
     webhookUrl: cluster.webhookUrl, repeatAfterMs: 0, ...(groupId ? { groupId } : {}),
   };

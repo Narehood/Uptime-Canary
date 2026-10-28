@@ -120,7 +120,7 @@ func TestNodeConnectionExpiredMutationIsNotDispatchedAfterLocalSlotWait(t *testi
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	mutation := make(chan error, 1)
-	body, _ := json.Marshal(MonitorInput{Name: "Must not be created", Type: "manual", Target: "", NodeIDs: []string{n.ID}, Enabled: false, IntervalMs: 1000, TimeoutMs: 500, Manual: &ManualMonitorOptions{State: "up"}})
+	body, _ := json.Marshal(MonitorInput{Name: "Must not be created", Type: "manual", Target: "", NodeIDs: []string{n.ID}, Enabled: false, InternalOnly: true, IntervalMs: 1000, TimeoutMs: 500, Manual: &ManualMonitorOptions{State: "up"}})
 	go func() {
 		_, _, err := d.nodeRequest(ctx, row, secrets.Admin, "POST", "/api/monitors", body)
 		mutation <- err

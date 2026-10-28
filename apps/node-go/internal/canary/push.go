@@ -113,7 +113,7 @@ func (n *Node) persistPushEvents(e dbExec, events map[string]heartbeat.Event) er
 }
 
 func pushConfig(m Monitor, known map[string]bool) heartbeat.Config {
-	return heartbeat.Config{MonitorID: m.ID, Generation: checkGeneration(m), StartedAt: m.PushStartedAt, IntervalMs: m.IntervalMs, Known: known}
+	return heartbeat.Config{MonitorID: m.ID, Generation: checkGeneration(m), StartedAt: m.PushStartedAt, IntervalMs: checkInterval(m.MonitorInput), Known: known}
 }
 
 func (n *Node) publishPushEvents(events map[string]heartbeat.Event) {

@@ -71,7 +71,7 @@ test('PM2 production workers retain local configuration, Pending and HA lifecycl
   await cluster.initialize(['pm2-a', 'pm2-b']); await cluster.startAll();
   const [a, b] = cluster.nodes; assert.ok(a && b);
   let input: MonitorInput = { name: 'Local PM2 proof', type: 'pm2', target: '0042',
-    pm2: { transport: 'unix', home, namespace: 'blue' }, intervalMs: 1000,
+    pm2: { transport: 'unix', home, namespace: 'blue' }, internalOnly: true, intervalMs: 1000,
     timeoutMs: 750, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0 };
   let monitor = await cluster.createMonitor(input);
   const settle = async (state: 'up' | 'down' | 'pending', since = Date.now() - 5000): Promise<void> => {

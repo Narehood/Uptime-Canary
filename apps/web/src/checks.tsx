@@ -143,13 +143,15 @@ export function inputOf(monitor: Monitor): MonitorInput {
  * The input for a new monitor copied from `source`, for the clone form to show before anything is created. Every setting
  * comes along, private ones included (credentials, headers, bodies, certificates and keys, API keys and tokens, a PM2
  * home), and so does every option this dashboard doesn't model, all deep-copied so the source never changes. Runtime
- * fields are dropped, so the node gives the copy its own ID, revision and check generation. A push monitor gets a new
+ * fields are dropped, so the node gives the copy its own ID, revision and check generation. Internal-use consent is
+ * cleared: each new monitor needs fresh confirmation before using a fast schedule. A push monitor gets a new
  * token from `newToken`: two monitors never share one heartbeat credential. The copy's destinations are always explicit:
  * a source without channels (stored without `notificationIds`, Go's omitempty) is copied as `[]`, so the node never adds
  * its default channels to a copy (protocol 19 fills defaults only when a create omits the list).
  */
 export function cloneInput(source: Monitor, newToken: () => string): MonitorInput {
   const input = inputOf(source);
+  delete input.internalOnly;
   input.name = `${source.name} (copy)`;
   if (input.push) input.push = { ...input.push, token: newToken() };
   if (!Array.isArray(input.notificationIds)) input.notificationIds = [];
@@ -187,8 +189,11 @@ export function checkChanges(before: MonitorInput, after: MonitorInput): string[
     if (key === 'target' && service) return false;
     return JSON.stringify(norm(key, before[key])) !== JSON.stringify(norm(key, after[key]));
   });
-  // A push monitor's interval is its heartbeat deadline, so it defines the check.
-  if (after.type === 'push' && before.type === 'push' && before.intervalMs !== after.intervalMs) changed.push('intervalMs');
+  // The effective heartbeat deadline defines the check, matching sameCheck on the node.
+  if (after.type === 'push' && before.type === 'push') {
+    const interval = (m: MonitorInput): number => m.internalOnly ? m.intervalMs : Math.max(60_000, m.intervalMs);
+    if (interval(before) !== interval(after)) changed.push('intervalMs');
+  }
   return changed;
 }
 const CHECK_FIELD_WORDS: Record<string, string> = {

@@ -185,7 +185,7 @@ func (n *Node) fleetPlacementAPI(r *http.Request, actor account, b []byte) (int,
 	if command.Deleted {
 		input = heads[0].Monitor.MonitorInput
 	} else {
-		input, err = parseMonitor(command.Monitor, n.known)
+		input, err = parseMonitorWrite(command.Monitor, n.known)
 		if err != nil {
 			return 0, nil, err
 		}

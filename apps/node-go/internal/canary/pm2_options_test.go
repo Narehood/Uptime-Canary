@@ -10,7 +10,7 @@ import (
 )
 
 func pm2Input(ids []string) MonitorInput {
-	return MonitorInput{Name: "PM2 process", Type: "pm2", Target: "0042", IntervalMs: 100, TimeoutMs: 50,
+	return MonitorInput{Name: "PM2 process", Type: "pm2", Target: "0042", InternalOnly: true, IntervalMs: 100, TimeoutMs: 50,
 		NodeIDs: ids, Enabled: false, PM2: &PM2MonitorOptions{Transport: "unix", Home: "/private-pm2", Namespace: "production"}}
 }
 

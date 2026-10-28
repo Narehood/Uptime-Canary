@@ -61,7 +61,7 @@ test('Globalping: real processes distinguish provider failures, preserve remote 
   for (const mode of ['http', 'HTTP', ' http ', ' HTTP ']) {
     const hidden = await c.createMonitor({ name: 'Disabled private measurement', type: 'globalping',
       target: 'https://remote.example/private-proof-path?key=private-proof-query',
-      intervalMs: 1_000, timeoutMs: 900, nodeIds: [a.id, b.id], enabled: false,
+      internalOnly: true, intervalMs: 1_000, timeoutMs: 900, nodeIds: [a.id, b.id], enabled: false,
       globalping: { mode: mode as 'http', location: 'private-proof-location', token,
         apiUrl: `http://127.0.0.1:${address.port}`, allowInsecureApi: true, http: {} },
     });
@@ -74,7 +74,7 @@ test('Globalping: real processes distinguish provider failures, preserve remote 
     }
   }
   const monitor = await c.createMonitor({ name: 'Remote provider proof', type: 'globalping', target: 'https://remote.example/health',
-    intervalMs: 1_000, timeoutMs: 900, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0, webhookUrl: c.webhookUrl,
+    internalOnly: true, intervalMs: 1_000, timeoutMs: 900, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0, webhookUrl: c.webhookUrl,
     globalping: { mode: 'http', location: 'US', apiUrl: `http://127.0.0.1:${address.port}`, allowInsecureApi: true,
       token, http: { method: 'GET', keyword: 'healthy' } },
   });

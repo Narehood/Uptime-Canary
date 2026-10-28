@@ -486,7 +486,7 @@ func TestAvailabilityHistoryNewSchemaAndAuthenticatedRoute(t *testing.T) {
 	}
 	// No Start, listening server, scheduler, probes or live delivery is needed.
 	t.Cleanup(func() { _ = n.Stop() })
-	m, err := n.writeMonitor(MonitorInput{Name: "Observed history", Type: "manual", IntervalMs: 100, TimeoutMs: 70,
+	m, err := n.writeMonitor(MonitorInput{Name: "Observed history", Type: "manual", InternalOnly: true, IntervalMs: 100, TimeoutMs: 70,
 		Enabled: true, NodeIDs: []string{"a"}, Manual: &ManualMonitorOptions{State: "up"}}, nil, "local-history", false)
 	if err != nil {
 		t.Fatal(err)

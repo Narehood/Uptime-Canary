@@ -27,7 +27,7 @@ test('passive heartbeats accepted by one process keep connected peers healthy, e
   assert.match(secret, /^[a-f0-9]{64}$/);
   const monitor = await cluster.createMonitor({
     name: 'Passive application heartbeat', type: 'push', target: '',
-    intervalMs: 3_000, timeoutMs: 500, nodeIds: [a.id, b.id], enabled: true,
+    internalOnly: true, intervalMs: 3_000, timeoutMs: 500, nodeIds: [a.id, b.id], enabled: true,
     push: { token: secret }, webhookUrl: cluster.webhookUrl, repeatAfterMs: 0,
   });
   assert.equal(monitor.target, 'push');

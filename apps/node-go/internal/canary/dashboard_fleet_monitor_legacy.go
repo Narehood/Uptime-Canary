@@ -59,7 +59,7 @@ func (d *Dashboard) validateLegacyMonitor(ctx context.Context, row dashboardFlee
 	for _, node := range view.Nodes {
 		known[node.ID] = true
 	}
-	input, err := parseMonitor(command.Monitor, known)
+	input, err := parseMonitorWrite(command.Monitor, known)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (d *Dashboard) applyLegacyMonitor(ctx context.Context, row *dashboardFleetR
 				known[node.ID] = true
 			}
 		}
-		input, err = parseMonitor(command.Monitor, known)
+		input, err = parseMonitorWrite(command.Monitor, known)
 		if err != nil {
 			if !attempt.Sent {
 				unsent()

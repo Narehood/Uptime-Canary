@@ -7,7 +7,7 @@ import { Cluster, QUIET_MS, type Alert, type ApiResponse, type NodeProcess } fro
 function monitorInput(cluster: Cluster): MonitorInput {
   return {
     name: 'Independent HTTP HA proof', type: 'http', target: cluster.targetUrl,
-    intervalMs: 1_000, timeoutMs: 500, nodeIds: cluster.nodes.map((node) => node.id),
+    internalOnly: true, intervalMs: 1_000, timeoutMs: 500, nodeIds: cluster.nodes.map((node) => node.id),
     enabled: true, expectedStatusCodes: [200], webhookUrl: cluster.webhookUrl, repeatAfterMs: 0,
   };
 }

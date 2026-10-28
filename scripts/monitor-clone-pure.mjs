@@ -60,7 +60,7 @@ const SECRET = {
 };
 const NEW_TOKEN = 'b'.repeat(64);
 const RUNTIME = { id: 'set below', revision: 'rev-7', updatedAt: 1_760_000_000_000, deleted: false, checkGeneration: 'gen-3', pushStartedAt: 1_759_000_000_000 };
-const base = (id, extra) => ({ ...RUNTIME, id, intervalMs: 60_000, timeoutMs: 5_000, nodeIds: ['a', 'b'], enabled: true, repeatAfterMs: 900_000, notificationIds: ['c1'], groupId: 'g1', tags: [{ tagId: 't1', value: 'prod', public: true }], ...extra });
+const base = (id, extra) => ({ ...RUNTIME, id, internalOnly: true, intervalMs: 60_000, timeoutMs: 5_000, nodeIds: ['a', 'b'], enabled: true, repeatAfterMs: 900_000, notificationIds: ['c1'], groupId: 'g1', tags: [{ tagId: 't1', value: 'prod', public: true }], ...extra });
 const SOURCES = {
   http: base('m-http', {
     name: 'API', type: 'http', target: 'https://api.example.test/health', expectedStatusCodes: [200, 204], webhookUrl: `https://hooks.example.test/${SECRET.webhook}`, retries: 2, retryIntervalMs: 10_000,
@@ -89,7 +89,11 @@ check('cloneInput: every setting is copied, private and unknown ones included; r
     const copy = checks.cloneInput(m, () => { calls++; return NEW_TOKEN; });
     assert.equal(copy.name, `${m.name} (copy)`, kind);
     for (const key of Object.keys(RUNTIME)) assert.equal(key in copy, false, `${kind} ${key}`);
-    assert.deepEqual(writable(copy), writable(m), kind);
+    // The user's 2026-10-28 rate policy requires fresh consent for each new
+    // monitor. Preserve every other copied setting and the source itself.
+    const expected = writable(m); delete expected.internalOnly;
+    assert.deepEqual(writable(copy), expected, kind);
+    assert.equal('internalOnly' in copy, false, `${kind}: cloning never grants consent`);
     assert.equal(calls, 0, `${kind}: only a push copy asks for a token`);
     copy.nodeIds.push('z');
     copy.tags[0].value = 'changed';
@@ -123,13 +127,15 @@ check('inputOf: pushStartedAt is runtime-owned too, so edits and copies never ec
 const copies = Object.fromEntries(Object.entries(SOURCES).map(([kind, m]) => [kind, checks.cloneInput(m, () => NEW_TOKEN)]));
 const built = Object.fromEntries(Object.entries(copies).map(([kind, copy]) => {
   const draft = cloneModel.draftFrom(copy, ['a']);
+  assert.equal(draft.internalOnly, false, `${kind}: the checkbox starts unchecked`);
+  draft.internalOnly = true; // Simulate the operator explicitly confirming the new private fixture.
   return [kind, { draft, copy, result: cloneModel.build(draft, copy, cloneModel.draftFrom(copy, ['a'])) }];
 }));
 
 check('form: the copy’s create body is every copied setting exactly, with no ID, revision or generation', () => {
   for (const [kind, { copy, result }] of Object.entries(built)) {
     assert.ok(result.input, `${kind}: ${JSON.stringify({ ...result.errors, ...result.serviceErrors })}`);
-    assert.equal(canonical(result.input), canonical(copy), kind);
+    assert.equal(canonical(result.input), canonical({ ...copy, internalOnly: true }), kind);
     for (const key of Object.keys(RUNTIME)) assert.equal(key in result.input, false, `${kind} ${key}`);
   }
   assert.equal(built.push.result.input.push.token, NEW_TOKEN);

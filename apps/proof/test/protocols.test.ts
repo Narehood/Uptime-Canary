@@ -51,7 +51,7 @@ test('standalone runtime performs trusted local HTTPS and real loopback ICMP che
     const node = cluster.nodes[0]!;
     const input: MonitorInput = {
       name: 'Standalone HTTPS proof', type: 'http', target: `https://127.0.0.1:${address.port}/service`,
-      intervalMs: 1_000, timeoutMs: 750, nodeIds: [node.id], enabled: true,
+      internalOnly: true, intervalMs: 1_000, timeoutMs: 750, nodeIds: [node.id], enabled: true,
       webhookUrl: cluster.webhookUrl, repeatAfterMs: 0,
     };
     const httpsMonitor = await cluster.createMonitor(input);
@@ -61,7 +61,7 @@ test('standalone runtime performs trusted local HTTPS and real loopback ICMP che
 
     const pingInput: MonitorInput = {
       name: 'Real ICMP loopback proof', type: 'ping', target: '127.0.0.1',
-      intervalMs: 1_000, timeoutMs: 1_000, nodeIds: [node.id], enabled: true, repeatAfterMs: 0,
+      internalOnly: true, intervalMs: 1_000, timeoutMs: 1_000, nodeIds: [node.id], enabled: true, repeatAfterMs: 0,
     };
     const pingMonitor = await cluster.createMonitor(pingInput);
     await cluster.wait('real system ping to 127.0.0.1 succeeds (ping must be installed and ICMP permitted)', async () =>

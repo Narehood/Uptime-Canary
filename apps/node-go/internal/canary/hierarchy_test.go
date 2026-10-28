@@ -24,7 +24,7 @@ func hierarchyGroup(t *testing.T, n *Node, name, parent string) Group {
 
 func hierarchyMonitor(t *testing.T, n *Node, name, group string, enabled bool) Monitor {
 	t.Helper()
-	in := MonitorInput{Name: name, Type: "manual", Target: "manual", IntervalMs: 1000, TimeoutMs: 500, NodeIDs: []string{"a"}, Enabled: enabled, GroupID: group}
+	in := MonitorInput{Name: name, Type: "manual", Target: "manual", InternalOnly: true, IntervalMs: 1000, TimeoutMs: 500, NodeIDs: []string{"a"}, Enabled: enabled, GroupID: group}
 	w := maintenanceAPIRequest(n, "POST", "/api/monitors", in, adminToken)
 	var m Monitor
 	if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &m) != nil {

@@ -9,7 +9,7 @@ import (
 )
 
 func systemServiceInput(ids []string) MonitorInput {
-	return MonitorInput{Name: "Local service", Type: "system-service", Target: "fixture-service", IntervalMs: 100, TimeoutMs: 50, NodeIDs: ids, Enabled: false}
+	return MonitorInput{Name: "Local service", Type: "system-service", Target: "fixture-service", InternalOnly: true, IntervalMs: 100, TimeoutMs: 50, NodeIDs: ids, Enabled: false}
 }
 
 func TestSystemServiceMonitorValidationAndDefaultRouting(t *testing.T) {

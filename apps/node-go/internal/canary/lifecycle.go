@@ -22,7 +22,7 @@ func sampleGeneration(s Sample) string {
 // preserve continuity so setting UP can recover the existing manual outage.
 func sameCheck(a, b MonitorInput) bool {
 	return a.Type == b.Type && a.Target == b.Target && a.TimeoutMs == b.TimeoutMs &&
-		(a.Type != "push" || a.IntervalMs == b.IntervalMs) && equalJSON(a.Push, b.Push) &&
+		(a.Type != "push" || checkInterval(a) == checkInterval(b)) && equalJSON(a.Push, b.Push) &&
 		a.Enabled == b.Enabled && slices.Equal(a.NodeIDs, b.NodeIDs) &&
 		slices.Equal(a.ExpectedStatusCodes, b.ExpectedStatusCodes) && a.UpsideDown == b.UpsideDown && a.Retries == b.Retries &&
 		equalJSON(a.HTTP, b.HTTP) && equalJSON(a.TLS, b.TLS) && equalJSON(a.DNS, b.DNS) && equalJSON(a.WebSocket, b.WebSocket) && equalJSON(a.SMTP, b.SMTP) && equalJSON(a.Service, b.Service) && equalJSON(a.Ping, b.Ping) && equalJSON(a.Globalping, b.Globalping) && equalJSON(a.Steam, b.Steam) && equalJSON(a.PM2, b.PM2) && equalJSON(a.Browser, b.Browser) && equalJSON(a.GameDig, b.GameDig)

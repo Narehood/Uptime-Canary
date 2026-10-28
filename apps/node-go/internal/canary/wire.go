@@ -435,7 +435,13 @@ func (n *Node) mergeSnapshot(s Snapshot) error {
 	if err := n.applySnapshot(s); err != nil {
 		return err
 	}
-	n.evaluate()
+	// Running nodes evaluate on every scheduler tick. A paged catch-up must
+	// not repeat that full sweep under mu before acknowledging each page:
+	// it can starve probes and peer observations until they become stale.
+	// Unstarted/bootstrap callers have no scheduler, so evaluate inline.
+	if !n.started {
+		n.evaluate()
+	}
 	return nil
 }
 func (n *Node) startSyncLocked() {

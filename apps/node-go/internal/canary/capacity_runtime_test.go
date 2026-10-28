@@ -25,7 +25,7 @@ func TestCapacityRuntimeEvaluationProfile(t *testing.T) {
 	for index := range 64 {
 		created := capacityReviewCreate(t, n, "/api/monitors", map[string]any{
 			"name": fmt.Sprintf("Capacity %d", index), "type": "http", "target": "http://127.0.0.1:1/service",
-			"intervalMs": 1000, "timeoutMs": 500, "nodeIds": []string{"capacity-a", "capacity-b"}, "enabled": true,
+			"internalOnly": true, "intervalMs": 1000, "timeoutMs": 500, "nodeIds": []string{"capacity-a", "capacity-b"}, "enabled": true,
 			"notificationIds": channels,
 		})
 		id := created["id"].(string)

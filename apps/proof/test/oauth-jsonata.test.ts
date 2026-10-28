@@ -55,7 +55,7 @@ test('compiled peers obtain OAuth grants and evaluate real JSONata responses wit
   await cluster.startAll();
   const monitor = await cluster.createMonitor({
     name: 'OAuth JSONata process proof', type: 'http', target: `${base}/service`,
-    intervalMs: 3_000, timeoutMs: 3_000, nodeIds: cluster.nodes.map(n => n.id), enabled: true,
+    internalOnly: true, intervalMs: 3_000, timeoutMs: 3_000, nodeIds: cluster.nodes.map(n => n.id), enabled: true,
     webhookUrl: cluster.webhookUrl, repeatAfterMs: 0,
     tls: { caPem: certificate },
     http: {
