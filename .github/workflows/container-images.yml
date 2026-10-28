@@ -38,6 +38,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Check promotion failure and admission controls
+        if: matrix.component == 'node'
         run: |
           python3 -B scripts/publish_container_images_test.py
           python3 -B scripts/container_publication_gate_test.py

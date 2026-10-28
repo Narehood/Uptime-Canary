@@ -21,6 +21,12 @@ manage that node; it is not evidence that the node stopped monitoring.
 
 ## Prepare the dashboard's connection endpoint
 
+**Nodes → Add node → The node reaches this dashboard** is available before the
+connection endpoint is configured. It identifies the existing dashboard service
+to update and shows the required environment and port settings. After updating
+the stack, use **Check dashboard setup** in that menu to reload its configuration;
+once the endpoint is enabled, the invitation form appears in the same menu.
+
 Keep the browser service behind your normal NetBird, Tailscale or other sign-in
 proxy. Give nodes a separate HTTPS origin with no interactive login. Canary
 authenticates invitations and devices itself on that origin. Do not exempt the
@@ -120,6 +126,9 @@ it does not infer it from the browser's SSO-protected address.
 
 Invitations last 15 minutes. The secret is returned once and the dashboard
 stores only its hash. Treat exported commands and environment files as private.
+While waiting, **Check for connection** requests the invitation's latest status
+immediately; automatic polling continues too. Adding a node still requires
+comparing its fingerprint and confirming the first connection.
 The wizard keeps generated values only in its memory; losing an unconfirmed
 invitation requires replacing it. Existing nodes keep their existing admin and
 cluster tokens. Generated bootstrap tokens are for fresh nodes, not replacements

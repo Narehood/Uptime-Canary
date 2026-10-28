@@ -38,7 +38,7 @@ export function useInvitations(refreshMs?: number): Resource<NodeInvitation[]> {
   return useResource(`${connection.identity}|invitations|${refreshMs ?? 0}`, signal => api.invitations(signal), refreshMs);
 }
 
-/** Why the node can't connect to this dashboard from here, or null when it can. */
+/** Current setup status; choosing the outbound setup flow never depends on this read. */
 function outboundReason(onboarding: Resource<NodeOnboardingCapabilities>): string | null {
   const capabilities = onboarding.data;
   if (capabilities) return capabilities.outboundEnabled ? null : 'Not set up here: this dashboard’s deployment has no node-connection address.';
@@ -71,7 +71,7 @@ export function AddNodeChooser({ plan, onPlan, onboarding }: { plan: AddPlan; on
             <span><b><Icon name="send" />This dashboard reaches the node</b><small>Its server connects to the node’s private address, so it needs a route to the node.</small></span>
           </label>
           <label>
-            <input type="radio" name={`${id}-link`} checked={plan.link === 'outbound'} disabled={reason !== null && plan.link !== 'outbound'} onChange={() => onPlan({ ...plan, link: 'outbound' })} />
+            <input type="radio" name={`${id}-link`} checked={plan.link === 'outbound'} onChange={() => onPlan({ ...plan, link: 'outbound' })} />
             <span><b><Icon name="plug" />The node reaches this dashboard</b><small>{reason ?? 'The node connects out over HTTPS and needs no inbound port: for nodes this dashboard can’t reach, such as behind a client VPN.'}</small></span>
           </label>
         </div>
@@ -82,6 +82,38 @@ export function AddNodeChooser({ plan, onPlan, onboarding }: { plan: AddPlan; on
         </Banner>
       ) : null}
     </div>
+  );
+}
+
+/** Configuration help stays available before the dashboard has a connection listener. Uses the existing guide controls. */
+export function OutboundDashboardSetup({ onboarding, onClose }: { onboarding: Resource<NodeOnboardingCapabilities>; onClose: () => void }) {
+  const settings: GuideBlock = {
+    key: 'dashboard-connection', kind: 'command', secret: false, title: 'Configure the existing dashboard service',
+    text: `environment:
+  CANARY_DASHBOARD_CONNECTION_URL: https://DASHBOARD_HOST_IP:18348
+  CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto
+  CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0
+  CANARY_DASHBOARD_CONNECTION_PORT: "8081"
+ports:
+  - "DASHBOARD_HOST_IP:18348:8081"`,
+  };
+  return (
+    <>
+      <Banner tone="info" title="Set up this dashboard for incoming node connections" actions={
+        <button type="button" className="btn sm" onClick={onboarding.reload} disabled={onboarding.loading}>
+          <Icon name="refresh" />{onboarding.loading ? 'Checking dashboard setup…' : 'Check dashboard setup'}
+        </button>
+      }>
+        {outboundReason(onboarding)} You can configure it now, then check again without closing this menu.
+        {onboarding.error ? <p role="alert">{describeFailure(onboarding.error)}</p> : null}
+      </Banner>
+      <p className="sec">First update the stack running this dashboard. In Portainer, edit its existing dashboard service: <code>web</code> in the supplied templates, using the <code>ghcr.io/narehood/uptime-canary-web</code> image. The remote node is configured after this step.</p>
+      <p className="modal-note">Replace DASHBOARD_HOST_IP with an IP assigned to the dashboard host that your nodes can reach. Merge these entries into the service’s existing environment and ports; keep its other settings, browser port, data and identity volumes.</p>
+      <ol className="gsteps"><GuideStep n={1} block={settings} real={settings} onHandled={() => {}} /></ol>
+      <p className="modal-note">Update the stack to recreate the dashboard container, then select Check dashboard setup. This uses built-in HTTPS on port 18348, separate from the browser dashboard and its sign-in proxy. The nodes must be able to reach that port without interactive sign-in.</p>
+      <p className="modal-note">Once the dashboard reports its connection address, this menu lets you create an invitation and shows the Docker, Compose, Portainer or Linux VM steps for the node. No invitation is created until the dashboard is ready.</p>
+      <div className="modal-foot"><span /><button type="button" className="btn" onClick={onClose}>Cancel</button></div>
+    </>
   );
 }
 
@@ -423,16 +455,18 @@ function PairingCard({ invitation, busy, onConfirm, onReject }: { invitation: No
 }
 
 /** Polls one invitation's status while it can still change. `nonce` asks again at once. */
-function useInvitationStatus(id: string | null, stop: boolean, nonce: number): { status: NodeInvitation | null; failure: unknown } {
+function useInvitationStatus(id: string | null, stop: boolean, nonce: number): { status: NodeInvitation | null; failure: unknown; loading: boolean } {
   const { api } = useCanary();
   const [status, setStatus] = useState<NodeInvitation | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!id || stop) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     const poll = async (): Promise<void> => {
+      setLoading(true);
       try {
         const next = await api.invitation(id, controller.signal);
         if (controller.signal.aborted) return;
@@ -447,12 +481,14 @@ function useInvitationStatus(id: string | null, stop: boolean, nonce: number): {
         failures++;
         if (failures >= 2) setFailure(error);
         timer = setTimeout(() => { void poll(); }, Math.min(30_000, 2000 * 2 ** failures));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
     void poll();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [api, id, stop, nonce]);
-  return { status, failure };
+  return { status, failure, loading };
 }
 
 export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
@@ -501,7 +537,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
 
   const create = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !capabilities?.outboundEnabled || !capabilities.connectionUrl) return;
     setShow(true); setFailure(null);
     if (errors.label || errors.nodeId) { failed(); return; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
@@ -572,9 +608,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
   };
 
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
-    return capabilities || onboarding.error
-      ? <Banner tone="info" title="Nodes can’t connect to this dashboard yet">{outboundReason(onboarding)} Its operator sets the node-connection address in the dashboard’s deployment.</Banner>
-      : <Spinner label="Checking whether nodes can connect to this dashboard…" />;
+    return <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} />;
   }
 
   const failureBox = failure ? <div className="errsum" role="alert" ref={summaryRef} tabIndex={-1}><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null;
@@ -670,6 +704,11 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
           </>
         )) : null}
       <div aria-live="polite">{status}</div>
+      {!gone && (current.state === 'waiting' || current.state === 'connected') ? (
+        <button type="button" className="btn sm" onClick={() => setNonce(n => n + 1)} disabled={busy !== null || polled.loading}>
+          <Icon name="refresh" />{polled.loading ? 'Checking for connection…' : 'Check for connection'}
+        </button>
+      ) : null}
       {polled.failure && !gone ? (
         <p className="small fwarn" role="alert"><Glyph tone="warn" />Can’t read the invitation’s status: {describeFailure(polled.failure)} <button type="button" className="linkbtn" onClick={() => setNonce(n => n + 1)}>Try now</button></p>
       ) : null}

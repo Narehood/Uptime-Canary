@@ -52,7 +52,8 @@ jobs:
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      max-parallel: 1
+      # Each platform has its own hosted runner, bounded cache and scratch.
+      max-parallel: 3
       matrix:
         include:
           - {target: linux-amd64, runner: ubuntu-24.04}

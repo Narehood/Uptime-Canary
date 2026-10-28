@@ -28,6 +28,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify embedded runtime provenance
+        if: matrix.phase == 'node'
         run: |
           python3 -B scripts/verify-jsonquery-runtime.py
           python3 -B scripts/security-check-test.py
