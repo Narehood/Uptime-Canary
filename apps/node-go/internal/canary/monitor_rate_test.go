@@ -162,10 +162,8 @@ func TestLegacyMonitorRateIsCappedWithoutRewritingRevision(t *testing.T) {
 func TestMonitorRateConsentReplicatesWithMonitorIdentity(t *testing.T) {
 	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
 	in := input([]string{"a", "b"}, "http://127.0.0.1:9", "")
-	m, err := a.writeMonitor(in, nil, "internal-rate-monitor", false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Admission normalizes the URL before committing its immutable identity.
+	m := groupMonitorFixture(t, a, in)
 	for _, page := range causalCapacityPages(t, a) {
 		raw, _ := json.Marshal(page)
 		decoded, err := b.validateSnapshot(raw, "a")
