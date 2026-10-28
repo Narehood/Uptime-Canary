@@ -60,7 +60,7 @@ test('actual Chromium navigates production HA checks, retains Pending outages an
   const [a, b] = cluster.nodes; assert.ok(a && b);
   const monitor = await cluster.createMonitor({ name: 'Private browser proof', type: 'real-browser',
     target: `http://127.0.0.1:${address.port}/page`, browser: { endpoint, bearerToken: 'private-browser-fixture-token', screenshot: true, delayMs: 25 },
-    intervalMs: 2000, timeoutMs: 1600, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0,
+    internalOnly: true, intervalMs: 2000, timeoutMs: 1600, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0,
     webhookUrl: cluster.webhookUrl });
   async function settle(state, since = Date.now() - 10000) {
     await cluster.wait(`fresh browser observers ${state}`, async () => (await cluster.overviews()).every(overview => {

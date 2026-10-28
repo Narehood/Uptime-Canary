@@ -89,7 +89,7 @@ if (process.argv.includes('--containment-control')) {
   const [a, b] = cluster.nodes;
   const input = { name: 'Actual private PM2', type: 'pm2', target: 'canary-pm2-fixture',
     pm2: { transport: 'unix', home: join(guard, 'pm2-real/pm2'), namespace: 'canary-fixture' },
-    nodeIds: [a.id, b.id], intervalMs: 2000, timeoutMs: 1500, enabled: true, repeatAfterMs: 0 };
+    nodeIds: [a.id, b.id], internalOnly: true, intervalMs: 2000, timeoutMs: 1500, enabled: true, repeatAfterMs: 0 };
   const monitor = await cluster.createMonitor(input);
   async function settle(state, since) {
     await cluster.wait(`actual PM2 reports ${state} on both observing nodes`, async () =>

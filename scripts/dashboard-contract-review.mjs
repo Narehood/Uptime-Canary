@@ -265,7 +265,7 @@ async function review() {
     return finishReview();
   }
   const f = await functionsUnderReview(), [A, B] = state.nodes;
-  const base = (type, options = {}) => ({ name: `Review ${type}`, type, target: type === 'manual' ? 'manual' : '127.0.0.1', intervalMs: 60000, timeoutMs: 1000, nodeIds: [A.id], enabled: false, ...options });
+  const base = (type, options = {}) => ({ name: `Review ${type}`, type, target: type === 'manual' ? 'manual' : '127.0.0.1', internalOnly: true, intervalMs: 60000, timeoutMs: 1000, nodeIds: [A.id], enabled: false, ...options });
   const configs = {
     docker: { endpoint: state.sink, container: 'app', apiVersion: 'v1.51' },
     redis: { address: '127.0.0.1:6379', username: 'review-user', password: 'review-password', database: 2, tlsMode: 'plain' },
