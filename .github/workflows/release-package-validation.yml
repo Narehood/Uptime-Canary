@@ -11,6 +11,8 @@ on:
       - 'scripts/*release*'
       - 'scripts/package*'
       - 'scripts/bounded_validation*'
+      - 'scripts/capacity-recovery-profile.py'
+      - 'scripts/capacity_recovery_profile_test.py'
       - 'scripts/validation_*'
       - 'scripts/verify-jsonquery-runtime.py'
       - 'scripts/third-party-notices.py'
@@ -104,6 +106,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify storage guard fixtures
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/bounded_validation_test.py
+      - name: Verify recovery profiler refuses workstation runtime execution
+        run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/capacity_recovery_profile_test.py
       - name: Install optional query service's locked proof dependencies
         run: python scripts/bounded_validation.py --timeout 180 -- python -B scripts/game-query-dependencies.py
       - name: Verify private browser launcher refusal and archive controls
@@ -132,6 +136,7 @@ jobs:
         if: runner.os == 'Linux'
         run: docker pull alpine:3.24
       - name: Build, package and exercise the extracted native executable
+        id: package_validation
         shell: python
         run: |
           import os
@@ -147,6 +152,20 @@ jobs:
           if target == 'linux-amd64':
               command.append('--coordinated-upgrade')
           subprocess.run(command, check=True)
+      - name: Profile Linux recovery after a failed package proof
+        if: failure() && matrix.target == 'linux-amd64' && steps.package_validation.outcome == 'failure'
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          import sys
+          # Preserve bounded original failure evidence before the next guard
+          # command overwrites its latest log. No binaries or profiles persist.
+          prior = Path('.canary/work/current/latest.log')
+          if prior.is_file():
+              Path('.canary/release-package-failure-current.log').write_bytes(prior.read_bytes()[-65536:])
+          subprocess.run([sys.executable, 'scripts/bounded_validation.py', '--timeout', '480', '--',
+                          sys.executable, '-B', 'scripts/capacity-recovery-profile.py'], check=True)
       - name: Upload reports only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -154,6 +173,8 @@ jobs:
           name: release-package-${{ matrix.target }}
           path: |
             .canary/release-package-current.json
+            .canary/release-package-failure-current.log
+            .canary/capacity-recovery-profile-current.json
             .canary/pm2-real-current.json
             .canary/browser-linux-current.json
             .canary/coordinated-upgrade-current.json
