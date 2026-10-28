@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -194,6 +195,33 @@ func TestCheckClassification(t *testing.T) {
 		if r.State != Unknown {
 			t.Errorf("local failure became %s: %s", r.State, diagnostic)
 		}
+	}
+}
+
+func TestCallerDeadlineKeepsVerifiedResult(t *testing.T) {
+	for _, tc := range []struct {
+		name, output, state string
+	}{
+		{"reply", fixture(t, "unix-partial"), Up},
+		{"no reply", fixture(t, "unix-loss"), Down},
+		{"no evidence", "", Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				// The node scheduler wraps ICMP in the monitor's own timeout. Its
+				// deadline can expire before the check's nested timeout does.
+				// Fake time advances only after the runner waits on the deadline.
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+				defer cancel()
+				r := check(ctx, validConfig(), "linux", func(budget context.Context, _ []string) execution {
+					<-budget.Done()
+					return execution{started: true, stdout: tc.output, err: budget.Err(), exitCode: -1}
+				})
+				if r.State != tc.state || r.Message == "ICMP check canceled" {
+					t.Fatalf("caller deadline discarded verified evidence: %+v", r)
+				}
+			})
+		})
 	}
 }
 

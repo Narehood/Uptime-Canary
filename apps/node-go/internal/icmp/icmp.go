@@ -167,12 +167,15 @@ func check(ctx context.Context, c Config, platform string, run runner) Result {
 		return unknown(err.Error())
 	}
 	if ctx.Err() != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return unknown("ICMP deadline expired without a verifiable result")
+		}
 		return unknown("ICMP check canceled")
 	}
 	budget, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 	e := run(budget, args)
-	if ctx.Err() != nil {
+	if ctx.Err() == context.Canceled {
 		return unknown("ICMP check canceled")
 	}
 	if !e.started {
