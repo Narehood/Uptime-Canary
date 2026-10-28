@@ -14,7 +14,7 @@ import (
 )
 
 func gpInput(ids []string) MonitorInput {
-	return MonitorInput{Name: "Remote check", Type: "globalping", Target: "https://example.com/private-path?key=private-query", IntervalMs: 1000, TimeoutMs: 900, NodeIDs: ids, Enabled: false,
+	return MonitorInput{Name: "Remote check", Type: "globalping", Target: "https://example.com/private-path?key=private-query", InternalOnly: true, IntervalMs: 1000, TimeoutMs: 900, NodeIDs: ids, Enabled: false,
 		Globalping: &GlobalpingMonitorOptions{Mode: "http", Location: "private-location", Token: "private-provider-token", HTTP: &gp.HTTPOptions{Headers: map[string]string{"Authorization": "private-target-secret"}, Keyword: "healthy"}}}
 }
 

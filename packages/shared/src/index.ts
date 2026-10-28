@@ -13,6 +13,8 @@ export interface MonitorInput {
   type: MonitorType;
   target: string;
   intervalMs: number;
+  /** Explicit confirmation of internal use on owned equipment; permits sub-minute checks and retries. */
+  internalOnly?: boolean;
   timeoutMs: number;
   nodeIds: string[];
   enabled: boolean;

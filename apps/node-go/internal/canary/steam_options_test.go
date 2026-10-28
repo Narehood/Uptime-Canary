@@ -11,7 +11,7 @@ import (
 )
 
 func steamInput(ids []string) MonitorInput {
-	return MonitorInput{Name: "Steam directory", Type: "steam", Target: "127.0.0.9:27015", IntervalMs: 1000, TimeoutMs: 750,
+	return MonitorInput{Name: "Steam directory", Type: "steam", Target: "127.0.0.9:27015", InternalOnly: true, IntervalMs: 1000, TimeoutMs: 750,
 		NodeIDs: ids, Enabled: false, Steam: &SteamMonitorOptions{APIKey: "fictional-private-steam-key", SkipLatency: true}}
 }
 

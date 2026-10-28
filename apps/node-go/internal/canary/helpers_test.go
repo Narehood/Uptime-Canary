@@ -100,7 +100,8 @@ func getOverview(t *testing.T, n *Node) Overview {
 	return v
 }
 func input(ids []string, target, hook string) MonitorInput {
-	return MonitorInput{Name: "Service", Type: "http", Target: target, IntervalMs: 100, TimeoutMs: 70, NodeIDs: ids, Enabled: true, WebhookURL: hook, RepeatAfterMs: Ptr(int64(0))}
+	// Private loopback fixtures explicitly opt in to the unchanged fast schedule.
+	return MonitorInput{Name: "Service", Type: "http", Target: target, InternalOnly: true, IntervalMs: 100, TimeoutMs: 70, NodeIDs: ids, Enabled: true, WebhookURL: hook, RepeatAfterMs: Ptr(int64(0))}
 }
 func add(t *testing.T, n *Node, in MonitorInput) Monitor {
 	t.Helper()

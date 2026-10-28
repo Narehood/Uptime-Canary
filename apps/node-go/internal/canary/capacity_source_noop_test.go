@@ -11,7 +11,7 @@ func TestCapacityOriginalSourceNoopPreservesLocalObligations(t *testing.T) {
 			n := capacityReviewNode(t, "a", []string{"a", "b"})
 			created := capacityReviewCreate(t, n, "/api/monitors", map[string]any{
 				"name": "Source no-op", "type": "http", "target": "http://127.0.0.1:1/service",
-				"intervalMs": 1000, "timeoutMs": 500, "nodeIds": []string{"a", "b"}, "enabled": true,
+				"internalOnly": true, "intervalMs": 1000, "timeoutMs": 500, "nodeIds": []string{"a", "b"}, "enabled": true,
 				"webhookUrl": "http://127.0.0.1:1/webhook",
 			})
 			m := n.current(created["id"].(string))

@@ -10,7 +10,7 @@ import (
 )
 
 func gameInput(ids []string) MonitorInput {
-	return MonitorInput{Name: "Game fixture", Type: "gamedig", Target: "fixture-server", IntervalMs: 100, TimeoutMs: 50, NodeIDs: ids, Enabled: false,
+	return MonitorInput{Name: "Game fixture", Type: "gamedig", Target: "fixture-server", InternalOnly: true, IntervalMs: 100, TimeoutMs: 50, NodeIDs: ids, Enabled: false,
 		GameDig: &GameDigMonitorOptions{Game: "minecraft", Port: 25565, GivenPortOnly: true, Endpoint: "http://127.0.0.1:3121", BearerToken: "private-game-fixture-0123456789", AllowInsecureHTTP: true}}
 }
 

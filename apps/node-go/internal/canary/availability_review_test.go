@@ -40,7 +40,7 @@ func archiveReviewNode(t *testing.T, clock *atomic.Int64, path, identity string)
 func archiveReviewMonitor(t *testing.T, n *Node, id string) Monitor {
 	t.Helper()
 	in := MonitorInput{Name: "Private archive review", Type: "manual", Enabled: true,
-		IntervalMs: 100, TimeoutMs: 70, NodeIDs: []string{"a", "b"}, Manual: &ManualMonitorOptions{State: "up"}}
+		InternalOnly: true, IntervalMs: 100, TimeoutMs: 70, NodeIDs: []string{"a", "b"}, Manual: &ManualMonitorOptions{State: "up"}}
 	if err := validateMonitor(&in, n.known); err != nil {
 		t.Fatal(err)
 	}

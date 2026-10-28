@@ -271,7 +271,7 @@ def main():
             registration = eventually("Independent dashboard registers its server-private node", lambda: dashboard_registered(web_url, owner, node_project))["id"]
             request(web_url, "/api/overview", credential=owner, registration=registration)
             monitor = request(node_url, "/api/monitors", {"name": "Separate stack fixture", "type": "manual", "target": "manual",
-                "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [node_project], "enabled": True,
+                "internalOnly": True, "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [node_project], "enabled": True,
                 "manual": {"state": "up", "message": "Private separate-stack fixture"}}, expected=201)
             path = "/api/monitors/" + monitor["id"] + "/history"
             history = eventually("Independent node retains observations", lambda: request(node_url, path))
@@ -330,7 +330,7 @@ def main():
             registration = eventually("Bundle auto-registers its Docker-private node", lambda: dashboard_registered(web_url, owner, prefix))["id"]
             request(web_url, "/api/overview", credential=owner, registration=registration)
             monitor = request(node_url, "/api/monitors", {"name": "Stack persistence fixture", "type": "manual", "target": "manual",
-                "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [prefix], "enabled": True, "manual": {"state": "up", "message": "Private stack fixture"}}, expected=201)
+                "internalOnly": True, "intervalMs": 1000, "timeoutMs": 750, "nodeIds": [prefix], "enabled": True, "manual": {"state": "up", "message": "Private stack fixture"}}, expected=201)
             path = "/api/monitors/" + monitor["id"] + "/history"
             history = eventually("Stack records private observations", lambda: request(node_url, path))
             cmd("Restart stack node with retained volumes", *compose, "restart", "node", timeout=60, env=env)
@@ -428,7 +428,7 @@ def main():
         passed("Runtime Alpine version", alpine)
         monitors = []
         for kind, target in (("http", "http://fixture:8000/target"), ("ping", "127.0.0.1")):
-            monitor = request(node_url, "/api/monitors", {"name": "Alpine " + kind, "type": kind, "target": target, "intervalMs": 5000, "timeoutMs": 4000, "nodeIds": ["alpine-validation"], "enabled": True, "webhookUrl": "http://fixture:8000/webhook" if kind == "http" else ""}, expected=201)
+            monitor = request(node_url, "/api/monitors", {"name": "Alpine " + kind, "type": kind, "target": target, "internalOnly": True, "intervalMs": 5000, "timeoutMs": 4000, "nodeIds": ["alpine-validation"], "enabled": True, "webhookUrl": "http://fixture:8000/webhook" if kind == "http" else ""}, expected=201)
             monitors.append(monitor)
         def all_up():
             views = request(node_url, "/api/monitors")

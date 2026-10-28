@@ -359,7 +359,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     const selected = registrations.find(row => row.nodeId === B.id);
     const token = randomBytes(32).toString('hex'); secrets.add(token);
     const made = await fixture.api('/api/monitors', 'POST', {
-      name: 'Dashboard heartbeat fixture', type: 'push', target: '', intervalMs: 1000, timeoutMs: 750,
+      name: 'Dashboard heartbeat fixture', type: 'push', target: '', internalOnly: true, intervalMs: 1000, timeoutMs: 750,
       nodeIds: [B.id], enabled: true, push: { token, allowGet: true },
     }, owner, selected.id);
     assert.equal(made.status, 201);
@@ -1040,7 +1040,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.ok(!('Address' in card.facts), `no address field: ${JSON.stringify(card)}`);
     // Real monitoring data, made on the node itself, read in the page through the dashboard.
     const heartbeat = 'Paired node heartbeat', pushToken = randomBytes(32).toString('hex'); secrets.add(pushToken);
-    const made = await atPaired('/api/monitors', 'POST', { name: heartbeat, type: 'push', target: '', intervalMs: 1000, timeoutMs: 750, nodeIds: [id], enabled: true, push: { token: pushToken, allowGet: true } });
+    const made = await atPaired('/api/monitors', 'POST', { name: heartbeat, type: 'push', target: '', internalOnly: true, intervalMs: 1000, timeoutMs: 750, nodeIds: [id], enabled: true, push: { token: pushToken, allowGet: true } });
     assert.equal(made.status, 201, JSON.stringify(made.value));
     const viewBegin = fixture.stats().paths.length;
     await until(() => page.eval(`!![...document.querySelectorAll('button')].find(e=>e.getAttribute('aria-label')===${q('Open ' + label)})`), 'the paired node can be opened', 25000);

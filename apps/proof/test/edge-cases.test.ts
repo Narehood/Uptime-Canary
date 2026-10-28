@@ -25,7 +25,7 @@ test('a real scheduled HTTP timeout records failure and sends an outage notifica
   const node = cluster.nodes[0]!;
   const monitor = await cluster.createMonitor({
     name: 'Timed out endpoint', type: 'http', target: `http://127.0.0.1:${address.port}`,
-    intervalMs: 1_000, timeoutMs: 150, nodeIds: [node.id], enabled: true,
+    internalOnly: true, intervalMs: 1_000, timeoutMs: 150, nodeIds: [node.id], enabled: true,
     webhookUrl: cluster.webhookUrl, repeatAfterMs: 0,
   });
   await cluster.wait('scheduled deadline expiry becomes a down observation', async () =>
@@ -60,7 +60,7 @@ for (const brokenDestination of [false, true]) {
     childTarget.state = 'down';
     const base: MonitorInput = {
       name: 'User-selected dependency', type: 'http', target: dependencyTarget.url,
-      intervalMs: 1_000, timeoutMs: 500, nodeIds: [node.id], enabled: true, repeatAfterMs: 0,
+      internalOnly: true, intervalMs: 1_000, timeoutMs: 500, nodeIds: [node.id], enabled: true, repeatAfterMs: 0,
       ...(failedProviderUrl ? { webhookUrl: failedProviderUrl } : {}),
     };
     const dependency = await cluster.createMonitor(base);

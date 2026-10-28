@@ -15,7 +15,7 @@ test('local system-service monitoring uses the production worker and retains its
   // installed, started, stopped, or assumed to be running by this proof.
   const target = 'uptime-canary-proof-missing-' + randomBytes(16).toString('hex');
   let input: MonitorInput = { name: 'Local manager proof', type: 'system-service', target,
-    intervalMs: 5_000, timeoutMs: 3_000, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0 };
+    internalOnly: true, intervalMs: 5_000, timeoutMs: 3_000, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0 };
   let monitor = await cluster.createMonitor(input);
   const settle = async (): Promise<void> => {
     await cluster.wait('both processes retain the service config and local worker results', async () =>

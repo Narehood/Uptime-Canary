@@ -21,6 +21,7 @@ type MonitorInput struct {
 	Type                string                    `json:"type"`
 	Target              string                    `json:"target"`
 	IntervalMs          int64                     `json:"intervalMs"`
+	InternalOnly        bool                      `json:"internalOnly,omitempty"`
 	TimeoutMs           int64                     `json:"timeoutMs"`
 	NodeIDs             []string                  `json:"nodeIds"`
 	Enabled             bool                      `json:"enabled"`

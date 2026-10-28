@@ -131,7 +131,7 @@ check('reasons name the actual problem', () => {
 
 const stored = (extra = {}) => ({
   id: 'm-ts', revision: 'r1', updatedAt: 1, checkGeneration: 'g1', name: 'Build server', type: 'tailscale-ping', target: 'build-server.example-tailnet.ts.net',
-  intervalMs: 61_500, timeoutMs: 4_321, nodeIds: ['b', 'a'], enabled: false, repeatAfterMs: 0, retries: 2, retryIntervalMs: 9_000, upsideDown: true,
+  internalOnly: true, intervalMs: 61_500, timeoutMs: 4_321, nodeIds: ['b', 'a'], enabled: false, repeatAfterMs: 0, retries: 2, retryIntervalMs: 9_000, upsideDown: true,
   notificationIds: ['c1'], tags: [{ tagId: 't1', value: 'lab', public: true }], groupId: 'g-lab', futureTop: { kept: [1, null] }, ...extra,
 });
 

@@ -585,7 +585,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	for _, nodeID := range input.NodeIDs {
 		known[nodeID] = true
 	}
-	input, err = parseMonitor(in.Monitor, known)
+	input, err = parseMonitorWrite(in.Monitor, known)
 	if err != nil {
 		errorReply(w, err)
 		return

@@ -31,7 +31,7 @@ test('Steam directory checks use private API fixtures, preserve HA configuration
   const address = api.address(); assert.ok(address && typeof address !== 'string');
   await cluster.initialize(['steam-a', 'steam-b']); await cluster.startAll();
   const [a, b] = cluster.nodes; assert.ok(a && b);
-  let input: MonitorInput = { name: 'Private Steam directory', type: 'steam', target: '127.0.0.9:27015', intervalMs: 1_000,
+  let input: MonitorInput = { name: 'Private Steam directory', type: 'steam', target: '127.0.0.9:27015', internalOnly: true, intervalMs: 1_000,
     timeoutMs: 750, nodeIds: [a.id, b.id], enabled: true, steam: { apiKey: key, apiUrl: `http://127.0.0.1:${address.port}/directory`,
       allowInsecureApi: true, skipLatency: true, packetSize: 0 } };
   let monitor = await cluster.createMonitor(input);

@@ -90,7 +90,7 @@ func BenchmarkCapacityRecoveryProfile(b *testing.B) {
 		}
 		for index := range 64 {
 			post("/api/monitors", map[string]any{"name": fmt.Sprint("Capacity ", index), "type": "http", "target": target.URL,
-				"intervalMs": 1000, "timeoutMs": 500, "nodeIds": []string{a.ID, peer.ID}, "enabled": true, "notificationIds": channels})
+				"internalOnly": true, "intervalMs": 1000, "timeoutMs": 500, "nodeIds": []string{a.ID, peer.ID}, "enabled": true, "notificationIds": channels})
 		}
 		time.Sleep(3 * time.Second)
 		down.Store(true)

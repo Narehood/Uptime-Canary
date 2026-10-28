@@ -11,7 +11,7 @@ test('public observed history requires opt-in, stays local and preserves coverag
   const [a, b] = c.nodes;
   assert.ok(a && b);
   const input: MonitorInput = {
-    name: 'Private billing backend', type: 'manual', target: '', intervalMs: 1000, timeoutMs: 500,
+    name: 'Private billing backend', type: 'manual', target: '', internalOnly: true, intervalMs: 1000, timeoutMs: 500,
     enabled: true, nodeIds: [a.id, b.id], manual: { state: 'up', message: 'Private implementation details' },
   };
   let monitor = await c.createMonitor(input);

@@ -64,6 +64,7 @@ interface Draft {
   /** One target per type, so trying another type doesn't lose what was typed. */
   targets: Record<string, string>;
   interval: DurationDraft;
+  internalOnly: boolean;
   timeout: DurationDraft;
   enabled: boolean;
   upsideDown: boolean;
@@ -144,12 +145,13 @@ function draftFrom(monitor: Monitor | undefined, defaultNodes: string[]): Draft 
     type: monitor?.type ?? 'http',
     targets: monitor && TYPED_TARGET_TYPES.has(monitor.type) ? { [monitor.type]: monitor.target } : {},
     interval: toDraft(monitor?.intervalMs ?? 60_000),
+    internalOnly: monitor?.internalOnly === true,
     timeout: toDraft(monitor?.timeoutMs ?? 10_000),
     enabled: monitor?.enabled ?? true,
     upsideDown: Boolean(monitor?.upsideDown),
     retries: monitor?.retries ? String(monitor.retries) : '0',
     retryOn: monitor?.retryIntervalMs !== undefined && monitor.retryIntervalMs !== null,
-    retryInterval: toDraft(monitor?.retryIntervalMs ?? 20_000),
+    retryInterval: toDraft(monitor?.retryIntervalMs ?? 60_000),
     expected: (ranges ? rangesText(h!.statusRanges) : statusCodesText(monitor?.expectedStatusCodes)).replace(/–/gu, '-'),
     statusMode: ranges ? 'ranges' : 'codes',
     method: h?.method || 'GET',
@@ -588,14 +590,17 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   }
   const interval = fromDraft(draft.interval);
   const timeout = fromDraft(draft.timeout);
-  if (interval === null || interval < 100 || interval > 86_400_000) errors.interval = 'Use an interval from 100 ms to 24 h.';
+  const minimumInterval = draft.internalOnly || !draft.enabled ? 100 : 60_000;
+  if (interval === null || interval < minimumInterval || interval > 86_400_000) errors.interval = minimumInterval === 100
+    ? 'Use an interval from 100 ms to 24 h.' : 'Use an interval from 1 minute to 24 h, or confirm internal use on equipment you own.';
   if (timeout === null || timeout < 25 || timeout > 120_000) errors.timeout = 'Use a timeout from 25 ms to 120 s.';
   else if (interval !== null && timeout > interval) errors.timeout = 'The timeout can’t be longer than the interval.';
   const retries = draft.retries.trim() === '' ? 0 : Number(draft.retries);
   if (!Number.isInteger(retries) || retries < 0 || retries > 100) errors.retries = 'Use a whole number from 0 to 100.';
   const retryInterval = draft.retryOn ? fromDraft(draft.retryInterval) : null;
   if (draft.retryOn) {
-    if (retryInterval === null || retryInterval < 100 || retryInterval > 86_400_000) errors.retryInterval = 'Use 100 ms to 24 h, or turn this off to use the normal interval.';
+    if (retryInterval === null || retryInterval < minimumInterval || retryInterval > 86_400_000) errors.retryInterval = minimumInterval === 100
+      ? 'Use 100 ms to 24 h, or turn this off to use the normal interval.' : 'Use 1 minute to 24 h, or confirm internal use on equipment you own.';
     else if (timeout !== null && timeout > retryInterval) errors.retryInterval = 'The timeout can’t be longer than the retry interval.';
   }
   const repeat = draft.repeatOn ? fromDraft(draft.repeat) : 0;
@@ -623,6 +628,8 @@ function build(draft: Draft, original: Monitor | undefined, initial: Draft | und
   if (Object.keys(errors).length || Object.keys(serviceErrors).length) return { errors, serviceErrors };
 
   const input = (original ? inputOf(original) : {}) as MonitorInput;
+  delete input.internalOnly;
+  if (draft.internalOnly) input.internalOnly = true;
   for (const key of ['expectedStatusCodes', 'webhookUrl', 'repeatAfterMs', 'groupId', 'http', 'tls', 'dns', 'websocket', 'smtp', 'upsideDown', 'service', 'ping', 'manual', 'push', 'globalping', 'steam', 'pm2', 'browser', 'gamedig', 'retries', 'retryIntervalMs', 'notificationIds', 'tags', 'description'] as const) delete input[key];
   // The description is metadata: sent exactly as typed (an unchanged one byte for byte), omitted when empty as Go encodes it.
   if (draft.description) input.description = draft.description;
@@ -1640,17 +1647,21 @@ function MonitorFormBody({ id, cloneOf, fleetId }: { id?: string; cloneOf?: stri
 
           <h3 className="fsec full">Schedule and retries</h3>
           <DurationField label={type === 'push' ? 'Expect a heartbeat every' : 'Check every'} value={draft.interval} onChange={value => set('interval', value)} error={visibleErrors.interval}
-            hint={type === 'push' ? 'The deadline: no up heartbeat within it counts as a failure. Changing it starts a new check.' : '100 ms to 24 h'} disabled={saving} />
+            hint={`${draft.internalOnly || !draft.enabled ? '100 ms' : '1 min'} to 24 h${type === 'push' ? '. The deadline: no up heartbeat within it counts as a failure. Changing it starts a new check.' : ''}`} disabled={saving} />
           <DurationField label="Timeout" value={draft.timeout} onChange={value => set('timeout', value)} error={visibleErrors.timeout} hint="25 ms to 120 s, at most the interval" units={['ms', 's']} disabled={saving} />
           <TextField label="Retries before down" value={draft.retries} onChange={value => set('retries', value)} error={visibleErrors.retries} inputMode="numeric" disabled={saving}
             hint={retries ? `The first ${plural(retries, 'failed check')} report${retries === 1 ? 's' : ''} pending; failure ${retries + 1} confirms down and alerts.` : '0 to 100. 0: the first failure is down.'} />
           <div className="fld">
             <CheckField full={false} label="Check more often while failing" checked={draft.retryOn} onChange={value => set('retryOn', value)} disabled={saving} />
             {draft.retryOn
-              ? <DurationField label="While failing, check every" value={draft.retryInterval} onChange={value => set('retryInterval', value)} error={visibleErrors.retryInterval} hint="100 ms to 24 h. Changing it keeps an open incident." disabled={saving} />
+              ? <DurationField label="While failing, check every" value={draft.retryInterval} onChange={value => set('retryInterval', value)} error={visibleErrors.retryInterval} hint={`${draft.internalOnly || !draft.enabled ? '100 ms' : '1 min'} to 24 h. Changing it keeps an open incident.`} disabled={saving} />
               : <small>Off: failed and pending checks repeat every {fromDraft(draft.interval) ? span(fromDraft(draft.interval)!) : 'interval'}.</small>}
             {draft.retryOn && retryInterval && fromDraft(draft.interval) && retryInterval > fromDraft(draft.interval)! ? <small className="muted">Slower than the normal interval: confirmation takes longer.</small> : null}
           </div>
+          <CheckField label="This monitor is used internally only, on equipment I own" checked={draft.internalOnly} onChange={value => set('internalOnly', value)} disabled={saving} danger
+            hint={type === 'push'
+              ? 'Allows heartbeat deadlines down to 100 ms instead of 1 minute. Senders then have to push more often, which increases network traffic and the load on them and on your nodes. Leave this off when a public or third-party service sends the heartbeats: keep those at 1 minute or longer.'
+              : 'Allows checks as often as every 100 ms instead of once a minute. Faster checks increase network traffic and the load on the checked equipment, and every node that runs this monitor adds its own checks. Leave this off for public or third-party services: check those once a minute or less often.'} />
           <CheckField label="Active" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Turn off to pause: no node checks it, and no alerts are sent." />
 
           <h3 className="fsec full">{fleetEnabled ? 'Where it runs' : 'Placement'}</h3>

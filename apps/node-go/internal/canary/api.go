@@ -304,7 +304,7 @@ func (n *Node) apiLocked(r *http.Request, a account, b []byte) (int, any, error)
 			if len(n.heads) >= maxMonitors {
 				return 0, nil, fail(409, "Monitor capacity exceeded")
 			}
-			input, err := parseMonitor(b, n.known)
+			input, err := parseMonitorWrite(b, n.known)
 			if err != nil {
 				return 0, nil, err
 			}
@@ -472,7 +472,7 @@ func (n *Node) apiLocked(r *http.Request, a account, b []byte) (int, any, error)
 		g, err := n.writeGroup(input, n.groups[id], id, false)
 		return 200, g, err
 	}
-	input, err := parseMonitor(b, n.known)
+	input, err := parseMonitorWrite(b, n.known)
 	if err != nil {
 		return 0, nil, err
 	}

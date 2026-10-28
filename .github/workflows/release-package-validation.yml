@@ -124,6 +124,8 @@ jobs:
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/pm2_real_validation_test.py
       - name: Verify PM2 editor and configuration contracts
         run: python scripts/bounded_validation.py --timeout 60 -- node scripts/pm2-pure.mjs
+      - name: Verify monitor rate consent without a browser
+        run: python scripts/bounded_validation.py --timeout 60 -- node scripts/monitor-rate-pure.mjs
       - name: Exercise native local-manager, browser and query adapters and process boundaries
         if: matrix.target != 'linux-arm64'
         run: python scripts/bounded_validation.py --timeout 300 -- go test -mod=readonly -p=1 -count=1 ./apps/node-go/internal/pm2monitor ./apps/node-go/internal/tailscalemonitor ./apps/node-go/internal/browsermonitor ./apps/node-go/internal/gamedigmonitor ./apps/node-go/internal/probeworker/process

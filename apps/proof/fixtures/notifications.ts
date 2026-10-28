@@ -136,7 +136,7 @@ export class SMTPSink {
 export function monitorInput(cluster: Cluster, name: string, notificationIds: string[], target?: HttpTarget): MonitorInput {
   return {
     name, type: 'http', target: target?.url ?? cluster.targetUrl,
-    intervalMs: CHECK_INTERVAL_MS, timeoutMs: 500, nodeIds: cluster.nodes.map(node => node.id),
+    internalOnly: true, intervalMs: CHECK_INTERVAL_MS, timeoutMs: 500, nodeIds: cluster.nodes.map(node => node.id),
     enabled: true, expectedStatusCodes: [200], notificationIds, repeatAfterMs: 0,
   };
 }

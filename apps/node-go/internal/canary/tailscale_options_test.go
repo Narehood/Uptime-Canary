@@ -9,7 +9,7 @@ import (
 )
 
 func tailscaleInput(ids []string) MonitorInput {
-	return MonitorInput{Name: "Tailnet peer", Type: "tailscale-ping", Target: "fixture-peer", IntervalMs: 100, TimeoutMs: 50, NodeIDs: ids, Enabled: false}
+	return MonitorInput{Name: "Tailnet peer", Type: "tailscale-ping", Target: "fixture-peer", InternalOnly: true, IntervalMs: 100, TimeoutMs: 50, NodeIDs: ids, Enabled: false}
 }
 
 func TestTailscaleMonitorAdmissionAndWorkerRouting(t *testing.T) {

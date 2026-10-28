@@ -404,6 +404,19 @@ func optionalNonNull(o map[string]json.RawMessage, fields ...string) error {
 	}
 	return nil
 }
+
+// Writes require explicit consent to faster checks. Stored and replicated
+// revisions retain their original bytes; the scheduler enforces their rate.
+func parseMonitorWrite(b []byte, known map[string]bool) (MonitorInput, error) {
+	m, err := parseMonitor(b, known)
+	// Pausing an older fast monitor must remain possible without granting
+	// consent. Enabling it again requires a compliant schedule or consent.
+	if err == nil && m.Enabled && !m.InternalOnly && (m.IntervalMs < 60_000 || m.RetryIntervalMs != nil && *m.RetryIntervalMs < 60_000) {
+		err = fail(400, "Check and retry intervals must be at least one minute unless you confirm internal use only on equipment you own; faster checks increase network traffic")
+	}
+	return m, err
+}
+
 func parseMonitor(b []byte, known map[string]bool) (MonitorInput, error) {
 	var m MonitorInput
 	o, err := jsonObject(b)
@@ -413,7 +426,7 @@ func parseMonitor(b []byte, known map[string]bool) (MonitorInput, error) {
 	if err = required(o, "name", "type", "target", "intervalMs", "timeoutMs", "nodeIds", "enabled"); err != nil {
 		return m, err
 	}
-	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam", "pm2", "browser", "gamedig", "description"); err != nil {
+	if err = optionalNonNull(o, "expectedStatusCodes", "webhookUrl", "notificationIds", "repeatAfterMs", "groupId", "http", "tls", "dns", "websocket", "smtp", "upsideDown", "service", "retries", "retryIntervalMs", "manual", "ping", "tags", "push", "globalping", "steam", "pm2", "browser", "gamedig", "description", "internalOnly"); err != nil {
 		return m, err
 	}
 	if json.Unmarshal(b, &m) != nil {

@@ -32,7 +32,7 @@ func TestWebSocketOAuth2IsPrivateInViewerProjection(t *testing.T) {
 func TestWebSocketOAuth2IsPrivateAcrossViewerAPIs(t *testing.T) {
 	n := local(t, nil)
 	input := MonitorInput{Name: "OAuth2 socket", Type: "websocket", Target: "wss://127.0.0.1:9/status", Enabled: false,
-		NodeIDs: []string{n.ID}, IntervalMs: 1000, TimeoutMs: 1000,
+		NodeIDs: []string{n.ID}, InternalOnly: true, IntervalMs: 1000, TimeoutMs: 1000,
 		WebSocket: &checks.WebSocketConfig{OAuth2: &checks.OAuth2Config{
 			TokenURL: "https://private-token.example.invalid/token", ClientID: "private-client", ClientSecret: "private-oauth-secret",
 		}},

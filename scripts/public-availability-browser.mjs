@@ -9,7 +9,7 @@ export async function reviewPublishedAvailability(h) {
   const title = 'Observed acceptance page';
   const path = `/public/status/${slug}`;
   const publicHash = node => `#/status/${slug}?node=${encodeURIComponent(node.url)}`;
-  const monitorInput = { name: 'Private observed acceptance monitor', type: 'manual', target: 'manual', intervalMs: 1000,
+  const monitorInput = { name: 'Private observed acceptance monitor', type: 'manual', target: 'manual', internalOnly: true, intervalMs: 1000,
     timeoutMs: 750, enabled: true, nodeIds: [A.id], manual: { state: 'up', message: 'Private observed acceptance diagnostics' } };
   const input = { slug, title, description: 'Explicit local observed history', enabled: true,
     groups: [{ id: 'services', name: 'Public services', monitors: [] }], announcements: [] };

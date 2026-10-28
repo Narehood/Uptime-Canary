@@ -13,18 +13,28 @@ type localCheckPolicy struct {
 	DownSince *int64            `json:"downSince"`
 }
 
-func retryInterval(m MonitorInput) int64 {
-	if m.RetryIntervalMs != nil {
-		return *m.RetryIntervalMs
+func checkInterval(m MonitorInput) int64 {
+	if !m.InternalOnly {
+		return max(60_000, m.IntervalMs)
 	}
 	return m.IntervalMs
+}
+
+func retryInterval(m MonitorInput) int64 {
+	if m.RetryIntervalMs != nil {
+		if !m.InternalOnly {
+			return max(60_000, *m.RetryIntervalMs)
+		}
+		return *m.RetryIntervalMs
+	}
+	return checkInterval(m)
 }
 
 func probeSpacing(m Monitor, s Sample) int64 {
 	if s.State == "down" || s.State == "pending" || s.State == "unknown" {
 		return retryInterval(m.MonitorInput)
 	}
-	return m.IntervalMs
+	return checkInterval(m.MonitorInput)
 }
 
 func (n *Node) loadProbePolicies() error {
@@ -53,7 +63,7 @@ func (n *Node) applyProbePolicy(m Monitor, r ProbeResult, seq int64) (localCheck
 	if p.State.Generation != checkGeneration(m) {
 		p.DownSince = nil
 	}
-	state, result, err := checkpolicy.Evaluate(checkpolicy.Config{Generation: checkGeneration(m), Retries: m.Retries, IntervalMs: m.IntervalMs, RetryIntervalMs: retryInterval(m.MonitorInput), TimeoutMs: m.TimeoutMs, UpsideDown: m.UpsideDown}, p.State, checkpolicy.Status(r.State))
+	state, result, err := checkpolicy.Evaluate(checkpolicy.Config{Generation: checkGeneration(m), Retries: m.Retries, IntervalMs: checkInterval(m.MonitorInput), RetryIntervalMs: retryInterval(m.MonitorInput), TimeoutMs: m.TimeoutMs, UpsideDown: m.UpsideDown}, p.State, checkpolicy.Status(r.State))
 	if err != nil {
 		return p, r, result, err
 	}

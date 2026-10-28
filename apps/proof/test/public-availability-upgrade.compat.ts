@@ -17,7 +17,7 @@ test('14-to-15 upgrade preserves local history and owed delivery without silentl
   const channel = await createChannel(c, webhookInput('Retained publication-upgrade route', c.webhookUrl));
   await channelsReplicated(c, [channel]);
   const common: MonitorInput = { name: 'Private retained uptime', type: 'manual', target: 'manual',
-    intervalMs: 1000, timeoutMs: 750, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0,
+    internalOnly: true, intervalMs: 1000, timeoutMs: 750, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0,
     manual: { state: 'up', message: 'Private implementation details' } };
   const from = Date.now();
   const monitor = await c.createMonitor(common);

@@ -62,7 +62,7 @@ test('GameDig service and Go nodes retain private queries, Pending and HA lifecy
   const [a, b] = cluster.nodes; assert.ok(a && b);
   const monitor = await cluster.createMonitor({ name: 'Private game proof', type: 'gamedig', target: '127.0.0.1',
     gamedig: { game: 'terrariatshock', port: gameAddress.port, givenPortOnly: true, token: gameToken, endpoint, bearerToken: serviceToken, allowInsecureHTTP: true },
-    intervalMs: 2000, timeoutMs: 1600, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0, webhookUrl: cluster.webhookUrl });
+    internalOnly: true, intervalMs: 2000, timeoutMs: 1600, nodeIds: [a.id, b.id], enabled: true, repeatAfterMs: 0, webhookUrl: cluster.webhookUrl });
   async function settle(state: string, since = Date.now() - 10000): Promise<void> {
     await cluster.wait(`fresh game observers ${state}`, async () => (await cluster.overviews()).every(overview => {
       const view = overview.monitors.find(item => item.monitor.id === monitor.id);

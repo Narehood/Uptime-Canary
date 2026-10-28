@@ -60,7 +60,7 @@ const SECRET = {
 };
 const NEW_TOKEN = 'b'.repeat(64);
 const RUNTIME = { id: 'set below', revision: 'rev-7', updatedAt: 1_760_000_000_000, deleted: false, checkGeneration: 'gen-3', pushStartedAt: 1_759_000_000_000 };
-const base = (id, extra) => ({ ...RUNTIME, id, intervalMs: 60_000, timeoutMs: 5_000, nodeIds: ['a', 'b'], enabled: true, repeatAfterMs: 900_000, notificationIds: ['c1'], groupId: 'g1', tags: [{ tagId: 't1', value: 'prod', public: true }], ...extra });
+const base = (id, extra) => ({ ...RUNTIME, id, internalOnly: true, intervalMs: 60_000, timeoutMs: 5_000, nodeIds: ['a', 'b'], enabled: true, repeatAfterMs: 900_000, notificationIds: ['c1'], groupId: 'g1', tags: [{ tagId: 't1', value: 'prod', public: true }], ...extra });
 const SOURCES = {
   http: base('m-http', {
     name: 'API', type: 'http', target: 'https://api.example.test/health', expectedStatusCodes: [200, 204], webhookUrl: `https://hooks.example.test/${SECRET.webhook}`, retries: 2, retryIntervalMs: 10_000,

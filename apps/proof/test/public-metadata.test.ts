@@ -20,7 +20,7 @@ test('published status and tags preserve explicit privacy across peers and resta
   assert.equal(exposed.color, '#aabbcc');
   const input: MonitorInput = {
     name: 'Private internal service name', type: 'manual', target: '',
-    intervalMs: 1_000, timeoutMs: 500, nodeIds: [a.id, b.id], enabled: true,
+    internalOnly: true, intervalMs: 1_000, timeoutMs: 500, nodeIds: [a.id, b.id], enabled: true,
     manual: { state: 'up', message: 'Private operational message' },
     tags: [
       { tagId: exposed.id, value: 'production', public: true },

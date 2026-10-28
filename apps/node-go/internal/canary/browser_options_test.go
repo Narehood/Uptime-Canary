@@ -11,7 +11,7 @@ import (
 )
 
 func browserInput() MonitorInput {
-	return MonitorInput{Name: "Browser fixture", Type: "real-browser", Target: "https://fixture.example/", IntervalMs: 1000, TimeoutMs: 500, NodeIDs: []string{"a"}, Enabled: false, Browser: &BrowserMonitorOptions{Endpoint: "http://127.0.0.1:9222", BearerToken: "private-browser-token", Screenshot: true}}
+	return MonitorInput{Name: "Browser fixture", Type: "real-browser", Target: "https://fixture.example/", InternalOnly: true, IntervalMs: 1000, TimeoutMs: 500, NodeIDs: []string{"a"}, Enabled: false, Browser: &BrowserMonitorOptions{Endpoint: "http://127.0.0.1:9222", BearerToken: "private-browser-token", Screenshot: true}}
 }
 
 func TestBrowserMonitorExactAdmissionGenerationAndPrivacy(t *testing.T) {

@@ -574,6 +574,7 @@ func (n *Node) currentGroup(id string) *Group {
 	g := h[0].Group
 	return &g
 }
+
 // equalJSON compares serialized state; selected unchanged records can avoid
 // encoding, while all other values retain the original JSON comparison.
 func equalJSON(a, b any) bool {
@@ -638,7 +639,7 @@ func (n *Node) tick() {
 		if m == nil || !m.Enabled || !slices.Contains(m.NodeIDs, n.ID) || n.probing[id] != nil || now < n.nextProbe[id] {
 			continue
 		}
-		n.nextProbe[id] = now + m.IntervalMs
+		n.nextProbe[id] = now + checkInterval(m.MonitorInput)
 		withTimeout := context.WithTimeout
 		if m.Type == "steam" {
 			withTimeout = steam.WithMeasurementTimeout

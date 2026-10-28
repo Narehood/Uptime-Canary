@@ -187,8 +187,11 @@ export function checkChanges(before: MonitorInput, after: MonitorInput): string[
     if (key === 'target' && service) return false;
     return JSON.stringify(norm(key, before[key])) !== JSON.stringify(norm(key, after[key]));
   });
-  // A push monitor's interval is its heartbeat deadline, so it defines the check.
-  if (after.type === 'push' && before.type === 'push' && before.intervalMs !== after.intervalMs) changed.push('intervalMs');
+  // The effective heartbeat deadline defines the check, matching sameCheck on the node.
+  if (after.type === 'push' && before.type === 'push') {
+    const interval = (m: MonitorInput): number => m.internalOnly ? m.intervalMs : Math.max(60_000, m.intervalMs);
+    if (interval(before) !== interval(after)) changed.push('intervalMs');
+  }
   return changed;
 }
 const CHECK_FIELD_WORDS: Record<string, string> = {

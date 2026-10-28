@@ -98,7 +98,7 @@ for (const nativeTLS of [false, true]) test(`node-initiated ${nativeTLS ? 'pinne
   assert.equal(row.connection, 'outbound'); assert.equal(row.url, undefined);
   assert.equal((await api('/api/overview', 'GET', undefined, row.id)).status, 200);
   const monitor = await cluster.createMonitor({ name: 'Independent while dashboard unavailable', type: 'http', target: cluster.targetUrl,
-    intervalMs: 1000, timeoutMs: 500, nodeIds: [node.id], enabled: true, expectedStatusCodes: [200], webhookUrl: cluster.webhookUrl, repeatAfterMs: 0 });
+    internalOnly: true, intervalMs: 1000, timeoutMs: 500, nodeIds: [node.id], enabled: true, expectedStatusCodes: [200], webhookUrl: cluster.webhookUrl, repeatAfterMs: 0 });
   async function freshState(state: 'up' | 'down', since: number): Promise<void> {
     await cluster.wait('independent fresh ' + state, async () => (await cluster.history(node, monitor.id)).some(sample => sample.state === state && sample.checkedAt >= since));
   }

@@ -26,7 +26,7 @@ test('protocol upgrade retains SQLite identity and receipts, rejects mixed peers
   await Promise.all(cluster.nodes.map(node => cluster.start(node, legacy)));
   const channel = await createChannel(cluster, webhookInput('Retained upgrade route', cluster.webhookUrl));
   await channelsReplicated(cluster, [channel]);
-  const common = { target: `http://127.0.0.1:${address.port}`, intervalMs: 3000, timeoutMs: 3000,
+  const common = { target: `http://127.0.0.1:${address.port}`, internalOnly: true, intervalMs: 3000, timeoutMs: 3000,
     nodeIds: cluster.nodes.map(node => node.id), enabled: true, notificationIds: [channel.id], repeatAfterMs: 0 };
   const query = await cluster.createMonitor({ ...common, name: 'Semantic upgrade control', type: 'http',
     http: { jsonata: { expression: 'ready ? $sort([2,1],$length(?))[0] : 2', operator: '==', expected: 2 } } });

@@ -30,6 +30,17 @@ per-node resource choices and durable recovery. Use matching node and dashboard
 builds containing this feature; the PR #18 baseline predates it.
 [Workflow and validation limits](docs/fleet-management.md).
 
+**Check rate, protocol 21 candidate:** normal and retry intervals have a
+one-minute minimum. To use shorter intervals, check **This monitor is used
+internally only, on equipment I own** in the monitor form, or explicitly send
+`"internalOnly": true` through the API. Faster checks increase network traffic
+and equipment load; each assigned node sends its own checks. Keep public and
+third-party services at one minute or slower. Older saved monitors remain
+readable, with sub-minute scheduling capped until consent is saved; their
+immutable revisions are preserved. Upgrade all peers together: protocol 21
+prevents older nodes from dropping this acknowledgement. This candidate is
+separate from the verified published baseline above.
+
 ## What it does
 
 | Area | What you get | Scope |
