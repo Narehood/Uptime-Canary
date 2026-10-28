@@ -34,7 +34,8 @@ builds containing this feature; the PR #18 baseline predates it.
 one-minute minimum. To use shorter intervals, check **This monitor is used
 internally only, on equipment I own** in the monitor form, or explicitly send
 `"internalOnly": true` through the API. Faster checks increase network traffic
-and equipment load; each assigned node sends its own checks. Keep public and
+and equipment load; cloning clears this acknowledgement so a new monitor needs
+fresh confirmation. Each assigned node sends its own checks. Keep public and
 third-party services at one minute or slower. Older saved monitors remain
 readable, with sub-minute scheduling capped until consent is saved; their
 immutable revisions are preserved. Upgrade all peers together: protocol 21

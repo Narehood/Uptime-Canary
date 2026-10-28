@@ -15,7 +15,7 @@ const scope = register({ namespace: 'monitor-rate-pure', tsconfig: resolve(root,
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
 const { cloneModel, MonitorFormView } = await load('views/MonitorForm.tsx');
 const { CanaryContext } = await load('context.tsx');
-const { checkChanges } = await load('checks.tsx');
+const { checkChanges, cloneInput } = await load('checks.tsx');
 const fresh = () => ({ ...cloneModel.draftFrom(undefined, ['a']), name: 'Private fixture', targets: { http: 'http://127.0.0.1:9' }, timeout: { amount: '70', unit: 'ms' } });
 const build = draft => cloneModel.build(draft, undefined, undefined);
 const duration = amount => ({ amount: String(amount), unit: 'ms' });
@@ -38,6 +38,13 @@ assert.ok(build({ ...fresh(), internalOnly: true, interval: duration(99) }).erro
 const stored = { ...build({ ...fresh(), internalOnly: true }).input, id: 'm1', revision: 'r1', updatedAt: 1 };
 const initial = cloneModel.draftFrom(stored, ['a']);
 assert.equal(initial.internalOnly, true, 'explicit consent survives reopening');
+const copy = cloneInput({ ...stored, intervalMs: 100 }, () => 'unused-token');
+assert.equal('internalOnly' in copy, false, 'a clone must not inherit consent for a new monitor');
+const copyDraft = cloneModel.draftFrom(copy, ['a']);
+assert.equal(copyDraft.internalOnly, false, 'cloned monitors start unchecked');
+assert.ok(cloneModel.build(copyDraft, copy, structuredClone(copyDraft)).errors.interval, 'fast clones require fresh confirmation');
+assert.ok(cloneModel.build({ ...copyDraft, internalOnly: true }, copy, copyDraft).input, 'fresh confirmation permits a fast clone');
+assert.equal(stored.internalOnly, true, 'cloning leaves the source acknowledgement untouched');
 const removed = cloneModel.build({ ...initial, internalOnly: false }, stored, initial);
 assert.ok(removed.input);
 assert.equal('internalOnly' in removed.input, false, 'unchecking removes saved consent');
