@@ -104,6 +104,86 @@ func TestGroupSyncCollectsBothDirectionsAndCopiesChannels(t *testing.T) {
 	}
 }
 
+func TestGroupSyncKeepsPendingSourceAfterPeerReplication(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	a.peerSeen[b.ID], b.peerSeen[a.ID] = 1, 1
+	sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	registrations := []string{ra.ID, rb.ID}
+	slices.Sort(registrations)
+	nodes := map[string]*Node{ra.ID: a, rb.ID: b}
+	// The new node's monitor arrives at the earlier registration between sync
+	// attempts, before the fleet worker has prepared its adoption placement.
+	source, peer := nodes[registrations[1]], nodes[registrations[0]]
+	in := input([]string{source.ID}, "http://127.0.0.1:9", "")
+	in.Enabled = false
+	monitor, err := source.writeMonitor(in, nil, "new-node-monitor", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := groupSyncFixture(t, d, owner, registrations)
+	job, exists, err := loadOne[dashboardGroupSync](d.accounts.node.store, "dashboardGroupSyncs", group.ID)
+	if err != nil || !exists {
+		t.Fatal("missing group sync job", err)
+	}
+	d.syncNodeGroup(context.Background(), group.ID, job)
+	if len(d.fleet) != 1 {
+		t.Fatal("initial sync did not collect exactly one monitor", len(d.fleet))
+	}
+	var definition string
+	for id, row := range d.fleet {
+		definition = id
+		if row.Source == nil || row.Source.RegistrationID != registrations[1] || len(row.Placements) != 0 {
+			t.Fatal("fixture must retain an unprepared source adoption", row)
+		}
+	}
+	for _, page := range causalCapacityPages(t, source) {
+		if err := peer.applySnapshot(page); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.syncNodeGroup(context.Background(), group.ID, job)
+	if len(d.fleet) != 1 {
+		t.Fatal("retry collected a replicated pending source as another monitor", len(d.fleet))
+	}
+	d.finishFleet(context.Background(), definition)
+	for _, page := range causalCapacityPages(t, source) {
+		if err := peer.applySnapshot(page); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.finishFleet(context.Background(), definition)
+	d.syncNodeGroup(context.Background(), group.ID, job)
+	row := d.fleet[definition]
+	if len(d.fleet) != 1 || row.State != "applied" || len(row.Placements) != 1 || row.Placements[0].MonitorID != monitor.ID || len(a.heads) != 1 || len(b.heads) != 1 {
+		t.Fatalf("adoption did not converge on the original monitor: %+v", row)
+	}
+}
+
+func TestGroupSyncPreservesIndependentEqualMonitorIDs(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	sa, sb := httptest.NewServer(a), httptest.NewServer(b)
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	for _, node := range []*Node{a, b} {
+		in := input([]string{node.ID}, "http://127.0.0.1:9", "")
+		in.Enabled = false
+		if _, err := node.writeMonitor(in, nil, "independent-equal-id", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	groupSyncFixture(t, d, owner, []string{ra.ID, rb.ID})
+	finishGroupFixture(t, d)
+	if len(d.fleet) != 2 || len(a.heads) != 2 || len(b.heads) != 2 {
+		t.Fatal("independent equal IDs were merged", len(d.fleet), len(a.heads), len(b.heads))
+	}
+}
+
 func TestGroupMonitorFollowsMembershipAndSourceChannelChanges(t *testing.T) {
 	d, owner, _ := dashboardRegistryFixture(t)
 	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")

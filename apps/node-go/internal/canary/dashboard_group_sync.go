@@ -192,6 +192,19 @@ func (d *Dashboard) syncNodeGroup(ctx context.Context, id string, job dashboardG
 			}
 			seen[monitor.ID] = append(seen[monitor.ID], registration)
 			row, managed := d.fleetForSourceLocked(registration, monitor.ID)
+			if !managed {
+				// A native HA sync can copy a newly collected source before its
+				// adoption placement exists. Reuse that pending definition even
+				// when this pass encounters another peer's copy first.
+				for _, other := range ids {
+					if fleetKnownPeers(views[registration], views[other]) {
+						row, managed = d.fleetForSourceLocked(other, monitor.ID)
+						if managed {
+							break
+						}
+					}
+				}
+			}
 			if managed && slices.Contains(row.GroupIDs, id) {
 				continue
 			}

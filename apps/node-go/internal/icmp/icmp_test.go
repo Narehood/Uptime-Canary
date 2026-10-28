@@ -197,6 +197,30 @@ func TestCheckClassification(t *testing.T) {
 	}
 }
 
+func TestCallerDeadlineKeepsVerifiedResult(t *testing.T) {
+	for _, tc := range []struct {
+		name, output, state string
+	}{
+		{"reply", fixture(t, "unix-partial"), Up},
+		{"no reply", fixture(t, "unix-loss"), Down},
+		{"no evidence", "", Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The node scheduler wraps ICMP in the monitor's own timeout. Its
+			// deadline can expire before the check's nested timeout does.
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			defer cancel()
+			r := check(ctx, validConfig(), "linux", func(budget context.Context, _ []string) execution {
+				<-budget.Done()
+				return execution{started: true, stdout: tc.output, err: budget.Err(), exitCode: -1}
+			})
+			if r.State != tc.state || r.Message == "ICMP check canceled" {
+				t.Fatalf("caller deadline discarded verified evidence: %+v", r)
+			}
+		})
+	}
+}
+
 func TestWholeBudgetAndCancellation(t *testing.T) {
 	c := validConfig()
 	c.Count, c.Timeout = 10, 25*time.Millisecond
