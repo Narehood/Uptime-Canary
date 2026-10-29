@@ -734,11 +734,10 @@ await check('the dashboard’s real invitation refusals, in Go’s own words, re
   for (const action of ['create', 'cancel', 'confirm']) assert.equal(fail(409, 'Dashboard permissions changed; sign in again', action).title, 'Your dashboard permissions changed', action);
 });
 
-await check('node connections off: the outbound choice says why and can’t be picked, and Go’s refusal to invite reads as not set up (the browser review’s disabled branch, now here)', async () => {
+await check('node connections off: setup remains selectable while Go still refuses invitations until configured', async () => {
   on();
-  // The browser review's fixture now configures a node-connection address, so its "outbound disabled" branch doesn't run
-  // there any more. Its two assertions run here instead: the chooser follows the dashboard's own answer, and the server's
-  // refusal to make an invitation without the address leaves no token and reads as not set up.
+  // The user explicitly requested access to setup before the endpoint is configured. This supersedes only the old
+  // disabled-radio expectation; the server must still refuse invitations without a connection address.
   const go = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_invitations.go'), 'utf8');
   assert.match(go, /"outboundEnabled": d\.connectionEnabled && d\.connectionURL != ""/u, 'Go offers outbound only with an address');
   assert.match(go, /if !d\.connectionEnabled \|\| d\.connectionURL == "" \{\s*errorReply\(w, fail\(409, "Configure the dedicated HTTPS node connection endpoint first"\)\)/u, 'Go refuses to invite without it');
@@ -747,13 +746,13 @@ await check('node connections off: the outbound choice says why and can’t be p
   const chooser = onboarding => within('admin', [], React.createElement(wizard.AddNodeChooser, { plan: { fresh: true, link: 'direct' }, onPlan: noop, onboarding }));
   const radiosOf = markup => tags(markup, 'input').map(attributes).filter(found => found.get('type') === 'radio').map(found => found.has('disabled'));
   const off = chooser(resource(disabled));
-  assert.deepEqual(radiosOf(off), [false, false, false, true], 'only the outbound choice is off');
+  assert.deepEqual(radiosOf(off), [false, false, false, false], 'setup is available before an address is configured');
   assert.match(text(off), /The node reaches this dashboard Not set up here: this dashboard’s deployment has no node-connection address\./u);
   const configured = chooser(resource(CAPS));
   assert.deepEqual(radiosOf(configured), [false, false, false, false], 'with an address it can be picked');
   assert.match(text(configured), /The node reaches this dashboard The node connects out over HTTPS and needs no inbound port/u);
   const unread = chooser({ ...resource(undefined), loading: false, error: new api.ApiFailure(503, 'HTTP 503', 'Unavailable') });
-  assert.deepEqual(radiosOf(unread), [false, false, false, true], 'an unread answer never enables it');
+  assert.deepEqual(radiosOf(unread), [false, false, false, false], 'a failed read does not block access to setup help');
   assert.match(text(unread), /didn’t say whether nodes can connect to it\..*This dashboard’s node setup couldn’t be read.*Adding a running node that this dashboard reaches still works\./u);
   const client = new api.CanaryApi(PAGE, TOKEN);
   let created;
@@ -776,7 +775,7 @@ await check('Add node opens on the running-node form, exactly as before, with th
   for (const phrase of ['A node that’s already running', 'Deploy a new node', 'This dashboard reaches the node', 'The node reaches this dashboard', 'Checking whether nodes can connect to this dashboard…',
     'Name on this dashboard', 'Node address', 'Enrollment credential', 'Verify node']) assert.ok(words.includes(phrase), phrase);
   const radios = tags(markup, 'input').map(attributes).filter(found => found.get('type') === 'radio');
-  assert.deepEqual(radios.map(found => [found.has('checked'), found.has('disabled')]), [[true, false], [false, false], [true, false], [false, true]], 'running node and direct are chosen; outbound waits for the server');
+  assert.deepEqual(radios.map(found => [found.has('checked'), found.has('disabled')]), [[true, false], [false, false], [true, false], [false, false]], 'running node and direct remain chosen; outbound setup is also available');
   assert.equal(tags(markup, 'input').map(attributes).filter(found => found.get('type') === 'password').length, 1, 'one credential field');
   assert.doesNotMatch(words, /Create invitation|Next: verify the node|Waiting to connect/u);
   assert.match(markup, /<dialog[^>]*class="modal wide"/u, 'the running-node form keeps its width');
@@ -822,9 +821,39 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
   assert.equal(typeof guard.current, 'function');
   assert.equal(guard.current(), true, 'nothing made yet, so closing needs no question');
-  assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Nodes can’t connect to this dashboard yet.*Not set up here/u);
+  assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Set up this dashboard for incoming node connections.*Not set up here/u);
   assert.match(text(outbound({ fresh: false })), /Its current CANARY_NODE_ID\. The dashboard refuses a node that connects with any other ID\./u);
   assert.deepEqual(reached, [], 'rendering asks the API nothing');
+});
+
+await check('outbound setup explains which stack to configure and offers a refresh before invitations are possible', () => {
+  on();
+  const setup = onboarding => within('admin', [], React.createElement(wizard.OutboundDashboardSetup, { onboarding, onClose: noop }));
+  const refreshButton = markup => {
+    const button = (markup.match(/<button\b[^>]*>[\s\S]*?<\/button>/gu) ?? []).find(button => /^Check(?:ing)? dashboard setup/u.test(text(button).trim()));
+    assert.ok(button, 'the dashboard setup refresh button is present');
+    return attributes(tags(button, 'button')[0]);
+  };
+  const off = setup(resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }));
+  const words = text(off);
+  for (const phrase of ['existing dashboard service: web', 'ghcr.io/narehood/uptime-canary-web', 'CANARY_DASHBOARD_CONNECTION_URL: https://NODE_REACHABLE_HOST:18348',
+    'CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto', 'CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0', 'DASHBOARD_BIND_IP:18348:8081',
+    'These may differ behind NAT or a VPN',
+    'keep its other settings, browser port, data and identity volumes', 'Check dashboard setup', 'No invitation is created until the dashboard is ready']) assert.ok(words.includes(phrase), phrase);
+  assert.equal(refreshButton(off).has('disabled'), false, 'setup can be checked now');
+  const loading = setup(resource(undefined));
+  assert.match(text(loading), /Checking dashboard setup…/u);
+  assert.equal(refreshButton(loading).has('disabled'), true, 'one check at a time');
+  const failedRead = setup({ ...resource(undefined), loading: false, error: new api.ApiFailure(503, 'HTTP 503', 'Unavailable') });
+  assert.match(text(failedRead), /Check dashboard setup/u);
+  assert.equal(refreshButton(failedRead).has('disabled'), false, 'a failed check can be retried');
+  assert.match(failedRead, /role="alert"/u, 'a failed check is visible and can be retried');
+  for (const markup of [off, loading, failedRead]) {
+    for (const value of PRIVATE) assert.ok(!markup.includes(value), 'dashboard prerequisites need no node credentials');
+    assert.ok(!text(markup).includes(PAGE), 'the browser origin is never guessed as a connection origin');
+    assert.doesNotMatch(text(markup), /Create invitation/u, 'setup help cannot create an invitation prematurely');
+  }
+  assert.deepEqual(reached, [], 'opening setup help performs no writes');
 });
 
 await check('first-pair confirmation shows what the node proved, and refuses to offer a node with another ID', () => {
