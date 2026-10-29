@@ -894,8 +894,16 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       await until(async () => !(await radios())[3].text.includes('Checking whether nodes can connect'), 'the outbound choice follows the server’s answer', 15000);
       const outbound = (await radios())[3];
       assert.deepEqual([outbound.disabled, /Not set up here/u.test(outbound.text)], [false, true], JSON.stringify(outbound));
+      await pick('Deploy a new node');
       await pick('The node reaches this dashboard');
       await text('Set up this dashboard for incoming node connections');
+      for (const method of ['Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
+        await click(method, 'dialog[open]');
+        const preview = await page.eval('(()=>{const tabs=document.querySelector("dialog[open] [role=tablist]");return {selected:tabs.querySelector("[aria-selected=true]").innerText,words:tabs.parentElement.innerText,actions:[...tabs.parentElement.querySelectorAll("button:not([role=tab])")].map(button=>button.innerText)}})()');
+        assert.equal(preview.selected, method, 'the deployment method can be selected before dashboard setup');
+        assert.deepEqual(preview.actions, [], 'a deployment preview cannot expose or export private settings');
+        assert.ok(preview.words.includes('CANARY_NODE_ID') || method === 'Linux VM', `${method}: node deployment preview`);
+      }
       assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes('Create invitation'), 'no premature invitation form');
       assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations' && entry.status !== 403), 'setup guidance made no invitation');
       if (!capabilities.value.outboundEnabled) {

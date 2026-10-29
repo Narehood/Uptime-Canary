@@ -818,11 +818,34 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   }));
   const identify = text(outbound({}));
   assert.ok(identify.includes(CONNECT) && /Create invitation/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
+  assert.match(identify, /Choose how the new node will run.*Deployment preview only/u, 'the fresh outbound flow offers deployment methods before creating an invitation');
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
   assert.equal(typeof guard.current, 'function');
   assert.equal(guard.current(), true, 'nothing made yet, so closing needs no question');
   assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Set up this dashboard for incoming node connections.*Not set up here/u);
+  for (const { value: platform } of onboarding.PLATFORMS) {
+    const beforeSetup = outbound({ platform, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
+    assert.equal(tags(beforeSetup, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 4, `${platform}: deployment choices before dashboard readiness`);
+    assert.doesNotMatch(text(beforeSetup), /Create invitation/u, 'no invitation action without an endpoint');
+    const preview = within('admin', [], React.createElement(wizard.OutboundDeploymentPreview, { capabilities: CAPS, platform, onPlatform: noop, nodeId: 'canary-outbound', name: 'Branch' }));
+    assert.ok(preview.includes(`ghcr.io/narehood/uptime-canary-node:${CAPS.imageTag}`) || platform === 'vm', `${platform}: preview uses this dashboard's image tag`);
+    assert.ok(text(preview).includes('canary-outbound'), `${platform}: valid entered ID is used`);
+    assert.ok(preview.includes(onboarding.MASK), `${platform}: private settings are masked`);
+    const controls = tags(preview, 'button').map(attributes);
+    assert.equal(controls.length, 4, `${platform}: only platform selection, no Show/Copy/Download before an invitation`);
+    assert.ok(controls.every(found => found.get('role') === 'tab'), `${platform}: preview actions cannot export sample settings`);
+    assert.ok(controls.find(found => found.get('id').endsWith(`-t-${platform}`)).get('aria-selected') === 'true', `${platform}: selected preview method`);
+    for (const value of PRIVATE) assert.ok(!preview.includes(value), `${platform}: preview uses no real node or invitation credentials`);
+    const blocks = onboarding.setupGuide({ nodeId: 'canary-outbound', name: 'Branch', imageTag: CAPS.imageTag, secrets: SECRETS,
+      outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN }, platform }, false);
+    assert.doesNotMatch(blocks.map(block => block.text).join('\n'), /\s-p\s|--publish|^\s*ports:/mu, `${platform}: outbound nodes publish no inbound port`);
+  }
+  const unreadPreview = outbound({ onboarding: resource(undefined) });
+  assert.match(text(unreadPreview), /IMAGE_TAG_FROM_DASHBOARD/u, 'an unread image tag is an explicit example, never a guessed release');
+  const existingWithoutEndpoint = outbound({ fresh: false, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
+  assert.equal(tags(existingWithoutEndpoint, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 0, 'running nodes are not offered a fresh deployment');
   assert.match(text(outbound({ fresh: false })), /Its current CANARY_NODE_ID\. The dashboard refuses a node that connects with any other ID\./u);
+  assert.doesNotMatch(text(outbound({ fresh: false })), /Deployment preview only/u, 'running nodes retain their existing deployment');
   assert.deepEqual(reached, [], 'rendering asks the API nothing');
 });
 

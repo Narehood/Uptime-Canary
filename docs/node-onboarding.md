@@ -26,6 +26,12 @@ connection endpoint is configured. It identifies the existing dashboard service
 to update and shows the required environment and port settings. After updating
 the stack, use **Check dashboard setup** in that menu to reload its configuration;
 once the endpoint is enabled, the invitation form appears in the same menu.
+With **Deploy a new node → The node reaches this dashboard**, the Docker run,
+Docker Compose, Portainer stack and Linux VM tabs are visible from the start,
+including before the endpoint is configured or an invitation exists. They show
+a labelled deployment preview with example settings and masked credentials;
+Show, Copy and Download become available with the real invitation. These tabs
+describe the new node, independently of how the dashboard itself is deployed.
 The node-facing hostname or IP and the Docker host's bind IP are separate:
 behind NAT, publish on an address assigned to the Docker host, forward the
 advertised TCP port to it, and give nodes the externally reachable address.
