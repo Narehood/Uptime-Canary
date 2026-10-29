@@ -22,19 +22,16 @@ manage that node; it is not evidence that the node stopped monitoring.
 ## Prepare the dashboard's connection endpoint
 
 **Nodes → Add node → The node reaches this dashboard** is available before the
-connection endpoint is configured. Under **How this dashboard runs**, choose
-**Docker run**, **Docker Compose**, **Portainer stack**, or **Linux VM** for a
-standard native service. Each method identifies the existing dashboard to update,
-provides its connection settings, and explains how to apply them while retaining
-its other configuration and data. Container instructions publish host port 18348
-to container port 8081; native instructions bind the service directly on port
-18348. After applying the settings, use **Check dashboard setup** to reload its configuration;
+connection endpoint is configured. It identifies the existing dashboard service
+to update and shows the required environment and port settings. After updating
+the stack, use **Check dashboard setup** in that menu to reload its configuration;
 once the endpoint is enabled, the invitation form appears in the same menu.
-For systemd, run `sudo systemctl daemon-reload` before restarting if you edited a
-unit or drop-in; changing only the contents of an existing EnvironmentFile needs
-just a restart.
-After creating the invitation, choose how the new node will run to obtain its
-complete deployment instructions. The dashboard and node may use different methods.
+With **Deploy a new node → The node reaches this dashboard**, the Docker run,
+Docker Compose, Portainer stack and Linux VM tabs are visible from the start,
+including before the endpoint is configured or an invitation exists. They show
+a labelled deployment preview with example settings and masked credentials;
+Show, Copy and Download become available with the real invitation. These tabs
+describe the new node, independently of how the dashboard itself is deployed.
 The node-facing hostname or IP and the Docker host's bind IP are separate:
 behind NAT, publish on an address assigned to the Docker host, forward the
 advertised TCP port to it, and give nodes the externally reachable address.
