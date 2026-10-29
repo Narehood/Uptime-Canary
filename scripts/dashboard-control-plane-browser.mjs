@@ -31,6 +31,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   const proxyCookie = 'canary_dashboard_fixture_proxy';
   let session = '', denied = 0, authenticated = 0;
   let updatePreview = null;
+  let onboardingPreview = null;
   const paths = [];
   const watchers = new Set();
   // Test-only: one dashboard answer held back after the dashboard's server has answered it, so a step can look at the
@@ -72,6 +73,14 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
         response.resume();
         delete returned['content-length']; delete returned['content-encoding'];
         res.writeHead(200, { ...returned, 'content-type': 'application/json' }).end(JSON.stringify(updatePreview));
+        return;
+      }
+      // Only the authenticated capability read is overridden; invitations and
+      // all other writes still reach the real dashboard's authorization checks.
+      if (onboardingPreview && entry?.path === '/api/dashboard/onboarding' && req.method === 'GET' && response.statusCode === 200) {
+        response.resume();
+        delete returned['content-length']; delete returned['content-encoding'];
+        res.writeHead(200, { ...returned, 'content-type': 'application/json' }).end(JSON.stringify(onboardingPreview));
         return;
       }
       if (held) {
@@ -238,6 +247,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   return {
     origin, backend, child, code, password, proxyCookie, route, startNode, freePort: port,
     previewUpdates(value) { assert.ok(Buffer.byteLength(JSON.stringify(value)) < 32768); updatePreview = value; },
+    previewOnboarding(value) { assert.ok(Buffer.byteLength(JSON.stringify(value)) < 32768); onboardingPreview = value; },
     // The node-connection address the dashboard reports (the HTTPS front), its private listener behind it, and what the
     // front carried.
     connection: {
@@ -878,15 +888,27 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     }
     const nodesBefore = (await fixture.api('/api/dashboard/nodes', 'GET', undefined, owner)).value.length;
     await page.eval('location.hash="#/nodes"'); await text('Wizard direct node');
-    await clickFirst('Add node'); await dialogOpen();
-    await until(async () => !(await radios())[3].text.includes('Checking whether nodes can connect'), 'the outbound choice follows the server’s answer', 15000);
-    if (!capabilities.value.outboundEnabled) {
+    fixture.previewOnboarding({ ...capabilities.value, outboundEnabled: false, connectionUrl: undefined, connectionTlsFingerprint: undefined });
+    try {
+      await clickFirst('Add node'); await dialogOpen();
+      await until(async () => !(await radios())[3].text.includes('Checking whether nodes can connect'), 'the outbound choice follows the server’s answer', 15000);
       const outbound = (await radios())[3];
-      assert.deepEqual([outbound.disabled, /Not set up here/u.test(outbound.text)], [true, true], JSON.stringify(outbound));
-      const refused = await fixture.api('/api/dashboard/invitations', 'POST', { label: 'Wizard outbound node', nodeId: 'review-outbound' }, owner);
-      assert.ok(refused.status >= 400 && !(refused.value && typeof refused.value === 'object' && 'token' in refused.value), `an invitation without a connection address: ${refused.status}`);
-      await click('Cancel', 'dialog[open]'); await dialogClosed();
-      return { outboundEnabled: false, choiceDisabled: true, serverRefusedInvitation: refused.status, viewerRefused };
+      assert.deepEqual([outbound.disabled, /Not set up here/u.test(outbound.text)], [false, true], JSON.stringify(outbound));
+      await pick('The node reaches this dashboard');
+      await text('Set up this dashboard for incoming node connections');
+      assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes('Create invitation'), 'no premature invitation form');
+      assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations' && entry.status !== 403), 'setup guidance made no invitation');
+      if (!capabilities.value.outboundEnabled) {
+        const refused = await fixture.api('/api/dashboard/invitations', 'POST', { label: 'Wizard outbound node', nodeId: 'review-outbound' }, owner);
+        assert.ok(refused.status >= 400 && !(refused.value && typeof refused.value === 'object' && 'token' in refused.value), `an invitation without a connection address: ${refused.status}`);
+        await click('Cancel', 'dialog[open]'); await dialogClosed();
+        return { outboundEnabled: false, choiceDisabled: false, serverRefusedInvitation: refused.status, viewerRefused };
+      }
+      fixture.previewOnboarding(null);
+      await click('Check dashboard setup', 'dialog[open]');
+      await until(() => page.eval('document.querySelector("dialog[open]").innerText.includes("Create invitation")'), 'refresh advances to the invitation form', 15000);
+    } finally {
+      fixture.previewOnboarding(null);
     }
     const connectionUrl = capabilities.value.connectionUrl;
     assert.ok(connectionUrl.startsWith('https://') && connectionUrl !== fixture.origin, 'a configured HTTPS node-connection address, not the page’s');

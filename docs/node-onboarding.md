@@ -26,6 +26,9 @@ connection endpoint is configured. It identifies the existing dashboard service
 to update and shows the required environment and port settings. After updating
 the stack, use **Check dashboard setup** in that menu to reload its configuration;
 once the endpoint is enabled, the invitation form appears in the same menu.
+The node-facing hostname or IP and the Docker host's bind IP are separate:
+behind NAT, publish on an address assigned to the Docker host, forward the
+advertised TCP port to it, and give nodes the externally reachable address.
 
 Keep the browser service behind your normal NetBird, Tailscale or other sign-in
 proxy. Give nodes a separate HTTPS origin with no interactive login. Canary

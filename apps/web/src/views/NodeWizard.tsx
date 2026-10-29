@@ -90,12 +90,12 @@ export function OutboundDashboardSetup({ onboarding, onClose }: { onboarding: Re
   const settings: GuideBlock = {
     key: 'dashboard-connection', kind: 'command', secret: false, title: 'Configure the existing dashboard service',
     text: `environment:
-  CANARY_DASHBOARD_CONNECTION_URL: https://DASHBOARD_HOST_IP:18348
+  CANARY_DASHBOARD_CONNECTION_URL: https://NODE_REACHABLE_HOST:18348
   CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto
   CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0
   CANARY_DASHBOARD_CONNECTION_PORT: "8081"
 ports:
-  - "DASHBOARD_HOST_IP:18348:8081"`,
+  - "DASHBOARD_BIND_IP:18348:8081"`,
   };
   return (
     <>
@@ -108,7 +108,7 @@ ports:
         {onboarding.error ? <p role="alert">{describeFailure(onboarding.error)}</p> : null}
       </Banner>
       <p className="sec">First update the stack running this dashboard. In Portainer, edit its existing dashboard service: <code>web</code> in the supplied templates, using the <code>ghcr.io/narehood/uptime-canary-web</code> image. The remote node is configured after this step.</p>
-      <p className="modal-note">Replace DASHBOARD_HOST_IP with an IP assigned to the dashboard host that your nodes can reach. Merge these entries into the service’s existing environment and ports; keep its other settings, browser port, data and identity volumes.</p>
+      <p className="modal-note">Replace NODE_REACHABLE_HOST with the hostname or IP your nodes use to reach this dashboard, and DASHBOARD_BIND_IP with an IP actually assigned to its Docker host. These may differ behind NAT or a VPN; forward TCP port 18348 to the published host port where needed. Merge these entries into the service’s existing environment and ports; keep its other settings, browser port, data and identity volumes.</p>
       <ol className="gsteps"><GuideStep n={1} block={settings} real={settings} onHandled={() => {}} /></ol>
       <p className="modal-note">Update the stack to recreate the dashboard container, then select Check dashboard setup. This uses built-in HTTPS on port 18348, separate from the browser dashboard and its sign-in proxy. The nodes must be able to reach that port without interactive sign-in.</p>
       <p className="modal-note">Once the dashboard reports its connection address, this menu lets you create an invitation and shows the Docker, Compose, Portainer or Linux VM steps for the node. No invitation is created until the dashboard is ready.</p>

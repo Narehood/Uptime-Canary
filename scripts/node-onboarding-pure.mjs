@@ -836,8 +836,9 @@ await check('outbound setup explains which stack to configure and offers a refre
   };
   const off = setup(resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }));
   const words = text(off);
-  for (const phrase of ['existing dashboard service: web', 'ghcr.io/narehood/uptime-canary-web', 'CANARY_DASHBOARD_CONNECTION_URL: https://DASHBOARD_HOST_IP:18348',
-    'CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto', 'CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0', 'DASHBOARD_HOST_IP:18348:8081',
+  for (const phrase of ['existing dashboard service: web', 'ghcr.io/narehood/uptime-canary-web', 'CANARY_DASHBOARD_CONNECTION_URL: https://NODE_REACHABLE_HOST:18348',
+    'CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto', 'CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0', 'DASHBOARD_BIND_IP:18348:8081',
+    'These may differ behind NAT or a VPN',
     'keep its other settings, browser port, data and identity volumes', 'Check dashboard setup', 'No invitation is created until the dashboard is ready']) assert.ok(words.includes(phrase), phrase);
   assert.equal(refreshButton(off).has('disabled'), false, 'setup can be checked now');
   const loading = setup(resource(undefined));
