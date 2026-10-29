@@ -267,6 +267,41 @@ export interface GuideBlock {
 
 export interface GuideVariable { name: string; value: string; secret: boolean }
 
+/** Update the dashboard already running here; never replace its deployment or retained state. */
+export function dashboardConnectionGuide(platform: Platform): GuideBlock[] {
+  const native = platform === 'vm';
+  const settings = [
+    ['CANARY_DASHBOARD_CONNECTION_URL', 'https://NODE_REACHABLE_HOST:18348'],
+    ['CANARY_DASHBOARD_CONNECTION_TLS_MODE', 'auto'],
+    ['CANARY_DASHBOARD_CONNECTION_HOST', native ? 'DASHBOARD_BIND_IP' : '0.0.0.0'],
+    ['CANARY_DASHBOARD_CONNECTION_PORT', native ? '18348' : '8081'],
+  ];
+  switch (platform) {
+    case 'docker':
+      return [
+        { key: 'env', kind: 'file', file: 'dashboard-connection.env', secret: false, title: 'Save these additional dashboard settings', text: settings.map(([key, value]) => `${key}=${value}\n`).join('') },
+        { key: 'run', kind: 'command', secret: false, title: 'Add these options to the existing dashboard docker run command', text: '--env-file dashboard-connection.env \\\n-p DASHBOARD_BIND_IP:18348:8081' },
+        { key: 'apply', kind: 'note', secret: false, title: 'Recreate the existing dashboard container', text: 'These are extra options, not a complete docker run command. Replace any existing values for these settings and any existing mapping to container port 8081. Recreate the dashboard with its original image, name, other options, browser port and the same data and identity volumes. Restart alone does not apply changed container settings.' },
+      ];
+    case 'compose':
+    case 'portainer': {
+      const portainer = platform === 'portainer';
+      return [
+        { key: 'edit', kind: 'note', secret: false, title: portainer ? 'Edit the existing dashboard stack in Portainer' : 'Edit the existing dashboard Compose file', text: `${portainer ? 'Open Stacks, select the stack running this dashboard, and open its Editor.' : 'Open the Compose file that starts this dashboard.'} Find its dashboard service: web in the supplied templates, using ghcr.io/narehood/uptime-canary-web. Merge the entries below into that service; replace existing entries with the same names or container port. Keep its other settings, browser port, data and identity volumes. Do not create another dashboard or replace the whole stack with this fragment.` },
+        { key: 'settings', kind: 'command', secret: false, title: 'Merge into the existing dashboard service', text: `environment:\n${settings.map(([key, value]) => `  ${key}: ${key.endsWith('_PORT') ? '"' + value + '"' : value}`).join('\n')}\nports:\n  - "DASHBOARD_BIND_IP:18348:8081"` },
+        portainer
+          ? { key: 'apply', kind: 'note', secret: false, title: 'Update the existing stack', text: 'Choose Update the stack to recreate the dashboard service. Keep the stack name and its existing volumes. Then select Check dashboard setup here.' }
+          : { key: 'apply', kind: 'command', secret: false, title: 'Apply from the existing Compose directory, using its usual file and env-file options', text: '# Replace web if your dashboard service has a different name.\ndocker compose up -d web\n' },
+      ];
+    }
+    case 'vm':
+      return [
+        { key: 'env', kind: 'command', secret: false, title: 'Merge into the existing dashboard service environment', text: settings.map(([key, value]) => `${key}=${value}\n`).join('') },
+        { key: 'apply', kind: 'note', secret: false, title: 'Restart the existing dashboard service', text: 'Update the EnvironmentFile or service settings used by the existing dashboard process, replacing earlier values for these variables. Keep its binary, browser listener, other settings, data directory and identity directory. If you edit a systemd unit or drop-in, run sudo systemctl daemon-reload before restarting the service. Editing the contents of an existing EnvironmentFile needs only a restart. Restart that dashboard service using its existing service manager. No Docker port mapping is needed: the native process listens on DASHBOARD_BIND_IP:18348. Allow nodes to reach that TCP port, then select Check dashboard setup here.' },
+      ];
+  }
+}
+
 export const imageReference = (tag: string): string => `${NODE_IMAGE}:${tag}`;
 /** The commit a `sha-<full commit>` tag names, or null for `latest` and other tags. */
 export const tagCommit = (tag: string): string | null => /^sha-([0-9a-f]{40})$/u.exec(tag)?.[1] ?? null;

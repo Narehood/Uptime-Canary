@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { bindingAccessNote, dashboardConnectionGuide, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -86,17 +86,10 @@ export function AddNodeChooser({ plan, onPlan, onboarding }: { plan: AddPlan; on
 }
 
 /** Configuration help stays available before the dashboard has a connection listener. Uses the existing guide controls. */
-export function OutboundDashboardSetup({ onboarding, onClose }: { onboarding: Resource<NodeOnboardingCapabilities>; onClose: () => void }) {
-  const settings: GuideBlock = {
-    key: 'dashboard-connection', kind: 'command', secret: false, title: 'Configure the existing dashboard service',
-    text: `environment:
-  CANARY_DASHBOARD_CONNECTION_URL: https://NODE_REACHABLE_HOST:18348
-  CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto
-  CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0
-  CANARY_DASHBOARD_CONNECTION_PORT: "8081"
-ports:
-  - "DASHBOARD_BIND_IP:18348:8081"`,
-  };
+export function OutboundDashboardSetup({ onboarding, platform, onPlatform, onClose }: {
+  onboarding: Resource<NodeOnboardingCapabilities>; platform: Platform; onPlatform: (platform: Platform) => void; onClose: () => void;
+}) {
+  const steps = dashboardConnectionGuide(platform);
   return (
     <>
       <Banner tone="info" title="Set up this dashboard for incoming node connections" actions={
@@ -107,10 +100,12 @@ ports:
         {outboundReason(onboarding)} You can configure it now, then check again without closing this menu.
         {onboarding.error ? <p role="alert">{describeFailure(onboarding.error)}</p> : null}
       </Banner>
-      <p className="sec">First update the stack running this dashboard. In Portainer, edit its existing dashboard service: <code>web</code> in the supplied templates, using the <code>ghcr.io/narehood/uptime-canary-web</code> image. The remote node is configured after this step.</p>
-      <p className="modal-note">Replace NODE_REACHABLE_HOST with the hostname or IP your nodes use to reach this dashboard, and DASHBOARD_BIND_IP with an IP actually assigned to its Docker host. These may differ behind NAT or a VPN; forward TCP port 18348 to the published host port where needed. Merge these entries into the service’s existing environment and ports; keep its other settings, browser port, data and identity volumes.</p>
-      <ol className="gsteps"><GuideStep n={1} block={settings} real={settings} onHandled={() => {}} /></ol>
-      <p className="modal-note">Update the stack to recreate the dashboard container, then select Check dashboard setup. This uses built-in HTTPS on port 18348, separate from the browser dashboard and its sign-in proxy. The nodes must be able to reach that port without interactive sign-in.</p>
+      <p className="sec">First configure the dashboard you are using now. Choose how that dashboard runs below; its service is <code>web</code> in the supplied container templates, using <code>ghcr.io/narehood/uptime-canary-web</code>. The remote node is configured after this step, with its own deployment choice.</p>
+      <p className="modal-note">Replace NODE_REACHABLE_HOST with the hostname or IP your nodes use to reach this dashboard, and DASHBOARD_BIND_IP with an IP actually assigned to its host. These may differ behind NAT or a VPN; forward TCP port 18348 to the dashboard host where needed. Keep the existing dashboard’s other settings, browser port, data and identity storage.</p>
+      <GuideTabs platform={platform} onPlatform={onPlatform} label="How this dashboard runs">
+        <ol className="gsteps">{steps.map((block, index) => <GuideStep key={`${platform}-${block.key}`} n={index + 1} block={block} real={block} onHandled={() => {}} />)}</ol>
+      </GuideTabs>
+      <p className="modal-note">After applying the selected setup, select Check dashboard setup. This uses built-in HTTPS on port 18348, separate from the browser dashboard and its sign-in proxy. The nodes must be able to reach that port without interactive sign-in.</p>
       <p className="modal-note">Once the dashboard reports its connection address, this menu lets you create an invitation and shows the Docker, Compose, Portainer or Linux VM steps for the node. No invitation is created until the dashboard is ready.</p>
       <div className="modal-foot"><span /><button type="button" className="btn" onClick={onClose}>Cancel</button></div>
     </>
@@ -237,8 +232,6 @@ function GuideStep({ n, block, real, onHandled }: { n: number; block: GuideBlock
 export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
   setup: Omit<NodeSetup, 'platform'>; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void;
 }) {
-  const id = useId();
-  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   let shown: GuideBlock[] = [];
   let real: GuideBlock[] = [];
   let problem: string | null = null;
@@ -248,6 +241,24 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
   } catch (error) {
     problem = error instanceof Error ? error.message : 'These settings can’t be written safely.';
   }
+  return (
+    <GuideTabs platform={platform} onPlatform={onPlatform} label="Where the node runs">
+      {problem ? <Banner tone="down" title="These settings can’t be written">{problem}</Banner> : (
+        <ol className="gsteps">
+          {/* Keyed by node ID too: values shown for one ID are hidden again once the steps are for another. */}
+          {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} />)}
+        </ol>
+      )}
+    </GuideTabs>
+  );
+}
+
+/** Both prerequisites and deployment use the existing keyboard-accessible platform controls. */
+function GuideTabs({ platform, onPlatform, label, children }: {
+  platform: Platform; onPlatform: (platform: Platform) => void; label: string; children: ReactNode;
+}) {
+  const id = useId();
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const move = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
     const last = PLATFORMS.length - 1;
     const next = event.key === 'ArrowRight' ? (index === last ? 0 : index + 1) : event.key === 'ArrowLeft' ? (index === 0 ? last : index - 1)
@@ -259,7 +270,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
   };
   return (
     <div className="guide">
-      <div className="gtabs" role="tablist" aria-label="Where the node runs">
+      <div className="gtabs" role="tablist" aria-label={label}>
         {PLATFORMS.map((entry, index) => (
           <button key={entry.value} ref={element => { tabs.current[index] = element; }} type="button" role="tab" id={`${id}-t-${entry.value}`}
             aria-selected={entry.value === platform} aria-controls={`${id}-p`} tabIndex={entry.value === platform ? 0 : -1}
@@ -269,12 +280,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
         ))}
       </div>
       <div className="gpanel" role="tabpanel" id={`${id}-p`} aria-labelledby={`${id}-t-${platform}`}>
-        {problem ? <Banner tone="down" title="These settings can’t be written">{problem}</Banner> : (
-          <ol className="gsteps">
-            {/* Keyed by node ID too: values shown for one ID are hidden again once the steps are for another. */}
-            {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} />)}
-          </ol>
-        )}
+        {children}
       </div>
     </div>
   );
@@ -608,7 +614,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
   };
 
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
-    return <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} />;
+    return <OutboundDashboardSetup onboarding={onboarding} platform={platform} onPlatform={onPlatform} onClose={onRequestClose} />;
   }
 
   const failureBox = failure ? <div className="errsum" role="alert" ref={summaryRef} tabIndex={-1}><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null;

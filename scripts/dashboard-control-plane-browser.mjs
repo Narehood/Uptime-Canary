@@ -896,6 +896,13 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       assert.deepEqual([outbound.disabled, /Not set up here/u.test(outbound.text)], [false, true], JSON.stringify(outbound));
       await pick('The node reaches this dashboard');
       await text('Set up this dashboard for incoming node connections');
+      for (const [method, setting] of [['Docker Compose', 'docker compose up -d web'], ['Portainer stack', 'Choose Update the stack'],
+        ['Linux VM', 'CANARY_DASHBOARD_CONNECTION_PORT=18348'], ['Docker run', '--env-file dashboard-connection.env']]) {
+        await click(method, 'dialog[open]');
+        const words = await page.eval('document.querySelector("dialog[open]").innerText');
+        assert.ok(words.includes(setting), `${method}: platform-specific dashboard setup`);
+        assert.ok(words.includes('https://NODE_REACHABLE_HOST:18348'), `${method}: the advertised node-facing address`);
+      }
       assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes('Create invitation'), 'no premature invitation form');
       assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations' && entry.status !== 403), 'setup guidance made no invitation');
       if (!capabilities.value.outboundEnabled) {
