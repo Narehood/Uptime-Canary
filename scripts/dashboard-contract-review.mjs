@@ -257,11 +257,11 @@ async function review() {
   report = { startedAt: new Date().toISOString(), runtime:process.version, harnessHash:sha(readFileSync(fileURLToPath(import.meta.url))), runDir, sourceHash: state.sourceHash, binaryHash: state.binaryHash, artifacts: state.artifacts, checks: [], exceptions: [], blocked: [], requests: [] }; save();
   // Same production executable, assets, browser and assertions; a focused entry
   // keeps fleet recovery diagnostics independent of the unrelated form corpus.
-  if (args.includes('--fleet-only')) {
-    assert.ok(dashboardControlPlaneFixture, '--fleet-only needs --dashboard-control-plane');
+  if (args.includes('--fleet-only') || args.includes('--dashboard-only')) {
+    assert.ok(dashboardControlPlaneFixture, 'A focused dashboard review needs --dashboard-control-plane');
     await launchBrowser();
     const [A, B] = state.nodes;
-    await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet: true });
+    await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet: args.includes('--fleet-only') });
     return finishReview();
   }
   const f = await functionsUnderReview(), [A, B] = state.nodes;

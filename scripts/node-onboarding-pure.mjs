@@ -814,15 +814,16 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   const guard = { current: null };
   const outbound = props => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
     fresh: true, onboarding: resource(CAPS), secrets: SECRETS, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop, onClose: noop, onRequestClose: noop,
-    onLock: noop, onBusy: noop, guard, onTakenChanged: noop, ...props,
+    onLock: noop, onBusy: noop, guard, onTakenChanged: noop, onNodeIdChange: noop, ...props,
   }));
   const identify = text(outbound({}));
   assert.ok(identify.includes(CONNECT) && /Create invitation/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
-  assert.match(identify, /Choose how the new node will run.*Deployment preview only/u, 'the fresh outbound flow offers deployment methods before creating an invitation');
+  assert.match(identify, /Choose how the new node will run.*Enter a name and a valid, unique Node ID/u, 'the fresh outbound flow asks for its identity before exporting settings');
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
   assert.equal(typeof guard.current, 'function');
   assert.equal(guard.current(), true, 'nothing made yet, so closing needs no question');
   assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Set up this dashboard for incoming node connections.*Not set up here/u);
+  assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Name on this dashboard.*Node ID/u, 'identity fields are available before endpoint setup');
   for (const { value: platform } of onboarding.PLATFORMS) {
     const beforeSetup = outbound({ platform, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
     assert.equal(tags(beforeSetup, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 4, `${platform}: deployment choices before dashboard readiness`);
@@ -845,8 +846,38 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   const existingWithoutEndpoint = outbound({ fresh: false, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
   assert.equal(tags(existingWithoutEndpoint, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 0, 'running nodes are not offered a fresh deployment');
   assert.match(text(outbound({ fresh: false })), /Its current CANARY_NODE_ID\. The dashboard refuses a node that connects with any other ID\./u);
-  assert.doesNotMatch(text(outbound({ fresh: false })), /Deployment preview only/u, 'running nodes retain their existing deployment');
+  assert.doesNotMatch(text(outbound({ fresh: false })), /Choose how the new node will run/u, 'running nodes retain their existing deployment');
   assert.deepEqual(reached, [], 'rendering asks the API nothing');
+});
+
+await check('outbound preparation exports real bootstrap tokens for every platform without fake connection settings', () => {
+  on();
+  const nodeId = 'canary-office';
+  const setup = { nodeId, name: 'Office', imageTag: CAPS.imageTag, secrets: { ...SECRETS, nodeId }, prepareOutbound: true };
+  for (const { value: platform } of onboarding.PLATFORMS) {
+    const masked = onboarding.setupGuide({ ...setup, platform }, false);
+    const real = onboarding.setupGuide({ ...setup, platform }, true);
+    const all = real.map(block => block.text).join('\n');
+    assert.ok(all.includes(ADMIN) && all.includes(CLUSTER), `${platform}: actual bootstrap credentials in exported settings`);
+    assert.ok(!all.includes(onboarding.MASK), `${platform}: exporting never copies a mask`);
+    assert.doesNotMatch(all, /CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)[=:]|NODE_REACHABLE_HOST|INVITATION_TOKEN|--publish|\s-p\s|^\s*ports:/mu, `${platform}: usable preparation, no fake connector values or inbound mapping`);
+    assert.ok(real.some(block => block.key === 'connect' && block.text.includes('does not connect to this dashboard yet')), `${platform}: clearly requires the later invitation`);
+    assert.ok(!real.some(block => block.key === 'started' || block.key === 'after'), `${platform}: no direct verification or consumed invitation instructions`);
+    for (const token of [ADMIN, CLUSTER]) assert.ok(!masked.map(block => block.text).join('\n').includes(token), `${platform}: preview remains masked`);
+    const markup = within('admin', [], React.createElement(wizard.NewOutboundDeploy, {
+      capabilities: { ...CAPS, outboundEnabled: false, connectionUrl: undefined }, nodeId, name: 'Office', secrets: setup.secrets,
+      platform, onPlatform: noop, onUse: noop, taken: { nodes: [], invitations: [] },
+    }));
+    assert.match(text(markup), /real administrator and cluster tokens/u, `${platform}: actual deployment, not an example`);
+    const buttons = tags(markup, 'button').map(attributes);
+    assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Show private values in ')), `${platform}: Show works before an invitation`);
+    assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Copy ')), `${platform}: Copy is available`);
+    assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Download ')), `${platform}: Download is available`);
+    for (const token of PRIVATE) assert.ok(!markup.includes(token), `${platform}: no private value in masked markup`);
+    assert.throws(() => onboarding.setupGuide({ ...setup, secrets: { ...SECRETS, nodeId: 'different-node' }, platform }, true), /already used/u);
+    assert.throws(() => onboarding.setupGuide({ ...setup, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN }, platform }, true), /Choose how/u);
+    assert.throws(() => onboarding.setupGuide({ ...setup, secrets: null, platform }, true), /own address and credential/u);
+  }
 });
 
 await check('outbound setup explains which stack to configure and offers a refresh before invitations are possible', () => {

@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, resourceName, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -287,7 +287,7 @@ export function OutboundDeploymentPreview({ capabilities, platform, onPlatform, 
   return (
     <>
       <p className="sec">Choose how the new node will run: Docker run, Docker Compose, Portainer stack or Linux VM.</p>
-      <p className="modal-note">Deployment preview only: do not deploy these example settings. Set up the dashboard connection endpoint and create an invitation to get this node’s private settings, with Show, Copy and Download. The preview uses an example node ID until you enter a valid one.</p>
+      <p className="modal-note">Enter a name and a valid, unique Node ID above to get this node’s real setup instructions with Show, Copy and Download. Until then these are example settings; do not deploy them.</p>
       {capabilities ? <ImageLine capabilities={capabilities} /> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
@@ -296,6 +296,36 @@ export function OutboundDeploymentPreview({ capabilities, platform, onPlatform, 
         platform={platform} onPlatform={onPlatform} onHandled={() => {}} previewOnly />
     </>
   );
+}
+
+/** Like direct deployment, a fresh node gets usable bootstrap credentials before it is registered. */
+export function NewOutboundDeploy({ capabilities, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse }: {
+  capabilities?: NodeOnboardingCapabilities; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
+  secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void;
+}) {
+  if (!capabilities || labelProblem(name) || nodeIdProblem(nodeId, taken)) {
+    return <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={name} />;
+  }
+  const pair = secretsFor(secrets, nodeId);
+  return pair ? <>
+    <p className="sec">These are this new node’s real administrator and cluster tokens, made in this browser. Show reveals them; Copy and Download include them while the preview stays masked. You can deploy it now without an inbound port, then connect it with an invitation once this dashboard’s endpoint is ready.</p>
+    <ImageLine capabilities={capabilities} />
+    <TokensNote nodeId={nodeId} earlier={earlier} />
+    <SetupGuide setup={{ nodeId, name, imageTag: capabilities.imageTag, secrets: pair, prepareOutbound: true }}
+      platform={platform} onPlatform={onPlatform} onHandled={() => onUse(nodeId)} />
+  </> : <p className="small fwarn" role="alert"><Glyph tone="warn" />{NO_TOKENS}</p>;
+}
+
+/** An invitation updates a deployment made in the preparation step, retaining its names and state. */
+function PreparedNodeNote({ platform, nodeId }: { platform: Platform; nodeId: string }) {
+  const res = resourceName(nodeId);
+  const advice = {
+    docker: `Before rerunning the start command below, stop and remove only its existing container with docker stop ${res} && docker rm ${res}. Keep both named volumes; the updated command reuses them.`,
+    compose: 'Replace both compose.yaml and the private settings file in the existing Compose directory: the YAML adds the dashboard address, certificate pin and invitation-token mapping. Then use the update command below with the same project name and volumes.',
+    portainer: 'Open its existing stack in Portainer, replace its YAML and environment variables with the settings below, and choose Update the stack. Keep the stack name and both volumes; use Add stack only for a first deployment.',
+    vm: `Install the updated environment file below at /etc/uptime-canary/${res}.env, then run sudo systemctl restart ${res} so the running service reads it. Keep the same unit and state directory.`,
+  }[platform];
+  return <p className="modal-note">If you already deployed this node using the earlier steps: {advice}</p>;
 }
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
@@ -509,8 +539,9 @@ function useInvitationStatus(id: string | null, stop: boolean, nonce: number): {
   return { status, failure, loading };
 }
 
-export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
+export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNodeIdChange, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
   fresh: boolean; onboarding: Resource<NodeOnboardingCapabilities>; secrets: NodeSecrets | null; earlier?: string | null; onUse: (nodeId: string) => void; taken: Taken; platform: Platform;
+  onNodeIdChange: (nodeId: string) => void;
   onPlatform: (platform: Platform) => void; onClose: () => void; onRequestClose: () => void; onLock: (locked: boolean) => void; onBusy: (busy: boolean) => void;
   guard: RefObject<(() => boolean) | null>; onTakenChanged: () => void;
 }) {
@@ -625,9 +656,18 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
     }
   };
 
+  const identityFields = <>
+    <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
+      hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
+    <TextField label="Node ID" mono value={nodeId} onChange={value => { setNodeId(value); if (fresh) onNodeIdChange(value); }} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
+      hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
+  </>;
+  const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
+    secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} /> : null;
+
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
     return <>
-      {fresh ? <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} /> : null}
+      {fresh && !invitation ? <form className="connect-form" onSubmit={event => event.preventDefault()} noValidate>{identityFields}{deployment}</form> : null}
       <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} />
     </>;
   }
@@ -662,11 +702,8 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
         </dl>
         <ConnectionTrust pin={capabilities.connectionTlsFingerprint} />
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
-        <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
-          hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
-        <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
-          hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
-        {fresh ? <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label} /> : null}
+        {identityFields}
+        {deployment}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
@@ -719,6 +756,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
           <>
             <ImageLine capabilities={capabilities} />
             {fresh ? <TokensNote nodeId={current.nodeId} earlier={earlier} /> : null}
+            {fresh ? <PreparedNodeNote platform={platform} nodeId={current.nodeId} /> : null}
             {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
             <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: pair,
               outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}

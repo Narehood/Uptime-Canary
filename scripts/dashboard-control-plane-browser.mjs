@@ -875,6 +875,8 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
   });
   await step('Control plane: the node-reaches-dashboard choice follows the dashboard’s own answer; invitations stay administrators’, shown once and masked, and cancelling one changes no node', async () => {
     const begin = fixture.stats().paths.length;
+    const preparationId = 'review-outbound', preparationFile = await settingsFile(preparationId);
+    let preparationCredentials = null;
     const capabilities = await fixture.api('/api/dashboard/onboarding', 'GET', undefined, owner);
     assert.equal(capabilities.status, 200, JSON.stringify(capabilities.value));
     const password = 'Private dashboard wizard viewer password'; secrets.add(password);
@@ -904,6 +906,34 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
         assert.deepEqual(preview.actions, [], 'a deployment preview cannot expose or export private settings');
         assert.ok(preview.words.includes('CANARY_NODE_ID') || method === 'Linux VM', `${method}: node deployment preview`);
       }
+      await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
+      await fill('Node ID', preparationId, 'dialog[open]');
+      for (const method of ['Docker run', 'Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
+        await click(method, 'dialog[open]');
+        await captureOutputs();
+        const copied = envOf(await copyOf(preparationFile));
+        const unquote = value => value.startsWith('"') ? JSON.parse(value) : value;
+        const credentials = [unquote(copied.CANARY_ADMIN_TOKEN), unquote(copied.CANARY_CLUSTER_TOKEN)];
+        for (const token of credentials) { secrets.add(token); assert.match(token, /^[A-Za-z0-9_-]{43}$/u, 'real browser-generated bootstrap token'); }
+        preparationCredentials ??= credentials;
+        assert.deepEqual(credentials, preparationCredentials, `${method}: switching platforms preserves this node's credentials`);
+        assert.equal(copied.CANARY_DASHBOARD_ENROLL_TOKEN, undefined, 'preparation needs no fake invitation');
+        await clickLabelled(`Show private values in ${preparationFile}`);
+        assert.ok((await page.eval('document.querySelector("dialog[open]").innerText')).includes(credentials[0]), `${method}: Show reveals a real credential`);
+        await clickLabelled(`Hide private values in ${preparationFile}`);
+        assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes(credentials[0]), `${method}: Hide masks it again`);
+        await clickLabelled(`Download ${preparationFile}`);
+        const downloaded = await page.eval('window.__saved.at(-1).blob.text()');
+        assert.ok(credentials.every(token => downloaded.includes(token)), `${method}: downloaded settings contain the real credentials`);
+        assert.ok(!downloaded.includes('••••'), `${method}: exported settings contain no mask`);
+      }
+      await fill('Node ID', 'review-outbound-other', 'dialog[open]');
+      const otherPreparation = envOf(await copyOf(await settingsFile('review-outbound-other')));
+      for (const token of [otherPreparation.CANARY_ADMIN_TOKEN, otherPreparation.CANARY_CLUSTER_TOKEN]) secrets.add(token);
+      assert.notEqual(otherPreparation.CANARY_ADMIN_TOKEN, preparationCredentials[0], 'another node ID receives another administrator token');
+      await fill('Node ID', preparationId, 'dialog[open]');
+      const restoredPreparation = envOf(await copyOf(preparationFile));
+      assert.deepEqual([restoredPreparation.CANARY_ADMIN_TOKEN, restoredPreparation.CANARY_CLUSTER_TOKEN], preparationCredentials, 'returning to the prepared ID restores its original tokens');
       assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes('Create invitation'), 'no premature invitation form');
       assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations' && entry.status !== 403), 'setup guidance made no invitation');
       if (!capabilities.value.outboundEnabled) {
@@ -927,6 +957,9 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await fill('Name on this dashboard', label, 'dialog[open]'); await fill('Node ID', id, 'dialog[open]');
     await click('Create invitation', 'dialog[open]');
     await text(`Waiting for ${id} to connect`, 15000);
+    await click('Docker Compose', 'dialog[open]');
+    await text('Replace both compose.yaml and the private settings file');
+    await click('Docker run', 'dialog[open]');
     const listed = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value;
     const invitation = listed.find(row => row.nodeId === id);
     assert.ok(invitation && invitation.state === 'waiting' && invitation.connectionUrl === connectionUrl, JSON.stringify(listed));
@@ -942,6 +975,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     const token = copied.CANARY_DASHBOARD_ENROLL_TOKEN;
     for (const value of [token, copied.CANARY_ADMIN_TOKEN, copied.CANARY_CLUSTER_TOKEN]) secrets.add(value);
     assert.deepEqual([copied.CANARY_DASHBOARD_URL, copied.CANARY_NODE_ID], [connectionUrl, id]);
+    assert.deepEqual([copied.CANARY_ADMIN_TOKEN, copied.CANARY_CLUSTER_TOKEN], preparationCredentials, 'the invitation keeps the prepared node’s exact credentials');
     assert.ok(token && token.length >= 24, 'the one-time token is in the private settings');
     assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes(token), 'the token stays masked');
     await footClose();

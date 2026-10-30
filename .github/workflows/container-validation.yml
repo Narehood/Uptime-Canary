@@ -7,6 +7,11 @@ on:
     branches: [main]
     paths-ignore: [README.md, 'docs/**', 'design/**']
   workflow_dispatch:
+    inputs:
+      dashboard_browser_only:
+        description: Run the existing dashboard browser proof on Linux instead of the Alpine matrix
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,6 +22,7 @@ concurrency:
 
 jobs:
   alpine-runtime:
+    if: github.event_name != 'workflow_dispatch' || !inputs.dashboard_browser_only
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -61,5 +67,50 @@ jobs:
             .canary/alpine-validation/source-manifest.json
             !.canary/alpine-validation/results/worker-race/**/canary-worker
             !.canary/alpine-validation/results/worker-race/**/process-fixture
+          retention-days: 14
+          include-hidden-files: true
+
+  dashboard-browser:
+    name: Dashboard browser proof
+    if: github.event_name == 'workflow_dispatch' && inputs.dashboard_browser_only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - name: Bind the installed toolchain and browser
+        shell: bash
+        run: |
+          mkdir -p .canary/tools
+          test ! -e .canary/tools/go
+          ln -s "$(go env GOROOT)" .canary/tools/go
+          echo "GOCACHE=$GITHUB_WORKSPACE/.canary/cache/go-build" >> "$GITHUB_ENV"
+          echo 'GOTOOLCHAIN=local' >> "$GITHUB_ENV"
+          echo 'GOFLAGS=-p=1 -mod=readonly' >> "$GITHUB_ENV"
+          dashboard_chrome="$(command -v google-chrome || command -v chromium)"
+          echo "CHROME_PATH=$dashboard_chrome" >> "$GITHUB_ENV"
+      - name: Install locked dependencies on the disposable runner
+        run: |
+          go mod download
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Exercise the real dashboard and browser controls
+        run: python3 scripts/bounded_validation.py --timeout 1200 -- node scripts/dashboard-contract-review.mjs --dashboard-control-plane --dashboard-only
+      - name: Upload bounded browser evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dashboard-browser-proof
+          path: |
+            .canary/dashboard-contract-current.json
+            .canary/work/current/latest.log
           retention-days: 14
           include-hidden-files: true
