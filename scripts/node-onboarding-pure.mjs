@@ -1273,7 +1273,7 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   assert.match(registry, /const verifying = deployed \? secretsFor\(pair, draft\.nodeId\) : null;/u, 'verification sends only this ID’s token');
   const source = read('src/views/NodeWizard.tsx');
   assert.match(source, /const pair = secretsFor\(secrets, draft\.nodeId\);/u);
-  assert.match(source, /const pair = fresh \? secretsFor\(secrets, current\.nodeId\) : null;/u);
+  assert.match(source, /const pair = secretsFor\(secrets, nodeId\);/u, 'bootstrap deployment uses only its own ID’s credentials');
   assert.match(source, /if \(fresh\) onUse\(result\.nodeId\);/u, 'an invitation’s tokens are bound to its node ID');
   // Rendered: a pair used for another ID, or none, gives no steps, and never a running node's steps.
   const draft = { label: 'Office', nodeId: 'canary-office', address: 'http://100.79.12.4:3100', bindAddress: '100.79.12.4', platform: 'docker' };
@@ -1293,16 +1293,24 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   assert.match(text(own), /publish port 3100 on 100\.79\.12\.4 only/u);
   assert.match(text(own), /the node host itself must have that address/u);
   assert.match(text(own), /Not a VPN, NAT or port-forward address that belongs to another machine/u);
-  // L3: a new node that reaches the dashboard can't be invited without its tokens; a running node can.
+  // CR1: bootstrap must be handled before invitation creation; the invitation
+  // then exports connection-only settings so a reopened dialog cannot replace
+  // the deployed node's original credentials. The browser proof restarts that
+  // node with its original database/identity and the connection-only export.
   const outbound = (fresh, secrets) => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
     fresh, onboarding: resource(CAPS), secrets, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
     onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
   }));
   const submit = markup => attributes(tags(markup, 'button').find(tag => attributes(tag).get('type') === 'submit'));
   assert.ok(submit(outbound(true, null)).has('disabled'), 'no invitation for a new node without tokens');
-  assert.ok(!submit(outbound(true, SECRETS)).has('disabled') && !submit(outbound(false, null)).has('disabled'));
-  assert.match(source, /\{token && current\.state !== 'confirmed' \? \(fresh && !pair\n\s+\? <Banner tone="down" title="No settings without the new node’s tokens">/u, 'after creation too: no steps rather than a running node’s');
-  assert.doesNotMatch(source, /secrets: fresh \? secrets : null/u, 'the r1-r4 fallback to running-node steps is gone');
+  assert.ok(submit(outbound(true, SECRETS)).has('disabled'), 'unsaved bootstrap cannot be skipped');
+  assert.ok(!submit(outbound(false, null)).has('disabled'), 'a running node uses its retained credentials');
+  assert.match(source, /setup=\{\{ nodeId: current\.nodeId, name: current\.label, imageTag: capabilities\.imageTag, secrets: null,/u, 'invitation exports intentionally contain no bootstrap credential replacement');
+  for (const pair of [{ ...SECRETS, nodeId: 'canary-other' }, null]) {
+    const markup = within('admin', [], React.createElement(wizard.NewOutboundDeploy, { capabilities: CAPS, nodeId: 'canary-office', name: 'Office', secrets: pair,
+      platform: 'docker', onPlatform: noop, onUse: noop, taken: { nodes: [], invitations: [] } }));
+    assert.doesNotMatch(markup, /aria-label="(?:Copy|Download|Show private values in) /u, 'preparation never exports missing or another ID’s credentials');
+  }
 });
 
 await check('a pending create can only be stopped: no choices, Close or Escape until it answers; a dialog the browser closes opens again; Review offers nothing once the invitation is gone', () => {

@@ -38,11 +38,16 @@ does not connect to the dashboard yet. Example previews are used only while
 the required identity fields or dashboard image tag are missing.
 
 Once the endpoint is configured, create an invitation using the same Node ID.
-Apply its connection settings to the prepared deployment, retaining the same
-tokens, names, data and identity storage. Recreate an existing Docker container
-with the updated settings, replace both the Compose YAML and its private settings
-file (or update the existing Portainer stack), or
-restart the native service after installing its updated environment file.
+Save the bootstrap settings before creating the invitation. Invitation exports
+contain only dashboard connection settings; they never replace administrator or
+cluster tokens. Add those settings to the prepared deployment, retaining its
+original credentials, names, data and identity storage. Update the existing
+Compose YAML and add the enrollment token to its existing private settings file,
+update the existing Portainer stack, recreate the Docker container with the extra
+connection settings, or restart the native service after updating its environment.
+The dialog forgets bootstrap credentials when closed. If the node is already
+deployed when returning later, choose **A node that’s already running** with its
+same Node ID and apply only the invitation's connection settings.
 The tabs describe the new node independently of the dashboard deployment.
 The node-facing hostname or IP and the Docker host's bind IP are separate:
 behind NAT, publish on an address assigned to the Docker host, forward the

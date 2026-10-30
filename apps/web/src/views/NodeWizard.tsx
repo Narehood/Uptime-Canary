@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, resourceName, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -316,18 +316,6 @@ export function NewOutboundDeploy({ capabilities, platform, onPlatform, nodeId, 
   </> : <p className="small fwarn" role="alert"><Glyph tone="warn" />{NO_TOKENS}</p>;
 }
 
-/** An invitation updates a deployment made in the preparation step, retaining its names and state. */
-function PreparedNodeNote({ platform, nodeId }: { platform: Platform; nodeId: string }) {
-  const res = resourceName(nodeId);
-  const advice = {
-    docker: `Before rerunning the start command below, stop and remove only its existing container with docker stop ${res} && docker rm ${res}. Keep both named volumes; the updated command reuses them.`,
-    compose: 'Replace both compose.yaml and the private settings file in the existing Compose directory: the YAML adds the dashboard address, certificate pin and invitation-token mapping. Then use the update command below with the same project name and volumes.',
-    portainer: 'Open its existing stack in Portainer, replace its YAML and environment variables with the settings below, and choose Update the stack. Keep the stack name and both volumes; use Add stack only for a first deployment.',
-    vm: `Install the updated environment file below at /etc/uptime-canary/${res}.env, then run sudo systemctl restart ${res} so the running service reads it. Keep the same unit and state directory.`,
-  }[platform];
-  return <p className="modal-note">If you already deployed this node using the earlier steps: {advice}</p>;
-}
-
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
 
 export interface NewNodeDraft { label: string; nodeId: string; address: string; bindAddress?: string; platform: Platform }
@@ -583,6 +571,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
 
   const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken) };
   const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
+  const bootstrapSaved = secretsFor(secrets, nodeId)?.nodeId === nodeId;
 
   const create = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -590,7 +579,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
     setShow(true); setFailure(null);
     if (errors.label || errors.nodeId) { failed(); return; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
-    if (fresh && !secrets) { failed(); return; }
+    if (fresh && (!secrets || !bootstrapSaved)) { failed(); return; }
     const controller = new AbortController();
     attempt.current = controller;
     setBusy('create');
@@ -704,13 +693,14 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
         {identityFields}
         {deployment}
+        {fresh && !bootstrapSaved ? <p className="modal-note">Save this node’s bootstrap settings above before creating its invitation. If you already deployed it before opening this dialog, choose “A node that’s already running” to keep its original credentials.</p> : null}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
             {busy === 'create'
               ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
               : <button type="button" className="btn" onClick={onRequestClose}>Cancel</button>}
-            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && !secrets)}><Icon name="key" />{busy === 'create' ? 'Creating…' : 'Create invitation'}</button>
+            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && (!secrets || !bootstrapSaved))}><Icon name="key" />{busy === 'create' ? 'Creating…' : 'Create invitation'}</button>
           </span>
         </div>
       </form>
@@ -720,8 +710,6 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
   const info = invitationInfo(current, now);
   const left = current.expiresAt - now;
   const gone = invitationGone(polled.failure);
-  // A new node's steps only with its own tokens; never a running node's steps in their place.
-  const pair = fresh ? secretsFor(secrets, current.nodeId) : null;
   let status: ReactNode;
   if (gone) status = <Banner tone="warn" title="This invitation is no longer on this dashboard">It may have been cancelled meanwhile. Nothing was added.</Banner>;
   else if (current.state === 'waiting') {
@@ -750,19 +738,16 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
         <dt>Node-connection address</dt><dd className="mono">{current.connectionUrl}</dd>
         {current.connectionTlsFingerprint ? <><dt>Its certificate fingerprint</dt><dd className="mono">{current.connectionTlsFingerprint}</dd></> : null}
       </dl>
-      {token && current.state !== 'confirmed' ? (fresh && !pair
-        ? <Banner tone="down" title="No settings without the new node’s tokens">{NO_TOKENS} This invitation’s token stays here until the dialog closes; cancel the invitation if you won’t use it.</Banner>
-        : (
+      {token && current.state !== 'confirmed' ? (
           <>
             <ImageLine capabilities={capabilities} />
-            {fresh ? <TokensNote nodeId={current.nodeId} earlier={earlier} /> : null}
-            {fresh ? <PreparedNodeNote platform={platform} nodeId={current.nodeId} /> : null}
+            {fresh ? <p className="modal-note">Add only these connection settings to the node you prepared. Keep its original administrator and cluster tokens, node ID, names, data and identity storage. This dialog forgets bootstrap credentials when closed; adding the connection must not replace them.</p> : null}
             {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
-            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: pair,
+            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: null,
               outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}
-              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); if (fresh) onUse(current.nodeId); }} />
+              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); }} />
           </>
-        )) : null}
+        ) : null}
       <div aria-live="polite">{status}</div>
       {!gone && (current.state === 'waiting' || current.state === 'connected') ? (
         <button type="button" className="btn sm" onClick={() => setNonce(n => n + 1)} disabled={busy !== null || polled.loading}>
