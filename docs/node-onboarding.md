@@ -28,10 +28,27 @@ the stack, use **Check dashboard setup** in that menu to reload its configuratio
 once the endpoint is enabled, the invitation form appears in the same menu.
 With **Deploy a new node → The node reaches this dashboard**, the Docker run,
 Docker Compose, Portainer stack and Linux VM tabs are visible from the start,
-including before the endpoint is configured or an invitation exists. They show
-a labelled deployment preview with example settings and masked credentials;
-Show, Copy and Download become available with the real invitation. These tabs
-describe the new node, independently of how the dashboard itself is deployed.
+including before the endpoint is configured or an invitation exists. Enter a
+name and a unique Node ID to get usable bootstrap deployment settings. **Show**
+reveals the real administrator and cluster tokens; **Copy** and **Download**
+include them while the page remains masked, just as in the direct-node flow.
+The preparation settings start the node without publishing an inbound port and
+omit dashboard connection variables until a real invitation exists. The node
+does not connect to the dashboard yet. Example previews are used only while
+the required identity fields or dashboard image tag are missing.
+
+Once the endpoint is configured, create an invitation using the same Node ID.
+Save the bootstrap settings before creating the invitation. Invitation exports
+contain only dashboard connection settings; they never replace administrator or
+cluster tokens. Add those settings to the prepared deployment, retaining its
+original credentials, names, data and identity storage. Update the existing
+Compose YAML and add the enrollment token to its existing private settings file,
+update the existing Portainer stack, recreate the Docker container with the extra
+connection settings, or restart the native service after updating its environment.
+The dialog forgets bootstrap credentials when closed. If the node is already
+deployed when returning later, choose **A node that’s already running** with its
+same Node ID and apply only the invitation's connection settings.
+The tabs describe the new node independently of the dashboard deployment.
 The node-facing hostname or IP and the Docker host's bind IP are separate:
 behind NAT, publish on an address assigned to the Docker host, forward the
 advertised TCP port to it, and give nodes the externally reachable address.

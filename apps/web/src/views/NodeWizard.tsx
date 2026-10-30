@@ -287,7 +287,7 @@ export function OutboundDeploymentPreview({ capabilities, platform, onPlatform, 
   return (
     <>
       <p className="sec">Choose how the new node will run: Docker run, Docker Compose, Portainer stack or Linux VM.</p>
-      <p className="modal-note">Deployment preview only: do not deploy these example settings. Set up the dashboard connection endpoint and create an invitation to get this node’s private settings, with Show, Copy and Download. The preview uses an example node ID until you enter a valid one.</p>
+      <p className="modal-note">Enter a name and a valid, unique Node ID above to get this node’s real setup instructions with Show, Copy and Download. Until then these are example settings; do not deploy them.</p>
       {capabilities ? <ImageLine capabilities={capabilities} /> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
@@ -296,6 +296,24 @@ export function OutboundDeploymentPreview({ capabilities, platform, onPlatform, 
         platform={platform} onPlatform={onPlatform} onHandled={() => {}} previewOnly />
     </>
   );
+}
+
+/** Like direct deployment, a fresh node gets usable bootstrap credentials before it is registered. */
+export function NewOutboundDeploy({ capabilities, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse }: {
+  capabilities?: NodeOnboardingCapabilities; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
+  secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void;
+}) {
+  if (!capabilities || labelProblem(name) || nodeIdProblem(nodeId, taken)) {
+    return <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={name} />;
+  }
+  const pair = secretsFor(secrets, nodeId);
+  return pair ? <>
+    <p className="sec">These are this new node’s real administrator and cluster tokens, made in this browser. Show reveals them; Copy and Download include them while the preview stays masked. You can deploy it now without an inbound port, then connect it with an invitation once this dashboard’s endpoint is ready.</p>
+    <ImageLine capabilities={capabilities} />
+    <TokensNote nodeId={nodeId} earlier={earlier} />
+    <SetupGuide setup={{ nodeId, name, imageTag: capabilities.imageTag, secrets: pair, prepareOutbound: true }}
+      platform={platform} onPlatform={onPlatform} onHandled={() => onUse(nodeId)} />
+  </> : <p className="small fwarn" role="alert"><Glyph tone="warn" />{NO_TOKENS}</p>;
 }
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
@@ -509,8 +527,9 @@ function useInvitationStatus(id: string | null, stop: boolean, nonce: number): {
   return { status, failure, loading };
 }
 
-export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
+export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNodeIdChange, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
   fresh: boolean; onboarding: Resource<NodeOnboardingCapabilities>; secrets: NodeSecrets | null; earlier?: string | null; onUse: (nodeId: string) => void; taken: Taken; platform: Platform;
+  onNodeIdChange: (nodeId: string) => void;
   onPlatform: (platform: Platform) => void; onClose: () => void; onRequestClose: () => void; onLock: (locked: boolean) => void; onBusy: (busy: boolean) => void;
   guard: RefObject<(() => boolean) | null>; onTakenChanged: () => void;
 }) {
@@ -552,6 +571,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
 
   const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken) };
   const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
+  const bootstrapSaved = secretsFor(secrets, nodeId)?.nodeId === nodeId;
 
   const create = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -559,7 +579,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
     setShow(true); setFailure(null);
     if (errors.label || errors.nodeId) { failed(); return; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
-    if (fresh && !secrets) { failed(); return; }
+    if (fresh && (!secrets || !bootstrapSaved)) { failed(); return; }
     const controller = new AbortController();
     attempt.current = controller;
     setBusy('create');
@@ -625,9 +645,18 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
     }
   };
 
+  const identityFields = <>
+    <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
+      hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
+    <TextField label="Node ID" mono value={nodeId} onChange={value => { setNodeId(value); if (fresh) onNodeIdChange(value); }} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
+      hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
+  </>;
+  const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
+    secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} /> : null;
+
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
     return <>
-      {fresh ? <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} /> : null}
+      {fresh && !invitation ? <form className="connect-form" onSubmit={event => event.preventDefault()} noValidate>{identityFields}{deployment}</form> : null}
       <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} />
     </>;
   }
@@ -662,18 +691,16 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
         </dl>
         <ConnectionTrust pin={capabilities.connectionTlsFingerprint} />
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
-        <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
-          hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
-        <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
-          hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
-        {fresh ? <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label} /> : null}
+        {identityFields}
+        {deployment}
+        {fresh && !bootstrapSaved ? <p className="modal-note">Save this node’s bootstrap settings above before creating its invitation. If you already deployed it before opening this dialog, choose “A node that’s already running” to keep its original credentials.</p> : null}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
             {busy === 'create'
               ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
               : <button type="button" className="btn" onClick={onRequestClose}>Cancel</button>}
-            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && !secrets)}><Icon name="key" />{busy === 'create' ? 'Creating…' : 'Create invitation'}</button>
+            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && (!secrets || !bootstrapSaved))}><Icon name="key" />{busy === 'create' ? 'Creating…' : 'Create invitation'}</button>
           </span>
         </div>
       </form>
@@ -683,8 +710,6 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
   const info = invitationInfo(current, now);
   const left = current.expiresAt - now;
   const gone = invitationGone(polled.failure);
-  // A new node's steps only with its own tokens; never a running node's steps in their place.
-  const pair = fresh ? secretsFor(secrets, current.nodeId) : null;
   let status: ReactNode;
   if (gone) status = <Banner tone="warn" title="This invitation is no longer on this dashboard">It may have been cancelled meanwhile. Nothing was added.</Banner>;
   else if (current.state === 'waiting') {
@@ -713,18 +738,16 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, taken
         <dt>Node-connection address</dt><dd className="mono">{current.connectionUrl}</dd>
         {current.connectionTlsFingerprint ? <><dt>Its certificate fingerprint</dt><dd className="mono">{current.connectionTlsFingerprint}</dd></> : null}
       </dl>
-      {token && current.state !== 'confirmed' ? (fresh && !pair
-        ? <Banner tone="down" title="No settings without the new node’s tokens">{NO_TOKENS} This invitation’s token stays here until the dialog closes; cancel the invitation if you won’t use it.</Banner>
-        : (
+      {token && current.state !== 'confirmed' ? (
           <>
             <ImageLine capabilities={capabilities} />
-            {fresh ? <TokensNote nodeId={current.nodeId} earlier={earlier} /> : null}
+            {fresh ? <p className="modal-note">Add only these connection settings to the node you prepared. Keep its original administrator and cluster tokens, node ID, names, data and identity storage. This dialog forgets bootstrap credentials when closed; adding the connection must not replace them.</p> : null}
             {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
-            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: pair,
+            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: null,
               outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}
-              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); if (fresh) onUse(current.nodeId); }} />
+              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); }} />
           </>
-        )) : null}
+        ) : null}
       <div aria-live="polite">{status}</div>
       {!gone && (current.state === 'waiting' || current.state === 'connected') ? (
         <button type="button" className="btn sm" onClick={() => setNonce(n => n + 1)} disabled={busy !== null || polled.loading}>

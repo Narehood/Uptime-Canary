@@ -454,7 +454,7 @@ export function AddNodeDialog({ onClose }: { onClose: () => void }) {
       : <NewNodeDeploy draft={draft} onDraft={changeDraft} secrets={pair} earlier={earlier} onboarding={onboarding} taken={taken}
         onNext={target => { tokensFor(draft.nodeId, true); setDeployed(target); }} onUse={nodeId => tokensFor(nodeId, true)} onCancel={onClose} />;
   } else {
-    body = <OutboundNode fresh={plan.fresh} onboarding={onboarding} secrets={pair} earlier={earlier} onUse={nodeId => tokensFor(nodeId, true)} taken={taken} platform={platform} onPlatform={setPlatform}
+    body = <OutboundNode fresh={plan.fresh} onboarding={onboarding} secrets={pair} earlier={earlier} onUse={nodeId => tokensFor(nodeId, true)} onNodeIdChange={nodeId => tokensFor(nodeId)} taken={taken} platform={platform} onPlatform={setPlatform}
       onClose={onClose} onRequestClose={requestClose} onLock={lock} onBusy={hold} guard={guard} onTakenChanged={invitations.reload} />;
   }
   return (

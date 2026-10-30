@@ -8,7 +8,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { createServer as netServer } from 'node:net';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createProxyAuthFixture, reviewProxyAuth } from './proxy-auth-browser.mjs';
@@ -27,7 +27,7 @@ const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2));
 const serial = value => JSON.parse(JSON.stringify(value));
 const args = process.argv.slice(2);
-let runDir, state, report, page, ws, requestHook, proxyAuthFixture, dashboardControlPlaneFixture, stopInterceptions;
+let runDir, state, report, page, ws, requestHook, proxyAuthFixture, dashboardControlPlaneFixture, stopInterceptions, browserProfile, browserProcess;
 const secrets = new Set();
 const redact = value => { let out = String(value); for (const s of secrets) if (s) out = out.replaceAll(s, '[fixture-secret]'); return out; };
 const save = () => writeFileSync(join(runDir, 'results.json'), redact(JSON.stringify(report, null, 2)));
@@ -166,7 +166,9 @@ async function launchBrowser() {
   }
   const debugPort = await port(), chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   const profile = mkdtempSync(join(runDir, 'chrome-profile-'));
+  browserProfile = profile;
   const p = spawn(chrome, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-extensions', '--no-proxy-server', '--password-store=basic', 'about:blank'], { windowsHide: true, stdio: 'ignore' }); owned.push(p);
+  browserProcess = p;
   const targets = await until(async () => { try { return await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json(); } catch { return false; } }, 'Chrome', 30000);
   ws = new WebSocket(targets.find(t => t.type === 'page').webSocketDebuggerUrl); await once(ws, 'open'); page = new Cdp(ws);
   for (const domain of ['Page', 'Runtime', 'Network']) await page.send(`${domain}.enable`);
@@ -257,11 +259,11 @@ async function review() {
   report = { startedAt: new Date().toISOString(), runtime:process.version, harnessHash:sha(readFileSync(fileURLToPath(import.meta.url))), runDir, sourceHash: state.sourceHash, binaryHash: state.binaryHash, artifacts: state.artifacts, checks: [], exceptions: [], blocked: [], requests: [] }; save();
   // Same production executable, assets, browser and assertions; a focused entry
   // keeps fleet recovery diagnostics independent of the unrelated form corpus.
-  if (args.includes('--fleet-only')) {
-    assert.ok(dashboardControlPlaneFixture, '--fleet-only needs --dashboard-control-plane');
+  if (args.includes('--fleet-only') || args.includes('--dashboard-only')) {
+    assert.ok(dashboardControlPlaneFixture, 'A focused dashboard review needs --dashboard-control-plane');
     await launchBrowser();
     const [A, B] = state.nodes;
-    await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet: true });
+    await reviewDashboardControlPlane({ fixture: dashboardControlPlaneFixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet: args.includes('--fleet-only') });
     return finishReview();
   }
   const f = await functionsUnderReview(), [A, B] = state.nodes;
@@ -1448,6 +1450,21 @@ finally {
       child.kill('SIGTERM');
       await Promise.race([once(child, 'exit'), sleep(1500)]);
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    }
+  }
+  // Linux Chrome leaves singleton links in its private profile. Remove only
+  // those link entries after Chrome exits; never follow their targets. Every
+  // other link still reaches the storage guard's existing refusal unchanged.
+  if (process.platform !== 'win32' && browserProfile && browserProcess && (browserProcess.exitCode !== null || browserProcess.signalCode !== null)) {
+    const outputs = join(root, '.canary', 'work', 'current', 'outputs');
+    const relativeProfile = relative(outputs, browserProfile);
+    assert.ok(relativeProfile && !relativeProfile.startsWith('..') && dirname(browserProfile) === runDir, 'Browser cleanup must stay inside owned outputs');
+    assert.ok(lstatSync(runDir).isDirectory() && !lstatSync(runDir).isSymbolicLink(), 'Browser run directory must not be linked');
+    assert.ok(lstatSync(browserProfile).isDirectory() && !lstatSync(browserProfile).isSymbolicLink(), 'Browser profile must be an owned directory');
+    for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'RunningChromeVersion']) {
+      const path = join(browserProfile, name);
+      try { if (lstatSync(path).isSymbolicLink()) unlinkSync(path); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
   }
   cleanup();
