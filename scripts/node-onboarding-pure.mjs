@@ -813,10 +813,14 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   assert.match(text(deploy({ draft: { ...draft, address: 'http://canary-b.lan:3100' } })), /publish port 3100 on 100\.79\.12\.4 only/u);
   const guard = { current: null };
   const outbound = props => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
     fresh: true, onboarding: resource(CAPS), secrets: SECRETS, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop, onClose: noop, onRequestClose: noop,
-    onLock: noop, onBusy: noop, guard, onTakenChanged: noop, onNodeIdChange: noop, ...props,
+    onLock: noop, onBusy: noop, guard, onTakenChanged: noop, ...props,
   }));
   const identify = text(outbound({}));
+  const retained = outbound({ draft, onDraft: noop, platform: 'portainer', secrets: { ...SECRETS, nodeId: draft.nodeId } });
+  assert.ok(tags(retained, 'input').map(attributes).some(input => input.get('value') === draft.nodeId), 'switching from direct setup retains the entered Node ID');
+  assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN'), 'the retained draft exposes real Portainer copy controls immediately');
   assert.ok(identify.includes(CONNECT) && /Create invitation/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
   assert.match(identify, /Choose how the new node will run.*Enter a name and a valid, unique Node ID/u, 'the fresh outbound flow asks for its identity before exporting settings');
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
@@ -828,12 +832,11 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
     const beforeSetup = outbound({ platform, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
     assert.equal(tags(beforeSetup, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 4, `${platform}: deployment choices before dashboard readiness`);
     assert.doesNotMatch(text(beforeSetup), /Create invitation/u, 'no invitation action without an endpoint');
-    const preview = within('admin', [], React.createElement(wizard.OutboundDeploymentPreview, { capabilities: CAPS, platform, onPlatform: noop, nodeId: 'canary-outbound', name: 'Branch' }));
-    assert.ok(preview.includes(`ghcr.io/narehood/uptime-canary-node:${CAPS.imageTag}`) || platform === 'vm', `${platform}: preview uses this dashboard's image tag`);
-    assert.ok(text(preview).includes('canary-outbound'), `${platform}: valid entered ID is used`);
-    assert.ok(preview.includes(onboarding.MASK), `${platform}: private settings are masked`);
+    const preview = within('admin', [], React.createElement(wizard.OutboundDeploymentPreview, { capabilities: CAPS, platform, onPlatform: noop }));
+    assert.match(text(preview), /Deployment settings appear once these fields are valid/u, `${platform}: missing prerequisites are explained`);
+    assert.doesNotMatch(preview, /CANARY_ADMIN_TOKEN|CANARY_CLUSTER_TOKEN|INVITATION_TOKEN|canary-new-node|class="gsteps"/u, `${platform}: no misleading sample deployment or masked sample credentials`);
     const controls = tags(preview, 'button').map(attributes);
-    assert.equal(controls.length, 4, `${platform}: only platform selection, no Show/Copy/Download before an invitation`);
+    assert.equal(controls.length, 4, `${platform}: only platform selection until the required identity fields are valid`);
     assert.ok(controls.every(found => found.get('role') === 'tab'), `${platform}: preview actions cannot export sample settings`);
     assert.ok(controls.find(found => found.get('id').endsWith(`-t-${platform}`)).get('aria-selected') === 'true', `${platform}: selected preview method`);
     for (const value of PRIVATE) assert.ok(!preview.includes(value), `${platform}: preview uses no real node or invitation credentials`);
@@ -842,7 +845,7 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
     assert.doesNotMatch(blocks.map(block => block.text).join('\n'), /\s-p\s|--publish|^\s*ports:/mu, `${platform}: outbound nodes publish no inbound port`);
   }
   const unreadPreview = outbound({ onboarding: resource(undefined) });
-  assert.match(text(unreadPreview), /IMAGE_TAG_FROM_DASHBOARD/u, 'an unread image tag is an explicit example, never a guessed release');
+  assert.match(text(unreadPreview), /Reading this dashboard’s image tag/u, 'an unread image tag is explained without fake deployment settings');
   const existingWithoutEndpoint = outbound({ fresh: false, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
   assert.equal(tags(existingWithoutEndpoint, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 0, 'running nodes are not offered a fresh deployment');
   assert.match(text(outbound({ fresh: false })), /Its current CANARY_NODE_ID\. The dashboard refuses a node that connects with any other ID\./u);
@@ -1298,6 +1301,7 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   // the deployed node's original credentials. The browser proof restarts that
   // node with its original database/identity and the connection-only export.
   const outbound = (fresh, secrets) => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
     fresh, onboarding: resource(CAPS), secrets, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
     onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
   }));
@@ -1725,6 +1729,7 @@ await check('TLS views: new-node steps point to the fingerprint in the node’s 
   const server = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_server.go'), 'utf8');
   assert.ok(server.includes(`fmt.Fprintln(log, "${wizard.DASHBOARD_TLS_LOG_LINE}", connectionPin)`), 'the line the dashboard logs');
   const outbound = capabilities => text(within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
     fresh: true, onboarding: resource(capabilities), secrets: SECRETS, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
     onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
   })));

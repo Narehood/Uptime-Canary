@@ -145,7 +145,7 @@ export function saveText(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void; previewOnly?: boolean }) {
+function GuideStep({ n, block, real, onHandled }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void }) {
   const [shown, setShown] = useState(false);
   const name = block.file ?? block.title;
   if (block.kind === 'note') {
@@ -156,13 +156,13 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
       </li>
     );
   }
-  const reveal = block.secret && !previewOnly ? (
+  const reveal = block.secret ? (
     <button type="button" className="btn sm" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} private values in ${name}`}
       onClick={() => { if (!shown) onHandled(); setShown(!shown); }}>
       <Icon name={shown ? 'eyeOff' : 'eye'} />{shown ? 'Hide' : 'Show'}
     </button>
   ) : null;
-  const download = block.file && !previewOnly ? (
+  const download = block.file ? (
     <button type="button" className="btn sm" aria-label={`Download ${block.file}`} onClick={() => { saveText(block.file!, real.text); if (block.secret) onHandled(); }}>
       <Icon name="download" />Download
     </button>
@@ -178,7 +178,7 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
             <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
             {reveal}
           </div>
-          <p>{previewOnly ? 'Each card previews one entry under Environment variables in Portainer. Private values are available after creating the invitation.' : 'Each card below is one entry under Environment variables in Portainer: copy its Name into the entry’s name field and its Value into the value field.'}</p>
+          <p>Each card below is one entry under Environment variables in Portainer: copy its Name into the entry’s name field and its Value into the value field.</p>
           <ul className="gvars">
             {block.variables.map((variable, index) => {
               const realVariable = real.variables?.[index];
@@ -188,25 +188,25 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
                   <div className="gvar-f">
                     <span className="gvar-k">Name</span>
                     <code className="gvar-v">{variable.name}</code>
-                    {previewOnly ? null : <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} />}
+                    <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} />
                   </div>
                   <div className="gvar-f">
                     <span className="gvar-k">Value</span>
                     <code className="gvar-v">{variable.secret && !shown ? variable.value : realVariable.value}</code>
-                    {previewOnly ? null : <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret ? onHandled : undefined} />}
+                    <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret ? onHandled : undefined} />
                   </div>
                 </li>
               );
             })}
           </ul>
-          {previewOnly ? null : <div className="gvars-alt">
+          <div className="gvars-alt">
             <small className="muted">Advanced: all entries at once as NAME=value lines, for Portainer’s Advanced mode or Load variables from .env file.</small>
             <span className="row-wrap">
               <CopyButton value={real.text} label="Copy .env" ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />
               {download}
             </span>
-          </div>}
-          {block.secret && !previewOnly ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy value, Copy .env and Download include them. Keep them private and delete stray copies.</small> : null}
+          </div>
+          {block.secret ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy value, Copy .env and Download include them. Keep them private and delete stray copies.</small> : null}
         </div>
       </li>
     );
@@ -219,12 +219,12 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
           <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
           <span className="row-wrap">
             {reveal}
-            {previewOnly ? null : <CopyButton value={real.text} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />}
+            <CopyButton value={real.text} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />
             {download}
           </span>
         </div>
         <pre className="json-pre gpre">{block.secret && !shown ? block.text : real.text}</pre>
-        {block.secret && !previewOnly ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy and Download include them. Keep the file private and delete stray copies.</small> : null}
+        {block.secret ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy and Download include them. Keep the file private and delete stray copies.</small> : null}
       </div>
     </li>
   );
@@ -234,8 +234,8 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
  * The platform tabs and their steps. The preview is built with every private value masked; Copy and Download use the
  * real text. Changing tabs hides everything again.
  */
-export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly = false }: {
-  setup: Omit<NodeSetup, 'platform'>; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void; previewOnly?: boolean;
+export function SetupGuide({ setup, platform, onPlatform, onHandled }: {
+  setup: Omit<NodeSetup, 'platform'> | null; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void;
 }) {
   const id = useId();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -243,8 +243,10 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
   let real: GuideBlock[] = [];
   let problem: string | null = null;
   try {
-    shown = setupGuide({ ...setup, platform }, false);
-    real = previewOnly ? shown : setupGuide({ ...setup, platform }, true);
+    if (setup) {
+      shown = setupGuide({ ...setup, platform }, false);
+      real = setupGuide({ ...setup, platform }, true);
+    }
   } catch (error) {
     problem = error instanceof Error ? error.message : 'These settings can’t be written safely.';
   }
@@ -269,10 +271,10 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
         ))}
       </div>
       <div className="gpanel" role="tabpanel" id={`${id}-p`} aria-labelledby={`${id}-t-${platform}`}>
-        {problem ? <Banner tone="down" title="These settings can’t be written">{problem}</Banner> : (
+        {!setup ? null : problem ? <Banner tone="down" title="These settings can’t be written">{problem}</Banner> : (
           <ol className="gsteps">
             {/* Keyed by node ID too: values shown for one ID are hidden again once the steps are for another. */}
-            {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} previewOnly={previewOnly} />)}
+            {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} />)}
           </ol>
         )}
       </div>
@@ -281,19 +283,15 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
 }
 
 /** Show the new node's deployment choices before an endpoint or one-time invitation exists. */
-export function OutboundDeploymentPreview({ capabilities, platform, onPlatform, nodeId = '', name = '' }: {
-  capabilities?: NodeOnboardingCapabilities; platform: Platform; onPlatform: (platform: Platform) => void; nodeId?: string; name?: string;
+export function OutboundDeploymentPreview({ capabilities, platform, onPlatform }: {
+  capabilities?: NodeOnboardingCapabilities; platform: Platform; onPlatform: (platform: Platform) => void;
 }) {
   return (
     <>
       <p className="sec">Choose how the new node will run: Docker run, Docker Compose, Portainer stack or Linux VM.</p>
-      <p className="modal-note">Enter a name and a valid, unique Node ID above to get this node’s real setup instructions with Show, Copy and Download. Until then these are example settings; do not deploy them.</p>
-      {capabilities ? <ImageLine capabilities={capabilities} /> : null}
-      <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
-        imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
-        outbound: { connectionUrl: capabilities?.connectionUrl ?? 'https://NODE_REACHABLE_HOST:18348', token: 'INVITATION_TOKEN',
-          ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }}
-        platform={platform} onPlatform={onPlatform} onHandled={() => {}} previewOnly />
+      <p className="modal-note">Enter a name and a valid, unique Node ID above to get this node’s real setup instructions with Show, Copy and Download. Deployment settings appear once these fields are valid and the dashboard’s image tag is loaded.</p>
+      {capabilities ? <ImageLine capabilities={capabilities} /> : <p className="small muted" role="status">Reading this dashboard’s image tag…</p>}
+      <SetupGuide setup={null} platform={platform} onPlatform={onPlatform} onHandled={() => {}} />
     </>
   );
 }
@@ -304,7 +302,7 @@ export function NewOutboundDeploy({ capabilities, platform, onPlatform, nodeId, 
   secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void;
 }) {
   if (!capabilities || labelProblem(name) || nodeIdProblem(nodeId, taken)) {
-    return <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={name} />;
+    return <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} />;
   }
   const pair = secretsFor(secrets, nodeId);
   return pair ? <>
@@ -527,16 +525,20 @@ function useInvitationStatus(id: string | null, stop: boolean, nonce: number): {
   return { status, failure, loading };
 }
 
-export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNodeIdChange, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
+export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earlier, onUse, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
   fresh: boolean; onboarding: Resource<NodeOnboardingCapabilities>; secrets: NodeSecrets | null; earlier?: string | null; onUse: (nodeId: string) => void; taken: Taken; platform: Platform;
-  onNodeIdChange: (nodeId: string) => void;
+  draft: NewNodeDraft; onDraft: (draft: NewNodeDraft) => void;
   onPlatform: (platform: Platform) => void; onClose: () => void; onRequestClose: () => void; onLock: (locked: boolean) => void; onBusy: (busy: boolean) => void;
   guard: RefObject<(() => boolean) | null>; onTakenChanged: () => void;
 }) {
   const { api, registry, connection, stillCurrent } = useCanary();
   const capabilities = onboarding.data;
-  const [label, setLabel] = useState('');
-  const [nodeId, setNodeId] = useState('');
+  const [existingLabel, setExistingLabel] = useState('');
+  const [existingNodeId, setExistingNodeId] = useState('');
+  const label = fresh ? draft.label : existingLabel;
+  const nodeId = fresh ? draft.nodeId : existingNodeId;
+  const setLabel = (label: string): void => { if (fresh) onDraft({ ...draft, label }); else setExistingLabel(label); };
+  const setNodeId = (nodeId: string): void => { if (fresh) onDraft({ ...draft, nodeId }); else setExistingNodeId(nodeId); };
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState<null | 'create' | 'cancel' | 'confirm'>(null);
   const [failure, setFailure] = useState<ChangeFailure | null>(null);
@@ -648,7 +650,7 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
   const identityFields = <>
     <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
       hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
-    <TextField label="Node ID" mono value={nodeId} onChange={value => { setNodeId(value); if (fresh) onNodeIdChange(value); }} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
+    <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
       hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
   </>;
   const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}

@@ -914,10 +914,28 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
         const preview = await page.eval('(()=>{const tabs=document.querySelector("dialog[open] [role=tablist]");return {selected:tabs.querySelector("[aria-selected=true]").innerText,words:tabs.parentElement.innerText,actions:[...tabs.parentElement.querySelectorAll("button:not([role=tab])")].map(button=>button.innerText)}})()');
         assert.equal(preview.selected, method, 'the deployment method can be selected before dashboard setup');
         assert.deepEqual(preview.actions, [], 'a deployment preview cannot expose or export private settings');
-        assert.ok(preview.words.includes('CANARY_NODE_ID') || method === 'Linux VM', `${method}: node deployment preview`);
+        assert.ok(!preview.words.includes('CANARY_ADMIN_TOKEN') && !preview.words.includes('canary-new-node'), `${method}: missing identity shows no fake deployment or masked sample credentials`);
       }
+      await pick('This dashboard reaches the node');
       await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
       await fill('Node ID', preparationId, 'dialog[open]');
+      await fill('Node URL', 'http://127.0.0.1:3100', 'dialog[open]');
+      await click('Portainer stack', 'dialog[open]');
+      await captureOutputs();
+      const directBootstrap = await bootstrapOf(preparationId);
+      preparationCredentials = [directBootstrap.CANARY_ADMIN_TOKEN, directBootstrap.CANARY_CLUSTER_TOKEN];
+      await pick('The node reaches this dashboard');
+      const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
+      const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
+      assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
+      await clickLabelled('Copy name for CANARY_ADMIN_TOKEN');
+      assert.equal(await page.eval('window.__copies.at(-1)'), 'CANARY_ADMIN_TOKEN', 'outbound Portainer offers Copy name immediately');
+      await clickLabelled('Copy value for CANARY_ADMIN_TOKEN');
+      assert.equal(await page.eval('window.__copies.at(-1)'), preparationCredentials[0], 'outbound Copy value uses the original real token');
+      await pick('This dashboard reaches the node');
+      assert.deepEqual(await draftValues(), expectedDraft, 'switching back preserves the shared draft');
+      assert.equal(await page.eval('__field("Node URL","dialog[open]").value'), 'http://127.0.0.1:3100', 'the direct address is retained');
+      await pick('The node reaches this dashboard');
       for (const method of ['Docker run', 'Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
         await click(method, 'dialog[open]');
         await captureOutputs();

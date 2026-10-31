@@ -34,8 +34,10 @@ reveals the real administrator and cluster tokens; **Copy** and **Download**
 include them while the page remains masked, just as in the direct-node flow.
 The preparation settings start the node without publishing an inbound port and
 omit dashboard connection variables until a real invitation exists. The node
-does not connect to the dashboard yet. Example previews are used only while
-the required identity fields or dashboard image tag are missing.
+does not connect to the dashboard yet. Switching between connection directions
+keeps the new node’s name, Node ID, deployment method and credentials. When the
+required identity fields or dashboard image tag are missing, the menu explains
+what to enter instead of displaying sample deployment settings or fake tokens.
 
 Once the endpoint is configured, create an invitation using the same Node ID.
 Save the bootstrap settings before creating the invitation. Invitation exports
