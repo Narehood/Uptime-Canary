@@ -279,6 +279,9 @@ func (d *Dashboard) createInvitation(w http.ResponseWriter, r *http.Request, act
 			err = fail(400, "Enter a canonical HTTPS dashboard connection address")
 		}
 	}
+	if err == nil && origin != d.connectionURL && d.connectionTLSFingerprint == "" {
+		err = fail(400, "A different address requires this dashboard's certificate fingerprint")
+	}
 	if err != nil {
 		errorReply(w, err)
 		return

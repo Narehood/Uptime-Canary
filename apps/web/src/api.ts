@@ -13,6 +13,7 @@ import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
 import { readScreenshot } from './screenshot';
 import { readFleetDeployment, readFleetGroup } from './fleetApi';
 import { rememberSignIn, savedSignIn, type SignInIssuer } from './browserSession';
+import { parseIPv4 } from './tailscale';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
@@ -232,9 +233,14 @@ const INVITATION_TOKEN = /^[A-Za-z0-9._~:+\/=-]{24,1024}$/u;
  */
 export function connectionOrigin(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2048) return null;
+  const host = /^https:\/\/(\[[^\]]+\]|[^:/?#@\\\s]+)(?::[0-9]+)?\/?$/iu.exec(value.trim())?.[1];
+  if (!host) return null;
   let url: URL;
   try { url = new URL(value); } catch { return null; }
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
+  // WHATWG accepts octal, hex and short IPv4 forms; Go does not dial those as
+  // the same address. Never replace the operator's IP with a different host.
+  if (parseIPv4(url.hostname) && host !== url.hostname) return null;
   return url.origin;
 }
 

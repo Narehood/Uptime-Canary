@@ -1,5 +1,6 @@
 import type { NodeInvitation, RegisteredNode } from '@uptime-canary/shared';
 import { parseIPv4, parseIPv6 } from './tailscale';
+import { connectionOrigin } from './api';
 
 /**
  * The Add node wizard without rendering: the node ID rule, the credentials a new node gets from this browser, and the
@@ -275,15 +276,16 @@ export function outboundConnectionAddress(input: string, configured: string): st
   if (!address || address.length > 2048) return null;
   try {
     const explicitUrl = /^[a-z][a-z0-9+.-]*:\/\//iu.test(address);
+    let hasPort = false;
     if (!explicitUrl) {
       if (!address.startsWith('[') && (address.match(/:/gu)?.length ?? 0) > 1) address = `[${address}]`;
-      const hasPort = /(?:\]|[^:]):[0-9]+$/u.test(address);
-      const candidate = new URL(`https://${address}`);
-      if (!hasPort) candidate.port = new URL(configured).port;
-      address = candidate.href;
+      hasPort = /(?:\]|[^:]):[0-9]+\/?$/u.test(address);
+      address = `https://${address}`;
     }
-    const url = new URL(address);
-    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
+    const origin = connectionOrigin(address);
+    if (!origin) return null;
+    const url = new URL(origin);
+    if (!explicitUrl && !hasPort) url.port = new URL(configured).port;
     return url.origin;
   } catch { return null; }
 }

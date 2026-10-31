@@ -571,7 +571,10 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     return false;
   };
 
-  const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken), connectionUrl: connectionUrl ? undefined : 'Enter the dashboard’s reachable IP, hostname or full HTTPS connection address.' };
+  const addressProblem = !connectionUrl ? 'Enter the dashboard’s reachable IP, hostname or full HTTPS connection address. IPv4 needs four decimal fields without leading zeros.'
+    : capabilities?.connectionUrl && !capabilities.connectionTlsFingerprint && connectionUrl !== capabilities.connectionUrl
+      ? 'A different address requires this dashboard’s certificate fingerprint. Use the configured address, or enable native TLS on the dashboard’s node-connection listener first.' : undefined;
+  const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken), connectionUrl: addressProblem };
   const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
   const pair = secretsFor(secrets, nodeId);
 
@@ -579,14 +582,16 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     event.preventDefault();
     if (busy || !capabilities?.outboundEnabled || !capabilities.connectionUrl) return;
     setShow(true); setFailure(null);
-    if (errors.label || errors.nodeId || !connectionUrl) { failed(); return; }
+    if (errors.label || errors.nodeId || errors.connectionUrl || !connectionUrl) { failed(); return; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
     if (fresh && !pair) { failed(); return; }
     const controller = new AbortController();
     attempt.current = controller;
     setBusy('create');
     try {
-      const result = await api.createInvitation({ label, nodeId, connectionUrl }, controller.signal);
+      // The default uses the server's exact configured origin, including its
+      // IPv6 spelling. Only an actual alternate destination needs an override.
+      const result = await api.createInvitation({ label, nodeId, ...(connectionUrl === capabilities.connectionUrl ? {} : { connectionUrl }) }, controller.signal);
       if (!stillCurrent()) return;
       setInvitation(withoutToken(result));
       setInvitationBootstrap(fresh && pair ? { ...pair, nodeId } : null);
@@ -654,7 +659,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
       hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
     <TextField label="Dashboard IP or HTTPS address" mono value={addressInput} onChange={setConnectionAddress} error={live(addressInput, errors.connectionUrl)} maxLength={2048} disabled={busy !== null}
-      placeholder="https://192.168.10.10:18348" hint={`The address this node can reach. An IP or hostname keeps the configured connection port; a full HTTPS address can specify another port. It must route to this dashboard’s node-connection listener. Configured address: ${capabilities?.connectionUrl ?? 'not configured yet'}.`} />
+      placeholder="https://192.168.10.10:18348" hint={`The address this node can reach. An IP or hostname keeps the configured connection port; a full HTTPS address can specify another port. It must route to this dashboard’s node-connection listener. A different address requires this dashboard’s certificate fingerprint from native TLS. Configured address: ${capabilities?.connectionUrl ?? 'not configured yet'}.`} />
   </>;
   const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} loading={onboarding.loading} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
     secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} addressError={errors.connectionUrl} /> : null;
@@ -705,7 +710,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
             {busy === 'create'
               ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
               : <button type="button" className="btn" onClick={onRequestClose}>Cancel</button>}
-            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && (!pair || Object.values(errors).some(Boolean)))}><Icon name="key" />{busy === 'create' ? 'Creating…' : fresh ? 'Generate setup' : 'Create invitation'}</button>
+            <button type="submit" className="btn primary" disabled={busy !== null || Boolean(errors.connectionUrl) || (fresh && (!pair || Object.values(errors).some(Boolean)))}><Icon name="key" />{busy === 'create' ? 'Creating…' : fresh ? 'Generate setup' : 'Create invitation'}</button>
           </span>
         </div>
       </form>

@@ -1042,6 +1042,15 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await text(connection.url);
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the invitation form', 15000);
     await fill('Name on this dashboard', label, 'dialog[open]'); await fill('Node ID', id, 'dialog[open]');
+    assert.ok(!capabilities.value.connectionTlsFingerprint, 'the HTTPS reverse-proxy fixture uses ordinary CA trust');
+    const addressBegin = fixture.stats().paths.length;
+    for (const badAddress of ['192.168.001.010', 'https://unrelated.example.test']) {
+      await fill('Dashboard IP or HTTPS address', badAddress, 'dialog[open]');
+      await until(() => page.eval('__field("Dashboard IP or HTTPS address","dialog[open]").getAttribute("aria-invalid")==="true" && [...document.querySelectorAll("dialog[open] button")].find(button=>__norm(button.innerText)==="Generate setup").disabled'), 'unsafe outbound address is refused before invitation generation');
+    }
+    assert.ok(!fixture.stats().paths.slice(addressBegin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations'), 'invalid addresses send no invitation request');
+    const refusedAddress = await fixture.api('/api/dashboard/invitations', 'POST', { label, nodeId: id, connectionUrl: 'https://unrelated.example.test' }, owner);
+    assert.equal(refusedAddress.status, 400, 'the real server also refuses an alternate address without its certificate pin');
     await fill('Dashboard IP or HTTPS address', new URL(connection.url).hostname, 'dialog[open]');
     await click('Generate setup', 'dialog[open]');
     await text(`Waiting for ${id} to connect`, 15000);

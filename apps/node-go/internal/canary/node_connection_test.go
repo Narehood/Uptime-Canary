@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 	"uptime-canary/apps/node-go/internal/nodeconnection"
+	"uptime-canary/apps/node-go/internal/nodetls"
 )
 
 type invitationFixture struct {
@@ -63,16 +64,16 @@ func TestNodeInvitationFirstConfirmationAndScopedRoleTransport(t *testing.T) {
 	server := httptest.NewTLSServer(d.ConnectionHandler())
 	t.Cleanup(server.Close)
 	d.connectionURL = "https://configured.fixture.invalid"
+	d.connectionTLSFingerprint = nodetls.CertificateFingerprint(server.Certificate())
 	invitation := connectionInvitation(t, d, owner, "outbound-a", server.URL)
-	if invitation.ConnectionURL != server.URL {
+	if invitation.ConnectionURL != server.URL || invitation.ConnectionTLSFingerprint != d.connectionTLSFingerprint {
 		t.Fatal("the invitation lost the node-reachable dashboard address")
 	}
-	n, err := New(Options{NodeID: "outbound-a", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: invitation.Token})
+	n, err := New(Options{NodeID: "outbound-a", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardTLSFingerprint: invitation.ConnectionTLSFingerprint, DashboardEnrollToken: invitation.Token})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = n.Stop() })
-	n.connector.transport.TLSClientConfig = server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
 	if err = n.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -318,6 +319,20 @@ func TestNodeInvitationLimitsAndAdministratorOnlyRoutes(t *testing.T) {
 			t.Fatal("invalid or credential-bearing connection address was accepted")
 		}
 	}
+	alternateURL := "https://alternate.fixture.invalid:18348"
+	refused := dashboardHTTP(d, "POST", "/api/dashboard/invitations", owner, "", map[string]string{"label": "Unpinned destination", "nodeId": "unpinned-destination", "connectionUrl": alternateURL})
+	if refused.Code != 400 || !strings.Contains(refused.Body.String(), "requires this dashboard's certificate fingerprint") || len(d.invitations) != 0 {
+		t.Fatal("an unrelated unpinned origin received an invitation")
+	}
+	d.connectionTLSFingerprint = strings.Repeat("a", 64)
+	pinned := connectionInvitation(t, d, owner, "pinned-destination", alternateURL)
+	if pinned.ConnectionURL != alternateURL || pinned.ConnectionTLSFingerprint != d.connectionTLSFingerprint {
+		t.Fatal("alternate origin did not retain the dashboard's certificate pin")
+	}
+	if dashboardHTTP(d, "DELETE", "/api/dashboard/invitations/"+pinned.ID, owner, "", nil).Code != 204 {
+		t.Fatal("pinned fixture invitation could not be cancelled")
+	}
+	d.connectionTLSFingerprint = ""
 	w := dashboardHTTP(d, "POST", "/api/accounts", owner, "", map[string]string{"name": "invitation-viewer", "role": "viewer", "password": dashboardPasswordFixture})
 	if w.Code != 201 {
 		t.Fatal("viewer fixture could not be created")

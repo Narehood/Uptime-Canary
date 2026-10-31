@@ -33,6 +33,10 @@ name, a unique Node ID and the dashboard address this node can reach. The addres
 defaults to the configured HTTPS listener. An IP or hostname keeps its configured
 port; a complete HTTPS URL can specify a different port, for example behind NAT.
 The address must still route to this dashboard and use its configured TLS trust.
+IPv4 addresses use four decimal fields without leading zeros. A different address
+is allowed only when the dedicated listener terminates native TLS and reports its
+certificate fingerprint. With an HTTPS reverse proxy and ordinary CA trust, use
+the configured address so the node sends credentials only to that destination.
 Choose **Generate setup** once. The first export now includes the node’s own
 administrator and cluster tokens, the dashboard address, and the one-time
 invitation token. A certificate pin is included when the dedicated listener

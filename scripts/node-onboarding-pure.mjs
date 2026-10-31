@@ -91,6 +91,7 @@ const SECRETS = { admin: ADMIN, cluster: CLUSTER };
 const PRIVATE = [ADMIN, CLUSTER, INVITE_TOKEN];
 const SHA = 'a'.repeat(40);
 const CAPS = { outboundEnabled: true, connectionUrl: CONNECT, connectionProtocol: 1, imageTag: `sha-${SHA}`, containerPlatforms: ['linux/amd64'], nativeDownloadAvailable: false };
+const AMBIGUOUS_IPV4 = ['192.168.001.010', '10.1', '0x7f.0.0.1', '2130706433', '0177.0.0.1'];
 const ENTRY = { id: REG, label: 'Rack B', nodeId: 'canary-b', nodeName: 'Canary B', url: 'http://100.79.12.4:3100', local: false, state: 'answering', lastReadAt: 900_000, monitorCount: 3 };
 const OUTBOUND = { id: 'e'.repeat(32), label: 'Branch office', nodeId: 'canary-branch', nodeName: 'Branch', local: false, state: 'answering', connection: 'outbound', lastConnectedAt: 950_000, lastReadAt: 960_000, monitorCount: 4 };
 const WAITING = { id: INV, label: 'Branch office', nodeId: 'canary-branch', connectionUrl: CONNECT, expiresAt: 1_900_000, state: 'waiting' };
@@ -576,6 +577,13 @@ await check('API: onboarding and invitation routes go to the dashboard itself, w
   assert.deepEqual(JSON.parse(sent[2].init.body), { label: 'Branch office', nodeId: 'canary-branch' });
   const custom = await record(() => client.createInvitation({ label: 'Branch office', nodeId: 'canary-branch', connectionUrl: 'https://Connect.Example.test:443/' }));
   assert.equal(JSON.parse(custom[0].init.body).connectionUrl, CONNECT, 'an explicit node-reachable address is canonicalized and sent to the dashboard');
+  const refusedAddresses = await record(async () => {
+    for (const host of AMBIGUOUS_IPV4) {
+      const failure = await rejection(client.createInvitation({ label: 'Branch office', nodeId: 'canary-branch', connectionUrl: `https://${host}` }));
+      assert.equal(failure.status, 400, 'ambiguous IP addresses are refused before sending an invitation request');
+    }
+  });
+  assert.equal(refusedAddresses.length, 0);
   for (const index of [0, 1, 3, 4, 5]) {
     assert.equal(sent[index].init.body, undefined, `${sent[index].url}: no body`);
     assert.equal(header(sent[index], 'content-type'), null);
@@ -602,6 +610,12 @@ await check('API normalizers: an HTTPS connection origin or none; Docker tag gra
   const caps = value => api.normalizeOnboarding({ ...CAPS, ...value });
   assert.deepEqual(caps({}), CAPS);
   assert.equal(caps({ connectionUrl: 'https://Connect.Example.test:443/' }).connectionUrl, CONNECT, 'canonical origin');
+  for (const host of AMBIGUOUS_IPV4) {
+    const address = `https://${host}`;
+    assert.equal(api.connectionOrigin(address), null, 'an IPv4 address is never silently rewritten');
+    assert.equal(caps({ connectionUrl: address }).outboundEnabled, false);
+    assert.throws(() => api.normalizeInvitation({ ...WAITING, connectionUrl: address }), /could not read/u);
+  }
   for (const url of ['http://connect.example.test', 'https://connect.example.test/connect', 'https://u:p@connect.example.test', 'https://connect.example.test?x', '', 7, undefined]) {
     const read = caps({ connectionUrl: url });
     assert.deepEqual([read.outboundEnabled, 'connectionUrl' in read], [false, false], String(url));
@@ -821,6 +835,14 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   }));
   const identify = text(outbound({}));
   const retained = outbound({ draft, onDraft: noop, platform: 'portainer', secrets: { ...SECRETS, nodeId: draft.nodeId } });
+  const alternate = { ...draft, dashboardAddress: 'https://alternate.example.test:18348' };
+  const changedAddress = props => outbound({ draft: alternate, secrets: { ...SECRETS, nodeId: draft.nodeId }, ...props });
+  const unpinned = changedAddress({});
+  assert.match(text(unpinned), /A different address requires this dashboard’s certificate fingerprint/u);
+  const generateButton = markup => (markup.match(/<button\b[^>]*>[\s\S]*?<\/button>/gu) ?? []).find(button => text(button).trim() === 'Generate setup');
+  assert.ok(attributes(tags(generateButton(unpinned), 'button')[0]).has('disabled'), 'an unpinned alternate destination cannot generate setup');
+  const pinned = changedAddress({ onboarding: resource({ ...CAPS, connectionTlsFingerprint: 'b'.repeat(64) }) });
+  assert.ok(!attributes(tags(generateButton(pinned), 'button')[0]).has('disabled'), 'a pinned alternate destination can generate complete setup');
   assert.ok(tags(retained, 'input').map(attributes).some(input => input.get('value') === draft.nodeId), 'switching from direct setup retains the entered Node ID');
   assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN' && button.has('disabled')), 'the retained draft keeps copy controls visible until complete setup is generated');
   assert.ok(identify.includes(CONNECT) && /Generate setup/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
@@ -900,6 +922,7 @@ await check('outbound first-start exports include bootstrap credentials and the 
     ['office.example', 'https://office.example:18348'],
     ['office.example:443', 'https://office.example'],
     ['office.example:9443', 'https://office.example:9443'],
+    ['office.example:9443/', 'https://office.example:9443'],
     ['[2001:db8::10]', 'https://[2001:db8::10]:18348'],
     ['[2001:db8::10]:443', 'https://[2001:db8::10]'],
     ['https://office.example:9443/', 'https://office.example:9443'],
@@ -907,6 +930,9 @@ await check('outbound first-start exports include bootstrap credentials and the 
     ['https://user:secret@office.example', null],
     ['https://office.example/path', null],
   ]) assert.equal(onboarding.outboundConnectionAddress(input, 'https://configured.example:18348'), expected);
+  for (const host of AMBIGUOUS_IPV4) {
+    for (const input of [host, `https://${host}`]) assert.equal(onboarding.outboundConnectionAddress(input, 'https://configured.example:18348'), null, `${input}: no rewritten destination`);
+  }
 });
 
 await check('outbound setup explains which stack to configure and offers a refresh before invitations are possible', () => {
@@ -1769,7 +1795,8 @@ await check('TLS views: new-node steps point to the fingerprint in the node’s 
     'It names the dashboard’s certificate: it isn’t the node’s connection fingerprint you compare when the node connects.']) assert.ok(withPin.includes(part), part);
   const withoutPin = outbound(CAPS);
   assert.ok(withoutPin.includes('Set by this dashboard’s deployment. The node must reach it over HTTPS and trust its certificate; nothing here turns certificate checks off.'), 'as before');
-  assert.doesNotMatch(withoutPin, /certificate fingerprint|CANARY_DASHBOARD_TLS_FINGERPRINT/u);
+  assert.doesNotMatch(withoutPin, /CANARY_DASHBOARD_TLS_FINGERPRINT/u, 'an unpinned listener never exports a fingerprint setting');
+  assert.ok(withoutPin.includes('A different address requires this dashboard’s certificate fingerprint from native TLS.'), 'alternate destinations explain their trust prerequisite');
   assert.deepEqual(reached, [], 'rendering asks the API nothing');
 });
 
