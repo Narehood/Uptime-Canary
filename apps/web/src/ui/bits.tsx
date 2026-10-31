@@ -109,7 +109,7 @@ export function Banner({ tone = 'warn', title, children, actions, role = 'status
  * Copies `value`. Without a clipboard (a plain-HTTP page) or when the browser refuses, it says so instead of doing
  * nothing; the page never promises to clear the clipboard afterwards. `onCopied` runs only after a successful copy.
  */
-export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLabel, onCopied, disabled = false }: { value: string; label?: string; className?: string; ariaLabel?: string; onCopied?: () => void; disabled?: boolean }) {
+export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLabel, onCopied, disabled = false, prepareValue, onCopyResult }: { value: string; label?: string; className?: string; ariaLabel?: string; onCopied?: () => void; disabled?: boolean; prepareValue?: () => Promise<string>; onCopyResult?: (copied: boolean) => void }) {
   const [copied, setCopied] = useState<null | 'done' | 'failed'>(null);
   useEffect(() => {
     if (!copied) return;
@@ -119,8 +119,21 @@ export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLa
   const copy = (): void => {
     if (disabled) return;
     const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
-    if (!clipboard?.writeText) { setCopied('failed'); return; }
-    clipboard.writeText(value).then(() => { setCopied('done'); onCopied?.(); }, () => setCopied('failed'));
+    if (!clipboard?.writeText) { setCopied('failed'); onCopyResult?.(false); return; }
+    // Start the clipboard operation in the click gesture. Safari in particular
+    // requires this when generating a one-time credential involves a request.
+    const pending = prepareValue ? Promise.resolve().then(prepareValue) : null;
+    const blob = pending?.then(text => new Blob([text], { type: 'text/plain' }));
+    void blob?.catch(() => undefined);
+    let write: Promise<void>;
+    try {
+      write = blob && typeof clipboard.write === 'function' && typeof ClipboardItem !== 'undefined'
+        ? clipboard.write([new ClipboardItem({ 'text/plain': blob })])
+        : pending ? pending.then(text => clipboard.writeText(text)) : clipboard.writeText(value);
+    } catch { write = Promise.reject(new Error('Clipboard unavailable')); }
+    // A synchronously refused clipboard must not leave generation unhandled.
+    void pending?.catch(() => undefined);
+    write.then(() => { setCopied('done'); onCopied?.(); onCopyResult?.(true); }, () => { setCopied('failed'); onCopyResult?.(false); });
   };
   const what = ariaLabel?.replace(/^Copy /u, '');
   return (

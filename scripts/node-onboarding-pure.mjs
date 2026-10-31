@@ -844,7 +844,7 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   const pinned = changedAddress({ onboarding: resource({ ...CAPS, connectionTlsFingerprint: 'b'.repeat(64) }) });
   assert.ok(!attributes(tags(generateButton(pinned), 'button')[0]).has('disabled'), 'a pinned alternate destination can generate complete setup');
   assert.ok(tags(retained, 'input').map(attributes).some(input => input.get('value') === draft.nodeId), 'switching from direct setup retains the entered Node ID');
-  assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN' && button.has('disabled')), 'the retained draft keeps copy controls visible until complete setup is generated');
+  assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN' && !button.has('disabled')), 'the complete retained draft enables export; the first action generates its invitation');
   assert.ok(identify.includes(CONNECT) && /Generate setup/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
   assert.match(identify, /Complete the fields above first.*Show, Copy and Download are disabled/u, 'the fresh outbound flow explains why its visible actions are disabled');
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
@@ -904,13 +904,13 @@ await check('outbound first-start exports include bootstrap credentials and the 
     const markup = within('admin', [], React.createElement(wizard.NewOutboundDeploy, {
       capabilities: CAPS, nodeId, name: 'Office', secrets: setup.secrets,
       platform, onPlatform: noop, onUse: noop, taken: { nodes: [], invitations: [] },
+      prepare: async () => setup,
     }));
-    assert.match(text(markup), /Generate setup/u, `${platform}: invitation is generated before any incomplete deployment can be copied`);
     const buttons = tags(markup, 'button').map(attributes);
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Show private values in ')), `${platform}: Show stays visible before an invitation`);
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Copy ')), `${platform}: Copy is available`);
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Download ')), `${platform}: Download is available`);
-    assert.ok(buttons.filter(button => button.get('role') !== 'tab').every(button => button.has('disabled')), `${platform}: pre-invitation actions are visible but disabled`);
+    assert.ok(buttons.filter(button => button.get('role') !== 'tab').every(button => !button.has('disabled')), `${platform}: valid fields enable actions that prepare a complete deployment on demand`);
     for (const token of PRIVATE) assert.ok(!markup.includes(token), `${platform}: no private value in masked markup`);
     assert.throws(() => onboarding.setupGuide({ ...setup, secrets: { ...SECRETS, nodeId: 'different-node' }, platform }, true), /already used/u);
     assert.throws(() => onboarding.setupGuide({ ...setup, direct: onboarding.directTarget('https://node.example.test:3100'), platform }, true), /Choose how/u);

@@ -37,7 +37,9 @@ IPv4 addresses use four decimal fields without leading zeros. A different addres
 is allowed only when the dedicated listener terminates native TLS and reports its
 certificate fingerprint. With an HTTPS reverse proxy and ordinary CA trust, use
 the configured address so the node sends credentials only to that destination.
-Choose **Generate setup** once. The first export now includes the node’s own
+Choose **Copy**, **Download** or **Show** once the fields are valid; the first
+action generates the complete setup and performs that action. **Generate setup**
+is also available. The first export includes the node’s own
 administrator and cluster tokens, the dashboard address, and the one-time
 invitation token. A certificate pin is included when the dedicated listener
 terminates native TLS; reverse proxies using ordinary CA trust need no pin.
@@ -46,8 +48,8 @@ environment settings and start the node. It connects immediately without a
 second configuration edit or an inbound node port. Compare the fingerprint from
 its log and confirm it in this dashboard after it connects.
 
-**Show**, **Copy** and **Download** remain visible but disabled until complete
-setup has been generated; Portainer’s individual copy controls do too. A warning
+**Show**, **Copy** and **Download** remain visible but disabled while required
+fields or dashboard prerequisites are missing; Portainer’s individual copy controls do too. A warning
 explains the prerequisites. Switching between new-node connection directions
 preserves its name, Node ID, deployment method and credentials. The invitation
 retains the selected node-reachable address even when it differs from the default.

@@ -710,7 +710,10 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
   };
   const captureOutputs = () => page.eval(`(() => {
     window.__copies = []; window.__saved = []; window.__downloads = []; window.__revoked = 0;
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: text => { window.__copies.push(text); return Promise.resolve(); } } });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: text => { window.__copies.push(text); return Promise.resolve(); },
+      write: async items => { for (const item of items) window.__copies.push(await (await item.getType('text/plain')).text()); },
+    } });
     if (!window.__urlHooks) {
       window.__urlHooks = true;
       const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
@@ -934,7 +937,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
       const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
       assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
-      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'outbound exports stay visible but disabled until a real invitation can be included');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>!button.disabled)'), 'valid outbound details enable first-action setup generation');
       await fill('Name on this dashboard', '', 'dialog[open]');
       assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'clearing a required field disables the visible actions again');
       await fill('Name on this dashboard', expectedDraft.name, 'dialog[open]');
@@ -1052,8 +1055,15 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     const refusedAddress = await fixture.api('/api/dashboard/invitations', 'POST', { label, nodeId: id, connectionUrl: 'https://unrelated.example.test' }, owner);
     assert.equal(refusedAddress.status, 400, 'the real server also refuses an alternate address without its certificate pin');
     await fill('Dashboard IP or HTTPS address', new URL(connection.url).hostname, 'dialog[open]');
-    await click('Generate setup', 'dialog[open]');
+    await click('Portainer stack', 'dialog[open]');
+    await captureOutputs();
+    const firstStackFile = `${(await naming).resourceName(id)}.yml`;
+    await clickLabelled(`Download ${firstStackFile}`);
     await text(`Waiting for ${id} to connect`, 15000);
+    await until(() => page.eval('window.__saved.length===1'),'the first Download completes after generating setup');
+    const firstYaml = await page.eval('window.__saved[0].blob.text()');
+    assert.ok(firstYaml.includes(id) && firstYaml.includes(connection.url) && !firstYaml.includes('INVITATION_TOKEN'),'the first download contains real deployment details');
+    assert.equal(fixture.stats().paths.slice(addressBegin).filter(entry=>entry.method==='POST' && entry.path==='/api/dashboard/invitations').length,2,'only the explicit invalid API probe and the first export created requests; typing did not');
     const firstInvitation = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value.find(row => row.nodeId === id);
     assert.equal(firstInvitation?.connectionUrl, connection.url, 'a bare dashboard IP preserves the configured connection port');
     await click('Portainer stack', 'dialog[open]');
@@ -1254,7 +1264,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     let held = fixture.hold('POST', '/api/dashboard/invitations');
     let stopAnswer;
     try {
-      await click('Generate setup', 'dialog[open]');
+      await clickLabelled(`Download ${await settingsFile(stoppedId)}`);
       await until(() => held.answered(), 'the dashboard’s server answered the held create', 15000);
       assert.equal(held.answered().status, 201, 'the server saved the invitation before the page heard back');
       await pendingCreate('held, before Stop');
@@ -1266,14 +1276,21 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     const afterStop = await dialogState();
     assert.ok(afterStop && afterStop.radios === 4 && afterStop.closeDisabled === false, `after Stop the choices and Close are back: ${JSON.stringify(afterStop)}`);
     assert.ok(!afterStop.text.includes('Invitation ready'), 'no token was shown for the stopped request');
+    assert.deepEqual(await page.eval('({saved:window.__saved.length,copies:window.__copies.length})'),{saved:0,copies:0},'a stopped first export writes no placeholder or credential');
     const stopped = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value.find(row => row.nodeId === stoppedId);
     assert.equal(stopped?.state, 'waiting', 'the server kept the invitation whose answer the page let go of');
     assert.equal((await fixture.api(`/api/dashboard/invitations/${stopped.id}`, 'DELETE', undefined, owner)).status, 204, 'fixture cleanup of the stopped invitation');
     // 2. Escape while the answer is held: refused, and the dialog stays open on the same pending form.
     await fill('Node ID', id, 'dialog[open]');
+    await captureOutputs();
+    await page.eval(`(() => {
+      const refuse = () => { window.__refusedPreparedCopy = true; throw new DOMException('Fixture refuses clipboard', 'NotAllowedError'); };
+      navigator.clipboard.write = async items => { for (const item of items) await item.getType('text/plain'); refuse(); };
+      navigator.clipboard.writeText = async () => { refuse(); };
+    })()`);
     held = fixture.hold('POST', '/api/dashboard/invitations');
     try {
-      await click('Generate setup', 'dialog[open]');
+      await clickLabelled('Copy Pull the image, create the two volumes and start the node');
       await until(() => held.answered(), 'the dashboard’s server answered the held create', 15000);
       assert.equal(held.answered().status, 201);
       await pendingCreate('held');
@@ -1283,6 +1300,13 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       assert.ok(escaped.text.includes('Name on this dashboard'), 'the same form, not unmounted');
     } finally { held.release(); }
     await text(`Waiting for ${id} to connect`, 15000);
+    await text('Couldn’t copy. Try Copy again, or use Download or Show.');
+    assert.equal(await page.eval('window.__refusedPreparedCopy'),true,'the clipboard refused after setup was generated');
+    assert.equal(await page.eval('window.__copies.length'),0,'a refused copy writes nothing');
+    await captureOutputs();
+    await copyOf('Pull the image, create the two volumes and start the node');
+    await text('Copied.');
+    assert.ok((await page.eval('window.__copies[0]')).includes(file),'the copied command uses this node’s real settings file');
     assert.equal(held.state().delivered, true, 'the held answer reached the page');
     assert.deepEqual(await downloads(), [file], 'its token arrived: the settings are offered under the helper’s name');
     // 3. The same key now reaches the dialog's close request: the token wasn't shown, copied or saved, so it asks.
