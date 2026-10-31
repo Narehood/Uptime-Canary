@@ -30,29 +30,38 @@ func imageFixture(t *testing.T) ([]byte, []byte) {
 	return image, config
 }
 
-func TestRegistryBuildTimeIsAuthenticatedMetadataAndRetainedOnConditionalReads(t *testing.T) {
+func TestRegistryMigratesVersionMetadataAndRetainsItOnConditionalReads(t *testing.T) {
 	for _, stamp := range []string{"2025-02-02T12:34:56Z", "", "not-a-time", "2999-01-01T00:00:00Z"} {
 		t.Run(stamp, func(t *testing.T) {
 			config, _ := json.Marshal(map[string]any{"config": map[string]any{"Labels": map[string]string{"org.opencontainers.image.source": sourceRepository, "org.opencontainers.image.revision": strings.Repeat("a", 40), "org.opencontainers.image.created": stamp, "org.opencontainers.image.version": "0.1.0-dev.42"}}})
 			image, _ := json.Marshal(map[string]any{"schemaVersion": 2, "config": map[string]any{"digest": sum(config), "size": len(config)}})
 			unchanged := false
+			configReads := 0
 			c := New(doer(func(r *http.Request) (*http.Response, error) {
 				if r.URL.Path == "/token" {
 					return response(200, []byte(`{"token":"metadata-only"}`), nil), nil
 				}
 				if strings.HasSuffix(r.URL.Path, "/manifests/latest") {
 					if unchanged {
+						if r.Header.Get("If-None-Match") != `"fixture"` {
+							t.Fatal("migrated metadata lost its conditional request")
+						}
 						return response(304, nil, nil), nil
+					}
+					if configReads == 0 && r.Header.Get("If-None-Match") != "" {
+						t.Fatal("legacy version metadata was not refreshed")
 					}
 					return response(200, image, http.Header{"Etag": []string{`"fixture"`}, "Docker-Content-Digest": []string{sum(image)}}), nil
 				}
 				if strings.HasSuffix(r.URL.Path, "/blobs/"+sum(config)) {
+					configReads++
 					return response(200, config, nil), nil
 				}
 				t.Fatal("unexpected image layer or endpoint")
 				return nil, ErrUnavailable
 			}))
-			first, err := c.Registry(context.Background(), NodeRepository, Cache{})
+			legacy := Cache{ETag: `"fixture"`, Digest: sum(image), Revision: strings.Repeat("a", 40)}
+			first, err := c.Registry(context.Background(), NodeRepository, legacy)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -63,13 +72,18 @@ func TestRegistryBuildTimeIsAuthenticatedMetadataAndRetainedOnConditionalReads(t
 			if first.CreatedAt != want {
 				t.Fatal("invalid or missing publisher time was treated as reliable", first.CreatedAt)
 			}
-			if first.Version != "0.1.0-dev.42" {
+			if first.Version != "0.1.0-dev.42" || !first.VersionRead {
 				t.Fatal("publisher version was not retained")
 			}
 			unchanged = true
 			second, err := c.Registry(context.Background(), NodeRepository, first)
 			if err != nil || second != first {
 				t.Fatal("conditional check lost publisher time", err)
+			}
+			unchanged = false
+			third, err := c.Registry(context.Background(), NodeRepository, second)
+			if err != nil || third != first || configReads != 1 {
+				t.Fatal("unchanged digest lost metadata or repeated the config read", err)
 			}
 		})
 	}
@@ -110,7 +124,7 @@ func TestRegistryReadsOnlyMetadataAndReusesConditionalManifestCache(t *testing.T
 		}
 	}))
 	first, err := c.Registry(context.Background(), NodeRepository, Cache{})
-	if err != nil || first.Revision != strings.Repeat("a", 40) || requests != 3 {
+	if err != nil || first.Revision != strings.Repeat("a", 40) || !first.VersionRead || first.Version != "" || requests != 3 {
 		t.Fatal("metadata read failed", err, requests)
 	}
 	unchanged = true

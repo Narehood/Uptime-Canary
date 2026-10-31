@@ -34,8 +34,10 @@ defaults to the configured HTTPS listener. An IP or hostname keeps its configure
 port; a complete HTTPS URL can specify a different port, for example behind NAT.
 The address must still route to this dashboard and use its configured TLS trust.
 Choose **Generate setup** once. The first export now includes the node’s own
-administrator and cluster tokens, the dashboard address and certificate pin,
-and the one-time invitation token. Paste the commands or stack YAML and private
+administrator and cluster tokens, the dashboard address, and the one-time
+invitation token. A certificate pin is included when the dedicated listener
+terminates native TLS; reverse proxies using ordinary CA trust need no pin.
+Paste the commands or stack YAML and private
 environment settings and start the node. It connects immediately without a
 second configuration edit or an inbound node port. Compare the fingerprint from
 its log and confirm it in this dashboard after it connects.
