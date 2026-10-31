@@ -907,17 +907,46 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       const outbound = (await radios())[3];
       assert.deepEqual([outbound.disabled, /Not set up here/u.test(outbound.text)], [false, true], JSON.stringify(outbound));
       await pick('Deploy a new node');
-      await pick('The node reaches this dashboard');
-      await text('Set up this dashboard for incoming node connections');
-      for (const method of ['Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
-        await click(method, 'dialog[open]');
-        const preview = await page.eval('(()=>{const tabs=document.querySelector("dialog[open] [role=tablist]");return {selected:tabs.querySelector("[aria-selected=true]").innerText,words:tabs.parentElement.innerText,actions:[...tabs.parentElement.querySelectorAll("button:not([role=tab])")].map(button=>button.innerText)}})()');
-        assert.equal(preview.selected, method, 'the deployment method can be selected before dashboard setup');
-        assert.deepEqual(preview.actions, [], 'a deployment preview cannot expose or export private settings');
-        assert.ok(preview.words.includes('CANARY_NODE_ID') || method === 'Linux VM', `${method}: node deployment preview`);
+      await captureOutputs();
+      for (const direction of ['This dashboard reaches the node', 'The node reaches this dashboard']) {
+        await pick(direction);
+        for (const method of ['Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
+          await click(method, 'dialog[open]');
+          const preview = await page.eval('(()=>{const tabs=document.querySelector("dialog[open] [role=tablist]");return {selected:tabs.querySelector("[aria-selected=true]").innerText,words:tabs.parentElement.innerText,actions:[...tabs.parentElement.querySelectorAll("button:not([role=tab])")].map(button=>({label:button.getAttribute("aria-label"),disabled:button.disabled}))}})()');
+          assert.equal(preview.selected, method, 'the deployment method can be selected before dashboard setup');
+          assert.ok(preview.actions.length >= 3 && preview.actions.every(action => action.disabled), `${direction} ${method}: setup actions stay visible and disabled`);
+          for (const prefix of ['Show private values in ', 'Copy ', 'Download ']) assert.ok(preview.actions.some(action => action.label.startsWith(prefix)), `${direction} ${method}: visible ${prefix} action`);
+          assert.ok(preview.words.includes('Complete the fields above first.'), 'the warning explains how to enable the controls');
+          await page.eval('document.querySelectorAll("dialog[open] .guide button:disabled").forEach(button=>button.click())');
+          assert.deepEqual(await page.eval('({copies:window.__copies.length,downloads:window.__saved.length})'), { copies: 0, downloads: 0 }, 'disabled setup actions neither copy nor download');
+        }
       }
+      await text('Set up this dashboard for incoming node connections');
+      await pick('This dashboard reaches the node');
       await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
       await fill('Node ID', preparationId, 'dialog[open]');
+      await fill('Node URL', 'http://127.0.0.1:3100', 'dialog[open]');
+      await click('Portainer stack', 'dialog[open]');
+      await captureOutputs();
+      const directBootstrap = await bootstrapOf(preparationId);
+      preparationCredentials = [directBootstrap.CANARY_ADMIN_TOKEN, directBootstrap.CANARY_CLUSTER_TOKEN];
+      await pick('The node reaches this dashboard');
+      const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
+      const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
+      assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
+      await clickLabelled('Copy name for CANARY_ADMIN_TOKEN');
+      assert.equal(await page.eval('window.__copies.at(-1)'), 'CANARY_ADMIN_TOKEN', 'outbound Portainer offers Copy name immediately');
+      await clickLabelled('Copy value for CANARY_ADMIN_TOKEN');
+      assert.equal(await page.eval('window.__copies.at(-1)'), preparationCredentials[0], 'outbound Copy value uses the original real token');
+      await fill('Name on this dashboard', '', 'dialog[open]');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'clearing a required field disables the visible actions again');
+      await fill('Name on this dashboard', expectedDraft.name, 'dialog[open]');
+      await clickLabelled('Copy value for CANARY_ADMIN_TOKEN');
+      assert.equal(await page.eval('window.__copies.at(-1)'), preparationCredentials[0], 'restoring the name re-enables copying without changing the token');
+      await pick('This dashboard reaches the node');
+      assert.deepEqual(await draftValues(), expectedDraft, 'switching back preserves the shared draft');
+      assert.equal(await page.eval('__field("Node URL","dialog[open]").value'), 'http://127.0.0.1:3100', 'the direct address is retained');
+      await pick('The node reaches this dashboard');
       for (const method of ['Docker run', 'Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
         await click(method, 'dialog[open]');
         await captureOutputs();
@@ -960,13 +989,21 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     }
     const connectionUrl = capabilities.value.connectionUrl;
     assert.ok(connectionUrl.startsWith('https://') && connectionUrl !== fixture.origin, 'a configured HTTPS node-connection address, not the page’s');
-    await pick('Deploy a new node'); await pick('The node reaches this dashboard');
+    await pick('Deploy a new node'); await pick('This dashboard reaches the node');
+    await click('Linux VM', 'dialog[open]');
+    await pick('The node reaches this dashboard');
     await text(connectionUrl);
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the invitation form', 15000);
+    await fill('Name on this dashboard', '', 'dialog[open]');
+    await click('Create invitation', 'dialog[open]');
+    await until(() => page.eval('__field("Name on this dashboard","dialog[open]").getAttribute("aria-invalid")==="true"'), 'the new-node submit shows its missing-name error');
+    await pick('A node that’s already running');
+    await until(() => page.eval('["Name on this dashboard","Node ID"].every(label=>{const input=__field(label,"dialog[open]");return input.value===""&&input.getAttribute("aria-invalid")!=="true"})'), 'the running-node form keeps its own blank identity without inheriting validation errors');
     const label = 'Wizard outbound node', id = 'review-outbound', file = await connectionFile(id);
     await fill('Name on this dashboard', label, 'dialog[open]'); await fill('Node ID', id, 'dialog[open]');
     await click('Create invitation', 'dialog[open]');
     await text(`Waiting for ${id} to connect`, 15000);
+    assert.equal(await page.eval('document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText'), 'Docker run', 'a running node defaults to its own Docker method despite the new-node VM choice');
     await click('Docker Compose', 'dialog[open]');
     await text('Add to compose.yaml, under the node service’s environment');
     await text('Put this line in its .env file');

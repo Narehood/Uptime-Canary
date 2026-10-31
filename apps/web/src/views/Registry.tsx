@@ -16,7 +16,7 @@ import { session } from '../session';
 import { Banner, Card, EmptyState, Modal, PageHead, Spinner, Tag, Time, nodeStateText, nodeTone } from '../ui/bits';
 import { ErrorSummary, SecretField, TextField } from '../ui/forms';
 import { EndpointMark, Glyph, Icon } from '../ui/icons';
-import { directTls, secretsFor, secretsForNode, TLS_LOG_LINE, type DialogSecrets, type DirectTarget, type Platform } from '../onboarding';
+import { directTls, secretsFor, secretsForNode, TLS_LOG_LINE, type DialogSecrets, type DirectTarget } from '../onboarding';
 import {
   AddNodeChooser, NewNodeDeploy, OutboundNode, PendingNodesCard, useInvitations, useOnboarding, type AddPlan, type NewNodeDraft, type Taken,
 } from './NodeWizard';
@@ -407,7 +407,6 @@ export function AddNodeDialog({ onClose }: { onClose: () => void }) {
   const held = useRef(secrets);
   const [secretFailure, setSecretFailure] = useState<string | null>(null);
   const [draft, setDraft] = useState<NewNodeDraft>({ label: '', nodeId: '', address: '', bindAddress: '0.0.0.0', platform: 'docker' });
-  const [platform, setPlatform] = useState<Platform>('docker');
   const [deployed, setDeployed] = useState<DirectTarget | null>(null);
   const [locked, setLocked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -454,7 +453,7 @@ export function AddNodeDialog({ onClose }: { onClose: () => void }) {
       : <NewNodeDeploy draft={draft} onDraft={changeDraft} secrets={pair} earlier={earlier} onboarding={onboarding} taken={taken}
         onNext={target => { tokensFor(draft.nodeId, true); setDeployed(target); }} onUse={nodeId => tokensFor(nodeId, true)} onCancel={onClose} />;
   } else {
-    body = <OutboundNode fresh={plan.fresh} onboarding={onboarding} secrets={pair} earlier={earlier} onUse={nodeId => tokensFor(nodeId, true)} onNodeIdChange={nodeId => tokensFor(nodeId)} taken={taken} platform={platform} onPlatform={setPlatform}
+    body = <OutboundNode fresh={plan.fresh} draft={draft} onDraft={changeDraft} onboarding={onboarding} secrets={pair} earlier={earlier} onUse={nodeId => tokensFor(nodeId, true)} taken={taken} platform={draft.platform} onPlatform={platform => changeDraft({ ...draft, platform })}
       onClose={onClose} onRequestClose={requestClose} onLock={lock} onBusy={hold} guard={guard} onTakenChanged={invitations.reload} />;
   }
   return (

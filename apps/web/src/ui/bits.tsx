@@ -109,7 +109,7 @@ export function Banner({ tone = 'warn', title, children, actions, role = 'status
  * Copies `value`. Without a clipboard (a plain-HTTP page) or when the browser refuses, it says so instead of doing
  * nothing; the page never promises to clear the clipboard afterwards. `onCopied` runs only after a successful copy.
  */
-export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLabel, onCopied }: { value: string; label?: string; className?: string; ariaLabel?: string; onCopied?: () => void }) {
+export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLabel, onCopied, disabled = false }: { value: string; label?: string; className?: string; ariaLabel?: string; onCopied?: () => void; disabled?: boolean }) {
   const [copied, setCopied] = useState<null | 'done' | 'failed'>(null);
   useEffect(() => {
     if (!copied) return;
@@ -117,13 +117,14 @@ export function CopyButton({ value, label = 'Copy', className = 'btn sm', ariaLa
     return () => clearTimeout(timer);
   }, [copied]);
   const copy = (): void => {
+    if (disabled) return;
     const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
     if (!clipboard?.writeText) { setCopied('failed'); return; }
     clipboard.writeText(value).then(() => { setCopied('done'); onCopied?.(); }, () => setCopied('failed'));
   };
   const what = ariaLabel?.replace(/^Copy /u, '');
   return (
-    <button type="button" className={`${className}${copied === 'failed' ? ' copy-failed' : ''}`} aria-label={ariaLabel ? (copied === 'done' ? `Copied: ${what}` : copied === 'failed' ? `Couldn’t copy: ${what}` : ariaLabel) : undefined} onClick={copy}>
+    <button type="button" className={`${className}${copied === 'failed' ? ' copy-failed' : ''}`} aria-label={ariaLabel ? (copied === 'done' ? `Copied: ${what}` : copied === 'failed' ? `Couldn’t copy: ${what}` : ariaLabel) : undefined} disabled={disabled} onClick={copy}>
       <Icon name={copied === 'done' ? 'check' : copied === 'failed' ? 'info' : 'copy'} />
       <span aria-live="polite">{copied === 'done' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : label}</span>
     </button>

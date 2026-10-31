@@ -34,8 +34,13 @@ reveals the real administrator and cluster tokens; **Copy** and **Download**
 include them while the page remains masked, just as in the direct-node flow.
 The preparation settings start the node without publishing an inbound port and
 omit dashboard connection variables until a real invitation exists. The node
-does not connect to the dashboard yet. Example previews are used only while
-the required identity fields or dashboard image tag are missing.
+does not connect to the dashboard yet. Switching between connection directions
+keeps the new node’s name, Node ID, deployment method and credentials. When the
+required identity fields or dashboard image tag are missing, both directions keep
+Show, Copy and Download visible but disabled. A warning explains what must be
+entered above first and identifies the settings as a preview. Portainer’s Copy
+name, Copy value and Copy .env controls follow the same rule. The actions enable
+automatically once the fields are valid and this node’s credentials are available.
 
 Once the endpoint is configured, create an invitation using the same Node ID.
 Save the bootstrap settings before creating the invitation. Invitation exports

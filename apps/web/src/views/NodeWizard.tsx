@@ -145,7 +145,7 @@ export function saveText(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void; previewOnly?: boolean }) {
+function GuideStep({ n, block, real, onHandled, disabled = false }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void; disabled?: boolean }) {
   const [shown, setShown] = useState(false);
   const name = block.file ?? block.title;
   if (block.kind === 'note') {
@@ -156,14 +156,14 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
       </li>
     );
   }
-  const reveal = block.secret && !previewOnly ? (
-    <button type="button" className="btn sm" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} private values in ${name}`}
+  const reveal = block.secret ? (
+    <button type="button" className="btn sm" disabled={disabled} aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} private values in ${name}`}
       onClick={() => { if (!shown) onHandled(); setShown(!shown); }}>
       <Icon name={shown ? 'eyeOff' : 'eye'} />{shown ? 'Hide' : 'Show'}
     </button>
   ) : null;
-  const download = block.file && !previewOnly ? (
-    <button type="button" className="btn sm" aria-label={`Download ${block.file}`} onClick={() => { saveText(block.file!, real.text); if (block.secret) onHandled(); }}>
+  const download = block.file ? (
+    <button type="button" className="btn sm" disabled={disabled} aria-label={`Download ${block.file}`} onClick={() => { saveText(block.file!, real.text); if (block.secret) onHandled(); }}>
       <Icon name="download" />Download
     </button>
   ) : null;
@@ -178,7 +178,7 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
             <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
             {reveal}
           </div>
-          <p>{previewOnly ? 'Each card previews one entry under Environment variables in Portainer. Private values are available after creating the invitation.' : 'Each card below is one entry under Environment variables in Portainer: copy its Name into the entry’s name field and its Value into the value field.'}</p>
+          <p>Each card below is one entry under Environment variables in Portainer: copy its Name into the entry’s name field and its Value into the value field.</p>
           <ul className="gvars">
             {block.variables.map((variable, index) => {
               const realVariable = real.variables?.[index];
@@ -188,25 +188,25 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
                   <div className="gvar-f">
                     <span className="gvar-k">Name</span>
                     <code className="gvar-v">{variable.name}</code>
-                    {previewOnly ? null : <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} />}
+                    <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} disabled={disabled} />
                   </div>
                   <div className="gvar-f">
                     <span className="gvar-k">Value</span>
                     <code className="gvar-v">{variable.secret && !shown ? variable.value : realVariable.value}</code>
-                    {previewOnly ? null : <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret ? onHandled : undefined} />}
+                    <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret ? onHandled : undefined} disabled={disabled} />
                   </div>
                 </li>
               );
             })}
           </ul>
-          {previewOnly ? null : <div className="gvars-alt">
+          <div className="gvars-alt">
             <small className="muted">Advanced: all entries at once as NAME=value lines, for Portainer’s Advanced mode or Load variables from .env file.</small>
             <span className="row-wrap">
-              <CopyButton value={real.text} label="Copy .env" ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />
+              <CopyButton value={real.text} label="Copy .env" ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} disabled={disabled} />
               {download}
             </span>
-          </div>}
-          {block.secret && !previewOnly ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy value, Copy .env and Download include them. Keep them private and delete stray copies.</small> : null}
+          </div>
+          {block.secret ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy value, Copy .env and Download include them. Keep them private and delete stray copies.</small> : null}
         </div>
       </li>
     );
@@ -219,12 +219,12 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
           <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
           <span className="row-wrap">
             {reveal}
-            {previewOnly ? null : <CopyButton value={real.text} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} />}
+            <CopyButton value={real.text} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} disabled={disabled} />
             {download}
           </span>
         </div>
         <pre className="json-pre gpre">{block.secret && !shown ? block.text : real.text}</pre>
-        {block.secret && !previewOnly ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy and Download include them. Keep the file private and delete stray copies.</small> : null}
+        {block.secret ? <small className="muted">{shown ? 'Private values are showing.' : 'Private values are hidden here.'} Copy and Download include them. Keep the file private and delete stray copies.</small> : null}
       </div>
     </li>
   );
@@ -234,8 +234,8 @@ function GuideStep({ n, block, real, onHandled, previewOnly = false }: { n: numb
  * The platform tabs and their steps. The preview is built with every private value masked; Copy and Download use the
  * real text. Changing tabs hides everything again.
  */
-export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly = false }: {
-  setup: Omit<NodeSetup, 'platform'>; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void; previewOnly?: boolean;
+export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledReason }: {
+  setup: Omit<NodeSetup, 'platform'>; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void; disabledReason?: string;
 }) {
   const id = useId();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -244,7 +244,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
   let problem: string | null = null;
   try {
     shown = setupGuide({ ...setup, platform }, false);
-    real = previewOnly ? shown : setupGuide({ ...setup, platform }, true);
+    real = disabledReason ? shown : setupGuide({ ...setup, platform }, true);
   } catch (error) {
     problem = error instanceof Error ? error.message : 'These settings can’t be written safely.';
   }
@@ -258,7 +258,8 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
     tabs.current[next]?.focus();
   };
   return (
-    <div className="guide">
+    <div className="guide" aria-describedby={disabledReason ? `${id}-warning` : undefined}>
+      {disabledReason ? <p className="small fwarn" role="alert" id={`${id}-warning`}><Glyph tone="warn" />Complete the fields above first. {disabledReason} Show, Copy and Download are disabled until setup is ready. Preview only: do not deploy these settings.</p> : null}
       <div className="gtabs" role="tablist" aria-label="Where the node runs">
         {PLATFORMS.map((entry, index) => (
           <button key={entry.value} ref={element => { tabs.current[index] = element; }} type="button" role="tab" id={`${id}-t-${entry.value}`}
@@ -272,7 +273,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
         {problem ? <Banner tone="down" title="These settings can’t be written">{problem}</Banner> : (
           <ol className="gsteps">
             {/* Keyed by node ID too: values shown for one ID are hidden again once the steps are for another. */}
-            {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} previewOnly={previewOnly} />)}
+            {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} disabled={!!disabledReason} />)}
           </ol>
         )}
       </div>
@@ -280,40 +281,36 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, previewOnly
   );
 }
 
-/** Show the new node's deployment choices before an endpoint or one-time invitation exists. */
-export function OutboundDeploymentPreview({ capabilities, platform, onPlatform, nodeId = '', name = '' }: {
-  capabilities?: NodeOnboardingCapabilities; platform: Platform; onPlatform: (platform: Platform) => void; nodeId?: string; name?: string;
+/** Keep every setup action visible but disabled until this new node's required fields are valid. */
+export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, nodeId = '', name = '' }: {
+  capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; reason: string; direct?: boolean; nodeId?: string; name?: string;
 }) {
   return (
     <>
-      <p className="sec">Choose how the new node will run: Docker run, Docker Compose, Portainer stack or Linux VM.</p>
-      <p className="modal-note">Enter a name and a valid, unique Node ID above to get this node’s real setup instructions with Show, Copy and Download. Until then these are example settings; do not deploy them.</p>
-      {capabilities ? <ImageLine capabilities={capabilities} /> : null}
+      {capabilities ? <ImageLine capabilities={capabilities} /> : loading ? <p className="small muted" role="status">Reading this dashboard’s image tag…</p> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
-        outbound: { connectionUrl: capabilities?.connectionUrl ?? 'https://NODE_REACHABLE_HOST:18348', token: 'INVITATION_TOKEN',
-          ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }}
-        platform={platform} onPlatform={onPlatform} onHandled={() => {}} previewOnly />
+        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { prepareOutbound: true as const }) }}
+        platform={platform} onPlatform={onPlatform} onHandled={() => {}} disabledReason={reason} />
     </>
   );
 }
 
 /** Like direct deployment, a fresh node gets usable bootstrap credentials before it is registered. */
-export function NewOutboundDeploy({ capabilities, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse }: {
-  capabilities?: NodeOnboardingCapabilities; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
+export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse }: {
+  capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
   secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void;
 }) {
-  if (!capabilities || labelProblem(name) || nodeIdProblem(nodeId, taken)) {
-    return <OutboundDeploymentPreview capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={name} />;
-  }
   const pair = secretsFor(secrets, nodeId);
-  return pair ? <>
+  const reason = [labelProblem(name), nodeIdProblem(nodeId, taken), !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
+  if (reason || !capabilities || !pair) return <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform} reason={reason} nodeId={nodeId} name={name} />;
+  return <>
     <p className="sec">These are this new node’s real administrator and cluster tokens, made in this browser. Show reveals them; Copy and Download include them while the preview stays masked. You can deploy it now without an inbound port, then connect it with an invitation once this dashboard’s endpoint is ready.</p>
     <ImageLine capabilities={capabilities} />
     <TokensNote nodeId={nodeId} earlier={earlier} />
     <SetupGuide setup={{ nodeId, name, imageTag: capabilities.imageTag, secrets: pair, prepareOutbound: true }}
       platform={platform} onPlatform={onPlatform} onHandled={() => onUse(nodeId)} />
-  </> : <p className="small fwarn" role="alert"><Glyph tone="warn" />{NO_TOKENS}</p>;
+  </>;
 }
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
@@ -328,8 +325,8 @@ function TokensNote({ nodeId, earlier }: { nodeId: string; earlier?: string | nu
   );
 }
 
-/** A new node without tokens gets no steps at all: a running node's steps would leave it with no administrator. */
-const NO_TOKENS = 'No steps without the new node’s own administrator and cluster tokens, and this page has none for it. Try again above, or add a node that’s already running instead.';
+/** Never enable setup actions using missing credentials or ones belonging to another node ID. */
+const NO_TOKENS = 'Usable settings require the new node’s own administrator and cluster tokens, and this page has none for it. Try again above, or add a node that’s already running instead.';
 
 /**
  * Where the steps open the node's port on its host: the publish or listen address field, never the Node URL. In a
@@ -381,9 +378,6 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
     onNext(target);
   };
 
-  if (!capabilities) {
-    return onboarding.error ? null : <Spinner label="Reading this dashboard’s image tag…" />;
-  }
   return (
     <form className="connect-form" onSubmit={next} noValidate>
       <p className="sec">The new node gets its own administrator and cluster tokens, made in this browser. This page keeps them until the dialog closes. It sends only the administrator token, to this dashboard’s server, when you verify the node.</p>
@@ -396,7 +390,7 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
         placeholder="https://100.79.12.4:3100" hint="The new node’s address as the dashboard’s server reaches it, such as the node host’s LAN, NetBird or Tailscale IP, with the port the steps publish. It’s never this dashboard’s own address. Verify uses this URL unchanged; it doesn’t choose which address Docker or the node binds to. With https:// the node encrypts the connection itself; use http:// only on a network that encrypts it already." />
       <TextField label="Publish or listen address on the node host" mono value={draft.bindAddress ?? '0.0.0.0'} onChange={bindAddress => set({ bindAddress })} error={live(draft.bindAddress ?? '0.0.0.0', errors.bindAddress)}
         placeholder="0.0.0.0" maxLength={64} hint={`Separate from the Node URL. 0.0.0.0, the default, means all of the host’s IPv4 interfaces. To accept connections on one interface only, enter an IP address the Docker or VM host itself has, or :: for all IPv6 interfaces. Not a VPN, NAT or port-forward address that belongs to another machine, and no URL, host name or port. ${bindingAccessNote(draft.platform)}`} />
-      {typeof target !== 'string' && ready && pair ? (
+      {capabilities && typeof target !== 'string' && ready && pair ? (
         <>
           <ImageLine capabilities={capabilities} />
           <BindingNote target={target} platform={draft.platform} />
@@ -409,9 +403,8 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
             onPlatform={platform => set({ platform })} onHandled={() => onUse(draft.nodeId)} />
           {draft.platform === 'vm' && capabilities.nativeDownloadAvailable ? <p className="small muted">This dashboard reports native downloads, but gives this page no address for them, so the steps above build the node instead.</p> : null}
         </>
-      ) : typeof target !== 'string' && ready
-        ? <p className="small fwarn" role="alert"><Glyph tone="warn" />{NO_TOKENS}</p>
-        : <p className="small muted">The commands appear here once these fields are filled in.</p>}
+      ) : <NodeDeploymentPreview direct capabilities={capabilities} loading={onboarding.loading} platform={draft.platform} onPlatform={platform => set({ platform })} nodeId={draft.nodeId} name={draft.label}
+        reason={[...Object.values(errors), !capabilities ? (onboarding.loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ')} />}
       <div className="modal-foot">
         <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
         <span className="row-wrap">
@@ -527,17 +520,25 @@ function useInvitationStatus(id: string | null, stop: boolean, nonce: number): {
   return { status, failure, loading };
 }
 
-export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNodeIdChange, taken, platform, onPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
+export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earlier, onUse, taken, platform: draftPlatform, onPlatform: onDraftPlatform, onClose, onRequestClose, onLock, onBusy, guard, onTakenChanged }: {
   fresh: boolean; onboarding: Resource<NodeOnboardingCapabilities>; secrets: NodeSecrets | null; earlier?: string | null; onUse: (nodeId: string) => void; taken: Taken; platform: Platform;
-  onNodeIdChange: (nodeId: string) => void;
+  draft: NewNodeDraft; onDraft: (draft: NewNodeDraft) => void;
   onPlatform: (platform: Platform) => void; onClose: () => void; onRequestClose: () => void; onLock: (locked: boolean) => void; onBusy: (busy: boolean) => void;
   guard: RefObject<(() => boolean) | null>; onTakenChanged: () => void;
 }) {
   const { api, registry, connection, stillCurrent } = useCanary();
   const capabilities = onboarding.data;
-  const [label, setLabel] = useState('');
-  const [nodeId, setNodeId] = useState('');
+  const [existingLabel, setExistingLabel] = useState('');
+  const [existingNodeId, setExistingNodeId] = useState('');
+  const [existingPlatform, setExistingPlatform] = useState<Platform>('docker');
+  const platform = fresh ? draftPlatform : existingPlatform;
+  const onPlatform = (platform: Platform): void => { if (fresh) onDraftPlatform(platform); else setExistingPlatform(platform); };
+  const label = fresh ? draft.label : existingLabel;
+  const nodeId = fresh ? draft.nodeId : existingNodeId;
+  const setLabel = (label: string): void => { if (fresh) onDraft({ ...draft, label }); else setExistingLabel(label); };
+  const setNodeId = (nodeId: string): void => { if (fresh) onDraft({ ...draft, nodeId }); else setExistingNodeId(nodeId); };
   const [show, setShow] = useState(false);
+  useEffect(() => setShow(false), [fresh]);
   const [busy, setBusy] = useState<null | 'create' | 'cancel' | 'confirm'>(null);
   const [failure, setFailure] = useState<ChangeFailure | null>(null);
   const [invitation, setInvitation] = useState<NodeInvitation | null>(null);
@@ -648,10 +649,10 @@ export function OutboundNode({ fresh, onboarding, secrets, earlier, onUse, onNod
   const identityFields = <>
     <TextField label="Name on this dashboard" value={label} onChange={setLabel} error={live(label, errors.label)} maxLength={128} disabled={busy !== null} autoFocus
       hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
-    <TextField label="Node ID" mono value={nodeId} onChange={value => { setNodeId(value); if (fresh) onNodeIdChange(value); }} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
+    <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
       hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
   </>;
-  const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
+  const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} loading={onboarding.loading} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
     secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} /> : null;
 
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {

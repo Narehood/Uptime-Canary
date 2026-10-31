@@ -807,18 +807,22 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   for (const value of PRIVATE) assert.ok(!ready.includes(value));
   assert.match(text(ready), /-p 100\.79\.12\.4:3100:3100.*Next: verify the node/u);
   assert.match(text(ready), /publish port 3100 on 100\.79\.12\.4 only/u);
-  assert.match(text(deploy({ draft: { ...draft, address: '' } })), /The commands appear here once these fields are filled in\./u);
-  assert.match(text(deploy({ draft: { ...draft, nodeId: 'canary-b' } })), /Already on this dashboard as “Rack B”\..*The commands appear here/u);
+  assert.match(text(deploy({ draft: { ...draft, address: '' } })), /Complete the fields above first.*Show, Copy and Download are disabled/u);
+  assert.match(text(deploy({ draft: { ...draft, nodeId: 'canary-b' } })), /Complete the fields above first.*Already on this dashboard as “Rack B”\./u);
   assert.match(text(deploy({ onboarding: resource(undefined) })), /Reading this dashboard’s image tag…/u);
   assert.match(text(deploy({ draft: { ...draft, address: 'http://canary-b.lan:3100' } })), /publish port 3100 on 100\.79\.12\.4 only/u);
   const guard = { current: null };
   const outbound = props => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
     fresh: true, onboarding: resource(CAPS), secrets: SECRETS, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop, onClose: noop, onRequestClose: noop,
-    onLock: noop, onBusy: noop, guard, onTakenChanged: noop, onNodeIdChange: noop, ...props,
+    onLock: noop, onBusy: noop, guard, onTakenChanged: noop, ...props,
   }));
   const identify = text(outbound({}));
+  const retained = outbound({ draft, onDraft: noop, platform: 'portainer', secrets: { ...SECRETS, nodeId: draft.nodeId } });
+  assert.ok(tags(retained, 'input').map(attributes).some(input => input.get('value') === draft.nodeId), 'switching from direct setup retains the entered Node ID');
+  assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN'), 'the retained draft exposes real Portainer copy controls immediately');
   assert.ok(identify.includes(CONNECT) && /Create invitation/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
-  assert.match(identify, /Choose how the new node will run.*Enter a name and a valid, unique Node ID/u, 'the fresh outbound flow asks for its identity before exporting settings');
+  assert.match(identify, /Complete the fields above first.*Show, Copy and Download are disabled/u, 'the fresh outbound flow explains why its visible actions are disabled');
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
   assert.equal(typeof guard.current, 'function');
   assert.equal(guard.current(), true, 'nothing made yet, so closing needs no question');
@@ -826,27 +830,37 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Name on this dashboard.*Node ID/u, 'identity fields are available before endpoint setup');
   for (const { value: platform } of onboarding.PLATFORMS) {
     const beforeSetup = outbound({ platform, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
+    const incompleteDirect = deploy({ draft: { ...draft, label: '', nodeId: '', address: '', platform } });
+    const incompleteOutbound = outbound({ platform });
+    for (const [direction, markup] of [['direct', incompleteDirect], ['outbound', incompleteOutbound]]) {
+      const actions = tags(markup, 'button').map(attributes).filter(button => /^(?:Show private values in|Copy |Download )/u.test(button.get('aria-label') ?? ''));
+      assert.ok(actions.length >= 3, `${platform} ${direction}: setup actions remain visible before required fields are entered`);
+      assert.ok(actions.every(button => button.has('disabled')), `${platform} ${direction}: incomplete setup actions are disabled`);
+    }
     assert.equal(tags(beforeSetup, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 4, `${platform}: deployment choices before dashboard readiness`);
     assert.doesNotMatch(text(beforeSetup), /Create invitation/u, 'no invitation action without an endpoint');
-    const preview = within('admin', [], React.createElement(wizard.OutboundDeploymentPreview, { capabilities: CAPS, platform, onPlatform: noop, nodeId: 'canary-outbound', name: 'Branch' }));
-    assert.ok(preview.includes(`ghcr.io/narehood/uptime-canary-node:${CAPS.imageTag}`) || platform === 'vm', `${platform}: preview uses this dashboard's image tag`);
-    assert.ok(text(preview).includes('canary-outbound'), `${platform}: valid entered ID is used`);
-    assert.ok(preview.includes(onboarding.MASK), `${platform}: private settings are masked`);
+    const preview = within('admin', [], React.createElement(wizard.NodeDeploymentPreview, { capabilities: CAPS, platform, onPlatform: noop, reason: 'Enter a name and a unique Node ID.' }));
+    assert.match(text(preview), /Complete the fields above first.*Preview only: do not deploy these settings/u, `${platform}: missing prerequisites and preview state are explained`);
+    assert.ok(preview.includes(onboarding.MASK), `${platform}: disabled secret previews stay masked`);
     const controls = tags(preview, 'button').map(attributes);
-    assert.equal(controls.length, 4, `${platform}: only platform selection, no Show/Copy/Download before an invitation`);
-    assert.ok(controls.every(found => found.get('role') === 'tab'), `${platform}: preview actions cannot export sample settings`);
-    assert.ok(controls.find(found => found.get('id').endsWith(`-t-${platform}`)).get('aria-selected') === 'true', `${platform}: selected preview method`);
+    assert.ok(controls.filter(found => found.get('role') !== 'tab').every(found => found.has('disabled')), `${platform}: every preview action is disabled`);
+    assert.ok(controls.filter(found => found.get('role') === 'tab').every(found => !found.has('disabled')), `${platform}: platform selection remains enabled`);
+    assert.ok(controls.find(found => found.get('id')?.endsWith(`-t-${platform}`)).get('aria-selected') === 'true', `${platform}: selected preview method`);
     for (const value of PRIVATE) assert.ok(!preview.includes(value), `${platform}: preview uses no real node or invitation credentials`);
     const blocks = onboarding.setupGuide({ nodeId: 'canary-outbound', name: 'Branch', imageTag: CAPS.imageTag, secrets: SECRETS,
       outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN }, platform }, false);
     assert.doesNotMatch(blocks.map(block => block.text).join('\n'), /\s-p\s|--publish|^\s*ports:/mu, `${platform}: outbound nodes publish no inbound port`);
   }
   const unreadPreview = outbound({ onboarding: resource(undefined) });
-  assert.match(text(unreadPreview), /IMAGE_TAG_FROM_DASHBOARD/u, 'an unread image tag is an explicit example, never a guessed release');
+  assert.match(text(unreadPreview), /Reading this dashboard’s image tag/u, 'an unread image tag is explained while setup actions remain disabled');
+  const failedRead = { ...resource(undefined), loading: false, error: new Error('failed') };
+  for (const markup of [outbound({ onboarding: failedRead }), deploy({ onboarding: failedRead })]) {
+    assert.doesNotMatch(text(markup), /Reading this dashboard’s image tag|Wait for the dashboard’s image tag to load/u, 'a failed capability read is not announced as still loading');
+  }
   const existingWithoutEndpoint = outbound({ fresh: false, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
   assert.equal(tags(existingWithoutEndpoint, 'button').map(attributes).filter(found => found.get('role') === 'tab').length, 0, 'running nodes are not offered a fresh deployment');
   assert.match(text(outbound({ fresh: false })), /Its current CANARY_NODE_ID\. The dashboard refuses a node that connects with any other ID\./u);
-  assert.doesNotMatch(text(outbound({ fresh: false })), /Choose how the new node will run/u, 'running nodes retain their existing deployment');
+  assert.doesNotMatch(text(outbound({ fresh: false })), /Preview only: do not deploy these settings/u, 'running nodes retain their existing deployment');
   assert.deepEqual(reached, [], 'rendering asks the API nothing');
 });
 
@@ -1275,15 +1289,17 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   assert.match(source, /const pair = secretsFor\(secrets, draft\.nodeId\);/u);
   assert.match(source, /const pair = secretsFor\(secrets, nodeId\);/u, 'bootstrap deployment uses only its own ID’s credentials');
   assert.match(source, /if \(fresh\) onUse\(result\.nodeId\);/u, 'an invitation’s tokens are bound to its node ID');
-  // Rendered: a pair used for another ID, or none, gives no steps, and never a running node's steps.
+  // User requested visible disabled actions even without prerequisites. A missing or wrong-ID pair never enables them.
   const draft = { label: 'Office', nodeId: 'canary-office', address: 'http://100.79.12.4:3100', bindAddress: '100.79.12.4', platform: 'docker' };
   const deploy = (secrets, earlier = null) => within('admin', [ENTRY], React.createElement(wizard.NewNodeDeploy, {
     draft, onDraft: noop, secrets, earlier, onboarding: resource(CAPS), taken: { nodes: [ENTRY], invitations: [] }, onNext: noop, onUse: noop, onCancel: noop,
   }));
   for (const secrets of [{ ...SECRETS, nodeId: 'canary-other' }, null]) {
     const markup = deploy(secrets);
-    assert.doesNotMatch(markup, /--env-file|aria-label="(?:Copy|Download|Show private values in) /u, `no steps for ${JSON.stringify(secrets?.nodeId ?? null)}`);
-    assert.match(text(markup), /No steps without the new node’s own administrator and cluster tokens, and this page has none for it\./u);
+    const actions = tags(markup, 'button').map(attributes).filter(button => /^(?:Copy|Download|Show private values in) /u.test(button.get('aria-label') ?? ''));
+    assert.ok(actions.length > 0 && actions.every(button => button.has('disabled')), 'missing or wrong-ID credentials never enable setup actions');
+    for (const value of PRIVATE) assert.ok(!markup.includes(value), 'another node’s credential is absent even from a disabled preview');
+    assert.match(text(markup), /Usable settings require the new node’s own administrator and cluster tokens, and this page has none for it\./u);
   }
   const own = deploy({ ...SECRETS, nodeId: 'canary-office' });
   assert.match(own, /--env-file/u);
@@ -1298,6 +1314,7 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   // the deployed node's original credentials. The browser proof restarts that
   // node with its original database/identity and the connection-only export.
   const outbound = (fresh, secrets) => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
     fresh, onboarding: resource(CAPS), secrets, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
     onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
   }));
@@ -1309,7 +1326,9 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   for (const pair of [{ ...SECRETS, nodeId: 'canary-other' }, null]) {
     const markup = within('admin', [], React.createElement(wizard.NewOutboundDeploy, { capabilities: CAPS, nodeId: 'canary-office', name: 'Office', secrets: pair,
       platform: 'docker', onPlatform: noop, onUse: noop, taken: { nodes: [], invitations: [] } }));
-    assert.doesNotMatch(markup, /aria-label="(?:Copy|Download|Show private values in) /u, 'preparation never exports missing or another ID’s credentials');
+    const actions = tags(markup, 'button').map(attributes).filter(button => /^(?:Copy|Download|Show private values in) /u.test(button.get('aria-label') ?? ''));
+    assert.ok(actions.length > 0 && actions.every(button => button.has('disabled')), 'preparation never enables exporting missing or another ID’s credentials');
+    for (const value of PRIVATE) assert.ok(!markup.includes(value), 'preparation includes no other node’s credential');
   }
 });
 
@@ -1725,6 +1744,7 @@ await check('TLS views: new-node steps point to the fingerprint in the node’s 
   const server = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_server.go'), 'utf8');
   assert.ok(server.includes(`fmt.Fprintln(log, "${wizard.DASHBOARD_TLS_LOG_LINE}", connectionPin)`), 'the line the dashboard logs');
   const outbound = capabilities => text(within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
     fresh: true, onboarding: resource(capabilities), secrets: SECRETS, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
     onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
   })));
