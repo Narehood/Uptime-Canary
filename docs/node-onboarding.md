@@ -38,7 +38,10 @@ is allowed only when the dedicated listener terminates native TLS and reports it
 certificate fingerprint. With an HTTPS reverse proxy and ordinary CA trust, use
 the configured address so the node sends credentials only to that destination.
 Choose **Copy**, **Download** or **Show** once the fields are valid; the first
-action generates the complete setup and performs that action. **Generate setup**
+action generates the complete setup. Copy and Show complete that action;
+Download requests the file while browser activation remains available. If it
+requires a fresh click, the ready guide says to choose Download again. A deferred
+download never marks the one-time token saved. **Generate setup**
 is also available. The first export includes the node’s own
 administrator and cluster tokens, the dashboard address, and the one-time
 invitation token. A certificate pin is included when the dedicated listener
@@ -53,6 +56,8 @@ fields or dashboard prerequisites are missing; Portainer’s individual copy con
 explains the prerequisites. Switching between new-node connection directions
 preserves its name, Node ID, deployment method and credentials. The invitation
 retains the selected node-reachable address even when it differs from the default.
+Before generation, the masked preview stays labeled and its non-secret YAML
+uses that same entered address; it cannot be deployed without the real settings.
 
 For a node already deployed, choose **A node that’s already running** and enter
 its existing Node ID and original dashboard connection address. That path exports

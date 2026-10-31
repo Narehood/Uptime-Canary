@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { createServer, request as upstreamRequest } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { dirname, join, resolve } from 'node:path';
@@ -27,6 +27,8 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   const backend = `http://127.0.0.1:${await port()}`;
   const origin = `http://127.0.0.1:${await port()}`;
   const identity = join(runDir, 'dashboard-identity');
+  const downloadDirectory = join(runDir, 'downloads');
+  mkdirSync(downloadDirectory, { mode: 0o700 });
   const password = 'Private dashboard browser fixture password';
   const proxyCookie = 'canary_dashboard_fixture_proxy';
   let session = '', denied = 0, authenticated = 0;
@@ -249,7 +251,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
     };
   }
   return {
-    origin, backend, child, code, password, proxyCookie, route, startNode, freePort: port,
+    origin, backend, child, code, password, proxyCookie, route, startNode, freePort: port, downloadDirectory,
     previewUpdates(value) { assert.ok(Buffer.byteLength(JSON.stringify(value)) < 32768); updatePreview = value; },
     previewOnboarding(value) { assert.ok(Buffer.byteLength(JSON.stringify(value)) < 32768); onboardingPreview = value; },
     // The node-connection address the dashboard reports (the HTTPS front), its private listener behind it, and what the
@@ -709,7 +711,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await page.eval(`(() => { const d=document.querySelector('dialog[open]'); const e=[...d.querySelectorAll('label')].find(e=>__vis(e)&&__norm(e.innerText).startsWith(${q(label)})&&e.querySelector('input[type=radio]')); if(!e) throw Error('choice missing'); const input=e.querySelector('input'); if(input.disabled) throw Error('choice disabled'); input.click(); })()`);
   };
   const captureOutputs = () => page.eval(`(() => {
-    window.__copies = []; window.__saved = []; window.__downloads = []; window.__revoked = 0;
+    window.__copies = []; window.__saved = []; window.__downloads = []; window.__revoked = 0; window.__realDownloads = false;
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
       writeText: text => { window.__copies.push(text); return Promise.resolve(); },
       write: async items => { for (const item of items) window.__copies.push(await (await item.getType('text/plain')).text()); },
@@ -720,11 +722,16 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       URL.createObjectURL = blob => { const url = create(blob); window.__saved.push({ url, blob }); return url; };
       URL.revokeObjectURL = url => { window.__revoked++; revoke(url); };
       const click = HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click = function () { if (this.download) { window.__downloads.push(this.download); return; } return click.call(this); };
+      HTMLAnchorElement.prototype.click = function () { if (this.download) { window.__downloads.push(this.download); if (!window.__realDownloads) return; } return click.call(this); };
     }
     return true;
   })()`);
   const clickLabelled = label => page.eval(`(() => { const e=[...document.querySelectorAll('dialog[open] button')].find(b=>b.getAttribute('aria-label')===${q(label)}); if(!e||e.disabled) throw Error('missing ' + ${q(label)}); e.click(); })()`);
+  const trustedClickLabelled = async label => {
+    const point = await page.eval(`(() => { const e=__button(${q(label)},'dialog[open]');if(e.disabled)throw Error('disabled');e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+    await page.send('Input.dispatchMouseEvent', { type:'mousePressed', button:'left', clickCount:1, ...point });
+    await page.send('Input.dispatchMouseEvent', { type:'mouseReleased', button:'left', clickCount:1, ...point });
+  };
   const copyOf = async name => {
     const before = await page.eval('window.__copies.length');
     await page.eval(`(() => { const e=[...document.querySelectorAll('dialog[open] button')].find(b=>/^(Copy|Copied:|Couldn’t copy:) /u.test(b.getAttribute('aria-label')||'')&&(b.getAttribute('aria-label')||'').endsWith(' '+${q(name)})); if(!e) throw Error('copy missing'); e.click(); })()`);
@@ -1059,12 +1066,24 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await click('Portainer stack', 'dialog[open]');
     await captureOutputs();
     const firstStackFile = `${(await naming).resourceName(id)}.yml`;
-    await clickLabelled(`Download ${firstStackFile}`);
-    await text(`Waiting for ${id} to connect`, 15000);
-    await until(() => page.eval('window.__saved.length===1'),'the first Download completes after generating setup');
-    const firstYaml = await page.eval('window.__saved[0].blob.text()');
-    assert.ok(firstYaml.includes(id) && firstYaml.includes(connection.url) && !firstYaml.includes('INVITATION_TOKEN'),'the first download contains real deployment details');
-    assert.equal(fixture.stats().paths.slice(addressBegin).filter(entry=>entry.method==='POST' && entry.path==='/api/dashboard/invitations').length,2,'only the explicit invalid API probe and the first export created requests; typing did not');
+    const actualDownload = join(fixture.downloadDirectory, firstStackFile);
+    await page.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:fixture.downloadDirectory});
+    try {
+      await page.eval('window.__realDownloads=true');
+      await trustedClickLabelled(`Download ${firstStackFile}`);
+      await text(`Waiting for ${id} to connect`, 15000);
+      await until(() => page.eval('window.__saved.length===1 || document.querySelector("dialog[open]").innerText.includes("Setup is ready. Click Download again")'),'download attempted or a fresh click requested');
+      if (await page.eval('window.__saved.length===0')) await trustedClickLabelled(`Download ${firstStackFile}`);
+      await until(() => existsSync(actualDownload),'the browser actually saved the YAML file');
+      const firstYaml = readFileSync(actualDownload,'utf8');
+      assert.equal(firstYaml,await page.eval('window.__saved[0].blob.text()'),'real browser download matches the generated bytes');
+      assert.ok(firstYaml.includes(id) && firstYaml.includes(connection.url) && !firstYaml.includes('INVITATION_TOKEN'),'the first download contains real deployment details');
+    } finally {
+      await page.eval('window.__realDownloads=false');
+      await page.send('Browser.setDownloadBehavior',{behavior:'default'});
+      if (existsSync(actualDownload)) unlinkSync(actualDownload);
+    }
+    assert.equal(fixture.stats().paths.slice(addressBegin).filter(entry=>entry.method==='POST' && entry.path==='/api/dashboard/invitations').length,1,'the first export creates one browser request; the direct fixture API probe bypasses the browser proxy');
     const firstInvitation = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value.find(row => row.nodeId === id);
     assert.equal(firstInvitation?.connectionUrl, connection.url, 'a bare dashboard IP preserves the configured connection port');
     await click('Portainer stack', 'dialog[open]');
@@ -1323,11 +1342,34 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await click('Cancel invitation', 'dialog[open]');
     await dialogClosed(15000);
     await text('If the node is already deployed, make the next invitation with “A node that’s already running” and the same node ID, then replace only CANARY_DASHBOARD_ENROLL_TOKEN in its settings.', 10000);
+    // An expired activation cannot count a prepared secret file as saved.
+    const delayedId='review-held-download', delayedFile=await settingsFile(delayedId);
+    await clickFirst('Add node'); await dialogOpen();
+    await pick('Deploy a new node'); await pick('The node reaches this dashboard');
+    await fill('Name on this dashboard','Delayed download','dialog[open]'); await fill('Node ID',delayedId,'dialog[open]');
+    await captureOutputs();
+    held=fixture.hold('POST','/api/dashboard/invitations');
+    try {
+      await trustedClickLabelled(`Download ${delayedFile}`);
+      await until(() => held.answered(),'the delayed download has generated its invitation',15000);
+      await until(() => page.eval('!navigator.userActivation.isActive'),'activation expires before the held response is released');
+    } finally {held.release();}
+    await text('Setup is ready. Click Download again to start the file download.');
+    assert.equal(await page.eval('window.__saved.length'),0,'expired activation starts no deferred secret download');
+    await footClose(); await text('Close without saving the invitation?'); await click('Keep it open','dialog[open]');
+    await trustedClickLabelled(`Download ${delayedFile}`);
+    await until(() => page.eval('window.__saved.length===1'),'a fresh ready-guide click saves the secret file');
+    const delayedSettings=envOf(await page.eval('window.__saved[0].blob.text()'));
+    for (const name of ['CANARY_ADMIN_TOKEN','CANARY_CLUSTER_TOKEN','CANARY_DASHBOARD_ENROLL_TOKEN']) secrets.add(delayedSettings[name]);
+    assert.ok(delayedSettings.CANARY_DASHBOARD_ENROLL_TOKEN && !Object.values(delayedSettings).some(value=>value.includes('••••')),'the fresh click exports real settings');
+    const delayedInvitation=(await fixture.api('/api/dashboard/invitations','GET',undefined,owner)).value.find(row=>row.nodeId===delayedId);
+    await footClose(); await dialogClosed();
+    assert.equal((await fixture.api(`/api/dashboard/invitations/${delayedInvitation.id}`,'DELETE',undefined,owner)).status,204);
     const creates = fixture.stats().paths.slice(begin).filter(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations');
-    assert.deepEqual(creates.map(entry => [entry.status, entry.registration]), [[201, null], [201, null]], 'two creates, each saved by the server');
+    assert.deepEqual(creates.map(entry => [entry.status, entry.registration]), [[201, null], [201, null], [201, null]], 'one create per first export; retrying Copy or Download creates none');
     const left = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value ?? [];
-    assert.ok(!left.some(row => [id, stoppedId].includes(row.nodeId) && ['waiting', 'connected'].includes(row.state)), 'neither invitation is left waiting');
-    return { heldCreates: 2, choicesWhileCreating: 0, closeDisabledWhileCreating: true, escapeKeptPendingDialog: true, stopAnswer, escapeAsksAfterAnswer: true, cancelNoticeNamesRunningNode: true };
+    assert.ok(!left.some(row => [id, stoppedId, delayedId].includes(row.nodeId) && ['waiting', 'connected'].includes(row.state)), 'no fixture invitation is left waiting');
+    return { heldCreates: 3, choicesWhileCreating: 0, closeDisabledWhileCreating: true, escapeKeptPendingDialog: true, stopAnswer, escapeAsksAfterAnswer: true, cancelNoticeNamesRunningNode: true, expiredActivationKeepsUnsavedWarning:true };
   });
   // ----- r5: a new node's tokens belong to one node ID (onboarding.ts secretsForNode). Nothing is deployed or verified:
   // the step reads the settings through Copy, captured in the page, and closes the dialog with Cancel.

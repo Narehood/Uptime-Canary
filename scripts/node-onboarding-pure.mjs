@@ -911,11 +911,23 @@ await check('outbound first-start exports include bootstrap credentials and the 
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Copy ')), `${platform}: Copy is available`);
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Download ')), `${platform}: Download is available`);
     assert.ok(buttons.filter(button => button.get('role') !== 'tab').every(button => !button.has('disabled')), `${platform}: valid fields enable actions that prepare a complete deployment on demand`);
+    assert.match(text(markup), /Preview only: do not deploy these settings/u, `${platform}: enabling actions never presents the masked preview as deployable`);
     for (const token of PRIVATE) assert.ok(!markup.includes(token), `${platform}: no private value in masked markup`);
     assert.throws(() => onboarding.setupGuide({ ...setup, secrets: { ...SECRETS, nodeId: 'different-node' }, platform }, true), /already used/u);
     assert.throws(() => onboarding.setupGuide({ ...setup, direct: onboarding.directTarget('https://node.example.test:3100'), platform }, true), /Choose how/u);
     const existing = onboarding.setupGuide({ ...setup, secrets: null, platform }, true).map(block => block.text).join('\n');
     assert.ok(!existing.includes(ADMIN) && !existing.includes(CLUSTER), `${platform}: an existing deployment keeps its own bootstrap credentials`);
+  }
+  for (const platform of ['compose', 'portainer']) {
+    const alternate='https://100.79.0.9:18348';
+    const markup=within('admin',[],React.createElement(wizard.OutboundNode,{
+      fresh:true,draft:{label:'Office',nodeId,platform,address:'',dashboardAddress:alternate},onDraft:noop,
+      onboarding:resource({...CAPS,connectionTlsFingerprint:'f'.repeat(64)}),secrets:setup.secrets,onUse:noop,taken:{nodes:[],invitations:[]},platform,onPlatform:noop,
+      onClose:noop,onRequestClose:noop,onLock:noop,onBusy:noop,guard:{current:null},onTakenChanged:noop,
+    }));
+    const blocks=[...markup.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gu)].map(match=>text(match[1])).join('\n');
+    assert.ok(blocks.includes(alternate) && !blocks.includes(CONNECT),`${platform}: selectable preview uses the same pinned destination as generation`);
+    assert.match(text(markup),/Preview only: do not deploy these settings/u);
   }
   for (const [input, expected] of [
     ['192.0.2.10', 'https://192.0.2.10:18348'],

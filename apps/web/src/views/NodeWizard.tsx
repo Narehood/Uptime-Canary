@@ -147,8 +147,9 @@ export function saveText(name: string, text: string): void {
 
 type PreparedSetup = Omit<NodeSetup, 'platform'>;
 type PrepareSetup = () => Promise<PreparedSetup>;
+type ExportResult = boolean | 'download-ready' | 'download-requested' | null;
 
-function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRevealPrepared, initiallyShown = false, onCopyResult }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void; disabled?: boolean; prepare?: () => Promise<GuideBlock>; onRevealPrepared?: (key: string | null) => void; initiallyShown?: boolean; onCopyResult?: (copied: boolean) => void }) {
+function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRevealPrepared, initiallyShown = false, onExportResult }: { n: number; block: GuideBlock; real: GuideBlock; onHandled: () => void; disabled?: boolean; prepare?: () => Promise<GuideBlock>; onRevealPrepared?: (key: string | null) => void; initiallyShown?: boolean; onExportResult?: (result: ExportResult) => void }) {
   const [shown, setShown] = useState(initiallyShown);
   const prepareText = prepare ? async () => (await prepare()).text : undefined;
   const name = block.file ?? block.title;
@@ -173,8 +174,14 @@ function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRev
   ) : null;
   const download = block.file ? (
     <button type="button" className="btn sm" disabled={disabled} aria-label={`Download ${block.file}`} onClick={() => {
-      const save = (text: string): void => { saveText(block.file!, text); if (block.secret) onHandled(); };
-      if (prepareText) void prepareText().then(save, () => undefined); else save(real.text);
+      if (prepareText) void prepareText().then(text => {
+        const active = navigator.userActivation?.isActive === true;
+        if (active) saveText(block.file!, text);
+        // A post-request click can be dropped, even while a browser still
+        // reports activation. Only the ready guide's fresh click handles the token.
+        onExportResult?.(active ? 'download-requested' : 'download-ready');
+      }, () => undefined);
+      else { saveText(block.file!, real.text); onExportResult?.(null); if (block.secret) onHandled(); }
     }}>
       <Icon name="download" />Download
     </button>
@@ -201,12 +208,12 @@ function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRev
                   <div className="gvar-f">
                     <span className="gvar-k">Name</span>
                     <code className="gvar-v">{variable.name}</code>
-                    <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} disabled={disabled} onCopyResult={onCopyResult} />
+                    <CopyButton value={realVariable.name} label="Copy name" ariaLabel={`Copy name for ${variable.name}`} disabled={disabled} onCopyResult={onExportResult} />
                   </div>
                   <div className="gvar-f">
                     <span className="gvar-k">Value</span>
                     <code className="gvar-v">{variable.secret && !shown ? variable.value : realVariable.value}</code>
-                    <CopyButton value={realVariable.value} prepareValue={prepare ? async () => { const entry = (await prepare()).variables?.find(entry => entry.name === variable.name); if (!entry) throw new Error('Setup value unavailable'); return entry.value; } : undefined} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret && (!includesInvitation || variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN') ? onHandled : undefined} disabled={disabled} onCopyResult={onCopyResult} />
+                    <CopyButton value={realVariable.value} prepareValue={prepare ? async () => { const entry = (await prepare()).variables?.find(entry => entry.name === variable.name); if (!entry) throw new Error('Setup value unavailable'); return entry.value; } : undefined} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret && (!includesInvitation || variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN') ? onHandled : undefined} disabled={disabled} onCopyResult={onExportResult} />
                   </div>
                 </li>
               );
@@ -215,7 +222,7 @@ function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRev
           <div className="gvars-alt">
             <small className="muted">Advanced: all entries at once as NAME=value lines, for Portainer’s Advanced mode or Load variables from .env file.</small>
             <span className="row-wrap">
-              <CopyButton value={real.text} prepareValue={prepareText} label="Copy .env" ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} disabled={disabled} onCopyResult={onCopyResult} />
+              <CopyButton value={real.text} prepareValue={prepareText} label="Copy .env" ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} disabled={disabled} onCopyResult={onExportResult} />
               {download}
             </span>
           </div>
@@ -232,7 +239,7 @@ function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRev
           <b>{block.secret ? <Icon name="lock" className="inline" /> : null}{block.title}</b>
           <span className="row-wrap">
             {reveal}
-            <CopyButton value={real.text} prepareValue={prepareText} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} disabled={disabled} onCopyResult={onCopyResult} />
+            <CopyButton value={real.text} prepareValue={prepareText} ariaLabel={`Copy ${name}`} onCopied={block.secret ? onHandled : undefined} disabled={disabled} onCopyResult={onExportResult} />
             {download}
           </span>
         </div>
@@ -247,10 +254,10 @@ function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRev
  * The platform tabs and their steps. The preview is built with every private value masked; Copy and Download use the
  * real text. Changing tabs hides everything again.
  */
-export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledReason, prepare, onRevealPrepared, initiallyRevealed, onCopyResult }: {
+export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledReason, prepare, onRevealPrepared, initiallyRevealed, onExportResult }: {
   setup: PreparedSetup; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void; disabledReason?: string;
   prepare?: PrepareSetup; onRevealPrepared?: (key: string | null) => void; initiallyRevealed?: string | null;
-  onCopyResult?: (copied: boolean) => void;
+  onExportResult?: (result: ExportResult) => void;
 }) {
   const id = useId();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -273,8 +280,9 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledRea
     tabs.current[next]?.focus();
   };
   return (
-    <div className="guide" aria-describedby={disabledReason ? `${id}-warning` : undefined}>
-      {disabledReason ? <p className="small fwarn" role="alert" id={`${id}-warning`}><Glyph tone="warn" />Complete the fields above first. {disabledReason} Show, Copy and Download are disabled until setup is ready. Preview only: do not deploy these settings.</p> : null}
+    <div className="guide" aria-describedby={disabledReason || prepare ? `${id}-warning` : undefined}>
+      {disabledReason ? <p className="small fwarn" role="alert" id={`${id}-warning`}><Glyph tone="warn" />Complete the fields above first. {disabledReason} Show, Copy and Download are disabled until setup is ready. Preview only: do not deploy these settings.</p>
+        : prepare ? <p className="small fwarn" role="note" id={`${id}-warning`}>Preview only: do not deploy these settings. Copy, Download or Show generates the complete private settings.</p> : null}
       <div className="gtabs" role="tablist" aria-label="Where the node runs">
         {PLATFORMS.map((entry, index) => (
           <button key={entry.value} ref={element => { tabs.current[index] = element; }} type="button" role="tab" id={`${id}-t-${entry.value}`}
@@ -289,7 +297,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledRea
           <ol className="gsteps">
             {/* Keyed by node ID too: values shown for one ID are hidden again once the steps are for another. */}
             {shown.map((block, index) => <GuideStep key={`${platform}-${setup.nodeId}-${block.key}`} n={index + 1} block={block} real={real[index]} onHandled={onHandled} disabled={!!disabledReason}
-              initiallyShown={initiallyRevealed === block.key} onRevealPrepared={onRevealPrepared} onCopyResult={onCopyResult} prepare={prepare ? async () => {
+              initiallyShown={initiallyRevealed === block.key} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} prepare={prepare ? async () => {
                 const ready = setupGuide({ ...await prepare(), platform }, true).find(entry => entry.key === block.key);
                 if (!ready) throw new Error('Setup unavailable'); return ready;
               } : undefined} />)}
@@ -301,35 +309,37 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledRea
 }
 
 /** Keep every setup action visible but disabled until this new node's required fields are valid. */
-export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, nodeId = '', name = '', prepare, onHandled = () => {}, onRevealPrepared, onCopyResult }: {
+export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, nodeId = '', name = '', prepare, onHandled = () => {}, onRevealPrepared, onExportResult, connectionUrl }: {
   capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; reason: string; direct?: boolean; nodeId?: string; name?: string;
   prepare?: PrepareSetup; onHandled?: () => void; onRevealPrepared?: (key: string | null) => void;
-  onCopyResult?: (copied: boolean) => void;
+  onExportResult?: (result: ExportResult) => void;
+  connectionUrl?: string;
 }) {
   return (
     <>
       {capabilities ? <ImageLine capabilities={capabilities} /> : loading ? <p className="small muted" role="status">Reading this dashboard’s image tag…</p> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
-        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { outbound: { connectionUrl: capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
-        platform={platform} onPlatform={onPlatform} onHandled={onHandled} disabledReason={reason || undefined} prepare={prepare} onRevealPrepared={onRevealPrepared} onCopyResult={onCopyResult} />
+        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { outbound: { connectionUrl: connectionUrl ?? capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
+        platform={platform} onPlatform={onPlatform} onHandled={onHandled} disabledReason={reason || undefined} prepare={prepare} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} />
     </>
   );
 }
 
 /** A new outbound node exports nothing until its one-time invitation can be included in the first deployment. */
-export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, taken, addressError, prepare, onHandled, onRevealPrepared, busy = false, onCopyResult }: {
+export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, taken, addressError, prepare, onHandled, onRevealPrepared, busy = false, onExportResult, connectionUrl }: {
   capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
   secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void; addressError?: string;
   prepare?: PrepareSetup; onHandled?: () => void; onRevealPrepared?: (key: string | null) => void; busy?: boolean;
-  onCopyResult?: (copied: boolean) => void;
+  onExportResult?: (result: ExportResult) => void;
+  connectionUrl?: string;
 }) {
   const pair = secretsFor(secrets, nodeId);
   const reason = [labelProblem(name), nodeIdProblem(nodeId, taken), addressError, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null,
     capabilities && !capabilities.outboundEnabled ? 'Configure the dashboard’s node-connection listener below, then choose Check dashboard setup.' : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
   return <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform}
     reason={reason || (busy ? 'Generating the complete setup…' : !prepare ? 'Choose Generate setup below to include the one-time invitation in a complete first-start deployment.' : '')} nodeId={nodeId} name={name}
-    prepare={prepare} onHandled={onHandled} onRevealPrepared={onRevealPrepared} onCopyResult={onCopyResult} />;
+    prepare={prepare} onHandled={onHandled} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} connectionUrl={connectionUrl} />;
 }
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
@@ -569,7 +579,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
   const [invitationBootstrap, setInvitationBootstrap] = useState<NodeSecrets | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [handled, setHandled] = useState(false);
-  const [copyResult, setCopyResult] = useState<boolean | null>(null);
+  const [exportResult, setExportResult] = useState<ExportResult>(null);
   const [asking, setAsking] = useState<null | 'close' | 'cancel'>(null);
   const [added, setAdded] = useState<RegisteredNode | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -606,7 +616,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
 
   const generate = async (): Promise<PreparedSetup | null> => {
     if (busy || !capabilities?.outboundEnabled || !capabilities.connectionUrl) return null;
-    setShow(true); setFailure(null); setCopyResult(null);
+    setShow(true); setFailure(null); setExportResult(null);
     if (errors.label || errors.nodeId || errors.connectionUrl || !connectionUrl) { failed(); return null; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
     if (fresh && !pair) { failed(); return null; }
@@ -653,7 +663,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     return creating.current.then(setup => { if (!setup) throw new Error('Setup could not be generated'); return setup; });
   };
   const create = (event: FormEvent): void => { event.preventDefault(); void prepare().catch(() => undefined); };
-  const copyFeedback = copyResult === null ? null : <p className="small" role="status">{copyResult ? 'Copied.' : 'Couldn’t copy. Try Copy again, or use Download or Show.'}</p>;
+  const exportFeedback = exportResult === null ? null : <p className="small" role="status">{exportResult === true ? 'Copied.' : exportResult === false ? 'Couldn’t copy. Try Copy again, or use Download or Show.' : exportResult === 'download-ready' ? 'Setup is ready. Click Download again to start the file download.' : 'Download requested. If no file appears, click Download again. Keep this dialog open until you have the file.'}</p>;
 
   const cancel = async (): Promise<void> => {
     if (!invitation || busy) return;
@@ -705,7 +715,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
   </>;
   const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} loading={onboarding.loading} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
     secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} addressError={errors.connectionUrl} prepare={prepare} busy={busy !== null}
-    onHandled={() => setHandled(true)} onRevealPrepared={setInitiallyRevealed} onCopyResult={setCopyResult} /> : null;
+    onHandled={() => setHandled(true)} onRevealPrepared={setInitiallyRevealed} onExportResult={setExportResult} connectionUrl={connectionUrl ?? undefined} /> : null;
 
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
     return <>
@@ -745,7 +755,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
         <ConnectionTrust pin={capabilities.connectionTlsFingerprint} />
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
         {identityFields}
-        {copyFeedback}
+        {exportFeedback}
         {deployment}
         {fresh ? <p className="modal-note">Copy, Download or Show generates the complete setup when you first use it. Then paste its commands or stack YAML and environment settings and start the node. If it is already deployed, choose “A node that’s already running” to preserve its credentials and identity.</p> : null}
         <div className="modal-foot">
@@ -792,7 +802,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
         <dt>Node-connection address</dt><dd className="mono">{current.connectionUrl}</dd>
         {current.connectionTlsFingerprint ? <><dt>Its certificate fingerprint</dt><dd className="mono">{current.connectionTlsFingerprint}</dd></> : null}
       </dl>
-      {copyFeedback}
+      {exportFeedback}
       {token && current.state !== 'confirmed' ? (
           <>
             <ImageLine capabilities={capabilities} />
@@ -800,7 +810,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
             {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
             {fresh && !secretsFor(invitationBootstrap, current.nodeId) ? <Banner tone="down" title="This new node’s setup is unavailable">Cancel this invitation and generate it again, or choose an already-running node if it was previously deployed.</Banner> : <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: fresh ? secretsFor(invitationBootstrap, current.nodeId) : null,
               outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}
-              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); }} initiallyRevealed={initiallyRevealed} onCopyResult={setCopyResult} />}
+              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); }} initiallyRevealed={initiallyRevealed} onExportResult={setExportResult} />}
           </>
         ) : null}
       <div aria-live="polite">{status}</div>
