@@ -29,24 +29,28 @@ once the endpoint is enabled, the invitation form appears in the same menu.
 With **Deploy a new node → The node reaches this dashboard**, the Docker run,
 Docker Compose, Portainer stack and Linux VM tabs are visible from the start,
 including before the endpoint is configured or an invitation exists. Enter a
-name and a unique Node ID to get usable bootstrap deployment settings. **Show**
-reveals the real administrator and cluster tokens; **Copy** and **Download**
-include them while the page remains masked, just as in the direct-node flow.
-The preparation settings start the node without publishing an inbound port and
-omit dashboard connection variables until a real invitation exists. The node
-does not connect to the dashboard yet. Switching between connection directions
-keeps the new node’s name, Node ID, deployment method and credentials. When the
-required identity fields or dashboard image tag are missing, both directions keep
-Show, Copy and Download visible but disabled. A warning explains what must be
-entered above first and identifies the settings as a preview. Portainer’s Copy
-name, Copy value and Copy .env controls follow the same rule. The actions enable
-automatically once the fields are valid and this node’s credentials are available.
+name, a unique Node ID and the dashboard address this node can reach. The address
+defaults to the configured HTTPS listener. An IP or hostname keeps its configured
+port; a complete HTTPS URL can specify a different port, for example behind NAT.
+The address must still route to this dashboard and use its configured TLS trust.
+Choose **Generate setup** once. The first export now includes the node’s own
+administrator and cluster tokens, the dashboard address and certificate pin,
+and the one-time invitation token. Paste the commands or stack YAML and private
+environment settings and start the node. It connects immediately without a
+second configuration edit or an inbound node port. Compare the fingerprint from
+its log and confirm it in this dashboard after it connects.
 
-Once the endpoint is configured, create an invitation using the same Node ID.
-Save the bootstrap settings before creating the invitation. Invitation exports
-contain only dashboard connection settings; they never replace administrator or
-cluster tokens. Add those settings to the prepared deployment, retaining its
-original credentials, names, data and identity storage. Update the existing
+**Show**, **Copy** and **Download** remain visible but disabled until complete
+setup has been generated; Portainer’s individual copy controls do too. A warning
+explains the prerequisites. Switching between new-node connection directions
+preserves its name, Node ID, deployment method and credentials. The invitation
+retains the selected node-reachable address even when it differs from the default.
+
+For a node already deployed, choose **A node that’s already running** and enter
+its existing Node ID and original dashboard connection address. That path exports
+only connection settings and never replaces administrator or cluster tokens.
+Apply those settings while retaining its credentials, names, data and identity.
+Update the existing
 Compose YAML and add the enrollment token to its existing private settings file,
 update the existing Portainer stack, recreate the Docker container with the extra
 connection settings, or restart the native service after updating its environment.

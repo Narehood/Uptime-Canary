@@ -6,7 +6,7 @@ import { connectionWaitingHint, invitationFailure, invitationGone, invitationInf
 import { elapsed } from '../format';
 import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
-import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
+import { bindingAccessNote, directTarget, directTls, imageReference, localBinding, nodeIdProblem, outboundConnectionAddress, PLATFORMS, schemePortNote, secretsFor, setupGuide, TLS_LOG_LINE, type DirectTarget, type GuideBlock, type NodeSecrets, type NodeSetup, type Platform } from '../onboarding';
 import { Banner, Card, CopyButton, Modal, Spinner } from '../ui/bits';
 import { CheckField, ErrorSummary, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
@@ -168,6 +168,7 @@ function GuideStep({ n, block, real, onHandled, disabled = false }: { n: number;
     </button>
   ) : null;
   if (block.variables) {
+    const includesInvitation = block.variables.some(variable => variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN');
     // Portainer's basic editor: one entry per row, with separate name and value fields. Copy value takes the raw value
     // alone, never NAME= or a line break; the real values stay in these handlers and show only after Show.
     return (
@@ -193,7 +194,7 @@ function GuideStep({ n, block, real, onHandled, disabled = false }: { n: number;
                   <div className="gvar-f">
                     <span className="gvar-k">Value</span>
                     <code className="gvar-v">{variable.secret && !shown ? variable.value : realVariable.value}</code>
-                    <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret ? onHandled : undefined} disabled={disabled} />
+                    <CopyButton value={realVariable.value} label="Copy value" ariaLabel={`Copy value for ${variable.name}`} onCopied={variable.secret && (!includesInvitation || variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN') ? onHandled : undefined} disabled={disabled} />
                   </div>
                 </li>
               );
@@ -290,32 +291,27 @@ export function NodeDeploymentPreview({ capabilities, loading = false, platform,
       {capabilities ? <ImageLine capabilities={capabilities} /> : loading ? <p className="small muted" role="status">Reading this dashboard’s image tag…</p> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
-        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { prepareOutbound: true as const }) }}
+        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { outbound: { connectionUrl: capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
         platform={platform} onPlatform={onPlatform} onHandled={() => {}} disabledReason={reason} />
     </>
   );
 }
 
-/** Like direct deployment, a fresh node gets usable bootstrap credentials before it is registered. */
-export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse }: {
+/** A new outbound node exports nothing until its one-time invitation can be included in the first deployment. */
+export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, taken, addressError }: {
   capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
-  secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void;
+  secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void; addressError?: string;
 }) {
   const pair = secretsFor(secrets, nodeId);
-  const reason = [labelProblem(name), nodeIdProblem(nodeId, taken), !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
-  if (reason || !capabilities || !pair) return <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform} reason={reason} nodeId={nodeId} name={name} />;
-  return <>
-    <p className="sec">These are this new node’s real administrator and cluster tokens, made in this browser. Show reveals them; Copy and Download include them while the preview stays masked. You can deploy it now without an inbound port, then connect it with an invitation once this dashboard’s endpoint is ready.</p>
-    <ImageLine capabilities={capabilities} />
-    <TokensNote nodeId={nodeId} earlier={earlier} />
-    <SetupGuide setup={{ nodeId, name, imageTag: capabilities.imageTag, secrets: pair, prepareOutbound: true }}
-      platform={platform} onPlatform={onPlatform} onHandled={() => onUse(nodeId)} />
-  </>;
+  const reason = [labelProblem(name), nodeIdProblem(nodeId, taken), addressError, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null,
+    capabilities && !capabilities.outboundEnabled ? 'Configure the dashboard’s node-connection listener below, then choose Check dashboard setup.' : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
+  return <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform}
+    reason={reason || 'Choose Generate setup below to include the one-time invitation in a complete first-start deployment.'} nodeId={nodeId} name={name} />;
 }
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
 
-export interface NewNodeDraft { label: string; nodeId: string; address: string; bindAddress?: string; platform: Platform }
+export interface NewNodeDraft { label: string; nodeId: string; address: string; bindAddress?: string; dashboardAddress?: string; platform: Platform }
 
 /** Says that the tokens shown are this node ID's own, after a pair was used for another ID in the same dialog. */
 function TokensNote({ nodeId, earlier }: { nodeId: string; earlier?: string | null }) {
@@ -531,6 +527,10 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
   const [existingLabel, setExistingLabel] = useState('');
   const [existingNodeId, setExistingNodeId] = useState('');
   const [existingPlatform, setExistingPlatform] = useState<Platform>('docker');
+  const [existingConnectionAddress, setExistingConnectionAddress] = useState<string | null>(null);
+  const addressInput = (fresh ? draft.dashboardAddress : existingConnectionAddress) ?? capabilities?.connectionUrl ?? '';
+  const setConnectionAddress = (value: string): void => { if (fresh) onDraft({ ...draft, dashboardAddress: value }); else setExistingConnectionAddress(value); };
+  const connectionUrl = outboundConnectionAddress(addressInput, capabilities?.connectionUrl ?? '');
   const platform = fresh ? draftPlatform : existingPlatform;
   const onPlatform = (platform: Platform): void => { if (fresh) onDraftPlatform(platform); else setExistingPlatform(platform); };
   const label = fresh ? draft.label : existingLabel;
@@ -542,6 +542,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
   const [busy, setBusy] = useState<null | 'create' | 'cancel' | 'confirm'>(null);
   const [failure, setFailure] = useState<ChangeFailure | null>(null);
   const [invitation, setInvitation] = useState<NodeInvitation | null>(null);
+  const [invitationBootstrap, setInvitationBootstrap] = useState<NodeSecrets | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [handled, setHandled] = useState(false);
   const [asking, setAsking] = useState<null | 'close' | 'cancel'>(null);
@@ -570,24 +571,25 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     return false;
   };
 
-  const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken) };
+  const errors = { label: labelProblem(label), nodeId: nodeIdProblem(nodeId, taken), connectionUrl: connectionUrl ? undefined : 'Enter the dashboard’s reachable IP, hostname or full HTTPS connection address.' };
   const live = (value: string, error?: string): string | undefined => show || value ? error : undefined;
-  const bootstrapSaved = secretsFor(secrets, nodeId)?.nodeId === nodeId;
+  const pair = secretsFor(secrets, nodeId);
 
   const create = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (busy || !capabilities?.outboundEnabled || !capabilities.connectionUrl) return;
     setShow(true); setFailure(null);
-    if (errors.label || errors.nodeId) { failed(); return; }
+    if (errors.label || errors.nodeId || !connectionUrl) { failed(); return; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
-    if (fresh && (!secrets || !bootstrapSaved)) { failed(); return; }
+    if (fresh && !pair) { failed(); return; }
     const controller = new AbortController();
     attempt.current = controller;
     setBusy('create');
     try {
-      const result = await api.createInvitation({ label, nodeId }, controller.signal);
+      const result = await api.createInvitation({ label, nodeId, connectionUrl }, controller.signal);
       if (!stillCurrent()) return;
       setInvitation(withoutToken(result));
+      setInvitationBootstrap(fresh && pair ? { ...pair, nodeId } : null);
       setToken(result.token);
       setHandled(false); setShow(false);
       // From here the new node's tokens belong to this invitation's node ID (a pair used for another ID is replaced).
@@ -651,9 +653,11 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
       hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
     <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
       hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
+    <TextField label="Dashboard IP or HTTPS address" mono value={addressInput} onChange={setConnectionAddress} error={live(addressInput, errors.connectionUrl)} maxLength={2048} disabled={busy !== null}
+      placeholder="https://192.168.10.10:18348" hint={`The address this node can reach. An IP or hostname keeps the configured connection port; a full HTTPS address can specify another port. It must route to this dashboard’s node-connection listener. Configured address: ${capabilities?.connectionUrl ?? 'not configured yet'}.`} />
   </>;
   const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} loading={onboarding.loading} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
-    secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} /> : null;
+    secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} addressError={errors.connectionUrl} /> : null;
 
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
     return <>
@@ -694,14 +698,14 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
         {identityFields}
         {deployment}
-        {fresh && !bootstrapSaved ? <p className="modal-note">Save this node’s bootstrap settings above before creating its invitation. If you already deployed it before opening this dialog, choose “A node that’s already running” to keep its original credentials.</p> : null}
+        {fresh ? <p className="modal-note">Generate one complete deployment, then paste its commands or stack YAML and environment settings and start the node. If it is already deployed, choose “A node that’s already running” to preserve its credentials and identity.</p> : null}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
             {busy === 'create'
               ? <button type="button" className="btn" onClick={() => attempt.current?.abort()}>Stop</button>
               : <button type="button" className="btn" onClick={onRequestClose}>Cancel</button>}
-            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && (!secrets || !bootstrapSaved))}><Icon name="key" />{busy === 'create' ? 'Creating…' : 'Create invitation'}</button>
+            <button type="submit" className="btn primary" disabled={busy !== null || (fresh && (!pair || Object.values(errors).some(Boolean)))}><Icon name="key" />{busy === 'create' ? 'Creating…' : fresh ? 'Generate setup' : 'Create invitation'}</button>
           </span>
         </div>
       </form>
@@ -742,11 +746,11 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
       {token && current.state !== 'confirmed' ? (
           <>
             <ImageLine capabilities={capabilities} />
-            {fresh ? <p className="modal-note">Add only these connection settings to the node you prepared. Keep its original administrator and cluster tokens, node ID, names, data and identity storage. This dialog forgets bootstrap credentials when closed; adding the connection must not replace them.</p> : null}
+            {fresh ? <p className="modal-note">This is the complete configuration for a new node’s first start, including its own credentials and this invitation. Paste the commands or stack YAML and environment settings together, then start it. Keep its data and identity storage.</p> : null}
             {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
-            <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: null,
+            {fresh && !secretsFor(invitationBootstrap, current.nodeId) ? <Banner tone="down" title="This new node’s setup is unavailable">Cancel this invitation and generate it again, or choose an already-running node if it was previously deployed.</Banner> : <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: fresh ? secretsFor(invitationBootstrap, current.nodeId) : null,
               outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}
-              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); }} />
+              platform={platform} onPlatform={onPlatform} onHandled={() => { setHandled(true); }} />}
           </>
         ) : null}
       <div aria-live="polite">{status}</div>

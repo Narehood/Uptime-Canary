@@ -934,38 +934,13 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
       const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
       assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
-      await clickLabelled('Copy name for CANARY_ADMIN_TOKEN');
-      assert.equal(await page.eval('window.__copies.at(-1)'), 'CANARY_ADMIN_TOKEN', 'outbound Portainer offers Copy name immediately');
-      await clickLabelled('Copy value for CANARY_ADMIN_TOKEN');
-      assert.equal(await page.eval('window.__copies.at(-1)'), preparationCredentials[0], 'outbound Copy value uses the original real token');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'outbound exports stay visible but disabled until a real invitation can be included');
       await fill('Name on this dashboard', '', 'dialog[open]');
       assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'clearing a required field disables the visible actions again');
       await fill('Name on this dashboard', expectedDraft.name, 'dialog[open]');
-      await clickLabelled('Copy value for CANARY_ADMIN_TOKEN');
-      assert.equal(await page.eval('window.__copies.at(-1)'), preparationCredentials[0], 'restoring the name re-enables copying without changing the token');
       await pick('This dashboard reaches the node');
       assert.deepEqual(await draftValues(), expectedDraft, 'switching back preserves the shared draft');
       assert.equal(await page.eval('__field("Node URL","dialog[open]").value'), 'http://127.0.0.1:3100', 'the direct address is retained');
-      await pick('The node reaches this dashboard');
-      for (const method of ['Docker run', 'Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
-        await click(method, 'dialog[open]');
-        await captureOutputs();
-        const copied = envOf(await copyOf(preparationFile));
-        const unquote = value => value.startsWith('"') ? JSON.parse(value) : value;
-        const credentials = [unquote(copied.CANARY_ADMIN_TOKEN), unquote(copied.CANARY_CLUSTER_TOKEN)];
-        for (const token of credentials) { secrets.add(token); assert.match(token, /^[A-Za-z0-9_-]{43}$/u, 'real browser-generated bootstrap token'); }
-        preparationCredentials ??= credentials;
-        assert.deepEqual(credentials, preparationCredentials, `${method}: switching platforms preserves this node's credentials`);
-        assert.equal(copied.CANARY_DASHBOARD_ENROLL_TOKEN, undefined, 'preparation needs no fake invitation');
-        await clickLabelled(`Show private values in ${preparationFile}`);
-        assert.ok((await page.eval('document.querySelector("dialog[open]").innerText')).includes(credentials[0]), `${method}: Show reveals a real credential`);
-        await clickLabelled(`Hide private values in ${preparationFile}`);
-        assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes(credentials[0]), `${method}: Hide masks it again`);
-        await clickLabelled(`Download ${preparationFile}`);
-        const downloaded = await page.eval('window.__saved.at(-1).blob.text()');
-        assert.ok(credentials.every(token => downloaded.includes(token)), `${method}: downloaded settings contain the real credentials`);
-        assert.ok(!downloaded.includes('••••'), `${method}: exported settings contain no mask`);
-      }
       await fill('Node ID', 'review-outbound-other', 'dialog[open]');
       const otherPreparation = envOf(await copyOf(await settingsFile('review-outbound-other')));
       for (const token of [otherPreparation.CANARY_ADMIN_TOKEN, otherPreparation.CANARY_CLUSTER_TOKEN]) secrets.add(token);
@@ -973,6 +948,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       await fill('Node ID', preparationId, 'dialog[open]');
       const restoredPreparation = envOf(await copyOf(preparationFile));
       assert.deepEqual([restoredPreparation.CANARY_ADMIN_TOKEN, restoredPreparation.CANARY_CLUSTER_TOKEN], preparationCredentials, 'returning to the prepared ID restores its original tokens');
+      await pick('The node reaches this dashboard');
       assert.ok(!(await page.eval('document.querySelector("dialog[open]").innerText')).includes('Create invitation'), 'no premature invitation form');
       assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations' && entry.status !== 403), 'setup guidance made no invitation');
       if (!capabilities.value.outboundEnabled) {
@@ -983,7 +959,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       }
       fixture.previewOnboarding(null);
       await click('Check dashboard setup', 'dialog[open]');
-      await until(() => page.eval('document.querySelector("dialog[open]").innerText.includes("Create invitation")'), 'refresh advances to the invitation form', 15000);
+      await until(() => page.eval('document.querySelector("dialog[open]").innerText.includes("Generate setup")'), 'refresh advances to the complete setup form', 15000);
     } finally {
       fixture.previewOnboarding(null);
     }
@@ -995,8 +971,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await text(connectionUrl);
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the invitation form', 15000);
     await fill('Name on this dashboard', '', 'dialog[open]');
-    await click('Create invitation', 'dialog[open]');
-    await until(() => page.eval('__field("Name on this dashboard","dialog[open]").getAttribute("aria-invalid")==="true"'), 'the new-node submit shows its missing-name error');
+    assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] button")].find(button=>__norm(button.innerText)==="Generate setup").disabled'), 'incomplete first-start details keep generation disabled');
     await pick('A node that’s already running');
     await until(() => page.eval('["Name on this dashboard","Node ID"].every(label=>{const input=__field(label,"dialog[open]");return input.value===""&&input.getAttribute("aria-invalid")!=="true"})'), 'the running-node form keeps its own blank identity without inheriting validation errors');
     const label = 'Wizard outbound node', id = 'review-outbound', file = await connectionFile(id);
@@ -1053,7 +1028,8 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     const capabilities = await fixture.api('/api/dashboard/onboarding', 'GET', undefined, owner);
     assert.equal(capabilities.status, 200, JSON.stringify(capabilities.value));
     assert.deepEqual([capabilities.value.outboundEnabled, capabilities.value.connectionUrl], [true, connection.url], 'the fixture configured the dedicated node-connection address');
-    const label = 'Paired outbound node', id = 'review-paired', file = await connectionFile(id);
+    const label = 'Paired outbound node', id = 'review-paired';
+    let file = await settingsFile(id);
     const nodePort = await fixture.freePort();
     const begin = fixture.stats().paths.length, browserBegin = report.requests.length, blockedBegin = report.blocked.length;
     const listed = async () => (await fixture.api('/api/dashboard/nodes', 'GET', undefined, owner)).value.map(row => row.id).sort();
@@ -1066,23 +1042,53 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await text(connection.url);
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the invitation form', 15000);
     await fill('Name on this dashboard', label, 'dialog[open]'); await fill('Node ID', id, 'dialog[open]');
+    await fill('Dashboard IP or HTTPS address', new URL(connection.url).hostname, 'dialog[open]');
+    await click('Generate setup', 'dialog[open]');
+    await text(`Waiting for ${id} to connect`, 15000);
+    const firstInvitation = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value.find(row => row.nodeId === id);
+    assert.equal(firstInvitation?.connectionUrl, connection.url, 'a bare dashboard IP preserves the configured connection port');
+    await click('Portainer stack', 'dialog[open]');
     await captureOutputs();
-    const bootstrap = await bootstrapOf(id);
-    const prepared = await fixture.startNode(id, bootstrap, nodePort);
-    assert.ok(prepared.running(), 'the prepared node starts before any invitation');
-    await prepared.stop();
-    await click('Cancel', 'dialog[open]'); await dialogClosed();
-    // CR1: reopening forgets dialog credentials. Even if the new-node choice
-    // makes a different pair, its invitation must not overwrite the live pair.
+    await clickLabelled('Copy value for CANARY_ADMIN_TOKEN');
+    secrets.add(await page.eval('window.__copies.at(-1)'));
+    await footClose(); await text('Close without saving the invitation?');
+    await click('Keep it open', 'dialog[open]');
+    let bootstrap;
+    for (const method of ['Docker run', 'Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
+      await click(method, 'dialog[open]');
+      await captureOutputs();
+      const copied = envOf(await copyOf(file));
+      const unquote = value => value.startsWith('"') ? JSON.parse(value) : value;
+      const credentials = ['CANARY_ADMIN_TOKEN', 'CANARY_CLUSTER_TOKEN', 'CANARY_DASHBOARD_ENROLL_TOKEN'].map(key => unquote(copied[key]));
+      for (const token of credentials) secrets.add(token);
+      bootstrap ??= copied;
+      assert.deepEqual(credentials, [bootstrap.CANARY_ADMIN_TOKEN, bootstrap.CANARY_CLUSTER_TOKEN, bootstrap.CANARY_DASHBOARD_ENROLL_TOKEN], `${method}: one complete export contains stable bootstrap credentials and the real invitation`);
+      await clickLabelled(`Show private values in ${file}`);
+      assert.ok(credentials.every(token => token && token.length >= 24), `${method}: every private value is real`);
+      assert.ok((await page.eval('document.querySelector("dialog[open]").innerText')).includes(credentials[0]), `${method}: Show reveals real settings`);
+      await clickLabelled(`Hide private values in ${file}`);
+      await clickLabelled(`Download ${file}`);
+      const downloaded = await page.eval('window.__saved.at(-1).blob.text()');
+      assert.ok(credentials.every(token => downloaded.includes(token)) && !downloaded.includes('••••'), `${method}: Download includes the same complete private settings`);
+    }
+    const firstNode = await fixture.startNode(id, bootstrap, nodePort, { connect: true });
+    await until(async () => (await fixture.api(`/api/dashboard/invitations/${firstInvitation.id}`, 'GET', undefined, owner)).value?.state === 'connected', 'the first deployment connects using only the initial exported settings', 30000);
+    const firstFingerprint = firstNode.fingerprint();
+    await firstNode.stop();
+    await footClose(); await dialogClosed();
+    assert.equal((await fixture.api(`/api/dashboard/invitations/${firstInvitation.id}`, 'DELETE', undefined, owner)).status, 204);
+    // Reinvite an already-deployed node after closing the dialog. Only its connection settings may change.
     await clickFirst('Add node'); await dialogOpen();
     await until(async () => !(await radios())[3].text.includes('Checking whether nodes can connect'), 'reopened setup read', 15000);
     await pick('Deploy a new node'); await pick('The node reaches this dashboard');
+    await click('Linux VM', 'dialog[open]');
+    await pick('A node that’s already running');
+    assert.ok(await page.eval('["Name on this dashboard","Node ID"].every(label=>__field(label,"dialog[open]").value==="")'), 'an existing node keeps its own blank identity fields');
     await fill('Name on this dashboard', label, 'dialog[open]'); await fill('Node ID', id, 'dialog[open]');
-    await captureOutputs();
-    const reopenedBootstrap = await bootstrapOf(id);
-    assert.notEqual(reopenedBootstrap.CANARY_ADMIN_TOKEN, bootstrap.CANARY_ADMIN_TOKEN, 'reopening does not persist the bootstrap secret');
     await click('Create invitation', 'dialog[open]');
     await text(`Waiting for ${id} to connect`, 15000);
+    assert.equal(await page.eval('document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText'), 'Docker run', 'running-node deployment method stays separate from the fresh VM choice');
+    file = await connectionFile(id);
     const invitation = (await fixture.api('/api/dashboard/invitations', 'GET', undefined, owner)).value.find(row => row.nodeId === id);
     assert.ok(invitation?.state === 'waiting' && invitation.connectionUrl === connection.url, JSON.stringify(invitation));
     // The node's settings come from the page's Copy action, captured in the page: nothing reaches a clipboard or a file.
@@ -1104,6 +1110,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     };
     const diagnose = error => { throw Error(`${error.message}; front ${JSON.stringify(connection.stats())}; node log ${node.log().slice(-600)}`); };
     const printed = await until(() => node.fingerprint(), 'the node printed its connection fingerprint', 15000).catch(diagnose);
+    assert.equal(printed, firstFingerprint, 'reinvitation retains the original first-start device identity');
     const pending = await until(async () => {
       if (!node.running()) throw Error('the node stopped');
       const reply = await fixture.api(`/api/dashboard/invitations/${invitation.id}`, 'GET', undefined, owner);
@@ -1215,8 +1222,8 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   const dialogState = () => page.eval(`(() => { const d=document.querySelector('dialog[open]'); if(!d) return null; const x=d.querySelector('.modal-h button[aria-label="Close"]');
     return { radios: d.querySelectorAll('input[type=radio]').length, closeDisabled: x ? x.disabled : null, foot: [...d.querySelectorAll('.modal-foot button')].map(b=>({ text: __norm(b.innerText), disabled: b.disabled })), text: __norm(d.innerText) }; })()`);
-  await step('Control plane: while “Create invitation” waits for the dashboard’s server, the Add node dialog can’t be closed, escaped or switched; Stop says the invitation may exist; a cancelled invitation says how to invite a deployed node again', async () => {
-    const label = 'Held invitation node', stoppedId = 'review-held-stop', id = 'review-held', file = await connectionFile(id);
+  await step('Control plane: while complete setup generation waits for the dashboard’s server, the Add node dialog can’t be closed, escaped or switched; Stop says the invitation may exist; a cancelled invitation says how to invite a deployed node again', async () => {
+    const label = 'Held invitation node', stoppedId = 'review-held-stop', id = 'review-held', file = await settingsFile(id);
     const begin = fixture.stats().paths.length;
     const pendingCreate = async where => {
       const state = await dialogState();
@@ -1233,12 +1240,12 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     await pick('Deploy a new node'); await pick('The node reaches this dashboard');
     await until(() => page.eval('[...document.querySelectorAll("dialog[open] label")].some(l=>__norm(l.innerText)==="Node ID")'), 'the invitation form', 15000);
     await fill('Name on this dashboard', label, 'dialog[open]'); await fill('Node ID', stoppedId, 'dialog[open]');
-    await captureOutputs(); await bootstrapOf(stoppedId);
+    await captureOutputs();
     // 1. Stop while the server's answer is held: the page lets go of it and says the invitation may exist.
     let held = fixture.hold('POST', '/api/dashboard/invitations');
     let stopAnswer;
     try {
-      await click('Create invitation', 'dialog[open]');
+      await click('Generate setup', 'dialog[open]');
       await until(() => held.answered(), 'the dashboard’s server answered the held create', 15000);
       assert.equal(held.answered().status, 201, 'the server saved the invitation before the page heard back');
       await pendingCreate('held, before Stop');
@@ -1255,10 +1262,9 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.equal((await fixture.api(`/api/dashboard/invitations/${stopped.id}`, 'DELETE', undefined, owner)).status, 204, 'fixture cleanup of the stopped invitation');
     // 2. Escape while the answer is held: refused, and the dialog stays open on the same pending form.
     await fill('Node ID', id, 'dialog[open]');
-    await bootstrapOf(id);
     held = fixture.hold('POST', '/api/dashboard/invitations');
     try {
-      await click('Create invitation', 'dialog[open]');
+      await click('Generate setup', 'dialog[open]');
       await until(() => held.answered(), 'the dashboard’s server answered the held create', 15000);
       assert.equal(held.answered().status, 201);
       await pendingCreate('held');

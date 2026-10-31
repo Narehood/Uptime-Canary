@@ -50,7 +50,7 @@ func (d *Dashboard) invitationRow(v nodeInvitationRecord) registeredNodeRecord {
 	if v.Node != nil {
 		name = v.Node.Name
 	}
-	return registeredNodeRecord{RegisteredNode: RegisteredNode{ID: v.ID, Label: v.Label, NodeID: v.NodeID, NodeName: name, State: "enrolling", Connection: "outbound"}, Credentials: v.Credentials, ConnectionHash: v.ConnectionHash, InvitationExpiresAt: v.ExpiresAt}
+	return registeredNodeRecord{RegisteredNode: RegisteredNode{ID: v.ID, Label: v.Label, NodeID: v.NodeID, NodeName: name, State: "enrolling", Connection: "outbound"}, Credentials: v.Credentials, ConnectionHash: v.ConnectionHash, InvitationExpiresAt: v.ExpiresAt, ConnectionURL: v.ConnectionURL, ConnectionTLSFingerprint: v.ConnectionTLSFingerprint}
 }
 
 func (d *Dashboard) loadInvitations() error {
@@ -222,7 +222,11 @@ func (d *Dashboard) invitationRequest(w http.ResponseWriter, r *http.Request, ac
 	defer d.mu.Unlock()
 	if row, ok := d.registry[id]; ok && row.Connection == "outbound" {
 		if r.Method == "GET" {
-			reply(w, 200, nodeInvitation{ID: id, Label: row.Label, NodeID: row.NodeID, ConnectionURL: d.connectionURL, ConnectionTLSFingerprint: d.connectionTLSFingerprint, ExpiresAt: row.InvitationExpiresAt, State: "confirmed", RegistrationID: id})
+			origin, pin := row.ConnectionURL, row.ConnectionTLSFingerprint
+			if origin == "" { // Registrations created before per-node connection addresses.
+				origin, pin = d.connectionURL, d.connectionTLSFingerprint
+			}
+			reply(w, 200, nodeInvitation{ID: id, Label: row.Label, NodeID: row.NodeID, ConnectionURL: origin, ConnectionTLSFingerprint: pin, ExpiresAt: row.InvitationExpiresAt, State: "confirmed", RegistrationID: id})
 			return
 		}
 		errorReply(w, fail(409, "This invitation is already paired; use Remove node to revoke access"))
@@ -254,18 +258,26 @@ func (d *Dashboard) createInvitation(w http.ResponseWriter, r *http.Request, act
 		return
 	}
 	var input struct {
-		Label  string `json:"label"`
-		NodeID string `json:"nodeId"`
+		Label         string  `json:"label"`
+		NodeID        string  `json:"nodeId"`
+		ConnectionURL *string `json:"connectionUrl"`
 	}
 	raw, err := readBounded(r.Body, 4096)
 	if err == nil {
-		err = connectionJSON(raw, &input, "label", "nodeId")
+		err = connectionJSON(raw, &input, "label", "nodeId", "connectionUrl")
 	}
 	if err == nil {
 		err = validText(input.Label, "node label", 128)
 	}
 	if err == nil {
 		err = identifier(input.NodeID, "node ID")
+	}
+	origin := d.connectionURL
+	if err == nil && input.ConnectionURL != nil {
+		origin, err = dashboardConnectionOrigin(*input.ConnectionURL)
+		if err != nil {
+			err = fail(400, "Enter a canonical HTTPS dashboard connection address")
+		}
 	}
 	if err != nil {
 		errorReply(w, err)
@@ -318,7 +330,7 @@ func (d *Dashboard) createInvitation(w http.ResponseWriter, r *http.Request, act
 		errorReply(w, fail(403, "Dashboard administrator permission is required"))
 		return
 	}
-	v := nodeInvitationRecord{nodeInvitation: nodeInvitation{ID: id, Label: input.Label, NodeID: input.NodeID, ConnectionURL: d.connectionURL, ConnectionTLSFingerprint: d.connectionTLSFingerprint, ExpiresAt: now + invitationLifetime.Milliseconds(), State: "waiting"}, TokenHash: digest(token), CreatorID: actor.ID, CreatorVersion: creator.AuthVersion}
+	v := nodeInvitationRecord{nodeInvitation: nodeInvitation{ID: id, Label: input.Label, NodeID: input.NodeID, ConnectionURL: origin, ConnectionTLSFingerprint: d.connectionTLSFingerprint, ExpiresAt: now + invitationLifetime.Milliseconds(), State: "waiting"}, TokenHash: digest(token), CreatorID: actor.ID, CreatorVersion: creator.AuthVersion}
 	if err = d.saveInvitation(r, actor, v, removed); err != nil {
 		errorReply(w, err)
 		return

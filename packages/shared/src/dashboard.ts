@@ -50,6 +50,9 @@ export interface RegisteredNode {
   lastConnectedAt?: number;
   /** Administrator-only certificate trust anchor for a direct HTTPS node. */
   tlsFingerprint?: string;
+  /** Last observed running software, not the requested image tag. */
+  version?: string;
+  sourceCommit?: string;
 }
 
 export interface NodeVerification {
@@ -78,7 +81,7 @@ export interface NodeOnboardingCapabilities {
   nativeDownloadAvailable: boolean;
 }
 
-export interface NodeInvitationInput { label: string; nodeId: string }
+export interface NodeInvitationInput { label: string; nodeId: string; connectionUrl?: string }
 
 /** Admin-only invitation status. The one-time secret is not returned here. */
 export interface NodeInvitation {

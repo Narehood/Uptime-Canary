@@ -33,7 +33,7 @@ func imageFixture(t *testing.T) ([]byte, []byte) {
 func TestRegistryBuildTimeIsAuthenticatedMetadataAndRetainedOnConditionalReads(t *testing.T) {
 	for _, stamp := range []string{"2025-02-02T12:34:56Z", "", "not-a-time", "2999-01-01T00:00:00Z"} {
 		t.Run(stamp, func(t *testing.T) {
-			config, _ := json.Marshal(map[string]any{"config": map[string]any{"Labels": map[string]string{"org.opencontainers.image.source": sourceRepository, "org.opencontainers.image.revision": strings.Repeat("a", 40), "org.opencontainers.image.created": stamp}}})
+			config, _ := json.Marshal(map[string]any{"config": map[string]any{"Labels": map[string]string{"org.opencontainers.image.source": sourceRepository, "org.opencontainers.image.revision": strings.Repeat("a", 40), "org.opencontainers.image.created": stamp, "org.opencontainers.image.version": "0.1.0-dev.42"}}})
 			image, _ := json.Marshal(map[string]any{"schemaVersion": 2, "config": map[string]any{"digest": sum(config), "size": len(config)}})
 			unchanged := false
 			c := New(doer(func(r *http.Request) (*http.Response, error) {
@@ -62,6 +62,9 @@ func TestRegistryBuildTimeIsAuthenticatedMetadataAndRetainedOnConditionalReads(t
 			}
 			if first.CreatedAt != want {
 				t.Fatal("invalid or missing publisher time was treated as reliable", first.CreatedAt)
+			}
+			if first.Version != "0.1.0-dev.42" {
+				t.Fatal("publisher version was not retained")
 			}
 			unchanged = true
 			second, err := c.Registry(context.Background(), NodeRepository, first)

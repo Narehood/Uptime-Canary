@@ -134,6 +134,8 @@ function UpdateRowItem({ row, report }: { row: UpdateRow; report: UpdateReport }
         <StatusChip kind={status.kind} label={status.label} />
       </div>
       <dl className="upd-commits">
+        <div><dt>Running version</dt><dd>{row.currentVersion || 'Not reported'}</dd></div>
+        <div><dt>Latest version</dt><dd>{row.latestVersion || (report.enabled ? 'Not read' : 'Not checked')}</dd></div>
         <div><dt>Running source</dt><dd><Commit value={row.currentCommit} missing="Not reported" /></dd></div>
         <div><dt>Latest official</dt><dd><Commit value={row.latestCommit} missing={report.enabled ? 'Not read' : 'Not checked'} /></dd></div>
         <div><dt>Running image built</dt><dd><BuildTime at={row.currentBuiltAt} missing="Not reported" /></dd></div>

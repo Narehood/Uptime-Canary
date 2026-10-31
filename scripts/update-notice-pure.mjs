@@ -84,7 +84,7 @@ const REBUILT = Math.floor((NOW - 6 * HOUR) / 1000) * 1000;
 const STATUS = {
   enabled: true, intervalHours: 6, state: 'ok', checkedAt: CHECKED, nextCheckAt: NOW + 3 * HOUR + 30_000,
   images: [
-    { component: 'node', registrationId: REG, label: 'Rack B', image: `${NODE}:latest`, currentCommit: OLD.toUpperCase(), latestCommit: NEW, status: 'update-available' },
+    { component: 'node', registrationId: REG, label: 'Rack B', image: `${NODE}:latest`, currentCommit: OLD.toUpperCase(), latestCommit: NEW, currentVersion: '0.1.0-dev.1', latestVersion: '0.1.0-dev.2', status: 'update-available' },
     // r2: equal build times keep this same-commit row current under the accepted build-time rule. The same row without
     // them, as r1 sent it, is now unknown (provenance group).
     { component: 'dashboard', label: 'Dashboard', image: WEB, currentCommit: NEW, latestCommit: NEW, currentBuiltAt: BUILT, latestBuiltAt: BUILT, status: 'current' },
@@ -337,8 +337,8 @@ await check('links: every link is fixed, or a compare link of two validated full
   assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/u, 'a label is text');
   for (const [, title] of markup.matchAll(/\btitle="([^"]*)"/gu)) assert.ok(/^[0-9a-f]{7,64}$/u.test(title) || / UTC$/u.test(title), title);
   const rendered = text(markup);
-  assert.match(rendered, new RegExp(`Rack C Node · ${NODE} Update available Running source ${OLD.slice(0, 12)} Latest official ${NEW.slice(0, 12)}`, 'u'));
-  assert.match(rendered, /<img src=x onerror=alert\(1\)> Node Unknown Running source/u, 'the unofficial image isn’t named');
+  assert.match(rendered, new RegExp(`Rack C Node · ${NODE} Update available Running version Not reported Latest version Not read Running source ${OLD.slice(0, 12)} Latest official ${NEW.slice(0, 12)}`, 'u'));
+  assert.match(rendered, /<img src=x onerror=alert\(1\)> Node Unknown Running version Not reported Latest version Not read Running source/u, 'the unofficial image isn’t named');
 });
 
 await check('roles: every role reads the components, commits and times; only administrators get Check now, and never while checks are off or running', () => {
@@ -347,9 +347,10 @@ await check('roles: every role reads the components, commits and times; only adm
     const screen = text(markup);
     for (const label of ['Dashboard', 'Rack B', 'Lab', 'Old node', 'Edge']) assert.match(screen, new RegExp(` ${label} (Dashboard|Node)`, 'u'), label);
     assert.match(screen, new RegExp(`Running source ${OLD.slice(0, 12)} Latest official ${NEW.slice(0, 12)}`, 'u'));
+    assert.match(screen, /Running version 0\.1\.0-dev\.1 Latest version 0\.1\.0-dev\.2/u, 'every role can identify running and available versions');
     assert.match(screen, /Last check .*· 3 h ago Next check .*· in 3 h How often Every 6 hours, by this dashboard’s server\. Browsers only read the result it stored\./u);
-    assert.match(screen, /Old node Node · \S+ Unknown Running source Not reported Latest official 358ede0b/u);
-    assert.match(screen, /Edge Node · \S+ Couldn’t check Running source 34442cc040f2 Latest official Not read/u);
+    assert.match(screen, /Old node Node · \S+ Unknown Running version Not reported Latest version Not read Running source Not reported Latest official 358ede0b/u);
+    assert.match(screen, /Edge Node · \S+ Couldn’t check Running version Not reported Latest version Not read Running source 34442cc040f2 Latest official Not read/u);
     const actions = buttons(markup).map(button => button.label);
     assert.equal(actions.includes('Check now'), admin, `admin ${admin}: ${actions}`);
     assert.ok(actions.includes('Close'));

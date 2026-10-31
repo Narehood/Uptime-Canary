@@ -33,6 +33,7 @@ type Cache struct {
 	Digest    string `json:"digest,omitempty"`
 	Revision  string `json:"revision,omitempty"`
 	CreatedAt string `json:"createdAt,omitempty"`
+	Version   string `json:"version,omitempty"`
 }
 
 type Throttled struct{ After time.Duration }
@@ -172,6 +173,7 @@ func (c *Client) Registry(ctx context.Context, repository string, previous Cache
 	if previous.Digest == topDigest && Commit(previous.Revision) {
 		result.Revision = previous.Revision
 		result.CreatedAt = previous.CreatedAt
+		result.Version = previous.Version
 		return result, nil
 	}
 	var image manifest
@@ -237,6 +239,9 @@ func (c *Client) Registry(ctx context.Context, repository string, previous Cache
 		return Cache{}, ErrUnavailable
 	}
 	result.Revision = labels["org.opencontainers.image.revision"]
+	if version := labels["org.opencontainers.image.version"]; len(version) <= 128 && !strings.ContainsAny(version, "\r\n\x00") {
+		result.Version = version
+	}
 	if created := labels["org.opencontainers.image.created"]; len(created) <= 40 {
 		if parsed, err := time.Parse(time.RFC3339, created); err == nil && parsed.UnixMilli() > 0 && parsed.Before(time.Now().Add(24*time.Hour)) {
 			result.CreatedAt = parsed.UTC().Format(time.RFC3339)

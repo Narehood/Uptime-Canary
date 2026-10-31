@@ -27,9 +27,13 @@ func connectionIdentityDirectory(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "identity")
 }
 
-func connectionInvitation(t *testing.T, d *Dashboard, owner, nodeID string) invitationFixture {
+func connectionInvitation(t *testing.T, d *Dashboard, owner, nodeID string, address ...string) invitationFixture {
 	t.Helper()
-	w := dashboardHTTP(d, "POST", "/api/dashboard/invitations", owner, "", map[string]string{"label": "Private outbound node", "nodeId": nodeID})
+	input := map[string]string{"label": "Private outbound node", "nodeId": nodeID}
+	if len(address) > 0 {
+		input["connectionUrl"] = address[0]
+	}
+	w := dashboardHTTP(d, "POST", "/api/dashboard/invitations", owner, "", input)
 	var v invitationFixture
 	if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &v) != nil || len(v.Token) != 97 {
 		t.Fatalf("invitation: %d", w.Code)
@@ -58,8 +62,11 @@ func TestNodeInvitationFirstConfirmationAndScopedRoleTransport(t *testing.T) {
 	d.connectionEnabled = true
 	server := httptest.NewTLSServer(d.ConnectionHandler())
 	t.Cleanup(server.Close)
-	d.connectionURL = server.URL
-	invitation := connectionInvitation(t, d, owner, "outbound-a")
+	d.connectionURL = "https://configured.fixture.invalid"
+	invitation := connectionInvitation(t, d, owner, "outbound-a", server.URL)
+	if invitation.ConnectionURL != server.URL {
+		t.Fatal("the invitation lost the node-reachable dashboard address")
+	}
 	n, err := New(Options{NodeID: "outbound-a", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardEnrollToken: invitation.Token})
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +104,11 @@ func TestNodeInvitationFirstConfirmationAndScopedRoleTransport(t *testing.T) {
 	d.mu.Unlock()
 	if row.Connection != "outbound" || row.URL != "" || row.State != "starting" {
 		t.Fatalf("registration state: %s", row.State)
+	}
+	var final nodeInvitation
+	status = dashboardHTTP(d, "GET", "/api/dashboard/invitations/"+row.ID, owner, "", nil)
+	if status.Code != 200 || json.Unmarshal(status.Body.Bytes(), &final) != nil || final.ConnectionURL != server.URL {
+		t.Fatal("confirmed status reverted the node-reachable connection address")
 	}
 	if dashboardHTTP(d, "DELETE", "/api/dashboard/invitations/"+row.ID, owner, "", nil).Code != 409 {
 		t.Fatal("closing paired invitation removed registry")
@@ -300,6 +312,12 @@ func TestNodeInvitationNeedsDurableDeviceSessionBeforeConfirmation(t *testing.T)
 func TestNodeInvitationLimitsAndAdministratorOnlyRoutes(t *testing.T) {
 	d, owner, _ := dashboardRegistryFixture(t)
 	d.connectionEnabled, d.connectionURL = true, "https://connection.fixture.invalid"
+	for _, address := range []string{"", "http://connection.fixture.invalid", "https://user:secret@connection.fixture.invalid", "https://connection.fixture.invalid/path", "https://connection.fixture.invalid?token=refused"} {
+		result := dashboardHTTP(d, "POST", "/api/dashboard/invitations", owner, "", map[string]string{"label": "Bad endpoint", "nodeId": "bad-endpoint", "connectionUrl": address})
+		if result.Code != 400 || len(d.invitations) != 0 {
+			t.Fatal("invalid or credential-bearing connection address was accepted")
+		}
+	}
 	w := dashboardHTTP(d, "POST", "/api/accounts", owner, "", map[string]string{"name": "invitation-viewer", "role": "viewer", "password": dashboardPasswordFixture})
 	if w.Code != 201 {
 		t.Fatal("viewer fixture could not be created")

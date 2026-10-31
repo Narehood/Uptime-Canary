@@ -211,6 +211,7 @@ function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
         {outbound ? <><dt>Last connected</dt><dd>{node.lastConnectedAt ? <><Time at={node.lastConnectedAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastConnectedAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd></> : null}
         {node.nodeName && node.nodeName !== node.nodeId && node.nodeName !== node.label ? <><dt>Node name</dt><dd>{node.nodeName}</dd></> : null}
         <dt>Last read</dt><dd>{node.lastReadAt ? <><Time at={node.lastReadAt} now={dashboardNow} /> <span className="muted">· {ago(node.lastReadAt, dashboardNow)}</span></> : <span className="muted">Not yet</span>}</dd>
+        <dt>Running version</dt><dd>{node.version || <span className="muted">Not reported</span>}{node.sourceCommit ? <span className="mono muted" title={node.sourceCommit}> · {node.sourceCommit.slice(0, 12)}</span> : null}{node.version && node.state !== 'answering' ? <span className="muted"> · last reported</span> : null}</dd>
         <dt>Monitors</dt><dd>{node.monitorCount === undefined ? <span className="muted">Not read yet</span> : <>{node.monitorCount}{node.state === 'answering' ? '' : <span className="muted"> · last known</span>}</>}</dd>
       </dl>
       <div className="nc-acts row-wrap">

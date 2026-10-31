@@ -244,8 +244,6 @@ export interface NodeSetup {
   secrets: NodeSecrets | null;
   /** This dashboard's server reaches the node here. */
   direct?: DirectTarget;
-  /** Deploy a fresh node without an inbound port; add its dashboard invitation settings later. */
-  prepareOutbound?: true;
   /**
    * The node reaches this dashboard: its node-connection address and the one-time invitation token, and the fingerprint of
    * the certificate that address serves when the dashboard's own listener terminates TLS (CANARY_DASHBOARD_TLS_FINGERPRINT).
@@ -270,6 +268,25 @@ export interface GuideBlock {
 export interface GuideVariable { name: string; value: string; secret: boolean }
 
 export const imageReference = (tag: string): string => `${NODE_IMAGE}:${tag}`;
+
+/** An outbound node's dashboard address; a bare host keeps the deployment's configured connection port. */
+export function outboundConnectionAddress(input: string, configured: string): string | null {
+  let address = input.trim();
+  if (!address || address.length > 2048) return null;
+  try {
+    const explicitUrl = /^[a-z][a-z0-9+.-]*:\/\//iu.test(address);
+    if (!explicitUrl) {
+      if (!address.startsWith('[') && (address.match(/:/gu)?.length ?? 0) > 1) address = `[${address}]`;
+      const hasPort = /(?:\]|[^:]):[0-9]+$/u.test(address);
+      const candidate = new URL(`https://${address}`);
+      if (!hasPort) candidate.port = new URL(configured).port;
+      address = candidate.href;
+    }
+    const url = new URL(address);
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
+    return url.origin;
+  } catch { return null; }
+}
 /** The commit a `sha-<full commit>` tag names, or null for `latest` and other tags. */
 export const tagCommit = (tag: string): string | null => /^sha-([0-9a-f]{40})$/u.exec(tag)?.[1] ?? null;
 
@@ -279,7 +296,7 @@ const TMPFS = '/tmp:rw,exec,nosuid,nodev,size=64m';
 export function setupGuide(setup: NodeSetup, reveal: boolean): GuideBlock[] {
   if (!NODE_ID_PATTERN.test(setup.nodeId) || setup.nodeId.length > 128) throw new Error('Enter a valid node ID first.');
   if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u.test(setup.imageTag)) throw new Error('This dashboard reported an image tag this page can’t use.');
-  if ([setup.direct, setup.outbound, setup.prepareOutbound].filter(Boolean).length !== 1) throw new Error('Choose how the node and this dashboard connect.');
+  if ([setup.direct, setup.outbound].filter(Boolean).length !== 1) throw new Error('Choose how the node and this dashboard connect.');
   if (!setup.secrets && !setup.outbound) throw new Error('A node that’s already running is added with its own address and credential.');
   if (setup.secrets && !secretsFor(setup.secrets, setup.nodeId)) throw new Error('These tokens were already used for another node ID, so they aren’t written for this one.');
   const hide = (value: string): string => reveal ? value : MASK;
@@ -293,12 +310,6 @@ export function setupGuide(setup: NodeSetup, reveal: boolean): GuideBlock[] {
   const blocks = setup.secrets
     ? newNodeBlocks(setup, { name, res, image, hide })
     : existingNodeBlocks(setup, { res, image, hide });
-  if (setup.prepareOutbound) {
-    return [...blocks.filter(block => block.key !== 'started'), {
-      key: 'connect', kind: 'note', secret: false, title: 'Connect it to this dashboard next',
-      text: 'These settings start the node with its own administrator and cluster tokens and no inbound host port. It does not connect to this dashboard yet. Keep its node ID, tokens, data and identity storage. Once the dashboard connection endpoint is ready, create an invitation here and apply its connection settings to this same deployment.',
-    }];
-  }
   if (out) {
     // The node saves the address and the pin with its connection credential and refuses to start if either changes
     // (node_connector.go prepareConnector), so both stay in its settings.

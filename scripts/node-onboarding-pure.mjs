@@ -574,6 +574,8 @@ await check('API: onboarding and invitation routes go to the dashboard itself, w
     assert.equal(call.init.credentials, 'same-origin');
   }
   assert.deepEqual(JSON.parse(sent[2].init.body), { label: 'Branch office', nodeId: 'canary-branch' });
+  const custom = await record(() => client.createInvitation({ label: 'Branch office', nodeId: 'canary-branch', connectionUrl: 'https://Connect.Example.test:443/' }));
+  assert.equal(JSON.parse(custom[0].init.body).connectionUrl, CONNECT, 'an explicit node-reachable address is canonicalized and sent to the dashboard');
   for (const index of [0, 1, 3, 4, 5]) {
     assert.equal(sent[index].init.body, undefined, `${sent[index].url}: no body`);
     assert.equal(header(sent[index], 'content-type'), null);
@@ -820,8 +822,8 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   const identify = text(outbound({}));
   const retained = outbound({ draft, onDraft: noop, platform: 'portainer', secrets: { ...SECRETS, nodeId: draft.nodeId } });
   assert.ok(tags(retained, 'input').map(attributes).some(input => input.get('value') === draft.nodeId), 'switching from direct setup retains the entered Node ID');
-  assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN'), 'the retained draft exposes real Portainer copy controls immediately');
-  assert.ok(identify.includes(CONNECT) && /Create invitation/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
+  assert.ok(tags(retained, 'button').map(attributes).some(button => button.get('aria-label') === 'Copy value for CANARY_ADMIN_TOKEN' && button.has('disabled')), 'the retained draft keeps copy controls visible until complete setup is generated');
+  assert.ok(identify.includes(CONNECT) && /Generate setup/u.test(identify) && /No inbound port or firewall opening is needed on the node/u.test(identify));
   assert.match(identify, /Complete the fields above first.*Show, Copy and Download are disabled/u, 'the fresh outbound flow explains why its visible actions are disabled');
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
   assert.equal(typeof guard.current, 'function');
@@ -864,34 +866,47 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   assert.deepEqual(reached, [], 'rendering asks the API nothing');
 });
 
-await check('outbound preparation exports real bootstrap tokens for every platform without fake connection settings', () => {
+await check('outbound first-start exports include bootstrap credentials and the real invitation in one deployment', () => {
   on();
   const nodeId = 'canary-office';
-  const setup = { nodeId, name: 'Office', imageTag: CAPS.imageTag, secrets: { ...SECRETS, nodeId }, prepareOutbound: true };
+  const setup = { nodeId, name: 'Office', imageTag: CAPS.imageTag, secrets: { ...SECRETS, nodeId }, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN } };
   for (const { value: platform } of onboarding.PLATFORMS) {
     const masked = onboarding.setupGuide({ ...setup, platform }, false);
     const real = onboarding.setupGuide({ ...setup, platform }, true);
     const all = real.map(block => block.text).join('\n');
     assert.ok(all.includes(ADMIN) && all.includes(CLUSTER), `${platform}: actual bootstrap credentials in exported settings`);
     assert.ok(!all.includes(onboarding.MASK), `${platform}: exporting never copies a mask`);
-    assert.doesNotMatch(all, /CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)[=:]|NODE_REACHABLE_HOST|INVITATION_TOKEN|--publish|\s-p\s|^\s*ports:/mu, `${platform}: usable preparation, no fake connector values or inbound mapping`);
-    assert.ok(real.some(block => block.key === 'connect' && block.text.includes('does not connect to this dashboard yet')), `${platform}: clearly requires the later invitation`);
-    assert.ok(!real.some(block => block.key === 'started' || block.key === 'after'), `${platform}: no direct verification or consumed invitation instructions`);
+    assert.ok(all.includes(CONNECT) && all.includes(INVITE_TOKEN), `${platform}: the first export contains its real dashboard address and invitation`);
+    assert.doesNotMatch(all, /NODE_REACHABLE_HOST|INVITATION_TOKEN|--publish|\s-p\s|^\s*ports:/mu, `${platform}: no fake connector values or inbound mapping`);
     for (const token of [ADMIN, CLUSTER]) assert.ok(!masked.map(block => block.text).join('\n').includes(token), `${platform}: preview remains masked`);
     const markup = within('admin', [], React.createElement(wizard.NewOutboundDeploy, {
-      capabilities: { ...CAPS, outboundEnabled: false, connectionUrl: undefined }, nodeId, name: 'Office', secrets: setup.secrets,
+      capabilities: CAPS, nodeId, name: 'Office', secrets: setup.secrets,
       platform, onPlatform: noop, onUse: noop, taken: { nodes: [], invitations: [] },
     }));
-    assert.match(text(markup), /real administrator and cluster tokens/u, `${platform}: actual deployment, not an example`);
+    assert.match(text(markup), /Generate setup/u, `${platform}: invitation is generated before any incomplete deployment can be copied`);
     const buttons = tags(markup, 'button').map(attributes);
-    assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Show private values in ')), `${platform}: Show works before an invitation`);
+    assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Show private values in ')), `${platform}: Show stays visible before an invitation`);
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Copy ')), `${platform}: Copy is available`);
     assert.ok(buttons.some(button => (button.get('aria-label') ?? '').startsWith('Download ')), `${platform}: Download is available`);
+    assert.ok(buttons.filter(button => button.get('role') !== 'tab').every(button => button.has('disabled')), `${platform}: pre-invitation actions are visible but disabled`);
     for (const token of PRIVATE) assert.ok(!markup.includes(token), `${platform}: no private value in masked markup`);
     assert.throws(() => onboarding.setupGuide({ ...setup, secrets: { ...SECRETS, nodeId: 'different-node' }, platform }, true), /already used/u);
-    assert.throws(() => onboarding.setupGuide({ ...setup, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN }, platform }, true), /Choose how/u);
-    assert.throws(() => onboarding.setupGuide({ ...setup, secrets: null, platform }, true), /own address and credential/u);
+    assert.throws(() => onboarding.setupGuide({ ...setup, direct: onboarding.directTarget('https://node.example.test:3100'), platform }, true), /Choose how/u);
+    const existing = onboarding.setupGuide({ ...setup, secrets: null, platform }, true).map(block => block.text).join('\n');
+    assert.ok(!existing.includes(ADMIN) && !existing.includes(CLUSTER), `${platform}: an existing deployment keeps its own bootstrap credentials`);
   }
+  for (const [input, expected] of [
+    ['192.0.2.10', 'https://192.0.2.10:18348'],
+    ['office.example', 'https://office.example:18348'],
+    ['office.example:443', 'https://office.example'],
+    ['office.example:9443', 'https://office.example:9443'],
+    ['[2001:db8::10]', 'https://[2001:db8::10]:18348'],
+    ['[2001:db8::10]:443', 'https://[2001:db8::10]'],
+    ['https://office.example:9443/', 'https://office.example:9443'],
+    ['http://office.example', null],
+    ['https://user:secret@office.example', null],
+    ['https://office.example/path', null],
+  ]) assert.equal(onboarding.outboundConnectionAddress(input, 'https://configured.example:18348'), expected);
 });
 
 await check('outbound setup explains which stack to configure and offers a refresh before invitations are possible', () => {
@@ -1309,20 +1324,21 @@ await check('a new node’s tokens belong to one node ID: typing, labels and pla
   assert.match(text(own), /publish port 3100 on 100\.79\.12\.4 only/u);
   assert.match(text(own), /the node host itself must have that address/u);
   assert.match(text(own), /Not a VPN, NAT or port-forward address that belongs to another machine/u);
-  // CR1: bootstrap must be handled before invitation creation; the invitation
-  // then exports connection-only settings so a reopened dialog cannot replace
-  // the deployed node's original credentials. The browser proof restarts that
-  // node with its original database/identity and the connection-only export.
-  const outbound = (fresh, secrets) => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
-    draft: { label: '', nodeId: '', address: '', platform: 'docker' }, onDraft: noop,
+  // Accepted first-start flow: create the invitation before exporting a fresh deployment.
+  // Existing nodes still export connection-only settings and never replace retained bootstrap credentials.
+  const outbound = (fresh, secrets, draft = { label: '', nodeId: '', address: '', platform: 'docker' }) => within('admin', [ENTRY], React.createElement(wizard.OutboundNode, {
+    draft, onDraft: noop,
     fresh, onboarding: resource(CAPS), secrets, earlier: null, onUse: noop, taken: { nodes: [ENTRY], invitations: [] }, platform: 'docker', onPlatform: noop,
     onClose: noop, onRequestClose: noop, onLock: noop, onBusy: noop, guard: { current: null }, onTakenChanged: noop,
   }));
   const submit = markup => attributes(tags(markup, 'button').find(tag => attributes(tag).get('type') === 'submit'));
   assert.ok(submit(outbound(true, null)).has('disabled'), 'no invitation for a new node without tokens');
-  assert.ok(submit(outbound(true, SECRETS)).has('disabled'), 'unsaved bootstrap cannot be skipped');
+  assert.ok(submit(outbound(true, SECRETS)).has('disabled'), 'missing required identity fields keep setup generation disabled');
+  const ready = outbound(true, SECRETS, { label: 'Office', nodeId: 'canary-office', address: '', platform: 'docker' });
+  assert.ok(!submit(ready).has('disabled'), 'a complete form can generate its first-start setup without a prior bootstrap export');
+  assert.match(text(ready), /Generate setup/u);
   assert.ok(!submit(outbound(false, null)).has('disabled'), 'a running node uses its retained credentials');
-  assert.match(source, /setup=\{\{ nodeId: current\.nodeId, name: current\.label, imageTag: capabilities\.imageTag, secrets: null,/u, 'invitation exports intentionally contain no bootstrap credential replacement');
+  assert.match(source, /secrets: fresh \? secretsFor\(invitationBootstrap, current\.nodeId\) : null,/u, 'only this newly generated deployment receives its captured own-ID bootstrap pair; an existing node gets connection-only settings');
   for (const pair of [{ ...SECRETS, nodeId: 'canary-other' }, null]) {
     const markup = within('admin', [], React.createElement(wizard.NewOutboundDeploy, { capabilities: CAPS, nodeId: 'canary-office', name: 'Office', secrets: pair,
       platform: 'docker', onPlatform: noop, onUse: noop, taken: { nodes: [], invitations: [] } }));

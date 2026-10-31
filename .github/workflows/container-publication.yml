@@ -95,4 +95,10 @@ jobs:
             docker pull "$prefix-$component:latest"
             revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$prefix-$component:latest")"
             test "$revision" = "$SOURCE_COMMIT"
+            version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$prefix-$component:latest")"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$ ]]
+            if [ "$component" != game-query ]; then
+              docker run --rm --network none --read-only --entrypoint /usr/local/bin/canary "$prefix-$component:latest" version |
+                python3 -c 'import json,sys; identity=json.load(sys.stdin); assert identity["version"] == sys.argv[1]; assert identity["imageRevision"] == sys.argv[2]' "$version" "$SOURCE_COMMIT"
+            fi
           done

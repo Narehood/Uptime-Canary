@@ -54,6 +54,9 @@ jobs:
           echo "name=$image" >> "$GITHUB_OUTPUT"
           echo "tag=$image:sha-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          base_version="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
+          [[ "$base_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$base_version-dev.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
@@ -69,6 +72,7 @@ jobs:
           build-args: |
             CANARY_BUILD_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
             CANARY_BUILD_CREATED=${{ steps.image.outputs.created }}
+            CANARY_BUILD_VERSION=${{ steps.image.outputs.version }}
           platforms: linux/amd64
           pull: true
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
@@ -78,3 +82,4 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}

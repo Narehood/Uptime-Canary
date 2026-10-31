@@ -19,6 +19,8 @@ type softwareUpdate struct {
 	Label          string `json:"label"`
 	Image          string `json:"image"`
 	CurrentCommit  string `json:"currentCommit,omitempty"`
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	LatestVersion  string `json:"latestVersion,omitempty"`
 	LatestCommit   string `json:"latestCommit,omitempty"`
 	CurrentBuiltAt int64  `json:"currentBuiltAt,omitempty"`
 	LatestBuiltAt  int64  `json:"latestBuiltAt,omitempty"`
@@ -65,7 +67,7 @@ func newDashboardUpdates(d *Dashboard, enabled bool, client updatecheck.Doer) (*
 	n.mu.Unlock()
 	invalid := err != nil || len(cache.Relations) > 128 || cache.CheckedAt < 0 || cache.LastAttemptAt < 0 || cache.NextCheckAt < 0 || cache.ThrottledUntil < 0
 	for _, c := range []updatecheck.Cache{cache.Node, cache.Web} {
-		if c.Revision != "" && !updatecheck.Commit(c.Revision) || len(c.ETag) > 200 || len(c.Digest) > 71 {
+		if c.Revision != "" && !updatecheck.Commit(c.Revision) || len(c.ETag) > 200 || len(c.Digest) > 71 || len(c.Version) > 128 {
 			invalid = true
 		}
 	}
@@ -112,15 +114,17 @@ func imageBuildTime(value string) int64 {
 
 func (u *dashboardUpdates) installed() []softwareUpdate {
 	local := LocalBinaryIdentity()
-	items := []softwareUpdate{{Component: "dashboard", Label: "Dashboard", Image: "ghcr.io/" + updatecheck.WebRepository, CurrentCommit: installedRevision(&local), CurrentBuiltAt: imageBuildTime(local.ImageBuiltAt)}}
+	items := []softwareUpdate{{Component: "dashboard", Label: "Dashboard", Image: "ghcr.io/" + updatecheck.WebRepository, CurrentCommit: installedRevision(&local), CurrentVersion: local.Version, CurrentBuiltAt: imageBuildTime(local.ImageBuiltAt)}}
 	d := u.dashboard
 	d.mu.Lock()
 	for _, row := range d.registry {
 		builtAt := int64(0)
+		version := ""
 		if row.build != nil {
 			builtAt = imageBuildTime(row.build.ImageBuiltAt)
+			version = row.build.Version
 		}
-		items = append(items, softwareUpdate{Component: "node", RegistrationID: row.ID, Label: row.Label, Image: "ghcr.io/" + updatecheck.NodeRepository, CurrentCommit: installedRevision(row.build), CurrentBuiltAt: builtAt})
+		items = append(items, softwareUpdate{Component: "node", RegistrationID: row.ID, Label: row.Label, Image: "ghcr.io/" + updatecheck.NodeRepository, CurrentCommit: installedRevision(row.build), CurrentVersion: version, CurrentBuiltAt: builtAt})
 	}
 	d.mu.Unlock()
 	slices.SortFunc(items[1:], func(a, b softwareUpdate) int { return stringsCompare(a.Label, b.Label) })
@@ -151,6 +155,7 @@ func (u *dashboardUpdates) status() updateStatus {
 			latest, available = cache.Web, cache.WebAvailable
 		}
 		item.LatestCommit = latest.Revision
+		item.LatestVersion = latest.Version
 		item.LatestBuiltAt = imageBuildTime(latest.CreatedAt)
 		item.Status = "unknown"
 		if cache.LastAttemptAt > 0 && !available {
