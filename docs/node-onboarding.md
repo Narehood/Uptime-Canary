@@ -36,8 +36,11 @@ The preparation settings start the node without publishing an inbound port and
 omit dashboard connection variables until a real invitation exists. The node
 does not connect to the dashboard yet. Switching between connection directions
 keeps the new node’s name, Node ID, deployment method and credentials. When the
-required identity fields or dashboard image tag are missing, the menu explains
-what to enter instead of displaying sample deployment settings or fake tokens.
+required identity fields or dashboard image tag are missing, both directions keep
+Show, Copy and Download visible but disabled. A warning explains what must be
+entered above first and identifies the settings as a preview. Portainer’s Copy
+name, Copy value and Copy .env controls follow the same rule. The actions enable
+automatically once the fields are valid and this node’s credentials are available.
 
 Once the endpoint is configured, create an invitation using the same Node ID.
 Save the bootstrap settings before creating the invitation. Invitation exports
