@@ -937,7 +937,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
       const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
       assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
-      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>!button.disabled)'), 'valid outbound details enable first-action setup generation');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'a missing dashboard listener keeps actions disabled even with valid node details');
       await fill('Name on this dashboard', '', 'dialog[open]');
       assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'clearing a required field disables the visible actions again');
       await fill('Name on this dashboard', expectedDraft.name, 'dialog[open]');
@@ -963,6 +963,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       fixture.previewOnboarding(null);
       await click('Check dashboard setup', 'dialog[open]');
       await until(() => page.eval('document.querySelector("dialog[open]").innerText.includes("Generate setup")'), 'refresh advances to the complete setup form', 15000);
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>!button.disabled)'), 'valid outbound details enable first-action setup generation once the listener is ready');
     } finally {
       fixture.previewOnboarding(null);
     }
