@@ -6,7 +6,8 @@ RUN go mod download
 COPY apps/node-go ./apps/node-go
 ARG CANARY_BUILD_COMMIT
 ARG CANARY_BUILD_CREATED
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X uptime-canary/apps/node-go/internal/canary.containerRevision=${CANARY_BUILD_COMMIT} -X uptime-canary/apps/node-go/internal/canary.containerBuiltAt=${CANARY_BUILD_CREATED}" -o /out/canary ./apps/node-go/cmd/canary
+ARG CANARY_BUILD_VERSION
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X uptime-canary/apps/node-go/internal/canary.containerRevision=${CANARY_BUILD_COMMIT} -X uptime-canary/apps/node-go/internal/canary.containerBuiltAt=${CANARY_BUILD_CREATED} -X uptime-canary/apps/node-go/internal/canary.releaseVersion=${CANARY_BUILD_VERSION}" -o /out/canary ./apps/node-go/cmd/canary
 
 FROM alpine:3.24 AS runtime
 RUN apk add --no-cache ca-certificates iputils \

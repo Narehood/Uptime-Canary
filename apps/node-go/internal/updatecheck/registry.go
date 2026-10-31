@@ -29,10 +29,12 @@ type Doer interface {
 }
 type Client struct{ http Doer }
 type Cache struct {
-	ETag      string `json:"etag,omitempty"`
-	Digest    string `json:"digest,omitempty"`
-	Revision  string `json:"revision,omitempty"`
-	CreatedAt string `json:"createdAt,omitempty"`
+	ETag        string `json:"etag,omitempty"`
+	Digest      string `json:"digest,omitempty"`
+	Revision    string `json:"revision,omitempty"`
+	CreatedAt   string `json:"createdAt,omitempty"`
+	Version     string `json:"version,omitempty"`
+	VersionRead bool   `json:"versionRead,omitempty"`
 }
 
 type Throttled struct{ After time.Duration }
@@ -139,6 +141,11 @@ func (c *Client) Registry(ctx context.Context, repository string, previous Cache
 	if repository != NodeRepository && repository != WebRepository {
 		return Cache{}, ErrUnavailable
 	}
+	// Older caches never read the version label. Refresh their config once,
+	// including images that legitimately have no version label.
+	if !previous.VersionRead {
+		previous.ETag, previous.Digest = "", ""
+	}
 	status, _, raw, err := c.get(ctx, "https://ghcr.io/token?service=ghcr.io&scope="+url.QueryEscape("repository:"+repository+":pull"), "", "", "application/json", 32*1024)
 	if err != nil {
 		return Cache{}, err
@@ -172,6 +179,8 @@ func (c *Client) Registry(ctx context.Context, repository string, previous Cache
 	if previous.Digest == topDigest && Commit(previous.Revision) {
 		result.Revision = previous.Revision
 		result.CreatedAt = previous.CreatedAt
+		result.Version = previous.Version
+		result.VersionRead = previous.VersionRead
 		return result, nil
 	}
 	var image manifest
@@ -237,6 +246,10 @@ func (c *Client) Registry(ctx context.Context, repository string, previous Cache
 		return Cache{}, ErrUnavailable
 	}
 	result.Revision = labels["org.opencontainers.image.revision"]
+	result.VersionRead = true
+	if version := labels["org.opencontainers.image.version"]; len(version) <= 128 && !strings.ContainsAny(version, "\r\n\x00") {
+		result.Version = version
+	}
 	if created := labels["org.opencontainers.image.created"]; len(created) <= 40 {
 		if parsed, err := time.Parse(time.RFC3339, created); err == nil && parsed.UnixMilli() > 0 && parsed.Before(time.Now().Add(24*time.Hour)) {
 			result.CreatedAt = parsed.UTC().Format(time.RFC3339)

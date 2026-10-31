@@ -35,6 +35,8 @@ type RegisteredNode struct {
 	Connection      string `json:"connection,omitempty"`
 	LastConnectedAt int64  `json:"lastConnectedAt,omitempty"`
 	TLSFingerprint  string `json:"tlsFingerprint,omitempty"`
+	Version         string `json:"version,omitempty"`
+	SourceCommit    string `json:"sourceCommit,omitempty"`
 }
 
 type registeredNodeRecord struct {
@@ -42,10 +44,12 @@ type registeredNodeRecord struct {
 	// Authenticated against ID, URL and proved node identity; never public JSON.
 	Credentials string `json:"credentials"`
 	// Distinguish an undiscovered placeholder from a real node named pending.
-	Unproved            bool `json:"unproved,omitempty"`
-	build               *BinaryIdentity
-	ConnectionHash      string `json:"connectionHash,omitempty"`
-	InvitationExpiresAt int64  `json:"invitationExpiresAt,omitempty"`
+	Unproved                 bool `json:"unproved,omitempty"`
+	build                    *BinaryIdentity
+	ConnectionHash           string `json:"connectionHash,omitempty"`
+	InvitationExpiresAt      int64  `json:"invitationExpiresAt,omitempty"`
+	ConnectionURL            string `json:"connectionUrl,omitempty"`
+	ConnectionTLSFingerprint string `json:"connectionTlsFingerprint,omitempty"`
 }
 
 type dashboardNodeSecrets struct {
@@ -196,6 +200,17 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 			if row.URL != "" || row.Local || row.Unproved || !nodeconnection.Identifier(row.ConnectionHash, 64) || row.InvitationExpiresAt < 1 {
 				return nil, errors.New("Invalid saved outbound node connection")
 			}
+			if row.ConnectionURL != "" {
+				canonical, e := dashboardConnectionOrigin(row.ConnectionURL)
+				if e != nil || canonical != row.ConnectionURL {
+					return nil, errors.New("Invalid saved dashboard connection address")
+				}
+				if _, e = validateTLSOrigin(row.ConnectionURL, row.ConnectionTLSFingerprint); e != nil {
+					return nil, errors.New("Invalid saved dashboard connection trust")
+				}
+			} else if row.ConnectionTLSFingerprint != "" {
+				return nil, errors.New("Saved dashboard connection trust requires an address")
+			}
 		} else {
 			canonical, e := dashboardNodeURL(row.URL)
 			if e != nil || canonical != row.URL || row.Connection != "" && row.Connection != "direct" || row.ConnectionHash != "" {
@@ -340,6 +355,10 @@ func (d *Dashboard) commitRegistry(row registeredNodeRecord, r *http.Request, ac
 
 func (d *Dashboard) publicNode(row registeredNodeRecord, role string) RegisteredNode {
 	v := row.RegisteredNode
+	if row.build != nil {
+		v.Version = row.build.Version
+		v.SourceCommit = installedRevision(row.build)
+	}
 	if v.Connection == "outbound" {
 		v.LastConnectedAt = d.connections.LastSeen(row.ID)
 	}

@@ -124,7 +124,7 @@ await check('copy controls take a raw row value and only report handling after a
   const view = source('apps/web/src/views/NodeWizard.tsx');
   assert.ok(/value=\{realVariable\.name\}/u.test(view), 'name copy must take only the raw variable name');
   assert.ok(/value=\{realVariable\.value\}/u.test(view), 'value copy must take only the raw variable value');
-  assert.ok(/onCopied=\{variable\.secret \? onHandled : undefined\}/u.test(view), 'only successful private copies count as handling the secret');
+  assert.ok(view.includes("variable.secret && (!includesInvitation || variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN')"), 'a row copy counts as handling the invitation only when it carries the enrollment token; direct bootstrap copies still bind their own ID');
   assert.doesNotMatch(source('apps/web/src/onboarding.ts'), /localStorage|sessionStorage|fetch\(/u);
 });
 await check('Docker filtering guidance differs from native VM firewall guidance and keeps default IPv4 explicit', () => {

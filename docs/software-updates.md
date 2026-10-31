@@ -62,6 +62,16 @@ that information. A dirty or unknown source identity is not assumed to be an
 official image. A node that has not answered since dashboard startup remains
 unknown until its build identity is read.
 
+Official container builds also report a numeric development version such as
+`0.1.0-dev.123`, using the package base version and container workflow run number.
+Node, dashboard and optional game-query images from that run carry the same
+version label. The node and dashboard executables report that version too.
+The Nodes page shows each node’s last observed running version and source;
+Software updates shows running and latest reported versions alongside their
+source revisions and build times. Version numbers are display information:
+source ancestry and authenticated build times still determine freshness.
+These development identifiers do not create a stable release or native download.
+
 Same-source rebuilds are detected only when both images report usable build
 times. This cannot identify what changed inside a rebuild, prove a security
 fix, or discover the exact digest currently running. The optional GameDig

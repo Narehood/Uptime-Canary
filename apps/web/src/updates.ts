@@ -60,6 +60,8 @@ export interface UpdateRow {
   /** Lowercase hexadecimal source commits, 7 to 64 digits. */
   currentCommit?: string;
   latestCommit?: string;
+  currentVersion?: string;
+  latestVersion?: string;
   /**
    * When the official publisher built each image, epoch ms, kept only with its commit. The latest one is also dropped
    * when it's more than `BUILD_CLOCK_SLACK_MS` after the check that read it, or the answer has no check time.
@@ -147,6 +149,8 @@ function readRow(value: unknown, index: number, enabled: boolean, checkedAt: num
   if (image) row.image = image;
   if (currentCommit) row.currentCommit = currentCommit;
   if (latestCommit) row.latestCommit = latestCommit;
+  if (typeof value.currentVersion === 'string' && value.currentVersion.trim()) row.currentVersion = cleanText(value.currentVersion, 128);
+  if (typeof value.latestVersion === 'string' && value.latestVersion.trim()) row.latestVersion = cleanText(value.latestVersion, 128);
   if (currentBuiltAt !== undefined) row.currentBuiltAt = currentBuiltAt;
   if (latestBuiltAt !== undefined) row.latestBuiltAt = latestBuiltAt;
   // With checks off nothing is compared, whatever an older stored row said.

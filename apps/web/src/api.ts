@@ -13,6 +13,7 @@ import { controlPlaneMode, gatewayMode, pageOrigin } from './gateway';
 import { readScreenshot } from './screenshot';
 import { readFleetDeployment, readFleetGroup } from './fleetApi';
 import { rememberSignIn, savedSignIn, type SignInIssuer } from './browserSession';
+import { parseIPv4 } from './tailscale';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const SIGN_OUT_TIMEOUT_MS = 5_000;
@@ -207,6 +208,8 @@ export function normalizeRegisteredNode(value: unknown): RegisteredNode {
   // Outbound nodes open the connection themselves and have no address here. Last connected is transport activity only.
   if (value.connection === 'outbound' || value.connection === 'direct') node.connection = value.connection;
   if (finite(value.lastConnectedAt) && value.lastConnectedAt > 0) node.lastConnectedAt = value.lastConnectedAt;
+  if (typeof value.version === 'string' && value.version.trim()) node.version = cleanText(value.version, 128);
+  if (typeof value.sourceCommit === 'string' && /^[0-9a-f]{7,64}$/iu.test(value.sourceCommit)) node.sourceCommit = value.sourceCommit.toLowerCase();
   // Administrators only, like the address: the one certificate the dashboard's server accepts there. Without it, the
   // server checks an HTTPS node's certificate against the authorities it trusts.
   const pin = reportedFingerprint(value.tlsFingerprint);
@@ -230,9 +233,14 @@ const INVITATION_TOKEN = /^[A-Za-z0-9._~:+\/=-]{24,1024}$/u;
  */
 export function connectionOrigin(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2048) return null;
+  const host = /^https:\/\/(\[[^\]]+\]|[^:/?#@\\\s]+)(?::[0-9]+)?\/?$/iu.exec(value.trim())?.[1];
+  if (!host) return null;
   let url: URL;
   try { url = new URL(value); } catch { return null; }
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
+  // WHATWG accepts octal, hex and short IPv4 forms; Go does not dial those as
+  // the same address. Never replace the operator's IP with a different host.
+  if (parseIPv4(url.hostname) && host !== url.hostname) return null;
   return url.origin;
 }
 
@@ -991,6 +999,11 @@ export class CanaryApi {
   /** One-time and bound to the expected node ID. The answer's token is the only copy this page ever gets. */
   async createInvitation(input: NodeInvitationInput, signal?: AbortSignal): Promise<NodeInvitationCreated> {
     const body: NodeInvitationInput = { label: input.label.trim(), nodeId: input.nodeId };
+    if (input.connectionUrl !== undefined) {
+      const address = connectionOrigin(input.connectionUrl);
+      if (!address) throw new ApiFailure(400, 'Enter the dashboard’s full HTTPS connection address.');
+      body.connectionUrl = address;
+    }
     return normalizeInvitationCreated(await this.own<unknown>('/api/dashboard/invitations', 'POST', body, signal));
   }
   async invitation(id: string, signal?: AbortSignal): Promise<NodeInvitation> {
