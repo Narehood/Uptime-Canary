@@ -173,18 +173,22 @@ def assess(repository, commit, read):
         all_required = all(names.count(name) == 1 and any(
             job.get("name") == name and job.get("status") == "completed"
             and job.get("conclusion") == "success" for job in jobs) for name in required_jobs)
-        no_failed_jobs = all(job.get("status") == "completed"
-            and (job.get("conclusion") in {"success", "skipped"}
-                 or (job.get("name") in advisory and names.count(job.get("name")) == 1)) for job in jobs)
+        # Only a single completed advisory job that actually failed is exempt;
+        # cancelled, timed-out or conclusion-less rows still refuse promotion.
         advisory_failed = sorted(job.get("name") for job in jobs
-            if job.get("name") in advisory and job.get("conclusion") not in {"success", "skipped"})
+            if job.get("name") in advisory and names.count(job.get("name")) == 1
+            and job.get("status") == "completed" and job.get("conclusion") == "failure")
+        no_failed_jobs = all(job.get("status") == "completed"
+            and (job.get("conclusion") in {"success", "skipped"} or job.get("name") in advisory_failed) for job in jobs)
         explained = conclusion == "success" or bool(advisory_failed)
         # Detect a rerun started while its previous attempt's jobs were read.
         latest = read(prefix + "/actions/runs/" + str(run["id"]))
         unchanged = (latest.get("head_sha") == commit and latest.get("run_attempt") == attempt
             and latest.get("status") == "completed" and latest.get("conclusion") == conclusion)
         item["approved"] = all_required and no_failed_jobs and explained and unchanged
-        item["reason"] = ("All required jobs passed" if item["approved"] else "Required jobs missing, skipped, failed or superseded") \
+        item["reason"] = ("All required jobs passed" if item["approved"]
+            else "Latest workflow run is not a completed success" if not explained
+            else "Required jobs missing, skipped, failed or superseded") \
             + "".join("; advisory " + name + " did not pass" for name in advisory_failed)
         approved = approved and item["approved"]
     result["ready"] = approved and current()

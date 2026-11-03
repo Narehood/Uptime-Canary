@@ -107,6 +107,15 @@ class AdmissionTests(unittest.TestCase):
         self.assertTrue(result["ready"])
         package = next(item for item in result["workflows"] if item["name"] == "Release package validation")
         self.assertIn("advisory " + windows + " did not pass", package["reason"])
+        # Only a Windows "failure" explains a failed run; other conclusions still block.
+        for windows_conclusion in ("cancelled", "timed_out", "neutral", "action_required", "stale", None, "success", "skipped"):
+            with self.subTest(windows=windows_conclusion):
+                api = failed()
+                for jobs in api.jobs.values():
+                    for job in jobs:
+                        if job["name"] == windows:
+                            job["conclusion"] = windows_conclusion
+                self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
         # Any other failure in the same run still blocks, and so does a cancelled run.
         self.assertFalse(gate.assess(REPO, COMMIT, failed("native-package (linux-amd64)"))["ready"])
         api = failed()
