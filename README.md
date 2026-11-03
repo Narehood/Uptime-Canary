@@ -467,8 +467,8 @@ does not establish an arm64 image.
   successful build pushes its source tag. `latest` is promoted only after
   all three builds, all four Alpine phases (including proof and race), and
   the Linux amd64 and arm64 native packages pass for that exact current `main`
-  commit. The Windows package result is reported but doesn't hold back the
-  Linux-only images.
+  commit. A failed Windows package is noted in the promotion summary but
+  doesn't hold back the Linux-only images.
   Completion events check once; no validation polling or duplicate test runs
   are added. Pending, failed, cancelled, missing or skipped required jobs keep
   `latest` unchanged. Promotion rechecks the latest attempts and main immediately

@@ -63,7 +63,7 @@ service as their builds finish. The separate promotion workflow advances
 and race), and the Linux amd64 and arm64 native packages pass on the exact
 current `main` commit. Pending, failed, cancelled, missing or skipped required
 jobs block promotion. The Windows native package still runs in the same
-workflow, but the images are Linux-only, so its result is reported in the
+workflow, but the images are Linux-only, so a failure there is noted in the
 promotion summary without holding back `latest`. Workflow completion events check once without polling or rerunning
 validation; a manual promotion dispatch on `main` can recheck existing results.
 A run for an older commit does not advance `latest` after `main` has moved.
