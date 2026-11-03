@@ -203,14 +203,15 @@ validator explicitly preserves serial Go compilation. The guard also correctly
 recognizes its already-selected owned cache, rather than classifying that same
 directory as unexpected external growth.
 
-The guard fixtures and archive/provenance fixtures run first. Native arm64 also
-runs every node package, filling a previously missing execution gate. Each
-target must then pass `--require-native --full-proofs`: two matching builds,
-verified/extracted archive identity, CLI help and **every** ordinary process
-proof. A mismatched or unknown host architecture is rejected before building;
-a successful cross-build can never satisfy this native gate.
+The guard fixtures and archive/provenance fixtures run first, then every node
+package's Go tests. The amd64 job must then pass `--require-native`: two
+matching builds, verified/extracted archive identity, CLI help and one process
+proof as a native smoke test. The full ordinary process-proof suite runs in the
+Alpine proof phase against the image binary. A mismatched or unknown host
+architecture is rejected before building; a successful cross-build can never
+satisfy this native gate.
 
-On both Linux architectures the extracted binary additionally runs CLI help in
+The extracted binary additionally runs CLI help in
 a pre-pulled native Alpine container with no network, read-only root, dropped
 capabilities, no-new-privileges and the nonroot host UID. The container image
 digest and actual architecture are recorded. This is a CLI portability check,
