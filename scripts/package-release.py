@@ -8,15 +8,14 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import stat
 import struct
 import tarfile
 import tempfile
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS = {"linux-amd64": 62, "linux-arm64": 183, "windows-amd64": 0x8664}
+# Uptime-Canary ships Linux only; there is no Windows release.
+TARGETS = {"linux-amd64": 62, "linux-arm64": 183}
 VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 
 
@@ -29,16 +28,9 @@ def version_value(value):
 
 
 def validate_header(prefix, target):
-    if target.startswith("linux-"):
-        valid = (len(prefix) >= 64 and prefix[:7] == b"\x7fELF\x02\x01\x01"
-                 and prefix[7] in (0, 3) and struct.unpack_from("<H", prefix, 16)[0] in (2, 3)
-                 and struct.unpack_from("<H", prefix, 18)[0] == TARGETS[target])
-    else:
-        offset = struct.unpack_from("<I", prefix, 60)[0] if len(prefix) >= 64 else -1
-        valid = (prefix[:2] == b"MZ" and 64 <= offset <= len(prefix) - 26
-                 and prefix[offset:offset + 4] == b"PE\x00\x00"
-                 and struct.unpack_from("<H", prefix, offset + 4)[0] == TARGETS[target]
-                 and struct.unpack_from("<H", prefix, offset + 24)[0] == 0x20B)
+    valid = (len(prefix) >= 64 and prefix[:7] == b"\x7fELF\x02\x01\x01"
+             and prefix[7] in (0, 3) and struct.unpack_from("<H", prefix, 16)[0] in (2, 3)
+             and struct.unpack_from("<H", prefix, 18)[0] == TARGETS[target])
     if not valid:
         raise ValueError("Binary format or machine does not match the requested target")
 
@@ -62,26 +54,16 @@ def digest_file(path):
         return reader.digest.hexdigest(), reader.count
 
 
-def write_archive(file, target, folder, entries):
+def write_archive(file, folder, entries):
     """Fixed metadata and streaming input make output independent of paths/time."""
-    if target.startswith("windows-"):
-        with zipfile.ZipFile(file, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    with gzip.GzipFile(filename="", mode="wb", fileobj=file, mtime=0, compresslevel=6) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT) as archive:
             for name, mode, size, source in entries:
-                info = zipfile.ZipInfo(folder + "/" + name, (1980, 1, 1, 0, 0, 0))
-                info.create_system = 3
-                info.external_attr = (stat.S_IFREG | mode) << 16
-                info.compress_type, info.file_size = zipfile.ZIP_DEFLATED, size
-                with archive.open(info, "w") as destination:
-                    shutil.copyfileobj(source, destination, 1048576)
-    else:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=file, mtime=0, compresslevel=6) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT) as archive:
-                for name, mode, size, source in entries:
-                    info = tarfile.TarInfo(folder + "/" + name)
-                    info.mode, info.size, info.mtime = mode, size, 0
-                    info.uid = info.gid = 0
-                    info.uname = info.gname = ""
-                    archive.addfile(info, source)
+                info = tarfile.TarInfo(folder + "/" + name)
+                info.mode, info.size, info.mtime = mode, size, 0
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                archive.addfile(info, source)
 
 
 def package(binary, output, version, commit, target, *, notice_root=ROOT):
@@ -99,7 +81,7 @@ def package(binary, output, version, commit, target, *, notice_root=ROOT):
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     output = output.resolve()
     folder = "uptime-canary-v" + version + "-" + target
-    archive_path = output / (folder + (".zip" if target.startswith("windows-") else ".tar.gz"))
+    archive_path = output / (folder + ".tar.gz")
     checksum_path = output / (archive_path.name + ".sha256")
     if any(os.path.lexists(p) for p in (archive_path, checksum_path)):
         raise FileExistsError("Release output already exists; nothing will be overwritten")
@@ -125,7 +107,7 @@ def package(binary, output, version, commit, target, *, notice_root=ROOT):
             size, digest = first.count, first.digest.hexdigest()
             source.seek(0)
             reader = HashedReader(source)
-            executable = "canary.exe" if target.startswith("windows-") else "canary"
+            executable = "canary"
             metadata = {"schemaVersion": 1, "name": "Uptime-Canary", "version": version,
                 "sourceCommit": commit, "target": target,
                 "files": {executable: {"sha256": digest, "bytes": size}, **{
@@ -136,7 +118,7 @@ def package(binary, output, version, commit, target, *, notice_root=ROOT):
             entries.append(("release.json", 0o644, len(raw_manifest), io.BytesIO(raw_manifest)))
             staged_archive, handle = temp_file()
             with handle:
-                write_archive(handle, target, folder, entries)
+                write_archive(handle, folder, entries)
                 handle.flush()
                 os.fsync(handle.fileno())
             final = os.fstat(source.fileno())
@@ -176,5 +158,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         print(json.dumps(package(args.binary, args.output, args.version, args.commit, args.target), indent=2))
-    except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
+    except (OSError, ValueError, tarfile.TarError) as error:
         parser.exit(1, "Release packaging failed: " + str(error) + "\n")

@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        phase: [node, web, race, proof]
+        phase: [node, web, race, proof, go]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,6 +56,7 @@ jobs:
             web) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --only web ;;
             race) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --only race ;;
             proof) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --only proof ;;
+            go) python3 scripts/alpine-validation.py --context .canary/alpine-validation/source --only go ;;
           esac
       - name: Upload validation evidence
         if: always()

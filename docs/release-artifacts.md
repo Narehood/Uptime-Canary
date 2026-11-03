@@ -5,13 +5,15 @@ does not build, run, sign or publish it, create a Git tag, or certify a release.
 This is follow-up release tooling; the monitored public-history PR remains
 unchanged on its own branch.
 
-Initial packaging targets:
+Packaging targets:
 
 | Target | Required input header | Output |
 | --- | --- | --- |
 | `linux-amd64` | Little-endian 64-bit ELF, machine x86-64 | `.tar.gz` |
 | `linux-arm64` | Little-endian 64-bit ELF, machine AArch64 | `.tar.gz` |
-| `windows-amd64` | PE32+ x86-64 | `.zip` |
+
+There is no Windows release. The `windows-amd64` target, its `.zip` format and
+its CI job were removed; the Windows records below are earlier history only.
 
 Header checks catch a common wrong-target input; they are not a loader, Go
 provenance check or native-platform runtime test. A binary must be a regular
@@ -88,7 +90,7 @@ It requires a clean Git checkout at the exact supplied commit, including no
 nonignored untracked files. It does not publish or retain a release artifact.
 
 ```text
-python scripts/bounded_validation.py --timeout 480 -- python -B scripts/release-package-validation.py --commit <exact-HEAD> --version 0.0.0-dev --target windows-amd64
+python scripts/bounded_validation.py --timeout 480 -- python -B scripts/release-package-validation.py --commit <exact-HEAD> --version 0.0.0-dev --target linux-amd64
 ```
 
 The runner uses the existing pinned toolchain and shared cache, with readonly
@@ -177,8 +179,13 @@ was created. The failures above remain part of the record.
 
 ### Native CI gate
 
-The new `.github/workflows/release-package-validation.yml` runs serial native
-jobs on Windows amd64, Ubuntu amd64 and Ubuntu arm64. The runner labels are
+`.github/workflows/release-package-validation.yml` runs one native job on
+Ubuntu amd64, the only platform the images ship for. (It originally also ran
+Windows amd64 and Ubuntu arm64; those jobs were removed because nothing ships
+for either. The full node Go test suite moved from arm64 to the Alpine `go`
+phase of Container validation, and the full
+process-proof suite runs only in the Alpine proof phase against the image
+binary.) The runner labels are
 listed in [GitHub's hosted-runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 The workflow checks out the actual PR head commit rather than a synthetic merge
 commit, with read-only permissions and no persisted Git credential. Go 1.27.3,
@@ -197,14 +204,15 @@ validator explicitly preserves serial Go compilation. The guard also correctly
 recognizes its already-selected owned cache, rather than classifying that same
 directory as unexpected external growth.
 
-The guard fixtures and archive/provenance fixtures run first. Native arm64 also
-runs every node package, filling a previously missing execution gate. Each
-target must then pass `--require-native --full-proofs`: two matching builds,
-verified/extracted archive identity, CLI help and **every** ordinary process
-proof. A mismatched or unknown host architecture is rejected before building;
-a successful cross-build can never satisfy this native gate.
+The guard fixtures, archive/provenance fixtures and native adapter Go tests run
+first. The amd64 job must then pass `--require-native`: two
+matching builds, verified/extracted archive identity, CLI help and one process
+proof as a native smoke test. The full ordinary process-proof suite runs in the
+Alpine proof phase against the image binary. A mismatched or unknown host
+architecture is rejected before building; a successful cross-build can never
+satisfy this native gate.
 
-On both Linux architectures the extracted binary additionally runs CLI help in
+The extracted binary additionally runs CLI help in
 a pre-pulled native Alpine container with no network, read-only root, dropped
 capabilities, no-new-privileges and the nonroot host UID. The container image
 digest and actual architecture are recorded. This is a CLI portability check,

@@ -15,7 +15,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import zipfile
 
 from bounded_validation import source_digest
 from validation_workspace import ROOT, guarded_output, retain_summary, tap_counts
@@ -114,15 +113,13 @@ def unpack_binary(result, destination, target, version, commit):
     if Path(result["checksum"]).read_bytes() != (result["sha256"] + "  " + archive.name + "\n").encode("ascii"):
         raise ValueError("Archive checksum sidecar mismatch")
     folder = "uptime-canary-v" + packager.version_value(version) + "-" + target
-    name = "canary.exe" if target.startswith("windows-") else "canary"
+    name = "canary"
     expected = {folder + "/" + item for item in (name, "LICENSE", "THIRD_PARTY_NOTICES.txt", "release.json")}
-    opener = zipfile.ZipFile if target.startswith("windows-") else tarfile.open
-    with opener(archive) as package:
-        names = package.namelist() if isinstance(package, zipfile.ZipFile) else package.getnames()
+    with tarfile.open(archive) as package:
+        names = package.getnames()
         if len(names) != 4 or set(names) != expected:
             raise ValueError("Unexpected or duplicate archive member")
-        def read(member):
-            return package.open(member) if isinstance(package, zipfile.ZipFile) else package.extractfile(member)
+        read = package.extractfile
         with read(folder + "/release.json") as source:
             metadata = json.loads(source.read(65537))
         if (metadata.get("version") != packager.version_value(version) or metadata.get("sourceCommit") != commit
@@ -197,7 +194,7 @@ def main():
         linked = run("target-dependencies", [str(go), "list", "-mod=readonly", "-deps", "-f",
                      "{{if .Module}}{{if not .Module.Main}}{{.Module.Path}} {{.Module.Version}}{{end}}{{end}}", "./apps/node-go/cmd/canary"])
         report["linkedNoticeSets"] = verify_notice_coverage(linked, json.loads((ROOT / "third-party-manifest.json").read_text()), expected_go)
-        binary = output / ("build.exe" if goos == "windows" else "build")
+        binary = output / "build"
         flags = "-s -w -X " + VERSION_SYMBOL + "=" + args.version
         build = [str(go), "build", "-mod=readonly", "-trimpath", "-buildvcs=true", "-buildmode=exe",
                  "-ldflags=" + flags, "-o", str(binary), "./apps/node-go/cmd/canary"]
@@ -210,7 +207,7 @@ def main():
         if packager.digest_file(binary)[0] != result["binarySha256"]:
             raise ValueError("Repeated build bytes differ")
         binary.unlink()
-        extracted = output / ("canary.exe" if goos == "windows" else "canary")
+        extracted = output / "canary"
         unpack_binary(result, extracted, args.target, args.version, args.commit)
         verify_build_info(run("extracted-build-info", [str(go), "version", "-m", str(extracted)]), args.target, args.commit, expected_go)
         report["nativeExecution"] = native
@@ -281,7 +278,7 @@ def main():
             raise ValueError("Extracted executable changed during validation")
         clean_checkout(args.commit)
         report["passed"] = True
-    except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
+    except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as error:
         report["error"] = str(error)
     finally:
         report["sourceUnchanged"] = source_digest(ROOT) == before

@@ -28,8 +28,7 @@ class GitHub:
                 "head_repository": {"full_name": REPO}, "run_attempt": 1,
                 "updated_at": "2026-10-26T01:00:00Z",
                 "status": "completed", "conclusion": "success"}]
-            self.jobs[index] = [{"name": name, "status": "completed", "conclusion": "success"}
-                for name in sorted(jobs | gate.ADVISORY.get(file, frozenset()))]
+            self.jobs[index] = [{"name": name, "status": "completed", "conclusion": "success"} for name in sorted(jobs)]
 
     def __call__(self, path):
         self.calls.append(path)
@@ -62,6 +61,13 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(sum(len(jobs) for _, jobs in gate.REQUIRED.values()), 9)
         self.assertEqual(len(api.calls), 11)  # Fixed one-shot reads, no polling.
 
+    def test_only_the_shipped_platform_is_packaged(self):
+        # Images are linux/amd64 only; nothing ships for Windows or arm64.
+        self.assertEqual(gate.REQUIRED["release-package-validation.yml"][1], {"native-package (linux-amd64)"})
+        workflow = (ROOT / ".github/workflows/release-package-validation.yml").read_text()
+        for platform in ("windows-", "linux-arm64", "ubuntu-24.04-arm"):
+            self.assertNotIn(platform, workflow)
+
     def test_original_image_only_success_cannot_promote(self):
         api = GitHub()
         api.runs["container-validation.yml"] = []
@@ -79,9 +85,7 @@ class AdmissionTests(unittest.TestCase):
 
     def test_every_required_job_must_pass_even_if_workflow_claims_success(self):
         for run_id in range(1, 4):
-            for index, job in enumerate(GitHub().jobs[run_id]):
-                if any(job["name"] in names for names in gate.ADVISORY.values()):
-                    continue
+            for index in range(len(GitHub().jobs[run_id])):
                 for conclusion in ("failure", "skipped", "cancelled", None):
                     api = GitHub()
                     api.jobs[run_id][index]["conclusion"] = conclusion
@@ -89,47 +93,10 @@ class AdmissionTests(unittest.TestCase):
             for mutation in ("missing", "duplicate"):
                 api = GitHub()
                 if mutation == "missing":
-                    api.jobs[run_id].pop(0)  # Sorted: a required job, never the advisory one.
+                    api.jobs[run_id].pop()
                 else:
                     api.jobs[run_id].append(dict(api.jobs[run_id][0]))
                 self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
-
-    def test_failed_windows_package_does_not_hold_back_linux_images(self):
-        file, windows = "release-package-validation.yml", "native-package (windows-amd64)"
-        def failed(*others):
-            api = GitHub()
-            api.runs[file][0]["conclusion"] = "failure"
-            for job in next(jobs for jobs in api.jobs.values() if any(j["name"] == windows for j in jobs)):
-                if job["name"] in (windows, *others):
-                    job["conclusion"] = "failure"
-            return api
-        result = gate.assess(REPO, COMMIT, failed())
-        self.assertTrue(result["ready"])
-        package = next(item for item in result["workflows"] if item["name"] == "Release package validation")
-        self.assertIn("advisory " + windows + " did not pass", package["reason"])
-        # Only a Windows "failure" explains a failed run; other conclusions still block.
-        for windows_conclusion in ("cancelled", "timed_out", "neutral", "action_required", "stale", None, "success", "skipped"):
-            with self.subTest(windows=windows_conclusion):
-                api = failed()
-                for jobs in api.jobs.values():
-                    for job in jobs:
-                        if job["name"] == windows:
-                            job["conclusion"] = windows_conclusion
-                self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
-        # Any other failure in the same run still blocks, and so does a cancelled run.
-        self.assertFalse(gate.assess(REPO, COMMIT, failed("native-package (linux-amd64)"))["ready"])
-        api = failed()
-        api.runs[file][0]["conclusion"] = "cancelled"
-        self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
-        # A duplicated advisory job is not a known result.
-        api = failed()
-        jobs = next(jobs for jobs in api.jobs.values() if any(j["name"] == windows for j in jobs))
-        jobs.append(dict(next(j for j in jobs if j["name"] == windows)))
-        self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
-        # Only the release-package workflow has an advisory job.
-        api = GitHub()
-        api.runs["container-validation.yml"][0]["conclusion"] = "failure"
-        self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
 
     def test_old_green_run_cannot_hide_newer_failed_or_pending_run(self):
         for status, conclusion in [("completed", "failure"), ("in_progress", None)]:

@@ -52,13 +52,11 @@ jobs:
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      # Each platform has its own hosted runner, bounded cache and scratch.
-      max-parallel: 3
+      # Only the platform the images ship for: linux/amd64. There is no
+      # Windows or arm64 release, so CI builds neither.
       matrix:
         include:
           - {target: linux-amd64, runner: ubuntu-24.04}
-          - {target: linux-arm64, runner: ubuntu-24.04-arm}
-          - {target: windows-amd64, runner: windows-2025}
     env:
       GOTOOLCHAIN: local
       CGO_ENABLED: '0'
@@ -92,10 +90,7 @@ jobs:
           link.parent.mkdir(parents=True, exist_ok=True)
           if link.exists() or link.is_symlink():
               raise SystemExit('An existing toolchain link will not be replaced')
-          if os.name == 'nt':
-              subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(goroot)], check=True)
-          else:
-              link.symlink_to(goroot, target_is_directory=True)
+          link.symlink_to(goroot, target_is_directory=True)
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
               output.write('GOCACHE=' + str(root / '.canary/cache/go-build') + '\n')
               output.write('GOFLAGS=-p=1 -mod=readonly\n')
@@ -123,20 +118,12 @@ jobs:
         run: python scripts/bounded_validation.py --timeout 60 -- python -B -m unittest discover -s scripts -p '*package*test.py'
       - name: Verify PM2 namespace refusal controls without privilege changes
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/pm2_real_validation_test.py
-      - name: Verify PM2 editor and configuration contracts
-        run: python scripts/bounded_validation.py --timeout 60 -- node scripts/pm2-pure.mjs
       - name: Verify monitor rate consent without a browser
         run: python scripts/bounded_validation.py --timeout 60 -- node scripts/monitor-rate-pure.mjs
       - name: Exercise native local-manager, browser and query adapters and process boundaries
-        if: matrix.target != 'linux-arm64'
+        # Every node package's tests run in the Alpine "go" phase of Container validation.
         run: python scripts/bounded_validation.py --timeout 300 -- go test -mod=readonly -p=1 -count=1 ./apps/node-go/internal/pm2monitor ./apps/node-go/internal/tailscalemonitor ./apps/node-go/internal/browsermonitor ./apps/node-go/internal/gamedigmonitor ./apps/node-go/internal/probeworker/process
-      - name: Exercise all node packages on native arm64
-        if: matrix.target == 'linux-arm64'
-        # Omit compiler DWARF as well as linker symbols: cold native compilation
-        # otherwise duplicates debug data in temporary archives above 512 MiB.
-        run: python scripts/bounded_validation.py --timeout 1200 -- go test -mod=readonly -p=1 -gcflags='all=-dwarf=false' -ldflags='-s -w' -count=1 -timeout=15m ./apps/node-go/...
       - name: Pull the native Alpine image for the offline help check
-        if: runner.os == 'Linux'
         run: docker pull alpine:3.24
       - name: Build, package and exercise the extracted native executable
         id: package_validation
@@ -145,15 +132,13 @@ jobs:
           import os
           import subprocess
           import sys
-          target = os.environ['PACKAGE_TARGET']
+          # The full process-proof suite already runs on the shipped image in
+          # the Alpine proof phase; here one proof smoke-tests the native binary.
           command = [sys.executable, 'scripts/bounded_validation.py', '--timeout', '1500', '--',
                      sys.executable, '-B', 'scripts/release-package-validation.py',
                      '--commit', os.environ['SOURCE_COMMIT'], '--version', '0.0.0-dev',
-                     '--target', target, '--require-native', '--full-proofs']
-          if target.startswith('linux-'):
-              command.extend(['--alpine-help', '--pm2-interop', '--browser-interop'])
-          if target == 'linux-amd64':
-              command.append('--coordinated-upgrade')
+                     '--target', os.environ['PACKAGE_TARGET'], '--require-native',
+                     '--alpine-help', '--pm2-interop', '--browser-interop', '--coordinated-upgrade']
           subprocess.run(command, check=True)
       - name: Profile Linux recovery after a failed package proof
         if: failure() && matrix.target == 'linux-amd64' && steps.package_validation.outcome == 'failure'

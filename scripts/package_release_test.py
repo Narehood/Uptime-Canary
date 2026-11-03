@@ -8,7 +8,6 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
-import zipfile
 
 spec = importlib.util.spec_from_file_location("release_package", Path(__file__).with_name("package-release.py"))
 release = importlib.util.module_from_spec(spec)
@@ -45,7 +44,7 @@ class ReleasePackageTests(unittest.TestCase):
         return release.package(binary, output, version, commit, target, notice_root=notices)
 
     def assert_contents(self, contents, binary, notices, target):
-        name = "canary.exe" if target.startswith("windows-") else "canary"
+        name = "canary"
         self.assertEqual(set(contents), {name, "LICENSE", "THIRD_PARTY_NOTICES.txt", "release.json"})
         self.assertEqual(contents[name], binary.read_bytes())
         metadata = json.loads(contents["release.json"])
@@ -79,18 +78,15 @@ class ReleasePackageTests(unittest.TestCase):
                 self.assert_checksum(result)
                 self.assertFalse(list((Path(folder) / "output").glob(".package-*")))
 
-    def test_windows_zip_bytes_metadata_and_determinism(self):
+    def test_windows_is_not_a_release_target(self):
+        # There is no Windows release, even for a well-formed Windows executable.
         with tempfile.TemporaryDirectory() as folder:
             binary, notices = self.fixture(folder, "windows-amd64")
-            a = self.make(binary, notices, Path(folder) / "a", "windows-amd64")
-            b = self.make(binary, notices, Path(folder) / "b", "windows-amd64")
-            self.assertEqual(a["sha256"], b["sha256"])
-            with zipfile.ZipFile(a["archive"]) as archive:
-                self.assertTrue(all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()))
-                self.assertTrue(all(not info.filename.startswith("/") and ".." not in info.filename.split("/") for info in archive.infolist()))
-                contents = {name.split("/")[1]: archive.read(name) for name in archive.namelist()}
-            self.assert_contents(contents, binary, notices, "windows-amd64")
-            self.assert_checksum(a)
+            output = Path(folder) / "output"
+            with self.assertRaises(ValueError):
+                self.make(binary, notices, output, "windows-amd64")
+            self.assertFalse(output.exists() and any(output.iterdir()))
+        self.assertEqual(set(release.TARGETS), {"linux-amd64", "linux-arm64"})
 
     def test_tar_is_reproducible_across_paths_and_input_timestamps(self):
         with tempfile.TemporaryDirectory() as folder:

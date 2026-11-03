@@ -48,7 +48,7 @@ def main():
     p.add_argument("--skip-web", action="store_true")
     p.add_argument("--skip-race", action="store_true")
     p.add_argument("--node-image", help="Use an existing image; explicitly skips the repository node build")
-    p.add_argument("--only", choices=("web", "race", "proof"), help="Run one independent phase and explicitly omit the other phases")
+    p.add_argument("--only", choices=("web", "race", "proof", "go"), help="Run one independent phase and explicitly omit the other phases")
     a = p.parse_args()
     a.context = a.context.resolve()
     a.output = a.output.resolve()
@@ -371,6 +371,13 @@ def main():
         cmd("Run Go race tests inside Alpine with GCC", "docker", "run", "--name", race_name, "--cpus", "4", "--memory", "4g", "-v", str(a.context) + ":/source:ro", "-v", str(a.output) + ":/evidence", "golang:1.27.3-alpine", "sh", "-ec", "trap 'if [ -d /work/.canary/worker-race ]; then cp -a /work/.canary/worker-race /evidence/worker-race; fi' EXIT; apk add --no-cache build-base iputils python3; cp -a /source /work; cd /work; go version; gcc --version; CGO_ENABLED=0 go test -count=1 ./apps/node-go/internal/systemservice; CGO_ENABLED=1 go test -race -count=1 -run '^TestSystemService(Config|State|SCM|Systemd)' ./apps/node-go/internal/systemservice; CGO_ENABLED=1 go test -race -count=1 -timeout=20m ./apps/node-go/internal/availability ./apps/node-go/internal/jsonquery/evaluator ./apps/node-go/internal/jsonquery/jsvm ./apps/node-go/internal/checkpolicy ./apps/node-go/internal/delivery ./apps/node-go/internal/heartbeat ./apps/node-go/internal/icmp ./apps/node-go/internal/maintenance ./apps/node-go/internal/origin ./apps/node-go/internal/nodeconnection; python3 scripts/worker-race-validation.py --context /work --core; python3 scripts/worker-race-validation.py --context /work", timeout=2400)
         passed("Go test -race inside actual Linux/Alpine with compiler")
 
+    def validate_go():
+        # Every node Go test, once, as a nonroot user on the shipped platform.
+        go_name = prefix + "-go"
+        containers.append(go_name)
+        cmd("Run every node Go test inside Alpine as nonroot", "docker", "run", "--name", go_name, "--cpus", "4", "--memory", "4g", "--user", "65534:65534", "-e", "HOME=/tmp/home", "-e", "GOCACHE=/tmp/go-cache", "-e", "GOMODCACHE=/tmp/go-mod", "-e", "CGO_ENABLED=0", "-e", "GOFLAGS=-mod=readonly", "-v", str(a.context) + ":/source:ro", "golang:1.27.3-alpine", "sh", "-ec", "cp -R /source /tmp/work; cd /tmp/work; go version; go test -count=1 -timeout=20m ./apps/node-go/...", timeout=1800)
+        passed("Every node Go test inside actual Linux/Alpine as nonroot")
+
     try:
         summary["docker"] = cmd("Docker version", "docker", "version")
         if a.only:
@@ -380,6 +387,8 @@ def main():
                 validate_web()
             elif a.only == "race":
                 validate_race()
+            elif a.only == "go":
+                validate_go()
             else:
                 validate_proof()
             summary["passed"] = True

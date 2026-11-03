@@ -449,8 +449,7 @@ Current tags and access are listed in [GitHub Packages](https://github.com/Nareh
 and the [image-build workflow](https://github.com/Narehood/Uptime-Canary/actions/workflows/container-images.yml).
 The follow-up [promotion workflow](https://github.com/Narehood/Uptime-Canary/actions/workflows/container-publication.yml)
 requires matching validation before moving `latest`.
-The published platform is **Linux amd64**; native arm64 binary validation
-does not establish an arm64 image.
+The published platform is **Linux amd64**, and CI validates only that platform.
 
 - **Matching source:** set `CANARY_IMAGE_TAG=sha-34442cc040f2b00f17ba45b3a6bfb338d0552b14`
   for this checkpoint, or choose another published matching source tag on
@@ -465,10 +464,10 @@ does not establish an arm64 image.
   `CANARY_PULL_POLICY=never` only for deliberately preloaded/offline images.
 - **Publishing:** PRs build all three images without pushing. On `main`, each
   successful build pushes its source tag. `latest` is promoted only after
-  all three builds, all four Alpine phases (including proof and race), and
-  the Linux amd64 and arm64 native packages pass for that exact current `main`
-  commit. A failed Windows package is noted in the promotion summary but
-  doesn't hold back the Linux-only images.
+  all three builds, all five Alpine phases (including proof, race and the
+  full node Go tests), and
+  the Linux amd64 native package pass for that exact current `main` commit.
+  Nothing ships for Windows or arm64, so CI builds neither.
   Completion events check once; no validation polling or duplicate test runs
   are added. Pending, failed, cancelled, missing or skipped required jobs keep
   `latest` unchanged. Promotion rechecks the latest attempts and main immediately
@@ -673,11 +672,10 @@ The [parity inventory](docs/parity-audit.md) tracks detailed option differences.
 
 ### Deployment and validation gaps
 
-- Published container images currently support Linux amd64 only. Native
-  arm64 executables are validated, but arm64 images, version tags and a
-  deliberate tagged release remain future work.
+- Published container images currently support Linux amd64 only. arm64
+  images, version tags and a deliberate tagged release remain future work.
 - Guided node onboarding and node-initiated connections passed local Windows
-  checks only; they still need hosted Linux, arm64, Alpine, race and full
+  checks only; they still need hosted Linux, Alpine, race and full
   process-proof gates, matching published images and a real deployment check
   ([status](#add-nodes-from-the-dashboard)).
 - The root source-build Compose configuration and optional GameDig stack
