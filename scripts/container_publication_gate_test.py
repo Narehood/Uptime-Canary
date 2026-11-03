@@ -53,12 +53,12 @@ class GitHub:
 
 
 class AdmissionTests(unittest.TestCase):
-    def test_all_eight_required_jobs_on_one_exact_main_commit(self):
+    def test_all_nine_required_jobs_on_one_exact_main_commit(self):
         api = GitHub()
         result = gate.assess(REPO, COMMIT, api)
         self.assertTrue(result["ready"])
         self.assertEqual(len(result["workflows"]), 3)
-        self.assertEqual(sum(len(jobs) for _, jobs in gate.REQUIRED.values()), 8)
+        self.assertEqual(sum(len(jobs) for _, jobs in gate.REQUIRED.values()), 9)
         self.assertEqual(len(api.calls), 11)  # Fixed one-shot reads, no polling.
 
     def test_only_the_shipped_platform_is_packaged(self):

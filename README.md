@@ -464,7 +464,8 @@ The published platform is **Linux amd64**, and CI validates only that platform.
   `CANARY_PULL_POLICY=never` only for deliberately preloaded/offline images.
 - **Publishing:** PRs build all three images without pushing. On `main`, each
   successful build pushes its source tag. `latest` is promoted only after
-  all three builds, all four Alpine phases (including proof and race), and
+  all three builds, all five Alpine phases (including proof, race and the
+  full node Go tests), and
   the Linux amd64 native package pass for that exact current `main` commit.
   Nothing ships for Windows or arm64, so CI builds neither.
   Completion events check once; no validation polling or duplicate test runs

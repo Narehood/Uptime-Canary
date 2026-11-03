@@ -182,7 +182,8 @@ was created. The failures above remain part of the record.
 `.github/workflows/release-package-validation.yml` runs one native job on
 Ubuntu amd64, the only platform the images ship for. (It originally also ran
 Windows amd64 and Ubuntu arm64; those jobs were removed because nothing ships
-for either. The full node Go test suite moved from arm64 to amd64, and the full
+for either. The full node Go test suite moved from arm64 to the Alpine `go`
+phase of Container validation, and the full
 process-proof suite runs only in the Alpine proof phase against the image
 binary.) The runner labels are
 listed in [GitHub's hosted-runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
@@ -203,8 +204,8 @@ validator explicitly preserves serial Go compilation. The guard also correctly
 recognizes its already-selected owned cache, rather than classifying that same
 directory as unexpected external growth.
 
-The guard fixtures and archive/provenance fixtures run first, then every node
-package's Go tests. The amd64 job must then pass `--require-native`: two
+The guard fixtures, archive/provenance fixtures and native adapter Go tests run
+first. The amd64 job must then pass `--require-native`: two
 matching builds, verified/extracted archive identity, CLI help and one process
 proof as a native smoke test. The full ordinary process-proof suite runs in the
 Alpine proof phase against the image binary. A mismatched or unknown host

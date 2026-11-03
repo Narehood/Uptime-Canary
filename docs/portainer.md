@@ -59,8 +59,8 @@ GitHub Actions builds the existing Dockerfiles. Pull requests build without
 publishing. Pushes to `main`, or a manual **Container images** run on `main`,
 publish `sha-<full commit>` tags for the node, dashboard and optional game-query
 service as their builds finish. The separate promotion workflow advances
-`latest` only after the three image builds, four Alpine phases (including proof
-and race), and the Linux amd64 native package pass on the exact current `main`
+`latest` only after the three image builds, five Alpine phases (including proof,
+race and the full node Go tests), and the Linux amd64 native package pass on the exact current `main`
 commit. Pending, failed, cancelled, missing or skipped required jobs block
 promotion. Nothing ships for Windows or arm64, so CI builds neither. Workflow completion events check once without polling or rerunning
 validation; a manual promotion dispatch on `main` can recheck existing results.

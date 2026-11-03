@@ -30,7 +30,7 @@ categories without returning raw private URLs or credentials. Pin and CA
 verification remain enforced before authenticated requests.
 
 Promotion now requires the latest matching successful attempts of all three
-image builds, four Alpine phases and three native package targets for the exact
+image builds, five Alpine phases and the Linux amd64 native package for the exact
 current `main` commit. Completion events check once, and admission is checked
 again immediately before registry writes. Missing, skipped, failed, cancelled,
 pending, stale or superseded required results cannot approve promotion.

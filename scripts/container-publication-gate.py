@@ -20,7 +20,7 @@ REQUIRED = {
         "Build image (node)", "Build image (web)", "Build image (game-query)"}),
     "container-validation.yml": ("Container validation", {
         "alpine-runtime (node)", "alpine-runtime (web)",
-        "alpine-runtime (race)", "alpine-runtime (proof)"}),
+        "alpine-runtime (race)", "alpine-runtime (proof)", "alpine-runtime (go)"}),
     "release-package-validation.yml": ("Release package validation", {
         "native-package (linux-amd64)"}),
 }
