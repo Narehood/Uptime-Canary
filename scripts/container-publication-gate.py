@@ -22,8 +22,13 @@ REQUIRED = {
         "alpine-runtime (node)", "alpine-runtime (web)",
         "alpine-runtime (race)", "alpine-runtime (proof)"}),
     "release-package-validation.yml": ("Release package validation", {
-        "native-package (linux-amd64)", "native-package (linux-arm64)",
-        "native-package (windows-amd64)"}),
+        "native-package (linux-amd64)", "native-package (linux-arm64)"}),
+}
+# Jobs that run in a required workflow but don't decide Linux image promotion.
+# The images are Linux-only; the Windows package keeps its own release result.
+# A failure here is reported in the summary and never hides another failed job.
+ADVISORY = {
+    "release-package-validation.yml": frozenset({"native-package (windows-amd64)"}),
 }
 MAX_JSON = 2 * 1024 * 1024
 
@@ -154,7 +159,11 @@ def assess(repository, commit, read):
         if type(attempt) is not int or attempt < 1:
             raise GateError("Invalid workflow attempt")
         item.update({"run": run["id"], "attempt": attempt})
-        if run.get("status") != "completed" or run.get("conclusion") != "success":
+        advisory = ADVISORY.get(file, frozenset())
+        conclusion = run.get("conclusion")
+        # A failed advisory job fails its whole workflow run, so only a workflow
+        # with advisory jobs may conclude "failure"; the jobs below must explain it.
+        if run.get("status") != "completed" or conclusion not in ({"success", "failure"} if advisory else {"success"}):
             item["reason"] = "Latest workflow run is not a completed success"
             approved = False
             continue
@@ -165,13 +174,18 @@ def assess(repository, commit, read):
             job.get("name") == name and job.get("status") == "completed"
             and job.get("conclusion") == "success" for job in jobs) for name in required_jobs)
         no_failed_jobs = all(job.get("status") == "completed"
-            and job.get("conclusion") in {"success", "skipped"} for job in jobs)
+            and (job.get("conclusion") in {"success", "skipped"}
+                 or (job.get("name") in advisory and names.count(job.get("name")) == 1)) for job in jobs)
+        advisory_failed = sorted(job.get("name") for job in jobs
+            if job.get("name") in advisory and job.get("conclusion") not in {"success", "skipped"})
+        explained = conclusion == "success" or bool(advisory_failed)
         # Detect a rerun started while its previous attempt's jobs were read.
         latest = read(prefix + "/actions/runs/" + str(run["id"]))
         unchanged = (latest.get("head_sha") == commit and latest.get("run_attempt") == attempt
-            and latest.get("status") == "completed" and latest.get("conclusion") == "success")
-        item["approved"] = all_required and no_failed_jobs and unchanged
-        item["reason"] = "All required jobs passed" if item["approved"] else "Required jobs missing, skipped, failed or superseded"
+            and latest.get("status") == "completed" and latest.get("conclusion") == conclusion)
+        item["approved"] = all_required and no_failed_jobs and explained and unchanged
+        item["reason"] = ("All required jobs passed" if item["approved"] else "Required jobs missing, skipped, failed or superseded") \
+            + "".join("; advisory " + name + " did not pass" for name in advisory_failed)
         approved = approved and item["approved"]
     result["ready"] = approved and current()
     result["reason"] = "All matching validation gates passed" if result["ready"] else "Validation incomplete, failed, or main advanced; latest unchanged"

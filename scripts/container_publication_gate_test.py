@@ -28,7 +28,8 @@ class GitHub:
                 "head_repository": {"full_name": REPO}, "run_attempt": 1,
                 "updated_at": "2026-10-26T01:00:00Z",
                 "status": "completed", "conclusion": "success"}]
-            self.jobs[index] = [{"name": name, "status": "completed", "conclusion": "success"} for name in sorted(jobs)]
+            self.jobs[index] = [{"name": name, "status": "completed", "conclusion": "success"}
+                for name in sorted(jobs | gate.ADVISORY.get(file, frozenset()))]
 
     def __call__(self, path):
         self.calls.append(path)
@@ -53,12 +54,12 @@ class GitHub:
 
 
 class AdmissionTests(unittest.TestCase):
-    def test_all_ten_required_jobs_on_one_exact_main_commit(self):
+    def test_all_nine_required_jobs_on_one_exact_main_commit(self):
         api = GitHub()
         result = gate.assess(REPO, COMMIT, api)
         self.assertTrue(result["ready"])
         self.assertEqual(len(result["workflows"]), 3)
-        self.assertEqual(sum(len(jobs) for _, jobs in gate.REQUIRED.values()), 10)
+        self.assertEqual(sum(len(jobs) for _, jobs in gate.REQUIRED.values()), 9)
         self.assertEqual(len(api.calls), 11)  # Fixed one-shot reads, no polling.
 
     def test_original_image_only_success_cannot_promote(self):
@@ -78,7 +79,9 @@ class AdmissionTests(unittest.TestCase):
 
     def test_every_required_job_must_pass_even_if_workflow_claims_success(self):
         for run_id in range(1, 4):
-            for index in range(len(GitHub().jobs[run_id])):
+            for index, job in enumerate(GitHub().jobs[run_id]):
+                if any(job["name"] in names for names in gate.ADVISORY.values()):
+                    continue
                 for conclusion in ("failure", "skipped", "cancelled", None):
                     api = GitHub()
                     api.jobs[run_id][index]["conclusion"] = conclusion
@@ -86,10 +89,38 @@ class AdmissionTests(unittest.TestCase):
             for mutation in ("missing", "duplicate"):
                 api = GitHub()
                 if mutation == "missing":
-                    api.jobs[run_id].pop()
+                    api.jobs[run_id].pop(0)  # Sorted: a required job, never the advisory one.
                 else:
                     api.jobs[run_id].append(dict(api.jobs[run_id][0]))
                 self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
+
+    def test_failed_windows_package_does_not_hold_back_linux_images(self):
+        file, windows = "release-package-validation.yml", "native-package (windows-amd64)"
+        def failed(*others):
+            api = GitHub()
+            api.runs[file][0]["conclusion"] = "failure"
+            for job in next(jobs for jobs in api.jobs.values() if any(j["name"] == windows for j in jobs)):
+                if job["name"] in (windows, *others):
+                    job["conclusion"] = "failure"
+            return api
+        result = gate.assess(REPO, COMMIT, failed())
+        self.assertTrue(result["ready"])
+        package = next(item for item in result["workflows"] if item["name"] == "Release package validation")
+        self.assertIn("advisory " + windows + " did not pass", package["reason"])
+        # Any other failure in the same run still blocks, and so does a cancelled run.
+        self.assertFalse(gate.assess(REPO, COMMIT, failed("native-package (linux-amd64)"))["ready"])
+        api = failed()
+        api.runs[file][0]["conclusion"] = "cancelled"
+        self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
+        # A duplicated advisory job is not a known result.
+        api = failed()
+        jobs = next(jobs for jobs in api.jobs.values() if any(j["name"] == windows for j in jobs))
+        jobs.append(dict(next(j for j in jobs if j["name"] == windows)))
+        self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
+        # Only the release-package workflow has an advisory job.
+        api = GitHub()
+        api.runs["container-validation.yml"][0]["conclusion"] = "failure"
+        self.assertFalse(gate.assess(REPO, COMMIT, api)["ready"])
 
     def test_old_green_run_cannot_hide_newer_failed_or_pending_run(self):
         for status, conclusion in [("completed", "failure"), ("in_progress", None)]:
