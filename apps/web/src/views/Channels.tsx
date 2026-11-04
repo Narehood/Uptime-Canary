@@ -1057,6 +1057,9 @@ function ChannelFormSession({ id }: { id?: string }) {
   const existing = id ? channels.map.get(id) : undefined;
   const seed = useRef<NotificationChannel | undefined>(existing?.channel);
   if (!seed.current && existing) seed.current = existing.channel;
+  const reload = channels.reload;
+  // A deep link can name a channel created outside this tab since its catalogue last loaded.
+  useEffect(() => { if (id && !seed.current) reload(); }, [id, reload]);
   return <ChannelFormBody key={seed.current ? 'known' : 'unloaded'} id={id} seed={seed.current} />;
 }
 
@@ -1104,7 +1107,7 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
   if (!editable) return <div className="view channel-editor"><PageHead title={id ? 'Edit channel' : 'New channel'} /><Card><EmptyState title="Viewers can’t change channels">Sign in with an editor or admin account.</EmptyState></Card></div>;
   if (channels.unsupported) return <div className="view channel-editor"><PageHead title="New channel" /><Card><EmptyState title={`${endpoint} doesn’t offer reusable channels`}>It probably runs an older Uptime-Canary version.</EmptyState></Card></div>;
   if (id && !existing && !base) {
-    return <div className="view channel-editor"><PageHead crumbs={<a href={href('notifications')}>Notifications</a>} title="Edit channel" /><ChannelRefreshNotice /><Card>{channels.error && !channels.list ? <Banner tone="down" title="Channels could not be loaded" actions={<button type="button" className="btn sm" onClick={channels.reload}>Retry loading</button>}>{describeFailure(channels.error)}</Banner> : channels.error && channels.list ? <EmptyState title="Channel could not be confirmed">Refresh the channel list before concluding this channel was deleted.</EmptyState> : channels.list ? <EmptyState title="Channel not found">{endpoint} doesn’t know this channel. It may have been deleted.</EmptyState> : <p className="muted">Loading the channel from {endpoint}…</p>}</Card></div>;
+    return <div className="view channel-editor"><PageHead crumbs={<a href={href('notifications')}>Notifications</a>} title="Edit channel" /><ChannelRefreshNotice /><Card>{channels.loading ? <p className="muted" role="status">Checking the channel on {endpoint}...</p> : channels.error && !channels.list ? <Banner tone="down" title="Channels could not be loaded" actions={<button type="button" className="btn sm" onClick={channels.reload}>Retry loading</button>}>{describeFailure(channels.error)}</Banner> : channels.error && channels.list ? <EmptyState title="Channel could not be confirmed">Refresh the channel list before concluding this channel was deleted.</EmptyState> : channels.list ? <EmptyState title="Channel not found">{endpoint} doesn’t know this channel. It may have been deleted.</EmptyState> : <p className="muted">Loading the channel from {endpoint}…</p>}</Card></div>;
   }
 
   // What the selected node renders: its overview's reported peer protocol, or the six-placeholder grammar when it reports none.

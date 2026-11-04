@@ -864,6 +864,66 @@ async function automationBrowserReview() {
       return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, unreadableReadRetainsAttempts: true, uncertainSaveReadback: true, deletedChannelDraftRetained: true, allEventsRestored: true, realSends: 0 };
     });
   }
+  await step('Automation browser: guarded history preserves indexed entries across same-hash traversal and unindexed gaps', async () => {
+    const token = secret(); secrets.add(token);
+    const made = await api(A, '/api/notification-channels', 'POST', {
+      name: 'Browser navigation history', enabled: true,
+      config: { kind: 'homeassistant', homeassistant: { baseURL: state.sink + '/ha', accessToken: token, eventType: 'uptime_canary', allowInsecureHTTP: true } },
+    });
+    assert.equal(made.status, 201, made.text);
+    const saved = made.value, edit = `#/channels/${saved.id}/edit`;
+    const second = await api(A, '/api/notification-channels', 'POST', { name: 'Browser navigation history B', enabled: true, config: saved.config });
+    assert.equal(second.status, 201, second.text);
+    const editB = `#/channels/${second.value.id}/edit`;
+    const mark = value => page.eval(`history.replaceState({...history.state, reviewEntry:${J(value)}}, ''); true`);
+    const at = (value, target = edit) => until(() => page.eval(`history.state?.reviewEntry === ${J(value)} && location.hash === ${J(target)}`), `restored history entry ${value}`);
+    try {
+      await nav('#/notifications'); await heading('Notifications');
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('early-editor');
+      await nav('#/notifications'); await heading('Notifications');
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('late-editor');
+      await fill('Name', 'Keep the multi-entry draft');
+      await page.eval('history.go(-2)'); await at('early-editor');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('early-editor');
+      assert.equal(await page.eval(`__field('Name').value`), 'Keep the multi-entry draft');
+      await page.eval('history.forward()'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('early-editor');
+      await nav('#/notifications'); await heading('Notifications');
+      for (const multiEntry of [false, true]) {
+        await nav(edit); await heading(`Edit ${saved.name}`);
+        const entry = multiEntry ? 'gap-multi-editor' : 'gap-single-editor';
+        await mark(entry); await fill('Name', 'Keep the unindexed-gap draft');
+        await page.eval(`window.__historyDraftField = __field('Name'); location.hash = '#/incidents'`);
+        await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
+        if (!multiEntry) { await page.eval('history.back()'); await at(entry); }
+        await page.eval(multiEntry ? 'history.go(-2)' : 'history.back()');
+        await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]'); await at(entry);
+        assert.equal(await page.eval(`window.__historyDraftField === __field('Name')`), true, 'history restoration retains the mounted draft');
+        await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+        await click('Discard changes', 'dialog[open]'); await heading('Notifications');
+        assert.equal(await page.eval('location.hash'), '#/notifications', 'the indexed Back destination keeps its original URL');
+      }
+      await nav(edit); await heading(`Edit ${saved.name}`); await fill('Name', 'Discard A after its held fragment');
+      await page.eval(`location.hash = '#/incidents'`); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]');
+      await nav(editB); await heading(`Edit ${second.value.name}`);
+      await mark('editor-b'); await fill('Name', 'Keep editor B draft');
+      await page.eval('history.go(-2)'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('editor-b', editB);
+      assert.equal(await page.eval(`__field('Name').value`), 'Keep editor B draft', 'a held slot does not shift the next accepted entry index');
+      await page.eval('history.go(-2)'); await text('Discard unsaved channel changes?');
+      await click('Discard changes', 'dialog[open]'); await heading(`Edit ${saved.name}`);
+      await nav('#/notifications'); await heading('Notifications');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'history decisions never save');
+      assert.equal((await api(A, `/api/notification-channels/${second.value.id}`)).value.revision, second.value.revision, 'editor B also remains unsaved');
+      assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0);
+    } finally {
+      await api(A, `/api/notification-channels/${saved.id}`, 'DELETE', { revision: saved.revision });
+      await api(A, `/api/notification-channels/${second.value.id}`, 'DELETE', { revision: second.value.revision });
+    }
+    return { sameHashTraversalPreserved: true, unindexedGapBackPreserved: true, multiEntryGapPreserved: true, heldSlotThenNavigation: true, realSends: 0 };
+  });
   await step('Automation browser: rejected-sign-in Leave preserves a dirty draft until discard', async () => {
     const token = secret(); secrets.add(token);
     const made = await api(A, '/api/notification-channels', 'POST', {
@@ -1500,7 +1560,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   });
   await step('Alert templates: presets, Undo and explicit replacement stay local; Discord cards show each sample event without sending', async () => {
     await nav('#/channels/new'); await heading('New channel');
-    await page.eval('document.querySelector("input[type=radio][value=discord]").click()');
+    await choose('Discord');
     await disclose('Message templates'); await text('Sample data');
     const start = report.requests.length;
     const fields = () => page.eval('[__field("Title").value,__field("Text").value]');

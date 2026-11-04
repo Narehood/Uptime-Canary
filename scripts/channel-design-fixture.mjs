@@ -85,6 +85,7 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/')) {
       requests.push({ method: req.method, path: url.pathname });
+      if (role === 'viewer' && req.method !== 'GET') return reply({ error: 'Viewer access refused by fixture.' }, 403);
       if (url.pathname === '/api/overview') return rejectOverview ? reply({ error: 'The private fixture rejected this credential.' }, 401) : reply(overview());
       if (url.pathname === '/api/auth/me') return reply({ id: 'fixture-admin', name: 'Alex Morgan', role, passwordEnabled: true });
       if (url.pathname === '/api/tags') return reply([]);

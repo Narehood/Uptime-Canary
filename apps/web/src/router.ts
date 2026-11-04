@@ -149,12 +149,13 @@ export function useRoute(): Route {
     const stamp = (index: number): void => history.replaceState({ ...history.state, [indexKey]: index }, '');
     let acceptedHash = location.hash;
     let acceptedIndex = historyIndex() ?? 0;
+    let currentIndex = acceptedIndex;
     stamp(acceptedIndex);
     let restoring: { after?: () => void } | null = null;
-    let indexedTraversal = true;
     const commit = (target: string, index: number): void => {
       acceptedHash = target;
       acceptedIndex = index;
+      currentIndex = index;
       stamp(index);
       setRoute(parseRoute(target));
     };
@@ -167,8 +168,8 @@ export function useRoute(): Route {
         return;
       }
       const reportedIndex = historyIndex();
-      const targetIndex = reportedIndex ?? acceptedIndex + 1;
-      const traversal = indexedTraversal && reportedIndex !== undefined && targetIndex !== acceptedIndex;
+      const targetIndex = reportedIndex ?? currentIndex + 1;
+      const traversal = reportedIndex !== undefined && targetIndex !== acceptedIndex;
       const proceed = (): void => {
         if (traversal) {
           const move = (): void => history.go(targetIndex - acceptedIndex);
@@ -187,10 +188,13 @@ export function useRoute(): Route {
           restoring = {};
           history.go(acceptedIndex - targetIndex);
         } else {
-          // Legacy/unindexed entries and direct hash edits have no reliable traversal offset. Hold the mounted
-          // editor and URL; stop using offsets after this gap, since their distance can no longer be trusted.
-          if (reportedIndex === undefined) indexedTraversal = false;
+          // Keep the original indexed editor entry as our restore anchor. An unindexed fragment can be held
+          // here without rewriting a later indexed Back/Forward destination or changing that anchor.
           history.replaceState(history.state, '', `${location.pathname}${location.search}${acceptedHash}`);
+          // The held fragment still occupies a slot. Index it without moving the original restore anchor,
+          // so a later accepted navigation is stamped at its actual position.
+          stamp(targetIndex);
+          currentIndex = targetIndex;
         }
         return;
       }
@@ -205,9 +209,15 @@ export function useRoute(): Route {
       event.preventDefault();
       navigate(target.hash);
     };
+    const syncIndex = (): void => {
+      const index = historyIndex();
+      if (location.hash === acceptedHash && index !== undefined) { acceptedIndex = index; currentIndex = index; }
+    };
+    window.addEventListener('popstate', syncIndex);
     window.addEventListener('hashchange', update);
     document.addEventListener('click', click);
     return () => {
+      window.removeEventListener('popstate', syncIndex);
       window.removeEventListener('hashchange', update);
       document.removeEventListener('click', click);
     };
