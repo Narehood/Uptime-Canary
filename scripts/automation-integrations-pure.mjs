@@ -17,7 +17,7 @@ globalThis.React ??= React;
 const { register } = await import('tsx/esm/api');
 const scope = register({ namespace: 'automation-integrations', tsconfig: resolve(root, 'apps/web/tsconfig.json') });
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
-const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged, sameChannelSettings, PreviewOutcomeList, previewRecipientLabels } = await load('views/Channels.tsx');
+const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged, sameChannelSettings, PreviewOutcomeList, previewRecipientLabels, channelAddresses, DeliveryTable } = await load('views/Channels.tsx');
 const messaging = await load('messaging.ts');
 const apiModel = await load('api.ts');
 const routes = await load('router.ts');
@@ -287,6 +287,29 @@ check('alert events render the stored selection, editable on protocol 22', () =>
   for (const kind of ['homeassistant', 'matrix']) assert.equal(providerOption(markup, kind).has('disabled'), false, kind);
   assert.equal(text(markup).includes('Needs peer protocol'), false);
 });
+check('recipient and sender validation retain the exact corrective row and control', () => {
+  const config = { kind: 'smtp', sender: { email: 'canary@example.test' }, recipients: [{ email: 'one@example.test' }, { email: 'two@example.test' }], smtp: { server: 'smtp.example.test', tlsMode: 'starttls' } };
+  const channel = saved(config), draft = form.channelDraft(channel), later = draft.recipients[1].key;
+  const cases = [
+    { ...draft, recipients: [draft.recipients[0], { ...draft.recipients[1], email: 'bad-address' }] },
+    { ...draft, recipients: [draft.recipients[0], { ...draft.recipients[1], name: 'x'.repeat(129) }] },
+    { ...draft, recipients: [draft.recipients[0], { ...draft.recipients[1], email: 'ONE@example.test' }] },
+  ];
+  for (const [index, changed] of cases.entries()) {
+    const issue = channelAddresses(changed).recipientProblem;
+    assert.equal(issue.key, later); assert.equal(issue.field, index === 1 ? 'name' : 'email');
+    assert.equal(form.buildChannel(changed, channel, 'enhanced', 22).errors.recipients, issue.message);
+  }
+  const sender = { ...draft, senderName: 'x'.repeat(129) };
+  assert.equal(channelAddresses(sender).senderProblem.field, 'name');
+  assert.equal(form.buildChannel(sender, channel, 'enhanced', 22).errors.sender, channelAddresses(sender).senderProblem.message);
+});
+check('delivery inspection preserves acknowledged email labels by attempt identity', () => {
+  const attempts = [{ id: 'attempt-one', kind: 'test', nodeId: 'a', channelId: 'preview-private', destinationId: 'destination-private', provider: 'smtp', state: 'accepted', failures: 0 }];
+  const markup = text(render(React.createElement(DeliveryTable, { attempts, compact: true, recipientLabels: new Map([['attempt-one', 'ops@example.test']]) }), [], 22));
+  assert.ok(markup.includes('ops@example.test'));
+  assert.ok(!markup.includes('channel preview-private'));
+});
 check('older or unreported protocol: read-only events with an upgrade note, and the new providers gated', () => {
   for (const protocol of [21, undefined]) {
     const markup = renderForm(undefined, protocol);
@@ -433,6 +456,13 @@ check('save readback compares writable settings and credentials, ignoring resour
     }
     response = [{ channel, configConflict: false }]; assert.equal((await client.channels())[0].channel.id, 'stored');
     response = []; assert.deepEqual(await client.channels(), []);
+    const attempt = { id: 'attempt', nodeId: 'a', kind: 'down', provider: 'homeassistant', state: 'queued', failures: 0 };
+    for (response of [null, {}, ['bad'], [{}], [{ ...attempt, failures: '0' }], [{ ...attempt, held: 'yes' }], [attempt, attempt]]) {
+      await assert.rejects(() => client.deliveries(), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    }
+    response = []; assert.deepEqual(await client.deliveries(), [], 'a real empty array remains a successful empty read');
+    response = [attempt]; assert.deepEqual(await client.deliveries(), [attempt]);
+    check('malformed delivery responses surface as read failures rather than empty results', () => {});
     check('save acknowledgements and catalogue reconciliation reject unreadable identities and malformed lists', () => {});
   } finally { globalThis.fetch = previousFetch; globalThis.location = previousLocation; }
 }

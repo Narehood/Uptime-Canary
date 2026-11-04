@@ -1494,3 +1494,11 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .preview-destination { display: block; margin-top: 4px; overflow-wrap: anywhere; font-size: 11.5px; }
 
 .preview-out .grow > small { display: block; }
+
+.channel-editor .modal, .channels-view .modal { scroll-padding-block-start: 84px; }
+@container app (max-width: 699px) {
+  .preview-out li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 8px 10px; }
+  .preview-out li > .prov-ic { grid-row: 1 / span 2; }
+  .preview-out li > .grow, .preview-out li > :last-child { grid-column: 2; }
+  .preview-out li > :last-child { justify-self: start; }
+}

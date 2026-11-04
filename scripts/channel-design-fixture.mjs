@@ -13,7 +13,7 @@ const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
 let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [], channelReadsFail = false;
-let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels, deliveriesFail = false;
+let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels, deliveriesFail = false, deliveriesMalformed = false;
 const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
@@ -24,6 +24,7 @@ function reset(empty = false, extras = false) {
   attempts = [];
   channelReadsFail = false;
   deliveriesFail = false;
+  deliveriesMalformed = false;
   monitorChannels = { website: ['ha-office', 'matrix-ops'], api: ['matrix-ops'] };
   channels = empty ? [] : [
     makeChannel('ha-office', 'Office status light', { kind: 'homeassistant', homeassistant: {
@@ -74,7 +75,7 @@ const server = createServer(async (req, res) => {
       channels = channels.filter(view => view.channel.id !== url.searchParams.get('id')); return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/deliveries-failure') {
-      deliveriesFail = url.searchParams.get('on') === '1'; return reply({ fixture: true, deliveriesFail });
+      deliveriesFail = url.searchParams.get('on') === '1'; deliveriesMalformed = url.searchParams.get('malformed') === '1'; return reply({ fixture: true, deliveriesFail, deliveriesMalformed });
     }
     if (url.pathname.startsWith('/api/')) {
       requests.push({ method: req.method, path: url.pathname });
@@ -125,7 +126,9 @@ const server = createServer(async (req, res) => {
       }
       if (url.pathname === '/api/monitors') return reply(overview().monitors);
       if (url.pathname === '/api/notification-deliveries') return role === 'viewer'
-        ? reply({ error: 'Viewer access refused by fixture.' }, 403) : deliveriesFail ? reply({ error: 'The delivery log cannot be read in the private fixture.' }, 503) : reply(attempts);
+        ? reply({ error: 'Viewer access refused by fixture.' }, 403) : deliveriesFail
+          ? deliveriesMalformed ? reply({ fixture: true, unreadableDeliveryPayload: true }) : reply({ error: 'The delivery log cannot be read in the private fixture.' }, 503)
+          : reply(attempts);
       return reply({ error: 'Not implemented by visual fixture' }, 404);
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {

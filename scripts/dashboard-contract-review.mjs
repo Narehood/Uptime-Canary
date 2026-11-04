@@ -705,6 +705,9 @@ async function finishReview() {
 // are attached and test confirmations are cancelled before provider I/O.
 async function automationBrowserReview() {
   const [A] = state.nodes;
+  const jsonReplyHeaders = paused => [{ name: 'Content-Type', value: 'application/json' }, {
+    name: 'Access-Control-Allow-Origin', value: String(Object.entries(paused.request.headers ?? {}).find(([key]) => key.toLowerCase() === 'origin')?.[1] ?? '*'),
+  }];
   await launchBrowser();
   await step('Automation browser: sign in', () => signIn(A));
   for (const kind of ['homeassistant', 'matrix']) {
@@ -781,11 +784,19 @@ async function automationBrowserReview() {
       await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
       assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'disconnect consults the draft guard');
       const originalHook = requestHook;
+      let injectAttempts = false, malformedAttemptRead = false;
       requestHook = async paused => {
         if (paused.request.url === A.url + '/api/notification-channels/preview-test' && paused.request.method === 'POST') {
           await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 202,
-            responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+            responseHeaders: jsonReplyHeaders(paused),
             body: Buffer.from(JSON.stringify({ fixture: true, acknowledgementUnreadable: true })).toString('base64') });
+          return true;
+        }
+        if (injectAttempts && paused.request.method === 'GET' && paused.request.url.startsWith(A.url + '/api/notification-deliveries?')) {
+          const attempts = [{ id: `private-${kind}-readback`, nodeId: A.id, kind: 'test', channelId: saved.id,
+            destinationId: 'private-readback-destination', provider: kind, state: 'queued', failures: 0 }];
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 200,
+            responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify(malformedAttemptRead ? {} : attempts)).toString('base64') });
           return true;
         }
         return Boolean(await originalHook?.(paused));
@@ -799,6 +810,12 @@ async function automationBrowserReview() {
         assert.equal(await page.eval(`location.hash`), `#/channels/${saved.id}/edit`, 'inspection does not leave the editor');
         assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'inspection preserves the unsaved draft');
         await text('No matching attempts in this recent view.');
+        injectAttempts = true;
+        await click('Refresh attempts', 'dialog[open]');
+        await until(() => page.eval(`document.querySelector('dialog .deliveries tbody')?.innerText.includes(${J(saved.name)})`), 'inspection displays the injected private attempt');
+        malformedAttemptRead = true;
+        await click('Refresh attempts', 'dialog[open]'); await text('Attempt refresh failed');
+        assert.equal(await page.eval(`document.querySelector('dialog .deliveries tbody').innerText.includes(${J(saved.name)})`), true, 'unreadable refresh retains last loaded rows');
         await click('Back to test result', 'dialog[open]'); await text('Test submission unconfirmed');
         await page.eval(`document.querySelector('dialog[open] .modal-h button').click()`);
       } finally { requestHook = originalHook; }
@@ -815,7 +832,7 @@ async function automationBrowserReview() {
           interruptedWrites++;
           committed = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', JSON.parse(paused.request.postData));
           await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: committed.status,
-            responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+            responseHeaders: jsonReplyHeaders(paused),
             body: Buffer.from(JSON.stringify(committed.status === 200 ? { acknowledgementUnreadable: true } : committed.value)).toString('base64') });
           return true;
         }
@@ -844,7 +861,7 @@ async function automationBrowserReview() {
       assert.equal(await page.eval(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save changes').disabled`), true);
       await nav('#/notifications'); await heading('Notifications');
       assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'save readback and deletion recovery send no notifications');
-      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, uncertainSaveReadback: true, deletedChannelDraftRetained: true, allEventsRestored: true, realSends: 0 };
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, unreadableReadRetainsAttempts: true, uncertainSaveReadback: true, deletedChannelDraftRetained: true, allEventsRestored: true, realSends: 0 };
     });
   }
 }

@@ -153,7 +153,7 @@ function AttemptWhy({ attempt }: { attempt: DeliveryAttemptView }) {
   return <div className="why">{parts.map((part, index) => <span key={index}>{part}</span>)}</div>;
 }
 
-export function DeliveryTable({ attempts, compact }: { attempts: DeliveryAttemptView[]; compact?: boolean }) {
+export function DeliveryTable({ attempts, compact, recipientLabels }: { attempts: DeliveryAttemptView[]; compact?: boolean; recipientLabels?: ReadonlyMap<string, string> }) {
   const { monitorMap, channels, overview } = useCanary();
   return (
     <div className="tbl-wrap">
@@ -169,7 +169,7 @@ export function DeliveryTable({ attempts, compact }: { attempts: DeliveryAttempt
           {attempts.map(attempt => {
             const monitor = attempt.monitorId ? monitorMap.get(attempt.monitorId)?.monitor : undefined;
             const channel = attempt.channelId ? channels.map.get(attempt.channelId)?.channel : undefined;
-            const state = attemptState(attempt.state);
+            const state = attemptState(attempt.state), recipient = recipientLabels?.get(attempt.id);
             return (
               <tr key={attempt.id}>
                 <td data-label="Last attempt" className="tn">{attempt.lastAttemptAt ? <Time at={attempt.lastAttemptAt} now={overview.now} /> : <span className="muted">not yet</span>}</td>
@@ -181,7 +181,7 @@ export function DeliveryTable({ attempts, compact }: { attempts: DeliveryAttempt
                   {attempt.incidentId ? <div className="muted small">incident <span className="mono" title={attempt.incidentId}>{shortId(attempt.incidentId)}</span></div> : null}
                 </td>
                 <td data-label="Destination">
-                  <span className="attempt-destination"><ProviderIcon kind={attempt.provider} /><span>{channel ? <a href={href('channels', channel.id, 'edit')}>{channel.name}</a> : attempt.channelId ? <span className="muted">channel {shortId(attempt.channelId)}</span> : providerLabel(attempt.provider)}</span></span>
+                  <span className="attempt-destination"><ProviderIcon kind={attempt.provider} /><span>{recipient ?? (channel ? <a href={href('channels', channel.id, 'edit')}>{channel.name}</a> : attempt.channelId ? <span className="muted">channel {shortId(attempt.channelId)}</span> : providerLabel(attempt.provider))}</span></span>
                   {attempt.destinationId ? <div className="muted small">destination <span className="mono" title={attempt.destinationId}>{shortId(attempt.destinationId)}</span></div> : null}
                 </td>
                 <td data-label="Outcome" className="full">
@@ -381,19 +381,24 @@ const PREVIEW_WAIT_MS = 30_000;
  * least 5 seconds apart, shared with saved channels' tests.
  */
 /** Read-only inspection stays inside the test dialog, so the editor and its credentials remain mounted. */
-function TestAttemptsInspector({ provider, attemptIds, onBack, onClose }: { provider: Kind; attemptIds?: string[]; onBack: () => void; onClose: () => void }) {
+function TestAttemptsInspector({ provider, attemptIds, recipientLabels, onBack, onClose }: { provider: Kind; attemptIds?: string[]; recipientLabels?: ReadonlyMap<string, string>; onBack: () => void; onClose: () => void }) {
   const { api, endpoint, connection } = useCanary();
-  const heading = useRef<HTMLHeadingElement>(null);
+  const region = useRef<HTMLElement>(null);
   const recent = useResource<DeliveryAttemptView[]>(`${connection.identity}|inspect-test|${provider}|${attemptIds?.join(',') ?? 'unconfirmed'}`, signal => api.deliveries({ limit: 200 }, signal), 15_000);
-  useEffect(() => { heading.current?.focus(); }, []);
+  useLayoutEffect(() => {
+    const dialog = region.current?.closest('dialog');
+    if (!dialog) return;
+    dialog.scrollTop = 0;
+    const title = dialog.querySelector<HTMLElement>('.modal-h h2');
+    if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
+  }, []);
   const rows = (recent.data ?? []).filter(attempt => attempt.kind === 'test' && attempt.provider === provider && (!attemptIds || attemptIds.includes(attempt.id)));
-  return <section aria-label="Recent test attempts">
-    <h3 ref={heading} tabIndex={-1}>Recent {providerLabel(provider)} test attempts</h3>
+  return <section ref={region}>
     <p className="muted small">Read from <span className="mono">{endpoint}</span>'s 200 most recent attempts. {attemptIds ? 'Only IDs confirmed by this test reply are shown.' : 'These may include other test batches; a match to this submission is not confirmed.'} Older or delayed attempts may be outside this view. Your channel settings stay in the form.</p>
-    {recent.error ? <Banner title="Test attempts could not be read" tone="down">{describeFailure(recent.error)}</Banner>
-      : !recent.data ? <p role="status">Loading recent test attempts...</p>
-      : rows.length ? <DeliveryTable attempts={rows} compact />
-      : <p>No matching attempts in this recent view. This does not prove the test was not queued.</p>}
+    {recent.error ? <Banner title={recent.data ? 'Attempt refresh failed' : 'Test attempts could not be read'} tone={recent.data ? 'warn' : 'down'}>{recent.data ? 'Showing the last loaded attempts; this view could not be updated. ' : ''}{describeFailure(recent.error)}</Banner> : null}
+    {recent.data ? rows.length ? <DeliveryTable attempts={rows} compact recipientLabels={recipientLabels} />
+      : <p>{recent.error ? 'No matching attempts in the last loaded view.' : 'No matching attempts in this recent view.'} This does not prove the test was not queued.</p>
+      : !recent.error ? <p role="status">Loading recent test attempts...</p> : null}
     <p className="muted small">Accepted means the provider acknowledged the request; it is not proof of device or inbox delivery. Do not resend an unconfirmed test just because it is absent here.</p>
     <div className="row-wrap modal-acts">
       <button type="button" className="btn primary" onClick={onBack}>Back to test result</button>
@@ -492,9 +497,9 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
   const settled = Boolean(attempts?.every(attempt => SETTLED.has(attempt.state)));
   const completion = readFailure ? waiting ? 'Retrying updates; these are the last reported results.' : 'Stopped waiting after outcome updates failed. Check delivery attempts for later outcomes.' : waiting ? 'Waiting for outcomes.' : settled ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
   return (
-    <Modal title={inspecting ? 'Recent test attempts' : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
+    <Modal title={inspecting ? `Recent ${providerLabel(kind)} test attempts` : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
       <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${readFailure ? `Outcome updates unavailable: ${readFailure}. ` : ''}${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
-      {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
+      {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} recipientLabels={recipientLabels.current} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
         <>
           <p><Glyph tone="up" /> {endpoint} queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
           {readFailure ? <p className="fwarn"><Glyph tone="warn" /><span><b>Outcome updates unavailable.</b> {readFailure} The last reported results are kept; use View delivery attempts to investigate.</span></p> : null}
@@ -827,6 +832,32 @@ const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun
 /** Channel keys this form writes. Other stored keys belong to the channel, not its provider, so they survive a provider change. */
 const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault', 'events'];
 
+/** Preserve validation priority while keeping the exact control that can correct each address error. */
+export function channelAddresses(draft: Pick<ChannelDraft, 'senderEmail' | 'senderName' | 'recipients'>): {
+  sender: EmailAddress; recipients: EmailAddress[];
+  senderProblem?: { field: 'email' | 'name'; message: string };
+  recipientProblem?: { key?: number; field: 'email' | 'name' | 'collection'; message: string };
+} {
+  const sender = draft.senderEmail.trim();
+  let senderProblem: { field: 'email' | 'name'; message: string } | undefined;
+  let recipientProblem: { key?: number; field: 'email' | 'name' | 'collection'; message: string } | undefined;
+  if (!EMAIL.test(sender)) senderProblem = { field: 'email', message: 'Enter the sender’s email address, like alerts@example.com.' };
+  else if (draft.senderName.length > 128 || control(draft.senderName)) senderProblem = { field: 'name', message: 'Use a sender name of at most 128 characters.' };
+  const recipients: EmailAddress[] = [], seen = new Set<string>();
+  for (const row of draft.recipients) {
+    const address = row.email.trim();
+    if (!address && !row.name.trim()) continue;
+    if (!EMAIL.test(address)) { recipientProblem = { key: row.key, field: 'email', message: `“${address || '(empty)'}” isn’t an email address.` }; continue; }
+    if (seen.has(address.toLowerCase())) { recipientProblem = { key: row.key, field: 'email', message: `${address} is listed twice.` }; continue; }
+    if (row.name.length > 128 || control(row.name)) { recipientProblem = { key: row.key, field: 'name', message: 'Recipient names are at most 128 characters.' }; continue; }
+    seen.add(address.toLowerCase());
+    recipients.push({ email: address, ...(row.name.trim() ? { name: row.name.trim() } : {}) });
+  }
+  if (!recipients.length && !recipientProblem) recipientProblem = { key: draft.recipients[0]?.key, field: 'email', message: 'Add at least one recipient.' };
+  if (recipients.length > 50) recipientProblem = { field: 'collection', message: 'Use at most 50 recipients.' };
+  return { sender: { email: sender, ...(draft.senderName.trim() ? { name: draft.senderName.trim() } : {}) }, recipients, senderProblem, recipientProblem };
+}
+
 /**
  * `level` is the selected node's template grammar (alertTemplates.ts templateCapability). Peer protocol 20 applies templates
  * to Discord and adds the card layout; for an older or unknown node the form writes neither the layout nor newly typed
@@ -846,24 +877,11 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
   }
   const email = PROVIDER.get(kind)!.email;
   if (email) {
-    const sender = draft.senderEmail.trim();
-    if (!EMAIL.test(sender)) errors.sender = 'Enter the sender’s email address, like alerts@example.com.';
-    else if (draft.senderName.length > 128 || control(draft.senderName)) errors.sender = 'Use a sender name of at most 128 characters.';
-    config.sender = { email: sender, ...(draft.senderName.trim() ? { name: draft.senderName.trim() } : {}) };
-    const recipients: EmailAddress[] = [];
-    const seen = new Set<string>();
-    for (const row of draft.recipients) {
-      const address = row.email.trim();
-      if (!address && !row.name.trim()) continue;
-      if (!EMAIL.test(address)) { errors.recipients = `“${address || '(empty)'}” isn’t an email address.`; continue; }
-      if (seen.has(address.toLowerCase())) { errors.recipients = `${address} is listed twice.`; continue; }
-      if (row.name.length > 128 || control(row.name)) { errors.recipients = 'Recipient names are at most 128 characters.'; continue; }
-      seen.add(address.toLowerCase());
-      recipients.push({ email: address, ...(row.name.trim() ? { name: row.name.trim() } : {}) });
-    }
-    if (!recipients.length && !errors.recipients) errors.recipients = 'Add at least one recipient.';
-    if (recipients.length > 50) errors.recipients = 'Use at most 50 recipients.';
-    config.recipients = recipients;
+    const addresses = channelAddresses(draft);
+    if (addresses.senderProblem) errors.sender = addresses.senderProblem.message;
+    if (addresses.recipientProblem) errors.recipients = addresses.recipientProblem.message;
+    config.sender = addresses.sender;
+    config.recipients = addresses.recipients;
   }
   const apiKey = (value: string): string => {
     if (!value) errors.apiKey = 'Enter the API key.';
@@ -1092,6 +1110,8 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));
   const smtpAuthField = !visible.smtpAuth ? undefined : control(draft.smtpUser) ? 'user' : control(draft.smtpPass) ? 'password' : draft.smtpTls === 'plain' ? 'both' : !draft.smtpUser ? 'user' : 'password';
   const provider = PROVIDER.get(draft.kind)!;
+  const addressIssues = provider.email ? channelAddresses(draft) : undefined;
+  const recipientIssue = visible.recipients ? addressIssues?.recipientProblem : undefined;
   const current = existing?.channel ?? base;
   const missing = Boolean(id && base && !existing);
   const saveUnconfirmed = failure?.disposition === 'unconfirmed';
@@ -1148,6 +1168,8 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
   };
   const errorEntries = Object.entries(visible);
   const fieldLabel = (field: CField): string => {
+    if (field === 'sender') return addressIssues?.senderProblem?.field === 'name' ? 'From name (optional)' : 'From address';
+    if (field === 'recipients' && recipientIssue?.key !== undefined) return `Recipient ${draft.recipients.findIndex(row => row.key === recipientIssue.key) + 1} ${recipientIssue.field}`;
     if (field === 'serverUrl' && draft.kind === 'ntfy') return 'Server URL (optional)';
     if (field === 'serverUrl') return draft.kind === 'homeassistant' ? 'Home Assistant URL' : draft.kind === 'matrix' ? 'Homeserver URL' : 'Server URL';
     if (field === 'accessToken' && draft.kind === 'homeassistant') return 'Long-lived access token';
@@ -1155,7 +1177,6 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
     if (field === 'sound') return 'Sound (optional)';
     if (field === 'tags') return 'Tags (optional)';
     if (field === 'appToken' && draft.kind === 'pushover') return 'Application API token';
-    if (field === 'sender') return 'From address';
     if (field === 'threadId') return 'Forum topic ID (optional)';
     if (field === 'baseUrl') return 'API base URL (optional)';
     if (field === 'smtpPort') return 'Port (optional)';
@@ -1169,7 +1190,8 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
     const error = [...form.querySelectorAll<HTMLElement>('[id]')].find(element => element.textContent?.trim() === message);
     const clearSmtp = entry[0] === 'smtpAuth' && draft.smtpTls === 'plain' ? form.querySelector<HTMLElement>('[data-clear-smtp]') : null;
     const described = error?.id ? [...form.querySelectorAll<HTMLElement>('input,select,textarea')].find(element => !element.matches(':disabled') && element.getAttribute('aria-describedby')?.split(/\s+/u).includes(error.id)) : null;
-    const control = clearSmtp ?? described ?? error?.closest('.fld')?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)');
+    const recipientGroup = entry[0] === 'recipients' && recipientIssue?.field === 'collection' ? form.querySelector<HTMLElement>('[data-recipient-group]') : null;
+    const control = clearSmtp ?? recipientGroup ?? described ?? error?.closest('.fld')?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)');
     const target = control ?? error;
     if (target) { if (!control) target.tabIndex = -1; target.scrollIntoView({ block: 'center' }); target.focus({ preventScroll: true }); }
   };
@@ -1295,16 +1317,16 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
           {provider.email ? (
             <>
               <h3 className="fsec full">Addresses</h3>
-              <TextField mono label="From address" value={draft.senderEmail} onChange={value => set('senderEmail', value)} error={visible.sender} placeholder="alerts@example.com" disabled={saving}
+              <TextField mono label="From address" value={draft.senderEmail} onChange={value => set('senderEmail', value)} error={addressIssues?.senderProblem?.field === 'email' ? visible.sender : undefined} placeholder="alerts@example.com" disabled={saving}
                 hint="Must be a sender or domain your provider has verified." />
-              <TextField label="From name (optional)" value={draft.senderName} onChange={value => set('senderName', value)} placeholder="Uptime Canary" maxLength={128} disabled={saving} />
-              <fieldset className="fld full hdr-f" disabled={saving} aria-invalid={visible.recipients ? true : undefined}>
+              <TextField label="From name (optional)" value={draft.senderName} onChange={value => set('senderName', value)} error={addressIssues?.senderProblem?.field === 'name' ? visible.sender : undefined} placeholder="Uptime Canary" maxLength={128} disabled={saving} />
+              <fieldset className="fld full hdr-f" data-recipient-group tabIndex={-1} disabled={saving} aria-invalid={visible.recipients ? true : undefined} aria-describedby={`${formId}-rcpt-h${visible.recipients ? ` ${formId}-rcpt` : ''}`}>
                 <legend>Recipients <span className="muted">({draft.recipients.filter(row => row.email.trim()).length} of at most 50)</span></legend>
                 <div className="hdr-rows">
                   {draft.recipients.map((row, index) => (
                     <div className="hdr-row" key={row.key}>
-                      <input type="email" className="mono" value={row.email} placeholder="oncall@example.com" aria-label={`Recipient ${index + 1} email`} autoComplete="off" spellCheck={false} onChange={event => updateRecipient(row.key, { email: event.target.value })} />
-                      <input type="text" value={row.name} placeholder="name (optional)" aria-label={`Recipient ${index + 1} name`} autoComplete="off" onChange={event => updateRecipient(row.key, { name: event.target.value })} />
+                      <input type="email" className="mono" value={row.email} placeholder="oncall@example.com" aria-label={`Recipient ${index + 1} email`} aria-invalid={recipientIssue?.key === row.key && recipientIssue.field === 'email' ? true : undefined} aria-describedby={recipientIssue?.key === row.key && recipientIssue.field === 'email' ? `${formId}-rcpt` : undefined} autoComplete="off" spellCheck={false} onChange={event => updateRecipient(row.key, { email: event.target.value })} />
+                      <input type="text" value={row.name} placeholder="name (optional)" aria-label={`Recipient ${index + 1} name`} aria-invalid={recipientIssue?.key === row.key && recipientIssue.field === 'name' ? true : undefined} aria-describedby={recipientIssue?.key === row.key && recipientIssue.field === 'name' ? `${formId}-rcpt` : undefined} autoComplete="off" onChange={event => updateRecipient(row.key, { name: event.target.value })} />
                       <button type="button" className="icon-btn sm" onClick={() => set('recipients', draft.recipients.filter(other => other.key !== row.key))} aria-label={`Remove recipient ${row.email || index + 1}`} disabled={draft.recipients.length === 1}><Icon name="close" /></button>
                     </div>
                   ))}
@@ -1312,7 +1334,7 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
                 <div className="row-wrap pick-acts">
                   <button type="button" className="linkbtn" onClick={() => set('recipients', [...draft.recipients, { key: ++recipientKey, email: '', name: '' }])} disabled={draft.recipients.length >= 50}><Icon name="plus" />Add recipient</button>
                 </div>
-                <small>Each recipient is a separate destination with its own retries, outcome and receipt. Adding one later doesn’t replay finished outages to it.</small>
+                <small id={`${formId}-rcpt-h`}>Each recipient is a separate destination with its own retries, outcome and receipt. Adding one later doesn’t replay finished outages to it.</small>
                 <ErrorText id={`${formId}-rcpt`}>{visible.recipients}</ErrorText>
               </fieldset>
             </>

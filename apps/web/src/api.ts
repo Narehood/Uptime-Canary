@@ -44,25 +44,32 @@ export class ApiFailure extends Error {
   }
 }
 
-/** A successful test reply must identify real one-shot attempts; an unreadable reply never proves rejection. */
-export function readChannelTestAttempts(value: unknown): DeliveryAttemptView[] | undefined {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 50) return undefined;
+/** Delivery reads are arrays of identifiable attempts; unreadable JSON is never an empty successful read. */
+export function readDeliveryAttempts(value: unknown): DeliveryAttemptView[] | undefined {
+  if (!Array.isArray(value) || value.length > 1000) return undefined;
   const states = new Set(['queued', 'sending', 'retrying', 'accepted', 'held', 'failed', 'cancelled', 'unknown', 'unavailable']);
   const ids = new Set<string>();
   for (const item of value) {
     if (!isRecord(item) || typeof item.id !== 'string' || !item.id || ids.has(item.id)
       || typeof item.nodeId !== 'string' || !item.nodeId || typeof item.provider !== 'string' || !item.provider
-      || item.kind !== 'test' || typeof item.state !== 'string' || !states.has(item.state)
+      || typeof item.kind !== 'string' || !['test', 'down', 'repeat', 'recovery'].includes(item.kind) || typeof item.state !== 'string' || !states.has(item.state)
       || !Number.isInteger(item.failures) || (item.failures as number) < 0) return undefined;
-    for (const key of ['channelId', 'destinationId', 'errorCode', 'providerId'] as const) {
+    for (const key of ['channelId', 'destinationId', 'monitorId', 'incidentId', 'sourceIncidentId', 'satisfiedByReceiptId', 'errorCode', 'providerId'] as const) {
       if (item[key] !== undefined && typeof item[key] !== 'string') return undefined;
     }
-    for (const key of ['httpStatus', 'lastAttemptAt', 'nextAttemptAt'] as const) {
+    for (const key of ['httpStatus', 'lastAttemptAt', 'nextAttemptAt', 'slot'] as const) {
       if (item[key] !== undefined && (typeof item[key] !== 'number' || !Number.isFinite(item[key]))) return undefined;
     }
+    if (item.held !== undefined && typeof item.held !== 'boolean') return undefined;
     ids.add(item.id);
   }
   return value as DeliveryAttemptView[];
+}
+
+/** A queue acknowledgement additionally requires a nonempty bounded one-shot batch. */
+export function readChannelTestAttempts(value: unknown): DeliveryAttemptView[] | undefined {
+  const attempts = readDeliveryAttempts(value);
+  return attempts && attempts.length > 0 && attempts.length <= 50 && attempts.every(attempt => attempt.kind === 'test') ? attempts : undefined;
 }
 
 export function normalizeApiUrl(input: string): string {
@@ -842,7 +849,9 @@ export class CanaryApi {
   async deliveries(options: { monitorId?: string; incidentId?: string; limit?: number } = {}, signal?: AbortSignal): Promise<DeliveryAttemptView[]> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(options)) if (value !== undefined) query.set(key, String(value));
-    return list(await this.call<unknown>(`/api/notification-deliveries?${query}`, 'GET', undefined, signal));
+    const attempts = readDeliveryAttempts(await this.call<unknown>(`/api/notification-deliveries?${query}`, 'GET', undefined, signal));
+    if (!attempts) throw new ApiFailure(200, 'The node sent delivery attempts this dashboard could not read.');
+    return attempts;
   }
   async maintenance(signal?: AbortSignal): Promise<MaintenanceView[]> { return list(await this.call<unknown>('/api/maintenance', 'GET', undefined, signal)); }
   createMaintenance(input: MaintenanceInput): Promise<Maintenance> { return this.call('/api/maintenance', 'POST', input); }
