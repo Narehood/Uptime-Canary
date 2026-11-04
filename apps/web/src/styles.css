@@ -1499,3 +1499,13 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .preview-out li > .grow, .preview-out li > :last-child { grid-column: 2; }
   .preview-out li > :last-child { justify-self: start; }
 }
+
+.channel-recipient > label { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--text-2); font-size: 12px; }
+.channel-recipient > label > input { width: 100%; min-width: 0; }
+.channel-recipient > button { align-self: end; }
+.channel-editor .hdr-rows:has(.channel-recipient) { gap: 14px; }
+@container app (max-width: 699px) {
+  .channel-editor .seg span { min-height: 44px; }
+  .channel-recipient > label:nth-child(2) { grid-column: 1; }
+  .channel-recipient > button { align-self: center; }
+}

@@ -339,7 +339,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
       <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{result ? `${endpoint} queued ${plural(result.length, 'test attempt')}. Outcomes are available in delivery attempts; queued does not mean delivered.` : ''}</p>
       {result ? (
         <>
-          <p><Glyph tone="up" /> {endpoint} queued {plural(result.length, 'test attempt')}. Each makes one attempt per destination, without automatic retries.</p>
+          <p><b>{endpoint}</b> queued {plural(result.length, 'test attempt')}. Each makes one attempt per destination, without automatic retries.</p>
           <p className="muted small">Outcomes appear under Delivery attempts within a few seconds. Accepted means the provider acknowledged the message, not that it reached an inbox, chat or device.</p>
           <div className="row-wrap modal-acts">
             <a className="btn primary" href={deliveryHref(channel.id)} onClick={onClose}><Icon name="send" />Open delivery attempts</a>
@@ -501,7 +501,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
       <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${readFailure ? `Outcome updates unavailable: ${readFailure}. ` : ''}${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
       {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} recipientLabels={recipientLabels.current} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
         <>
-          <p><Glyph tone="up" /> {endpoint} queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
+          <p><b>{endpoint}</b> queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
           {readFailure ? <p className="fwarn"><Glyph tone="warn" /><span><b>Outcome updates unavailable.</b> {readFailure} The last reported results are kept; use View delivery attempts to investigate.</span></p> : null}
           <PreviewOutcomeList attempts={attempts} recipientLabels={recipientLabels.current} />
           <p>{completion}</p>
@@ -1242,7 +1242,7 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
               </select>
             )}
             <small id={`${formId}-provider-h`}>{provider.hint}</small>
-            <small>13 providers, including Home Assistant, Matrix and email{!eventsReady ? '; Home Assistant / Matrix need peer protocol 22' : ''}.</small>
+            {!current || providerOpen ? <small>13 providers, including Home Assistant, Matrix and email{!eventsReady ? '; Home Assistant / Matrix need peer protocol 22' : ''}.</small> : null}
             {current && current.config.kind !== draft.kind ? <small className="fwarn"><Glyph tone="warn" /><span>A different provider is a new destination. Alerts already owed to the old one aren’t moved.</span></small> : null}
             {!eventsReady && PROTOCOL_22_KINDS.has(draft.kind) ? <small className="fwarn"><Glyph tone="warn" /><span>{provider.label} needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Saving and testing are refused until every node is upgraded.</span></small> : null}
           </fieldset>
@@ -1324,9 +1324,13 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
                 <legend>Recipients <span className="muted">({draft.recipients.filter(row => row.email.trim()).length} of at most 50)</span></legend>
                 <div className="hdr-rows">
                   {draft.recipients.map((row, index) => (
-                    <div className="hdr-row" key={row.key}>
-                      <input type="email" className="mono" value={row.email} placeholder="oncall@example.com" aria-label={`Recipient ${index + 1} email`} aria-invalid={recipientIssue?.key === row.key && recipientIssue.field === 'email' ? true : undefined} aria-describedby={recipientIssue?.key === row.key && recipientIssue.field === 'email' ? `${formId}-rcpt` : undefined} autoComplete="off" spellCheck={false} onChange={event => updateRecipient(row.key, { email: event.target.value })} />
-                      <input type="text" value={row.name} placeholder="name (optional)" aria-label={`Recipient ${index + 1} name`} aria-invalid={recipientIssue?.key === row.key && recipientIssue.field === 'name' ? true : undefined} aria-describedby={recipientIssue?.key === row.key && recipientIssue.field === 'name' ? `${formId}-rcpt` : undefined} autoComplete="off" onChange={event => updateRecipient(row.key, { name: event.target.value })} />
+                    <div className="hdr-row channel-recipient" key={row.key}>
+                      <label><span>Recipient {index + 1} email</span>
+                        <input type="email" className="mono" value={row.email} placeholder="oncall@example.com" aria-label={`Recipient ${index + 1} email`} aria-invalid={recipientIssue?.key === row.key && recipientIssue.field === 'email' ? true : undefined} aria-describedby={recipientIssue?.key === row.key && recipientIssue.field === 'email' ? `${formId}-rcpt` : undefined} autoComplete="off" spellCheck={false} onChange={event => updateRecipient(row.key, { email: event.target.value })} />
+                      </label>
+                      <label><span>Recipient {index + 1} name <span className="muted">(optional)</span></span>
+                        <input type="text" value={row.name} placeholder="name (optional)" aria-label={`Recipient ${index + 1} name`} aria-invalid={recipientIssue?.key === row.key && recipientIssue.field === 'name' ? true : undefined} aria-describedby={recipientIssue?.key === row.key && recipientIssue.field === 'name' ? `${formId}-rcpt` : undefined} autoComplete="off" onChange={event => updateRecipient(row.key, { name: event.target.value })} />
+                      </label>
                       <button type="button" className="icon-btn sm" onClick={() => set('recipients', draft.recipients.filter(other => other.key !== row.key))} aria-label={`Remove recipient ${row.email || index + 1}`} disabled={draft.recipients.length === 1}><Icon name="close" /></button>
                     </div>
                   ))}
