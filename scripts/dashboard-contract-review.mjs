@@ -868,7 +868,7 @@ async function automationBrowserReview() {
     const token = secret(); secrets.add(token);
     const made = await api(A, '/api/notification-channels', 'POST', {
       name: 'Browser rejected-sign-in draft', enabled: true,
-      config: { kind: 'homeassistant', homeassistant: { serverUrl: state.sink + '/ha', accessToken: token, eventType: 'uptime_canary', allowInsecureHttp: true } },
+      config: { kind: 'homeassistant', homeassistant: { baseURL: state.sink + '/ha', accessToken: token, eventType: 'uptime_canary', allowInsecureHTTP: true } },
     });
     assert.equal(made.status, 201, made.text);
     const saved = made.value, originalHook = requestHook;
