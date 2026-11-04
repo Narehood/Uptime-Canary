@@ -17,7 +17,7 @@ globalThis.React ??= React;
 const { register } = await import('tsx/esm/api');
 const scope = register({ namespace: 'automation-integrations', tsconfig: resolve(root, 'apps/web/tsconfig.json') });
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
-const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged } = await load('views/Channels.tsx');
+const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged, sameChannelSettings } = await load('views/Channels.tsx');
 const messaging = await load('messaging.ts');
 const apiModel = await load('api.ts');
 const routes = await load('router.ts');
@@ -356,5 +356,37 @@ check('Grafana dashboard: classic JSON, scoped variables and the exact exported 
   const scrape = panels.find(panel => panel.targets.some(target => target.expr === 'up{job=~"$job"}'));
   assert.ok(scrape && /not monitored-site health/u.test(scrape.description), 'exporter reachability is labelled apart from site health');
 });
+check('save readback compares writable settings and credentials, ignoring resource metadata and default encoding', () => {
+  const input = { name: 'Automation', enabled: true, config: channels[0] };
+  const stored = { ...input, id: 'stored', revision: 'revision', updatedAt: 1, isDefault: false, events: ['recovery', 'down', 'repeat'] };
+  assert.ok(sameChannelSettings(stored, input));
+  assert.ok(!sameChannelSettings(stored, { ...input, config: { ...channels[0], homeassistant: { ...channels[0].homeassistant, accessToken: 'different-private-value' } } }));
+  for (const change of [{ enabled: false }, { name: 'Other' }, { events: ['recovery'] }, { isDefault: true }, { futureKey: 1 }]) assert.ok(!sameChannelSettings(stored, { ...input, ...change }));
+  assert.ok(sameChannelSettings({ ...stored, futureKey: { a: 1, b: 2 } }, { ...input, futureKey: { b: 2, a: 1 } }));
+});
+// The actual API helpers run against bounded in-memory HTTP responses, never network or a database.
+{
+  const previousFetch = globalThis.fetch, previousLocation = globalThis.location;
+  const channel = { id: 'stored', revision: 'new-revision', updatedAt: 1, name: 'Automation', enabled: true, config: channels[0] };
+  let response;
+  globalThis.location = new URL('https://dashboard.example.test');
+  globalThis.fetch = async () => new Response(JSON.stringify(response), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  try {
+    const client = new apiModel.CanaryApi('https://node.example.test', 'private-fixture-token');
+    response = channel; assert.equal((await client.createChannel(channel)).id, 'stored');
+    assert.equal((await client.updateChannel('stored', channel)).revision, 'new-revision');
+    for (response of [null, {}, { ...channel, id: '' }, { ...channel, revision: '' }, { ...channel, config: {} }, { ...channel, deleted: true }, { ...channel, events: [['down']] }]) {
+      await assert.rejects(() => client.createChannel(channel), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    }
+    response = { ...channel, id: 'another-channel' };
+    await assert.rejects(() => client.updateChannel('stored', channel), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    for (response of [null, {}, [{ channel }], [{ channel, configConflict: false }, { channel, configConflict: false }]]) {
+      await assert.rejects(() => client.channels(), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    }
+    response = [{ channel, configConflict: false }]; assert.equal((await client.channels())[0].channel.id, 'stored');
+    response = []; assert.deepEqual(await client.channels(), []);
+    check('save acknowledgements and catalogue reconciliation reject unreadable identities and malformed lists', () => {});
+  } finally { globalThis.fetch = previousFetch; globalThis.location = previousLocation; }
+}
 console.log(`${passed} automation integration contract checks passed`);
 scope.unregister();

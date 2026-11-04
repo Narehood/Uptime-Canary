@@ -13,15 +13,17 @@ const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
 let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [], channelReadsFail = false;
+let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels;
 const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
   id, name, config, revision: `fixture-revision-${revision++}`, updatedAt: now() - 3600_000,
-  updatedBy: 'canary-eu', enabled: true, ...extra,
+  enabled: true, ...extra, // Go Channel metadata is id/revision/updatedAt, with no updatedBy field.
 }, configConflict: false });
 function reset(empty = false) {
   attempts = [];
   channelReadsFail = false;
+  monitorChannels = { website: ['ha-office', 'matrix-ops'], api: ['matrix-ops'] };
   channels = empty ? [] : [
     makeChannel('ha-office', 'Office status light', { kind: 'homeassistant', homeassistant: {
       baseURL: 'https://home.example.test', accessToken: 'private-fixture-ha-token', eventType: 'uptime_canary',
@@ -40,7 +42,7 @@ const monitor = (id, name, notificationIds) => ({ monitor: {
 const overview = () => ({
   build: { name: 'uptime-canary', version: 'development', peerProtocol: protocol, modified: null },
   node: { id: 'canary-eu', name: 'Europe' }, now: now(), user: { name: 'Alex Morgan', role },
-  monitors: [monitor('website', 'Website', ['ha-office', 'matrix-ops']), monitor('api', 'API health', ['matrix-ops'])],
+  monitors: [monitor('website', 'Website', monitorChannels.website), monitor('api', 'API health', monitorChannels.api)],
   nodes: [], incidents: [], notifications: [], groups: [], maintenance: [],
 });
 const vite = await createVite({ root: join(root, 'apps/web'), configFile: join(root, 'apps/web/vite.config.ts'),
@@ -50,15 +52,20 @@ const vite = await createVite({ root: join(root, 'apps/web'), configFile: join(r
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   const reply = (value, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+  const brokenReply = () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{'); };
   try {
     if (url.pathname === '/__fixture/reset') {
       protocol = Number(url.searchParams.get('protocol') || 22); role = url.searchParams.get('role') || 'admin';
       testMode = url.searchParams.get('test') || 'reject';
+      saveMode = url.searchParams.get('save') || 'normal'; deleteMode = url.searchParams.get('remove') || 'normal'; assignMode = url.searchParams.get('assign') || 'normal';
       reset(url.searchParams.get('empty') === '1'); requests.length = 0; return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
     if (url.pathname === '/__fixture/channels-failure') {
       channelReadsFail = url.searchParams.get('on') === '1'; return reply({ fixture: true, channelReadsFail });
+    }
+    if (url.pathname === '/__fixture/remove-channel') {
+      channels = channels.filter(view => view.channel.id !== url.searchParams.get('id')); return reply({ fixture: true });
     }
     if (url.pathname.startsWith('/api/')) {
       requests.push({ method: req.method, path: url.pathname });
@@ -68,6 +75,16 @@ const server = createServer(async (req, res) => {
       if (url.pathname === '/api/notification-channels' && req.method === 'GET') return channelReadsFail
         ? reply({ error: 'Channel refresh unavailable in the private fixture.' }, 503)
         : reply(role === 'viewer' ? channels.map(view => ({ ...view, channel: { ...view.channel, config: { kind: view.channel.config.kind } } })) : channels);
+      if (url.pathname.endsWith('/apply') && req.method === 'POST') {
+        let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
+        const body = JSON.parse(bytes), id = url.pathname.split('/').at(-2), changedIds = [];
+        for (const item of body.monitors ?? []) if (monitorChannels[item.id] && !monitorChannels[item.id].includes(id)) { monitorChannels[item.id].push(id); changedIds.push(item.id); }
+        return assignMode === 'malformed' ? brokenReply() : reply({ changedIds });
+      }
+      if (url.pathname.startsWith('/api/notification-channels/') && req.method === 'DELETE') {
+        const id = url.pathname.split('/').at(-1); channels = channels.filter(view => view.channel.id !== id);
+        return deleteMode === 'malformed' ? brokenReply() : (res.writeHead(204), res.end());
+      }
       if (url.pathname.endsWith('/test') || url.pathname.endsWith('/preview-test')) {
         if (role === 'viewer') return reply({ error: 'Viewer access refused by fixture.' }, 403);
         if (testMode === 'reject') return reply({ error: 'Visual fixture rejected the test; no notification was sent.' }, 400);
@@ -83,11 +100,13 @@ const server = createServer(async (req, res) => {
         return reply({ ...(preview ? { preview: true } : {}), attempts: [attempt] }, 202);
       }
       if (url.pathname.startsWith('/api/notification-channels') && ['POST', 'PUT'].includes(req.method)) {
+        if (saveMode === 'reject') return reply({ error: 'Visual fixture rejected the save; nothing changed.' }, 400);
         let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
         const body = JSON.parse(bytes), id = req.method === 'PUT' ? url.pathname.split('/').at(-1) : `fixture-created-${revision}`;
         const saved = makeChannel(id, body.name, body.config, body);
         saved.channel.revision = `fixture-revision-${revision++}`;
         channels = [...channels.filter(v => v.channel.id !== id), saved];
+        if (saveMode === 'malformed') return reply({ fixture: true, acknowledgementUnreadable: true });
         return reply(saved.channel, req.method === 'POST' ? 201 : 200);
       }
       if (url.pathname === '/api/monitors') return reply(overview().monitors);

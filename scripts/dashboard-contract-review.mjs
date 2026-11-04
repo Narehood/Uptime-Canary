@@ -804,7 +804,46 @@ async function automationBrowserReview() {
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'unsaved test recovery never changes the stored revision');
       await nav('#/notifications'); await heading('Notifications');
       assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
-      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, allEventsRestored: true, realSends: 0 };
+      // Commit on the real private Go node, then replace only its browser acknowledgement.
+      // A readback must recover the stored resource without a second write or any provider send.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const recoveredName = name + ' recovered save', beforeSaveHook = requestHook;
+      let committed, interruptedWrites = 0;
+      requestHook = async paused => {
+        if (paused.request.url === A.url + '/api/notification-channels/' + saved.id && paused.request.method === 'PUT') {
+          interruptedWrites++;
+          committed = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', JSON.parse(paused.request.postData));
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: committed.status,
+            responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+            body: Buffer.from(JSON.stringify(committed.status === 200 ? { acknowledgementUnreadable: true } : committed.value)).toString('base64') });
+          return true;
+        }
+        return Boolean(await beforeSaveHook?.(paused));
+      };
+      try {
+        await fill('Name', recoveredName); await click('Save changes'); await text('Save unconfirmed');
+        await text('Stored settings, including credentials, match your current draft.');
+        assert.equal(await page.eval(`__field('Name').value`), recoveredName);
+        assert.equal(await page.eval(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save changes').disabled`), true);
+        await click('Use this stored channel'); await heading('Notifications');
+        assert.equal(interruptedWrites, 1, 'readback does not repeat the update');
+        assert.equal(committed.status, 200);
+        saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+        assert.equal(saved.name, recoveredName); assert.deepEqual(saved.config, config);
+      } finally { requestHook = beforeSaveHook; }
+      // A catalogue change is not a navigation decision: keep the exact mounted field and its dirty draft.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      await fill('Name', name + ' retained after deletion');
+      await page.eval(`window.__retainedChannelField = __field('Name'); true`);
+      const removed = await api(A, `/api/notification-channels/${saved.id}`, 'DELETE', { revision: saved.revision });
+      assert.ok([200, 204].includes(removed.status), removed.text);
+      await until(() => page.eval(`document.body.innerText.includes('Channel no longer listed')`), 'catalogue deletion is visible without unmounting the editor', 35000);
+      assert.equal(await page.eval(`window.__retainedChannelField === __field('Name')`), true);
+      assert.equal(await page.eval(`__field('Name').value`), name + ' retained after deletion');
+      assert.equal(await page.eval(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save changes').disabled`), true);
+      await nav('#/notifications'); await heading('Notifications');
+      assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'save readback and deletion recovery send no notifications');
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, uncertainSaveReadback: true, deletedChannelDraftRetained: true, allEventsRestored: true, realSends: 0 };
     });
   }
 }
