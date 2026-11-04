@@ -64,7 +64,11 @@ func TestAutomationChannelEventsReplicateAndSurviveRestart(t *testing.T) {
 	in.IntervalMs, in.TimeoutMs, in.NotificationIDs = 60000, 1000, []string{hc.ID, mc.ID}
 	// Use management admission so immutable payloads contain the same canonical
 	// target that peer ingress validates (http://host:port/ with the trailing /).
-	m := add(t, a, in)
+	code, body := messagingAPI(a, "/api/monitors", "POST", in, adminToken)
+	var m Monitor
+	if code != 201 || json.Unmarshal(body, &m) != nil {
+		t.Fatal("monitor admission", code, string(body))
+	}
 	drive := func() {
 		partitionDrive(t, a)
 		messagingPeerPage(t, a, b)
