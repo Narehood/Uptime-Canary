@@ -10,6 +10,7 @@ import (
 )
 
 type ChannelInput struct {
+	Events    []string                `json:"events,omitempty"`
 	Name      string                  `json:"name"`
 	Enabled   bool                    `json:"enabled"`
 	Config    providerDelivery.Config `json:"config"`
@@ -31,7 +32,7 @@ type ChannelView struct {
 
 func parseChannel(b []byte) (ChannelInput, error) {
 	var in ChannelInput
-	raw, err := strictResourceObject(b, "name", "enabled", "config", "id", "revision", "revisions", "updatedAt", "deleted", "isDefault")
+	raw, err := strictResourceObject(b, "name", "enabled", "config", "id", "revision", "revisions", "updatedAt", "deleted", "isDefault", "events")
 	if err != nil || required(raw, "name", "enabled", "config") != nil {
 		return in, fail(400, "Channel requires name, enabled and config")
 	}
@@ -40,6 +41,19 @@ func parseChannel(b []byte) (ChannelInput, error) {
 	}
 	if raw["isDefault"] != nil && json.Unmarshal(raw["isDefault"], &in.IsDefault) != nil {
 		return in, fail(400, "Invalid default channel flag")
+	}
+	if value, exists := raw["events"]; exists {
+		if json.Unmarshal(value, &in.Events) != nil || len(in.Events) == 0 || len(in.Events) > 3 || len(unique(in.Events)) != len(in.Events) {
+			return in, fail(400, "Select at least one notification event")
+		}
+		for _, event := range in.Events {
+			if !slices.Contains([]string{"down", "repeat", "recovery"}, event) {
+				return in, fail(400, "Invalid notification event")
+			}
+		}
+		if slices.Contains(in.Events, "repeat") && !slices.Contains(in.Events, "down") {
+			return in, fail(400, "Repeat notifications require down notifications")
+		}
 	}
 	d := json.NewDecoder(bytes.NewReader(raw["config"]))
 	d.DisallowUnknownFields()

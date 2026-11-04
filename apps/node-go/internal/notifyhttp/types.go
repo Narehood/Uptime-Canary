@@ -10,11 +10,13 @@ import (
 type Kind string
 
 const (
-	Slack    Kind = "slack"
-	Telegram Kind = "telegram"
-	Ntfy     Kind = "ntfy"
-	Gotify   Kind = "gotify"
-	Pushover Kind = "pushover"
+	Slack         Kind = "slack"
+	Telegram      Kind = "telegram"
+	Ntfy          Kind = "ntfy"
+	Gotify        Kind = "gotify"
+	Pushover      Kind = "pushover"
+	HomeAssistant Kind = "homeassistant"
+	Matrix        Kind = "matrix"
 )
 
 type Status string
@@ -45,12 +47,29 @@ const (
 // Config contains secrets. Root must store it privately and redact before display.
 // Exactly one matching pointer is required; even an empty foreign pointer fails.
 type Config struct {
-	Kind     Kind            `json:"kind"`
-	Slack    *SlackConfig    `json:"slack,omitempty"`
-	Telegram *TelegramConfig `json:"telegram,omitempty"`
-	Ntfy     *NtfyConfig     `json:"ntfy,omitempty"`
-	Gotify   *GotifyConfig   `json:"gotify,omitempty"`
-	Pushover *PushoverConfig `json:"pushover,omitempty"`
+	HomeAssistant *HomeAssistantConfig `json:"homeassistant,omitempty"`
+	Matrix        *MatrixConfig        `json:"matrix,omitempty"`
+	Kind          Kind                 `json:"kind"`
+	Slack         *SlackConfig         `json:"slack,omitempty"`
+	Telegram      *TelegramConfig      `json:"telegram,omitempty"`
+	Ntfy          *NtfyConfig          `json:"ntfy,omitempty"`
+	Gotify        *GotifyConfig        `json:"gotify,omitempty"`
+	Pushover      *PushoverConfig      `json:"pushover,omitempty"`
+}
+
+type HomeAssistantConfig struct {
+	BaseURL           string `json:"baseURL"`
+	AccessToken       string `json:"accessToken"`
+	EventType         string `json:"eventType"`
+	AllowInsecureHTTP bool   `json:"allowInsecureHTTP,omitempty"`
+}
+
+// Matrix sends plaintext notices to rooms the token owner has joined.
+type MatrixConfig struct {
+	BaseURL           string `json:"baseURL"`
+	AccessToken       string `json:"accessToken"`
+	RoomID            string `json:"roomId"`
+	AllowInsecureHTTP bool   `json:"allowInsecureHTTP,omitempty"`
 }
 
 type SlackConfig struct {

@@ -373,7 +373,7 @@ export interface NotificationView {
   provider?: NotificationProvider;
 }
 
-export type NotificationProvider = 'generic' | 'webhook' | 'discord' | 'smtp' | 'mailgun' | 'brevo' | 'mandrill' | 'slack' | 'telegram' | 'ntfy' | 'gotify' | 'pushover';
+export type NotificationProvider = 'generic' | 'webhook' | 'discord' | 'smtp' | 'mailgun' | 'brevo' | 'mandrill' | 'slack' | 'telegram' | 'ntfy' | 'gotify' | 'pushover' | 'homeassistant' | 'matrix';
 export interface EmailAddress { email: string; name?: string }
 export interface NotificationConfig {
   kind: Exclude<NotificationProvider, 'generic'>;
@@ -389,9 +389,11 @@ export interface NotificationConfig {
   ntfy?: { topic: string; token?: string; username?: string; password?: string; priority?: number; tags?: string[]; baseURL?: string; allowInsecureHTTP?: boolean };
   gotify?: { appToken: string; priority?: number; baseURL: string; allowInsecureHTTP?: boolean };
   pushover?: { appToken: string; userKey: string; device?: string; priority?: number; sound?: string; retrySeconds?: number; expireSeconds?: number; baseURL?: string; allowInsecureHTTP?: boolean };
+  homeassistant?: { baseURL: string; accessToken: string; eventType: string; allowInsecureHTTP?: boolean };
+  matrix?: { baseURL: string; accessToken: string; roomId: string; allowInsecureHTTP?: boolean };
   templates?: { subject?: string; text?: string; html?: string };
 }
-export interface NotificationChannelInput { name: string; enabled: boolean; config: NotificationConfig; isDefault?: boolean }
+export interface NotificationChannelInput { name: string; enabled: boolean; config: NotificationConfig; isDefault?: boolean; events?: ('down' | 'repeat' | 'recovery')[] }
 export interface NotificationChannel extends NotificationChannelInput { id: string; revision: string; updatedAt: number; deleted?: boolean }
 export interface NotificationChannelView { channel: NotificationChannel; configConflict: boolean }
 export interface DeliveryAttemptView {

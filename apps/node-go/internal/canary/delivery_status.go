@@ -70,11 +70,14 @@ func (n *Node) attemptView(a attempt) DeliveryAttemptView {
 	if a.Kind != "test" && v.State != "accepted" && v.State != "cancelled" {
 		m := n.current(a.MonitorID)
 		available := m != nil && m.Enabled
+		var target notificationTarget
 		if available {
-			_, available = n.targetForAttempt(*m, a)
+			target, available = n.targetForAttempt(*m, a)
 		}
 		if !available {
 			v.State, v.NextAttemptAt, v.Held, v.ErrorCode = "unavailable", 0, false, "destination_unavailable"
+		} else if !target.allows(a.Kind) {
+			v.State, v.NextAttemptAt, v.Held, v.ErrorCode = "cancelled", 0, false, "event_filtered"
 		} else if len(n.activeMaintenance(*m)) != 0 {
 			v.State, v.NextAttemptAt, v.Held = "held", 0, true
 		}

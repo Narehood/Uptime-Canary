@@ -144,7 +144,7 @@ export const templateFamily = (kind: string, level: TemplateLevel = 'legacy'): T
   isMessaging(kind) ? 'chat' : EMAIL.has(kind) ? 'email' : kind === 'discord' && level === 'enhanced' ? 'discord' : 'fixed';
 
 /** Slack and Telegram get one plain-text message: the title, a line break, then the text. ntfy, Gotify and Pushover keep them apart. */
-export const combinesTitle = (kind: MessagingKind): boolean => kind === 'slack' || kind === 'telegram';
+export const combinesTitle = (kind: MessagingKind): boolean => kind === 'slack' || kind === 'telegram' || kind === 'matrix';
 
 export interface TemplateFields { subject: string; text: string; html: string }
 

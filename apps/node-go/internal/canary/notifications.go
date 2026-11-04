@@ -73,7 +73,7 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 		kind := ""
 		slot := int64(0)
 		due := int64(0)
-		if down == nil {
+		if down == nil && target.allows("down") {
 			if i.Closed == nil {
 				evidence := false
 				for _, s := range observations {
@@ -109,6 +109,9 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 			kind = "recovery"
 			due = *i.ResolvedAt + n.settings.NotificationDelayMs
 		} else {
+			if down == nil {
+				continue
+			}
 			repeat := int64(0)
 			if m.RepeatAfterMs != nil {
 				repeat = *m.RepeatAfterMs
@@ -138,6 +141,9 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 			// Slots advance from delivery evidence rather than dividing by the
 			// editable repeat interval. Lengthening that interval must not make
 			// every future repeat collide with an already-delivered old slot.
+		}
+		if !target.allows(kind) {
+			continue
 		}
 		if kind != "recovery" {
 			if groupID != "" {
@@ -261,7 +267,7 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 	n.mu.Lock()
 	current := n.current(m.ID)
 	target, targetExists := n.targetForAttempt(m, a)
-	valid := !n.stopped && n.fault == nil && current != nil && current.Enabled && current.Revision == m.Revision && targetExists && target.Revision == a.TargetRevision
+	valid := target.allows(a.Kind) && !n.stopped && n.fault == nil && current != nil && current.Enabled && current.Revision == m.Revision && targetExists && target.Revision == a.TargetRevision
 	var latest Incident
 	found := false
 	// The captured projection can split while this job is queued. Only the
@@ -321,7 +327,7 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 			valid = false
 		}
 	} else {
-		valid = valid && latest.Closed != nil && hasReceipt(successes, "down") && len(observations) == len(m.NodeIDs)
+		valid = valid && latest.Closed != nil && (hasReceipt(successes, "down") || !target.allows("down") && n.hasDeliveryIntent(latest, target.ID)) && len(observations) == len(m.NodeIDs)
 		for _, s := range observations {
 			valid = valid && s.State == "up"
 		}

@@ -53,6 +53,9 @@ long-term rollups remain distinct release work.
 
 ## Prometheus
 
+For external retention, Grafana dashboards and remote write, follow the
+[Prometheus/Grafana setup](external-observability.md).
+
 `GET /api/metrics` requires a management bearer token or password session.
 An account with the viewer role is sufficient. Cluster credentials are not
 management credentials. A static viewer token suits unattended scraping; keep

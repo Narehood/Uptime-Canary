@@ -1,0 +1,55 @@
+name: Automation integrations
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-integrations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - name: Prepare one owned cache and installed toolchain
+        run: |
+          mkdir -p .canary/tools
+          ln -s "$(go env GOROOT)" .canary/tools/go
+          echo "GOCACHE=$GITHUB_WORKSPACE/.canary/cache/go-build" >> "$GITHUB_ENV"
+          echo 'GOTOOLCHAIN=local' >> "$GITHUB_ENV"
+          go mod download
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Provider and runtime tests with private loopback fixtures
+        run: python3 scripts/bounded_validation.py --timeout 600 -- go test -count=1 -timeout=8m ./apps/node-go/internal/notifyhttp ./apps/node-go/internal/delivery ./apps/node-go/internal/canary
+      - name: Shared and frontend types
+        run: python3 scripts/bounded_validation.py --timeout 120 -- npm run typecheck
+      - name: Existing channel and template regressions
+        run: python3 scripts/bounded_validation.py --timeout 120 -- node scripts/alert-templates-pure.mjs
+      - name: Automation form and external dashboard contracts
+        run: python3 scripts/bounded_validation.py --timeout 120 -- node scripts/automation-integrations-pure.mjs
+      - name: Upload bounded result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: automation-integrations-evidence
+          path: |
+            .canary/work/current/latest.log
+            .canary/work/current/latest.json
+          include-hidden-files: true
+          retention-days: 7

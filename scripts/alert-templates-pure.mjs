@@ -626,7 +626,8 @@ await check('source (protocol 20): the card colors in CSS are the node’s, the 
   const channels = source('views/Channels.tsx');
   for (const line of [
     'if (draft.discordEmbed) config.webhook.embed = true; else delete config.webhook.embed;', 'discordEmbed: c?.kind === \'discord\' && c.webhook?.embed === true,',
-    'const capability = templateCapability(overview.build);', 'const { input, errors } = buildChannel(draft, base, capability.level);', 'onEmbed={value => set(\'discordEmbed\', value)}',
+    'const capability = templateCapability(overview.build);', // Protocol 22 also gates providers/event selection on the selected node; retain the template grammar argument.
+    'const { input, errors } = buildChannel(draft, base, capability.level, capability.protocol ?? 0);', 'onEmbed={value => set(\'discordEmbed\', value)}',
   ]) assert.ok(channels.includes(line), line);
   assert.equal(count(channels, 'config.webhook.embed = true'), 1);
   assert.equal(count(source('views/MessageTemplates.tsx'), 'onEmbed?.('), 1, 'only the layout control calls it');

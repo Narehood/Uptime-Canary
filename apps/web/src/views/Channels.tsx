@@ -3,7 +3,7 @@ import type { DeliveryAttemptView, EmailAddress, NotificationChannel, Notificati
 import { discordTemplateProblem, TEMPLATE_PROTOCOL, templateCapability, templateSummary, unsupportedPlaceholders, withoutAddedPlaceholders, type TemplateLevel } from '../alertTemplates';
 import { ApiFailure, describeFailure, isAbort, jsonBytes } from '../api';
 import { useCanary } from '../context';
-import { ago, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
+import { ago, andList, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
 import { useResource } from '../hooks';
 import { buildMessaging, control, isMessaging, messagingDraft, messagingRoute, MFIELD_LABEL, templateProblem, urlProblem, type MessagingDraft, type MField } from '../messaging';
 import { notify } from '../notices';
@@ -27,11 +27,13 @@ export const PROVIDERS: { kind: Kind; label: string; hint: string; icon: IconNam
   { kind: 'ntfy', label: 'ntfy', hint: 'Topic on ntfy.sh or your server', icon: 'bell', email: false, group: 'push' },
   { kind: 'gotify', label: 'Gotify', hint: 'Your Gotify server', icon: 'megaphone', email: false, group: 'push' },
   { kind: 'pushover', label: 'Pushover', hint: 'One user or group key', icon: 'phone', email: false, group: 'push' },
+  { kind: 'matrix', label: 'Matrix', hint: 'Notice in an unencrypted room', icon: 'chat', email: false, group: 'push' },
   { kind: 'smtp', label: 'SMTP', hint: 'Your own mail server', icon: 'mail', email: true, group: 'email' },
   { kind: 'mailgun', label: 'Mailgun', hint: 'US or EU API', icon: 'mail', email: true, group: 'email' },
   { kind: 'brevo', label: 'Brevo', hint: 'Transactional email API', icon: 'mail', email: true, group: 'email' },
   { kind: 'mandrill', label: 'Mailchimp Transactional', hint: 'Mandrill API, not Marketing', icon: 'mail', email: true, group: 'email' },
   { kind: 'webhook', label: 'Webhook', hint: 'JSON POST to your endpoint', icon: 'hook', email: false, group: 'custom' },
+  { kind: 'homeassistant', label: 'Home Assistant', hint: 'Event that triggers automations', icon: 'plug', email: false, group: 'custom' },
 ];
 const PROVIDER_GROUPS: { key: ProviderGroup; label: string }[] = [{ key: 'push', label: 'Chat and push' }, { key: 'email', label: 'Email' }, { key: 'custom', label: 'Your endpoint' }];
 const PROVIDER = new Map(PROVIDERS.map(entry => [entry.kind as string, entry]));
@@ -78,6 +80,7 @@ const ERROR_TEXT: Record<string, string> = {
   destination_unavailable: 'The channel is disabled or deleted, or the monitor no longer uses it.',
   channel_changed: 'The channel’s route changed before this attempt was sent.',
   completed_during_maintenance: 'The whole outage happened inside planned maintenance; this destination was never notified, so it isn’t replayed.',
+  event_filtered: 'The channel’s alert events leave out this kind of alert, so it was cancelled without sending.',
 };
 export const errorText = (code: string | undefined): string | undefined => code ? ERROR_TEXT[code] ?? code.replace(/_/gu, ' ') : undefined;
 const KIND_LABEL: Record<DeliveryAttemptView['kind'], string> = { down: 'Down alert', repeat: 'Repeat', recovery: 'Recovery', test: 'Test' };
@@ -217,7 +220,7 @@ export function DeliveriesView() {
             </>
           )}
         <p className="foot-note">
-          <b>Accepted</b> means the provider acknowledged the request (Discord with a saved message, Slack with “ok”, Telegram, ntfy, Gotify and Pushover with a message or request ID, email services and SMTP after DATA). It isn’t proof of inbox or device delivery.
+          <b>Accepted</b> means the provider acknowledged the request (Discord with a saved message, Slack with “ok”, Telegram, ntfy, Gotify and Pushover with a message or request ID, Matrix with an event ID, Home Assistant when it reports the event fired, email services and SMTP after DATA). It isn’t proof of inbox or device delivery, or that an automation ran.
           Outcomes, error codes and HTTP statuses are fixed values: provider bodies, addresses and secret URLs are never shown. Partitions can cause duplicate sends.
         </p>
       </Card>
@@ -589,6 +592,7 @@ interface Recipient { key: number; email: string; name: string }
 let recipientKey = 0;
 
 interface ChannelDraft extends MessagingDraft {
+ events: ('down' | 'repeat' | 'recovery')[];
   name: string;
   enabled: boolean;
   /** Protocol 19: preselected for new monitors while enabled. Never applied to existing monitors by itself. */
@@ -610,6 +614,7 @@ interface ChannelDraft extends MessagingDraft {
 function channelDraft(channel: NotificationChannel | undefined): ChannelDraft {
   const c = channel?.config;
   return {
+    events: channel?.events ? [...channel.events] : ['down', 'repeat', 'recovery'],
     name: channel?.name ?? '',
     enabled: channel?.enabled ?? true,
     isDefault: channel?.isDefault === true,
@@ -628,9 +633,9 @@ function channelDraft(channel: NotificationChannel | undefined): ChannelDraft {
   };
 }
 
-type CField = MField | 'name' | 'discordUrl' | 'hookUrl' | 'hookBearer' | 'sender' | 'recipients' | 'smtpServer' | 'smtpPort' | 'smtpAuth' | 'apiKey' | 'mailgunDomain' | 'templates' | 'size';
+type CField = MField | 'events' | 'name' | 'discordUrl' | 'hookUrl' | 'hookBearer' | 'sender' | 'recipients' | 'smtpServer' | 'smtpPort' | 'smtpAuth' | 'apiKey' | 'mailgunDomain' | 'templates' | 'size';
 const CFIELD_LABEL: Record<CField, string> = {
-  ...MFIELD_LABEL,
+  ...MFIELD_LABEL, events: 'Alert events',
   name: 'Name', discordUrl: 'Discord webhook URL', hookUrl: 'Webhook URL', hookBearer: 'Bearer token', sender: 'Sender', recipients: 'Recipients', smtpServer: 'Server',
   smtpPort: 'Port', smtpAuth: 'Authentication', apiKey: 'API key', mailgunDomain: 'Sending domain', baseUrl: 'API base URL', templates: 'Templates', size: 'Size',
 };
@@ -640,17 +645,19 @@ const HOST = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?
 const DISCORD = /^https:\/\/(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\/\d+\/[\w-]+\/?$/u;
 
 /** Config keys this form models; anything else from a newer node is carried through unchanged. */
-const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun', 'brevo', 'mandrill', 'webhook', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'templates']);
+const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun', 'brevo', 'mandrill', 'webhook', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'homeassistant', 'matrix', 'templates']);
 /** Channel keys this form writes. Other stored keys belong to the channel, not its provider, so they survive a provider change. */
-const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault'];
+const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault', 'events'];
 
 /**
  * `level` is the selected node's template grammar (alertTemplates.ts templateCapability). Peer protocol 20 applies templates
  * to Discord and adds the card layout; for an older or unknown node the form writes neither the layout nor newly typed
  * protocol 20 placeholders, and keeps what the node already stores.
  */
-function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined, level: TemplateLevel = 'legacy'): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
+function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined, level: TemplateLevel = 'legacy', protocol = 22): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
   const errors: Partial<Record<CField, string>> = {};
+  if (!draft.events.length || draft.events.includes('repeat') && !draft.events.includes('down')) errors.events = 'Select at least one event. Repeats require down alerts.';
+  if (protocol < 22 && (draft.kind === 'homeassistant' || draft.kind === 'matrix' || JSON.stringify(draft.events) !== JSON.stringify(original?.events ?? ['down', 'repeat', 'recovery']))) errors.events = 'These providers and event selection require node protocol 22. Upgrade the cluster together.';
   const name = draft.name.trim();
   if (!name || name.length > 128 || control(name)) errors.name = 'Enter a name of at most 128 characters.';
   const kind = draft.kind;
@@ -773,7 +780,7 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
   if (Object.keys(templates).length) config.templates = templates;
   if (Object.keys(errors).length) return { errors };
   // `isDefault` is written only when on, as Go's omitempty encoding stores it, so an unchanged channel saves as before.
-  const input: NotificationChannelInput = { name, enabled: draft.enabled, config, ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) };
+  const input: NotificationChannelInput = { name, enabled: draft.enabled, config, ...(draft.events.length !== 3 ? { events: [...draft.events] } : {}), ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) };
   if (jsonBytes(input) > 250_000) return { errors: { size: 'This channel is larger than nodes accept. Shorten the templates.' } };
   return { input, errors };
 }
@@ -821,7 +828,7 @@ function ChannelFormBody({ id }: { id?: string }) {
 
   // What the selected node renders: its overview's reported peer protocol, or the six-placeholder grammar when it reports none.
   const capability = templateCapability(overview.build);
-  const { input, errors } = buildChannel(draft, base, capability.level);
+  const { input, errors } = buildChannel(draft, base, capability.level, capability.protocol ?? 0);
   const visible = showErrors ? errors : {};
   const set = <K extends keyof ChannelDraft>(key: K, value: ChannelDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));

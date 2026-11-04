@@ -313,7 +313,10 @@ async function review() {
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'pm2'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'tailscale-ping'));
     assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
-    assert.equal(f.PROVIDERS.length, 11);
+    // Protocol 22 adds Home Assistant and Matrix; verify both alongside all original providers.
+    assert.equal(f.PROVIDERS.length, 13);
+    assert.ok(f.PROVIDERS.some(v => v.kind === 'homeassistant'));
+    assert.ok(f.PROVIDERS.some(v => v.kind === 'matrix'));
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
   });
   await step('All 16 structured service forms cover the Go DTO fields', async () => {
@@ -462,6 +465,8 @@ async function review() {
     return { id:m.id, schedulePreserved:true, nodeCompilesDST:true };
   });
   const channelConfigs = {
+    homeassistant: { kind: 'homeassistant', homeassistant: { baseURL: state.sink + '/ha', accessToken: 'review-homeassistant-token', eventType: 'uptime_canary', allowInsecureHTTP: true } },
+    matrix: { kind: 'matrix', matrix: { baseURL: state.sink + '/matrix', accessToken: 'review-matrix-token', roomId: '!review:example.test', allowInsecureHTTP: true } },
     webhook: { kind: 'webhook', webhook: { url: state.sink + '/hook-contract', bearerToken: 'review-hook-key', allowInsecureHTTP: true } },
     discord: { kind: 'discord', webhook: { url: 'https://discord.com/api/webhooks/123456789/review-fixture-never-send' } },
     smtp: { kind: 'smtp', smtp: { server: '127.0.0.1', port: 2525, tlsMode: 'starttls', username: 'review', password: 'review-smtp-password' }, sender: { email: 'review@example.test', name: 'Review' }, recipients: [{ email: 'recipient@example.test', name: 'Recipient' }] },
@@ -480,7 +485,7 @@ async function review() {
   for (const [kind, config] of Object.entries(channelConfigs)) await step(`Channel ${kind} API + form rename preserves credentials and provider options`, async () => {
     const made = await api(A, '/api/notification-channels', 'POST', { name: `Review ${kind}`, enabled: false, config }); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.channelDraft(m); d.name += ' renamed'; const built = f.buildChannel(d, m); assert.ok(built.input, JSON.stringify(built.errors));
-    for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
+    for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'homeassistant', 'matrix', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
     const saved = await api(A, `/api/notification-channels/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.config, m.config); channels[kind] = saved.value;
     return { id: m.id, savedWithoutSending: !existsSync(join(runDir, 'sink.json')) };
   });

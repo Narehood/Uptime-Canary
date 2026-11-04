@@ -4,8 +4,8 @@
 import type { NotificationConfig } from '@uptime-canary/shared';
 import { bytesOf, maskedUrl, span } from './format';
 
-export type MessagingKind = 'slack' | 'telegram' | 'ntfy' | 'gotify' | 'pushover';
-const KINDS: readonly string[] = ['slack', 'telegram', 'ntfy', 'gotify', 'pushover'];
+export type MessagingKind = 'slack' | 'telegram' | 'ntfy' | 'gotify' | 'pushover' | 'homeassistant' | 'matrix';
+const KINDS: readonly string[] = ['slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'homeassistant', 'matrix'];
 export const isMessaging = (kind: string): kind is MessagingKind => KINDS.includes(kind);
 
 /** Official endpoints used when no base URL is configured. Gotify is self-hosted and has none. */
@@ -14,6 +14,8 @@ export const DEFAULT_BASE = { telegram: 'https://api.telegram.org', ntfy: 'https
 export type NtfyAuth = 'none' | 'token' | 'basic';
 
 export interface MessagingDraft {
+ haBase: string; haToken: string; haEvent: string; haInsecure: boolean;
+ matrixBase: string; matrixToken: string; matrixRoom: string; matrixInsecure: boolean;
   slackUrl: string; slackInsecure: boolean;
   tgToken: string; tgChat: string; tgThread: string; tgSilent: boolean; tgProtect: boolean; tgNoPreview: boolean; tgBase: string; tgInsecure: boolean;
   ntfyTopic: string; ntfyAuth: NtfyAuth; ntfyToken: string; ntfyUser: string; ntfyPass: string; ntfyPriority: string; ntfyTags: string; ntfyBase: string; ntfyInsecure: boolean;
@@ -27,6 +29,8 @@ const num = (value: number | undefined): string => value ? String(value) : '';
 export function messagingDraft(c: NotificationConfig | undefined): MessagingDraft {
   const s = c?.slack, t = c?.telegram, n = c?.ntfy, g = c?.gotify, p = c?.pushover;
   return {
+    haBase: c?.homeassistant?.baseURL ?? '', haToken: c?.homeassistant?.accessToken ?? '', haEvent: c?.homeassistant?.eventType ?? 'uptime_canary', haInsecure: Boolean(c?.homeassistant?.allowInsecureHTTP),
+    matrixBase: c?.matrix?.baseURL ?? '', matrixToken: c?.matrix?.accessToken ?? '', matrixRoom: c?.matrix?.roomId ?? '', matrixInsecure: Boolean(c?.matrix?.allowInsecureHTTP),
     slackUrl: s?.webhookURL ?? '', slackInsecure: Boolean(s?.allowInsecureHTTP),
     tgToken: t?.botToken ?? '', tgChat: t?.chatId ?? '', tgThread: num(t?.messageThreadId), tgSilent: Boolean(t?.silent), tgProtect: Boolean(t?.protectContent),
     tgNoPreview: Boolean(t?.disableLinkPreview), tgBase: t?.baseURL ?? '', tgInsecure: Boolean(t?.allowInsecureHTTP),
@@ -53,8 +57,9 @@ export function urlProblem(raw: string, insecure: boolean, label: string, requir
   return undefined;
 }
 
-export type MField = 'slackUrl' | 'botToken' | 'chatId' | 'threadId' | 'topic' | 'ntfyAuth' | 'tags' | 'serverUrl' | 'appToken' | 'userKey' | 'device' | 'sound' | 'emergency' | 'baseUrl';
+export type MField = 'accessToken' | 'eventType' | 'roomId' | 'slackUrl' | 'botToken' | 'chatId' | 'threadId' | 'topic' | 'ntfyAuth' | 'tags' | 'serverUrl' | 'appToken' | 'userKey' | 'device' | 'sound' | 'emergency' | 'baseUrl';
 export const MFIELD_LABEL: Record<MField, string> = {
+ accessToken: 'Access token', eventType: 'Event type', roomId: 'Room ID',
   slackUrl: 'Slack webhook URL', botToken: 'Bot token', chatId: 'Chat', threadId: 'Forum topic', topic: 'Topic', ntfyAuth: 'Login', tags: 'Tags', serverUrl: 'Server URL',
   appToken: 'Application token', userKey: 'User or group key', device: 'Device', sound: 'Sound', emergency: 'Emergency repeats', baseUrl: 'API base URL',
 };
@@ -90,6 +95,25 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
     return raw.trim();
   };
   switch (kind) {
+    case 'homeassistant':
+    case 'matrix': {
+      const ha = kind === 'homeassistant';
+      const accessToken = ha ? d.haToken : d.matrixToken;
+      if (!accessToken || accessToken.length > 4096 || !VISIBLE.test(accessToken)) errors.accessToken = 'Enter the access token without spaces or line breaks (at most 4,096 characters).';
+      const baseURL = base(ha ? d.haBase : d.matrixBase, ha ? d.haInsecure : d.matrixInsecure, 'Server URL', 'serverUrl', true);
+      if (ha) {
+        const eventType = d.haEvent.trim();
+        if (!/^[A-Za-z0-9_]{1,64}$/u.test(eventType)) errors.eventType = 'Use 1?64 letters, digits or underscores.';
+        config.homeassistant = { ...same?.homeassistant, baseURL, accessToken, eventType, ...(d.haInsecure ? { allowInsecureHTTP: true } : {}) };
+        if (!d.haInsecure) delete config.homeassistant.allowInsecureHTTP;
+      } else {
+        const roomId = d.matrixRoom.trim();
+        if (!/^![^/\\?#%\s]+:[^/\\?#%\s]+$/u.test(roomId) || bytesOf(roomId) > 255) errors.roomId = 'Use the internal room ID, like !room:example.org, up to 255 bytes.';
+        config.matrix = { ...same?.matrix, baseURL, accessToken, roomId, ...(d.matrixInsecure ? { allowInsecureHTTP: true } : {}) };
+        if (!d.matrixInsecure) delete config.matrix.allowInsecureHTTP;
+      }
+      break;
+    }
     case 'slack': {
       const url = base(d.slackUrl, d.slackInsecure, 'Slack webhook URL', 'slackUrl', true);
       if (!errors.slackUrl && new URL(url).pathname.endsWith('/')) errors.slackUrl = 'Paste the complete webhook URL from Slack, without a trailing slash: https://hooks.slack.com/services/…';
@@ -182,6 +206,8 @@ const utf16 = (text: string): number => text.length;
 
 export const TITLE_LIMIT = 'One line, at most 250 characters (1,000 bytes) after substitution.';
 export const TEXT_LIMIT: Record<MessagingKind, { limit: number; cost: (text: string) => number; combined: boolean; unit: string; rule: string }> = {
+  homeassistant: { limit: 16_384, cost: bytesOf, combined: false, unit: 'bytes', rule: 'At most 16 KiB after substitution.' },
+  matrix: { limit: 16_384, cost: bytesOf, combined: true, unit: 'bytes', rule: 'At most 16 KiB including title after substitution.' },
   slack: { limit: 4000, cost: slackCost, combined: true, unit: 'characters', rule: 'Title and text together: at most 4,000 characters after Slack escaping (& counts as 5, < and > as 4).' },
   telegram: { limit: 4096, cost: utf16, combined: true, unit: 'UTF-16 units', rule: 'Title and text together: at most 4,096 UTF-16 units (most emoji count as 2).' },
   ntfy: { limit: 4096, cost: bytesOf, combined: false, unit: 'bytes', rule: 'Text: at most 4,096 bytes.' },
@@ -221,6 +247,8 @@ export function pushoverPriorityText(p: NotificationConfig['pushover']): string 
 export function messagingRoute(c: NotificationConfig): { where: string; facts: string[] } | undefined {
   const facts = (...items: (string | false | undefined)[]): string[] => items.filter((item): item is string => Boolean(item));
   switch (c.kind) {
+    case 'homeassistant': return { where: c.homeassistant?.baseURL ? maskedUrl(c.homeassistant.baseURL) : 'no server', facts: [c.homeassistant?.eventType ?? 'uptime_canary'] };
+    case 'matrix': return { where: c.matrix?.baseURL ? maskedUrl(c.matrix.baseURL) : 'no server', facts: ['one unencrypted room'] };
     case 'slack': return { where: c.slack?.webhookURL ? maskedUrl(c.slack.webhookURL) : 'no URL', facts: [] };
     case 'telegram': {
       const t = c.telegram;
@@ -252,6 +280,8 @@ const route = (raw: string, fallback = ''): string => {
 /** What picks the destination. A change means a new destination; owed alerts and receipts don't move. */
 export function routeKey(kind: MessagingKind, d: MessagingDraft): string {
   switch (kind) {
+    case 'homeassistant': return [route(d.haBase), d.haEvent.trim()].join('\n');
+    case 'matrix': return [route(d.matrixBase), d.matrixRoom.trim()].join('\n');
     case 'slack': {
       try {
         const u = new URL(d.slackUrl.trim()), parts = u.pathname.split('/');
@@ -269,6 +299,8 @@ export function routeKey(kind: MessagingKind, d: MessagingDraft): string {
 /** Credentials only: rotating them keeps the destination and its receipts. */
 export function credentialKey(kind: MessagingKind, d: MessagingDraft): string {
   switch (kind) {
+    case 'homeassistant': return d.haToken;
+    case 'matrix': return d.matrixToken;
     case 'slack': return d.slackUrl.trim();
     case 'telegram': return d.tgToken;
     case 'ntfy': return [d.ntfyAuth, d.ntfyToken, d.ntfyUser, d.ntfyPass].join('\n');
