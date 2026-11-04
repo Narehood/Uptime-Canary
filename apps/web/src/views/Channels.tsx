@@ -181,7 +181,7 @@ export function DeliveryTable({ attempts, compact }: { attempts: DeliveryAttempt
                   {attempt.incidentId ? <div className="muted small">incident <span className="mono" title={attempt.incidentId}>{shortId(attempt.incidentId)}</span></div> : null}
                 </td>
                 <td data-label="Destination">
-                  <span className="nowrap"><ProviderIcon kind={attempt.provider} />{channel ? <a href={href('channels', channel.id, 'edit')}>{channel.name}</a> : attempt.channelId ? <span className="muted">channel {shortId(attempt.channelId)}</span> : providerLabel(attempt.provider)}</span>
+                  <span className="attempt-destination"><ProviderIcon kind={attempt.provider} /><span>{channel ? <a href={href('channels', channel.id, 'edit')}>{channel.name}</a> : attempt.channelId ? <span className="muted">channel {shortId(attempt.channelId)}</span> : providerLabel(attempt.provider)}</span></span>
                   {attempt.destinationId ? <div className="muted small">destination <span className="mono" title={attempt.destinationId}>{shortId(attempt.destinationId)}</span></div> : null}
                 </td>
                 <td data-label="Outcome" className="full">
@@ -320,7 +320,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
     } finally { setBusy(false); }
   };
   return (
-    <Modal title={result ? 'Test queued' : error?.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : `Send a test from ${channel.name}?`} onClose={onClose} busy={busy}>
+    <Modal title={result ? 'Test queued' : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : `Send a test from ${channel.name}?`} onClose={onClose} busy={busy}>
       <p className="vh" role="status" aria-live="polite" aria-atomic="true">{result ? `${endpoint} queued ${plural(result.length, 'test attempt')}. Outcomes are available in delivery attempts; queued does not mean delivered.` : ''}</p>
       {result ? (
         <>
@@ -333,15 +333,15 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
         </>
       ) : (
         <>
-          <p>
+          {error ? <TestSubmissionError failure={error} /> : null}
+          {!error ? <p>
             This sends a <b>real message</b> from <span className="mono">{endpoint}</span> to {destinations === 1 ? 'this channel’s destination' : `all ${destinations} recipients`} through {providerLabel(channel.config.kind)}.
             It creates no monitor, incident or receipt.
-          </p>
+          </p> : null}
           {emergency ? <p className="fwarn"><Glyph tone="warn" /><span>Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</span></p> : null}
           <AutomationTestDestination config={channel.config} />
           {channel.config.kind === 'homeassistant' ? <HaTestWarning eventType={channel.config.homeassistant?.eventType} /> : null}
           <p className="muted small">Tests use revision <Rev revision={channel.revision} />. A node sends one batch at a time, at least 5 seconds apart.</p>
-          {error ? <TestSubmissionError failure={error} /> : null}
           <div className="row-wrap modal-acts">
             {error?.disposition === 'unconfirmed' ? <a className="btn primary" href={deliveryHref(channel.id)} onClick={onClose}>View delivery attempts</a>
               : <button type="button" className="btn primary" onClick={() => { void send(); }} disabled={busy || !channel.enabled}><Icon name="send" />{busy ? 'Queuing…' : 'Send test'}</button>}
@@ -446,7 +446,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
   const settled = Boolean(attempts?.every(attempt => SETTLED.has(attempt.state)));
   const completion = waiting ? 'Waiting for outcomes.' : settled ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
   return (
-    <Modal title={inspecting ? 'Recent test attempts' : error?.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
+    <Modal title={inspecting ? 'Recent test attempts' : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
       <p className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
       {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
         <>
@@ -472,15 +472,15 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
         </>
       ) : (
         <>
-          <p>
+          {error ? <TestSubmissionError failure={error} /> : null}
+          {!error ? <p>
             This sends a <b>real message</b> from <span className="mono">{endpoint}</span> to {recipients === 1 ? 'the destination' : `all ${recipients} recipients`} in the form, through {providerLabel(kind)}, with the settings as they are now, saved or not. {input.enabled ? '' : 'The channel stays disabled. '}
             Nothing is saved, and no monitor, incident or receipt is created.
-          </p>
+          </p> : null}
           {emergency ? <p className="fwarn"><Glyph tone="warn" /><span>Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</span></p> : null}
           <AutomationTestDestination config={input.config} />
           {kind === 'homeassistant' ? <HaTestWarning eventType={input.config.homeassistant?.eventType} /> : null}
           <p className="muted small">A node sends one test batch at a time, at least 5 seconds apart, shared with saved channels’ tests.</p>
-          {error ? <TestSubmissionError failure={error} /> : null}
           <div className="row-wrap modal-acts">
             {error?.disposition === 'unconfirmed' ? <button ref={inspectButton} type="button" className="btn primary" onClick={() => setInspecting(true)}>View delivery attempts</button>
               : <button type="button" className="btn primary" onClick={() => { void send(); }} disabled={busy}><Icon name="send" />{busy ? 'Queuing…' : 'Send test'}</button>}
@@ -627,6 +627,15 @@ function routeText(channel: NotificationChannel, viewer: boolean): ReactNode {
   }
 }
 
+/** Overview freshness is independent of this catalogue; retained settings must never look freshly verified. */
+function ChannelRefreshNotice() {
+  const { channels } = useCanary();
+  if (!channels.error || !channels.list) return null;
+  return <Banner tone="warn" title="Channels could not be refreshed" actions={<button type="button" className="btn sm" disabled={channels.loading} onClick={channels.reload}>Retry refresh</button>}>
+    Showing the last loaded channel data; destinations and enabled/default settings may be out of date. {describeFailure(channels.error)}
+  </Banner>;
+}
+
 export function ChannelsView() {
   const { channels, editable, endpoint, overview, search, role } = useCanary();
   const [testing, setTesting] = useState<NotificationChannel | null>(null);
@@ -647,6 +656,7 @@ export function ChannelsView() {
         actions={editable ? <a className="btn primary" href={href('channels', 'new')}><Icon name="plus" />New channel</a> : <ReadOnly>Viewers see names and providers only</ReadOnly>}
       />
       <NotificationTabs current="channels" />
+      <ChannelRefreshNotice />
       <Card title="Channels" className="channel-list-card">
         {channels.unsupported ? <EmptyState title={`${endpoint} doesn’t offer reusable channels`}>It probably runs an older Uptime-Canary version. Monitors can still use a legacy webhook URL.</EmptyState>
           : channels.error && !channels.list ? <Banner tone="down" title="Channels could not be loaded" actions={<button type="button" className="btn sm" onClick={channels.reload}><Icon name="refresh" />Try again</button>}>{describeFailure(channels.error)}</Banner>
@@ -694,7 +704,7 @@ export function ChannelsView() {
               })}
             </ul>
           ) : (
-            <EmptyState title={channels.list.length ? 'Nothing matches' : 'No channels yet'} action={!channels.list.length && editable ? <a className="btn primary" href={href('channels', 'new')}><Icon name="plus" />New channel</a> : undefined}>
+            <EmptyState title={channels.list.length ? 'Nothing matches' : channels.error ? 'No channels in the last loaded list' : 'No channels yet'} action={!channels.list.length && editable ? <a className="btn primary" href={href('channels', 'new')}><Icon name="plus" />New channel</a> : undefined}>
               {channels.list.length ? 'Try another search.' : 'Add Discord, Slack, Telegram, Matrix, ntfy, Gotify, Pushover, an email service, Home Assistant or a JSON webhook, then pick it in a monitor’s alerts.'}
             </EmptyState>
           )}
@@ -980,7 +990,7 @@ function ChannelFormBody({ id }: { id?: string }) {
   if (!editable) return <div className="view"><PageHead title={id ? 'Edit channel' : 'New channel'} /><Card><EmptyState title="Viewers can’t change channels">Sign in with an editor or admin account.</EmptyState></Card></div>;
   if (channels.unsupported) return <div className="view"><PageHead title="New channel" /><Card><EmptyState title={`${endpoint} doesn’t offer reusable channels`}>It probably runs an older Uptime-Canary version.</EmptyState></Card></div>;
   if (id && !existing) {
-    return <div className="view"><PageHead crumbs={<a href={href('notifications')}>Notifications</a>} title="Edit channel" /><Card>{channels.list ? <EmptyState title="Channel not found">{endpoint} doesn’t know this channel. It may have been deleted.</EmptyState> : <p className="muted">Loading the channel from {endpoint}…</p>}</Card></div>;
+    return <div className="view"><PageHead crumbs={<a href={href('notifications')}>Notifications</a>} title="Edit channel" /><ChannelRefreshNotice /><Card>{channels.error && !channels.list ? <Banner tone="down" title="Channels could not be loaded" actions={<button type="button" className="btn sm" onClick={channels.reload}>Retry loading</button>}>{describeFailure(channels.error)}</Banner> : channels.error && channels.list ? <EmptyState title="Channel could not be confirmed">Refresh the channel list before concluding this channel was deleted.</EmptyState> : channels.list ? <EmptyState title="Channel not found">{endpoint} doesn’t know this channel. It may have been deleted.</EmptyState> : <p className="muted">Loading the channel from {endpoint}…</p>}</Card></div>;
   }
 
   // What the selected node renders: its overview's reported peer protocol, or the six-placeholder grammar when it reports none.
@@ -1083,6 +1093,7 @@ function ChannelFormBody({ id }: { id?: string }) {
         : changedElsewhere ? <Banner title={<>This channel changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" onClick={loadLatest}><Icon name="refresh" />Load latest (discards your edits)</button>}>Saving your version will be rejected because it’s based on an older revision.</Banner>
         : null}
       {dirty ? <span className="channel-unsaved" role="status">Unsaved changes</span> : null}
+      <ChannelRefreshNotice />
       <Card>
         <form className="form" onSubmit={event => { void submit(event); }} noValidate aria-busy={saving}>
           <ErrorSummary ref={summaryRef} title={failure ? (failure.stale ? 'Not saved: the channel changed or has a conflict' : 'Not saved') : 'Check these fields'} errors={failure ? [] : errorList} onErrorSelect={focusError}>
@@ -1208,13 +1219,13 @@ function ChannelFormBody({ id }: { id?: string }) {
               ))}
             </div>
             {!draft.events.includes('down') ? <small id={`${formId}-repeat-h`}>Repeats are off while down alerts are off. Enable down alerts to choose repeats.</small> : null}
-            {eventsReady ? <small id={`${formId}-events-h`}>Excluded events are cancelled for this channel only.</small>
+            {eventsReady ? <small id={`${formId}-events-h`}>Repeats need down alerts. Excluded events are cancelled for this channel only.</small>
               : <small id={`${formId}-events-h`} className="fwarn"><Glyph tone="warn" /><span>Choosing events needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Upgrade every node in the cluster together. Until then this selection is read-only.</span></small>}
             <ErrorText id={`${formId}-events-e`}>{visible.events}</ErrorText>
           </fieldset>
           <CheckField full={false} label="Enabled" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Disabled: no sends. Enable during an outage to resume owed alerts." />
           <CheckField full={false} label="Default for new monitors" checked={draft.isDefault} onChange={value => set('isDefault', value)} disabled={saving}
-            hint={draft.isDefault && !draft.enabled ? 'Only while enabled: a disabled default isn’t preselected.' : 'Preselected for new monitors while enabled. For existing monitors, use Add to monitors in the channel list.'} />
+            hint={draft.isDefault && !draft.enabled ? 'Only while enabled: a disabled default isn’t preselected.' : 'Preselected for new monitors; existing monitors stay unchanged.'} />
 
           <Disclosure title="Message templates" summary={templateSummary(draft.kind, draft, capability.level, draft.discordEmbed)} open={templatesOpen} onToggle={() => setTemplatesOpen(v => !v)}>
             <MessageTemplates kind={draft.kind} providerLabel={provider.label} icon={<ProviderIcon kind={draft.kind} />} channelName={draft.name}

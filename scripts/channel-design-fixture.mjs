@@ -12,7 +12,7 @@ assert.ok(existsSync(join(root, '.canary/bounded-validation.lock')), 'Use bounde
 const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
-let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [];
+let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [], channelReadsFail = false;
 const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
@@ -21,6 +21,7 @@ const makeChannel = (id, name, config, extra = {}) => ({ channel: {
 }, configConflict: false });
 function reset(empty = false) {
   attempts = [];
+  channelReadsFail = false;
   channels = empty ? [] : [
     makeChannel('ha-office', 'Office status light', { kind: 'homeassistant', homeassistant: {
       baseURL: 'https://home.example.test', accessToken: 'private-fixture-ha-token', eventType: 'uptime_canary',
@@ -56,13 +57,17 @@ const server = createServer(async (req, res) => {
       reset(url.searchParams.get('empty') === '1'); requests.length = 0; return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
+    if (url.pathname === '/__fixture/channels-failure') {
+      channelReadsFail = url.searchParams.get('on') === '1'; return reply({ fixture: true, channelReadsFail });
+    }
     if (url.pathname.startsWith('/api/')) {
       requests.push({ method: req.method, path: url.pathname });
       if (url.pathname === '/api/overview') return reply(overview());
       if (url.pathname === '/api/auth/me') return reply({ id: 'fixture-admin', name: 'Alex Morgan', role, passwordEnabled: true });
       if (url.pathname === '/api/tags') return reply([]);
-      if (url.pathname === '/api/notification-channels' && req.method === 'GET') return reply(role === 'viewer'
-        ? channels.map(view => ({ ...view, channel: { ...view.channel, config: { kind: view.channel.config.kind } } })) : channels);
+      if (url.pathname === '/api/notification-channels' && req.method === 'GET') return channelReadsFail
+        ? reply({ error: 'Channel refresh unavailable in the private fixture.' }, 503)
+        : reply(role === 'viewer' ? channels.map(view => ({ ...view, channel: { ...view.channel, config: { kind: view.channel.config.kind } } })) : channels);
       if (url.pathname.endsWith('/test') || url.pathname.endsWith('/preview-test')) {
         if (role === 'viewer') return reply({ error: 'Viewer access refused by fixture.' }, 403);
         if (testMode === 'reject') return reply({ error: 'Visual fixture rejected the test; no notification was sent.' }, 400);

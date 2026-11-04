@@ -263,6 +263,27 @@ check('channel list summarises a narrowed event selection and shows no credentia
   assert.equal(text(markup).split('down alerts and recoveries only').length - 1, 1);
   for (const secret of ['private-ha-token', 'private-matrix-token']) assert.equal(markup.includes(secret), false, secret);
 });
+check('cached channel data has a local refresh warning and retry in both list and editor, including uncertain absence', () => {
+  const channel = saved(channels[0]);
+  const stale = ctx([{ channel, configConflict: false }], 22);
+  stale.channels.error = new apiModel.ApiFailure(503, 'fixture refresh failure');
+  const markup = element => plain(renderToStaticMarkup(React.createElement(CanaryContext.Provider, { value: stale }, element)));
+  for (const element of [React.createElement(ChannelsView), React.createElement(ChannelFormView, { id: channel.id })]) {
+    const html = markup(element);
+    assert.ok(text(html).includes('Channels could not be refreshed'));
+    assert.ok(text(html).includes('Showing the last loaded channel data'));
+    assert.ok(text(html).includes('Retry refresh'));
+  }
+  const missing = markup(React.createElement(ChannelFormView, { id: 'not-in-cached-list' }));
+  assert.ok(text(missing).includes('Channel could not be confirmed'));
+  assert.ok(!text(missing).includes('Channel not found'));
+  stale.channels.list = undefined;
+  stale.channels.map = new Map();
+  const unloaded = markup(React.createElement(ChannelFormView, { id: 'unloaded' }));
+  assert.ok(text(unloaded).includes('Channels could not be loaded'));
+  assert.ok(text(unloaded).includes('Retry loading'));
+  assert.ok(!text(unloaded).includes('Loading the channel from'));
+});
 check('unknown stored Home Assistant and Matrix keys survive an unrelated edit', () => {
   for (const config of channels) {
     const extended = { ...config, [config.kind]: { ...config[config.kind], futureOption: 'kept' } };
