@@ -132,7 +132,7 @@ export function NotificationTabs({ current }: { current: 'channels' | 'deliverie
 }
 
 /** Why an attempt is held or still owed, using only what the endpoint reports. */
-function AttemptWhy({ attempt }: { attempt: DeliveryAttemptView }) {
+function AttemptWhy({ attempt, explainAcceptance = true }: { attempt: DeliveryAttemptView; explainAcceptance?: boolean }) {
   const { monitorMap, groupMap, maintenanceMap } = useCanary();
   const view = attempt.monitorId ? monitorMap.get(attempt.monitorId) : undefined;
   const parts: ReactNode[] = [];
@@ -148,12 +148,12 @@ function AttemptWhy({ attempt }: { attempt: DeliveryAttemptView }) {
       ? <>Held by group <b>{group}</b>{view.suppressionReason ? `: ${view.suppressionReason}` : ''}.</>
       : <>Group <b>{group}</b> holds alerts only for destinations that received its outage alert; this destination fails open after the grace period.</>);
   }
-  if (attempt.state === 'accepted') parts.push('The provider acknowledged it. That isn’t proof of inbox, channel or device delivery.');
+  if (explainAcceptance && attempt.state === 'accepted') parts.push('The provider acknowledged it. That isn’t proof of inbox, channel or device delivery.');
   if (!parts.length) return null;
   return <div className="why">{parts.map((part, index) => <span key={index}>{part}</span>)}</div>;
 }
 
-export function DeliveryTable({ attempts, compact, recipientLabels }: { attempts: DeliveryAttemptView[]; compact?: boolean; recipientLabels?: ReadonlyMap<string, string> }) {
+export function DeliveryTable({ attempts, compact, recipientLabels, explainAcceptance = true }: { attempts: DeliveryAttemptView[]; compact?: boolean; recipientLabels?: ReadonlyMap<string, string>; explainAcceptance?: boolean }) {
   const { monitorMap, channels, overview } = useCanary();
   return (
     <div className="tbl-wrap">
@@ -188,7 +188,7 @@ export function DeliveryTable({ attempts, compact, recipientLabels }: { attempts
                   <span className="nowrap"><Chip tone={state.tone} label={state.label} />{attempt.httpStatus ? <span className="muted small"> HTTP {attempt.httpStatus}</span> : null}</span>
                   {attempt.nextAttemptAt ? <div className="muted small">next try <Time at={attempt.nextAttemptAt} now={overview.now} mode="short" /></div> : null}
                   {attempt.providerId ? <div className="muted small">acknowledgement <span className="mono" title="SHA-256 of the provider’s ID">{attempt.providerId.slice(0, 10)}…</span></div> : null}
-                  <AttemptWhy attempt={attempt} />
+                  <AttemptWhy attempt={attempt} explainAcceptance={explainAcceptance} />
                 </td>
                 {compact ? null : <td data-label="Node"><span className="mono">{attempt.nodeId}</span></td>}
                 <td data-label="Failures" className="num">{attempt.failures}</td>
@@ -396,7 +396,7 @@ function TestAttemptsInspector({ provider, attemptIds, recipientLabels, onBack, 
   return <section ref={region}>
     <p className="muted small">Read from <span className="mono">{endpoint}</span>'s 200 most recent attempts. {attemptIds ? 'Only IDs confirmed by this test reply are shown.' : 'These may include other test batches; a match to this submission is not confirmed.'} Older or delayed attempts may be outside this view. Your channel settings stay in the form.</p>
     {recent.error ? <Banner title={recent.data ? 'Attempt refresh failed' : 'Test attempts could not be read'} tone={recent.data ? 'warn' : 'down'}>{recent.data ? 'Showing the last loaded attempts; this view could not be updated. ' : ''}{describeFailure(recent.error)}</Banner> : null}
-    {recent.data ? rows.length ? <DeliveryTable attempts={rows} compact recipientLabels={recipientLabels} />
+    {recent.data ? rows.length ? <DeliveryTable attempts={rows} compact recipientLabels={recipientLabels} explainAcceptance={false} />
       : <p>{recent.error ? 'No matching attempts in the last loaded view.' : 'No matching attempts in this recent view.'} This does not prove the test was not queued.</p>
       : !recent.error ? <p role="status">Loading recent test attempts...</p> : null}
     <p className="muted small">Accepted means the provider acknowledged the request; it is not proof of device or inbox delivery. Do not resend an unconfirmed test just because it is absent here.</p>
@@ -425,7 +425,7 @@ export function PreviewOutcomeList({ attempts, recipientLabels }: { attempts: De
             <ProviderIcon kind={attempt.provider} />
             <span className="grow">{recipient ?? providerLabel(attempt.provider)}{attempt.httpStatus ? <span className="muted small"> · HTTP {attempt.httpStatus}</span> : null}
               {recipient ? <small className="muted small">{providerLabel(attempt.provider)}</small> : attempts.length > 1 ? <small className="preview-destination mono">{attempt.destinationId ? `Destination ${attempt.destinationId}` : `Attempt ${attempt.id}`}</small> : null}
-              {errorText(attempt.errorCode) ? <span className="muted small"> · {errorText(attempt.errorCode)}</span> : null}</span>
+              {errorText(attempt.errorCode) ? <small className="muted small">{errorText(attempt.errorCode)}</small> : null}</span>
             <Chip tone={state.tone} label={state.label} />
           </li>
         );
