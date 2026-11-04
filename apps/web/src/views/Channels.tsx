@@ -85,6 +85,31 @@ const ERROR_TEXT: Record<string, string> = {
 export const errorText = (code: string | undefined): string | undefined => code ? ERROR_TEXT[code] ?? code.replace(/_/gu, ' ') : undefined;
 const KIND_LABEL: Record<DeliveryAttemptView['kind'], string> = { down: 'Down alert', repeat: 'Repeat', recovery: 'Recovery', test: 'Test' };
 
+// ---------- alert events (peer protocol 22)
+
+/** The peer protocol that adds per-channel alert events and the Home Assistant and Matrix providers (buildChannel's gate). */
+const EVENTS_PROTOCOL = 22;
+const PROTOCOL_22_KINDS: ReadonlySet<string> = new Set(['homeassistant', 'matrix']);
+type AlertEvent = 'down' | 'repeat' | 'recovery';
+const EVENT_ORDER: readonly AlertEvent[] = ['down', 'repeat', 'recovery'];
+const EVENT_CHOICE: Record<AlertEvent, { label: string; hint: string; noun: string }> = {
+  down: { label: 'Down alerts', hint: 'When a monitor goes down.', noun: 'down alerts' },
+  repeat: { label: 'Repeats', hint: 'Reminders while it stays down. Needs down alerts.', noun: 'repeats' },
+  recovery: { label: 'Recoveries', hint: 'When it’s back up.', noun: 'recoveries' },
+};
+/** A stored selection that isn't all three, in words; nothing for the default. */
+export const eventsSummary = (events: readonly string[] | undefined): string | undefined => {
+  if (!events) return undefined;
+  const known = EVENT_ORDER.filter(event => events.includes(event));
+  if (known.length === EVENT_ORDER.length) return undefined;
+  return known.length ? `${andList(known.map(event => EVENT_CHOICE[event].noun))} only` : 'no alert events';
+};
+
+/** A Home Assistant test is a real event: automations that trigger on it run unless they check the kind. */
+function HaTestWarning({ eventType }: { eventType: string | undefined }) {
+  return <p className="fwarn"><Glyph tone="warn" />This fires a real <span className="mono">{eventType || 'uptime_canary'}</span> event in Home Assistant. Automations that trigger on it run and can switch real devices, unless they check that <span className="mono">kind</span> is <span className="mono">test</span>.</p>;
+}
+
 export function NotificationTabs({ current }: { current: 'channels' | 'deliveries' | 'receipts' }) {
   const tabs = [
     { key: 'channels', label: 'Channels', to: href('notifications') },
@@ -266,6 +291,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
             It creates no monitor, incident or receipt.
           </p>
           {emergency ? <p className="fwarn"><Glyph tone="warn" />Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</p> : null}
+          {channel.config.kind === 'homeassistant' ? <HaTestWarning eventType={channel.config.homeassistant?.eventType} /> : null}
           <p className="muted small">Tests use revision <Rev revision={channel.revision} />. A node sends one batch at a time, at least 5 seconds apart.</p>
           {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Test not sent</b><p>{error}</p></div></div> : null}
           <div className="row-wrap modal-acts">
@@ -364,6 +390,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
             Nothing is saved, and no monitor, incident or receipt is created.
           </p>
           {emergency ? <p className="fwarn"><Glyph tone="warn" />Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</p> : null}
+          {kind === 'homeassistant' ? <HaTestWarning eventType={input.config.homeassistant?.eventType} /> : null}
           <p className="muted small">A node sends one test batch at a time, at least 5 seconds apart, shared with saved channels’ tests.</p>
           {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Test not sent</b><p>{error}</p></div></div> : null}
           <div className="row-wrap modal-acts">
@@ -558,6 +585,7 @@ export function ChannelsView() {
                       <div className="m">
                         {routeText(c, role === 'viewer')}
                         {recipientCount(c) ? <span> · {plural(recipientCount(c), 'recipient')}</span> : null}
+                        {eventsSummary(c.events) ? <span> · {eventsSummary(c.events)}</span> : null}
                         <span className="muted"> · used by {plural(count, 'monitor')} · <Rev revision={c.revision} /></span>
                       </div>
                     </div>
@@ -575,7 +603,7 @@ export function ChannelsView() {
             </ul>
           ) : (
             <EmptyState title={channels.list.length ? 'Nothing matches' : 'No channels yet'} action={!channels.list.length && editable ? <a className="btn primary" href={href('channels', 'new')}><Icon name="plus" />New channel</a> : undefined}>
-              {channels.list.length ? 'Try another search.' : 'Add Discord, Slack, Telegram, ntfy, Gotify, Pushover, an email service or a JSON webhook, then pick it in a monitor’s alerts.'}
+              {channels.list.length ? 'Try another search.' : 'Add Discord, Slack, Telegram, Matrix, ntfy, Gotify, Pushover, an email service, Home Assistant or a JSON webhook, then pick it in a monitor’s alerts.'}
             </EmptyState>
           )}
       </Card>
@@ -829,6 +857,11 @@ function ChannelFormBody({ id }: { id?: string }) {
   // What the selected node renders: its overview's reported peer protocol, or the six-placeholder grammar when it reports none.
   const capability = templateCapability(overview.build);
   const { input, errors } = buildChannel(draft, base, capability.level, capability.protocol ?? 0);
+  // Alert events and the protocol 22 providers: editable only when the selected node reports protocol 22 or later.
+  const eventsReady = (capability.protocol ?? 0) >= EVENTS_PROTOCOL;
+  const reported = capability.protocol ? `reports peer protocol ${capability.protocol}` : 'doesn’t report a peer protocol';
+  const toggleEvent = (event: AlertEvent, on: boolean): void =>
+    setDraft(d => ({ ...d, events: on ? EVENT_ORDER.filter(other => other === event || d.events.includes(other)) : d.events.filter(other => other !== event) }));
   const visible = showErrors ? errors : {};
   const set = <K extends keyof ChannelDraft>(key: K, value: ChannelDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));
@@ -899,22 +932,35 @@ function ChannelFormBody({ id }: { id?: string }) {
           <CheckField full={false} label="Enabled" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Disabled channels receive nothing; owed alerts resume if you enable it during an outage." />
           <CheckField full={false} label="Default for new monitors" checked={draft.isDefault} onChange={value => set('isDefault', value)} disabled={saving}
             hint={draft.isDefault && !draft.enabled ? 'Only while enabled: a disabled default isn’t preselected.' : 'Preselected on every new monitor while enabled; each one can still clear it. Existing monitors change only when you add it to them from the channel list.'} />
+          <fieldset className="fld full" disabled={saving || !eventsReady} aria-invalid={visible.events ? true : undefined}>
+            <legend>Alert events</legend>
+            {EVENT_ORDER.map(event => (
+              <CheckField key={event} full={false} label={EVENT_CHOICE[event].label} hint={EVENT_CHOICE[event].hint} checked={draft.events.includes(event)} onChange={on => toggleEvent(event, on)} />
+            ))}
+            {eventsReady ? <small>Alerts for an event left out are cancelled for this channel without sending. Monitors and their other channels are unaffected.</small>
+              : <small className="fwarn"><Glyph tone="warn" />Choosing events needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Upgrade every node in the cluster together. Until then this selection is read-only.</small>}
+            <ErrorText id={`${formId}-events-e`}>{visible.events}</ErrorText>
+          </fieldset>
           <fieldset className="fld full types-f" disabled={saving}>
             <legend>Provider</legend>
             {PROVIDER_GROUPS.map(group => (
               <div key={group.key} className="type-cat">
                 <span className="type-cat-h" aria-hidden="true">{group.label}</span>
                 <div className="types">
-                  {PROVIDERS.filter(entry => entry.group === group.key).map(entry => (
-                    <label key={entry.kind}>
-                      <input type="radio" name={`${formId}-kind`} value={entry.kind} checked={draft.kind === entry.kind} onChange={() => set('kind', entry.kind)} />
-                      <span><b><ProviderIcon kind={entry.kind} />{entry.label}</b><small>{entry.hint}</small></span>
-                    </label>
-                  ))}
+                  {PROVIDERS.filter(entry => entry.group === group.key).map(entry => {
+                    const gated = !eventsReady && PROTOCOL_22_KINDS.has(entry.kind);
+                    return (
+                      <label key={entry.kind}>
+                        <input type="radio" name={`${formId}-kind`} value={entry.kind} checked={draft.kind === entry.kind} onChange={() => set('kind', entry.kind)} disabled={gated && draft.kind !== entry.kind} />
+                        <span><b><ProviderIcon kind={entry.kind} />{entry.label}</b><small>{gated ? `Needs peer protocol ${EVENTS_PROTOCOL}` : entry.hint}</small></span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ))}
             {current && current.config.kind !== draft.kind ? <small className="fwarn"><Glyph tone="warn" />A different provider is a new destination. Alerts already owed to the old one aren’t moved.</small> : null}
+            {!eventsReady && PROTOCOL_22_KINDS.has(draft.kind) ? <small className="fwarn"><Glyph tone="warn" />{provider.label} needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Saving and testing are refused until every node is upgraded.</small> : null}
           </fieldset>
 
           <h3 className="fsec full">{provider.email ? 'Mail service' : 'Destination'}</h3>

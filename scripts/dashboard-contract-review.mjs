@@ -257,6 +257,10 @@ async function functionsUnderReview() {
 async function review() {
   for (const n of state.nodes) secrets.add(n.token);
   report = { startedAt: new Date().toISOString(), runtime:process.version, harnessHash:sha(readFileSync(fileURLToPath(import.meta.url))), runDir, sourceHash: state.sourceHash, binaryHash: state.binaryHash, artifacts: state.artifacts, checks: [], exceptions: [], blocked: [], requests: [] }; save();
+  if (args.includes('--automation-only')) {
+    await automationBrowserReview();
+    return finishReview();
+  }
   // Same production executable, assets, browser and assertions; a focused entry
   // keeps fleet recovery diagnostics independent of the unrelated form corpus.
   if (args.includes('--fleet-only') || args.includes('--dashboard-only')) {
@@ -686,6 +690,66 @@ async function finishReview() {
   report.finishedAt = new Date().toISOString(); report.summary = { passed: report.checks.filter(v => v.passed).length, failed: report.checks.filter(v => !v.passed).length, exceptions: report.exceptions.length, blocked: report.blocked.length }; save();
   console.log(JSON.stringify(report.summary));
   ws?.close(); return report.summary.failed || report.summary.exceptions || report.summary.blocked || report.sourceChangedAfterSnapshot.length ? 1 : 0;
+}
+
+// Real React forms and node API on private Linux loopback fixtures. No monitors
+// are attached and test confirmations are cancelled before provider I/O.
+async function automationBrowserReview() {
+  const [A] = state.nodes;
+  await launchBrowser();
+  await step('Automation browser: sign in', () => signIn(A));
+  for (const kind of ['homeassistant', 'matrix']) {
+    await step(`Automation browser: create, rename and select events for ${kind}`, async () => {
+      const name = `Browser ${kind}`, token = secret(); secrets.add(token);
+      await nav('#/channels/new'); await heading('New channel');
+      await fill('Name', name);
+      await choose(kind === 'homeassistant' ? 'Home Assistant' : 'Matrix');
+      if (kind === 'homeassistant') {
+        await fill('Home Assistant URL', state.sink + '/ha');
+        await fill('Long-lived access token', token);
+        await fill('Event type', 'uptime_canary');
+      } else {
+        await fill('Homeserver URL', state.sink + '/matrix');
+        await fill('Access token', token);
+        await fill('Room ID', '!domainless_hash');
+      }
+      await choose('Allow plain HTTP for this server');
+      await choose('Repeats');
+      await click('Create channel'); await heading('Notifications');
+      const views = await api(A, '/api/notification-channels');
+      let saved = views.value.find(v => v.channel.name === name)?.channel;
+      assert.ok(saved, 'the form created a channel');
+      assert.deepEqual(saved.events, ['down', 'recovery']);
+      assert.equal(saved.config[kind].accessToken, token);
+      const config = structuredClone(saved.config);
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const tokenLabel = kind === 'homeassistant' ? 'Long-lived access token' : 'Access token';
+      assert.equal(await page.eval(`__field(${J(tokenLabel)}).type`), 'password');
+      assert.equal(await page.eval(`document.body.innerText.includes(${J(token)})`), false);
+      await fill('Name', name + ' renamed');
+      await choose('Down alerts');
+      await click('Save changes'); await heading('Notifications');
+      saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+      assert.deepEqual(saved.config, config, 'rename preserves provider settings');
+      assert.deepEqual(saved.events, ['recovery']);
+      const revision = saved.revision;
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      await choose('Recoveries'); await click('Save changes');
+      await text('Select at least one event.');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, revision, 'invalid selection saves nothing');
+      await choose('Recoveries'); await choose('Down alerts'); await choose('Repeats');
+      await click('Save changes'); await heading('Notifications');
+      saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+      assert.equal(saved.events, undefined, 'all events retain the omitted default');
+      if (kind === 'homeassistant') {
+        await page.eval(`(() => { const row=[...document.querySelectorAll('.chan-list li')].find(row => row.querySelector('.t b')?.textContent === ${J(name + ' renamed')}); [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Test').click(); })()`);
+        await text('This fires a real');
+        await click('Cancel', 'dialog[open]');
+      }
+      assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, allEventsRestored: true, realSends: 0 };
+    });
+  }
 }
 async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows }) {
   await launchBrowser(); await step('Browser: sign in to private A', () => signIn(A));

@@ -60,7 +60,8 @@ Unknown/stale observations have no latency or certificate-lifetime sample.
 Maintenance is separate from health: a monitor can be down during planned work.
 
 The dashboard shows state timelines, fresh latency, certificate days,
-maintenance and peer reachability. It deliberately does not label a count of
+maintenance, peer reachability, current monitor counts and exporter scrape
+reachability (separate from monitored-site health). It deliberately does not label a count of
 scraped samples as SLA uptime. Scrapes can miss short transitions and retain
 only data collected after scraping starts. They do not backfill Canary's
 SQLite history. For Canary's local observed-time coverage and full metric

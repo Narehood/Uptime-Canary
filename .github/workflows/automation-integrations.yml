@@ -35,6 +35,8 @@ jobs:
           echo 'GOTOOLCHAIN=local' >> "$GITHUB_ENV"
           go mod download
           npm ci --ignore-scripts --no-audit --no-fund
+          automation_chrome="$(command -v google-chrome || command -v chromium)"
+          echo "CHROME_PATH=$automation_chrome" >> "$GITHUB_ENV"
       # Separate invocations release compiler scratch between packages; the guard
       # retains one shared build cache and enforces the same 512 MiB scratch cap.
       - name: Native provider tests with private loopback fixtures
@@ -71,6 +73,13 @@ jobs:
         run: python3 scripts/bounded_validation.py --timeout 120 -- node scripts/alert-templates-pure.mjs
       - name: Automation form and external dashboard contracts
         run: python3 scripts/bounded_validation.py --timeout 120 -- node scripts/automation-integrations-pure.mjs
+      - name: Real automation forms on Linux Chrome
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 600 -- node scripts/dashboard-contract-review.mjs --automation-only
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
       - name: Upload bounded result
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -79,5 +88,6 @@ jobs:
           path: |
             .canary/work/current/latest.log
             .canary/work/current/latest.json
+            .canary/dashboard-contract-current.json
           include-hidden-files: true
           retention-days: 7

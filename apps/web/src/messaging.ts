@@ -103,7 +103,7 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
       const baseURL = base(ha ? d.haBase : d.matrixBase, ha ? d.haInsecure : d.matrixInsecure, 'Server URL', 'serverUrl', true);
       if (ha) {
         const eventType = d.haEvent.trim();
-        if (!/^[A-Za-z0-9_]{1,64}$/u.test(eventType)) errors.eventType = 'Use 1?64 letters, digits or underscores.';
+        if (!/^[A-Za-z0-9_]{1,64}$/u.test(eventType)) errors.eventType = 'Use 1 to 64 letters, digits or underscores.';
         config.homeassistant = { ...same?.homeassistant, baseURL, accessToken, eventType, ...(d.haInsecure ? { allowInsecureHTTP: true } : {}) };
         if (!d.haInsecure) delete config.homeassistant.allowInsecureHTTP;
       } else {
