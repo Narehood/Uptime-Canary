@@ -114,7 +114,7 @@ func Validate(c Config) error {
 			return errConfig
 		}
 		p := c.Matrix
-		if !secret(p.AccessToken, 4096) || !singleLine(p.RoomID, 255, false) || !strings.HasPrefix(p.RoomID, "!") || !strings.Contains(p.RoomID, ":") || strings.ContainsAny(p.RoomID, "/\\?#% ") {
+		if !secret(p.AccessToken, 4096) || !singleLine(p.RoomID, 255, false) || !strings.HasPrefix(p.RoomID, "!") || len(p.RoomID) < 2 || strings.ContainsAny(p.RoomID, "/\\?#% ") {
 			return errConfig
 		}
 		if _, err := endpoint(p.BaseURL, "", p.AllowInsecureHTTP); err != nil {

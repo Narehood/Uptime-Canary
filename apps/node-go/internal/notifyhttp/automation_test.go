@@ -128,3 +128,29 @@ func TestAutomationConfigurationAndRouteIdentity(t *testing.T) {
 		}
 	}
 }
+
+// Matrix v1.16+ room versions can use a domainless create-event hash.
+func TestMatrixDomainlessRoomID(t *testing.T) {
+	const room = "!Abcdef0123456789_hash"
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PUT" || r.URL.Path != "/_matrix/client/v3/rooms/"+room+"/send/m.room.message/stable" {
+			t.Error("wrong room route", r.URL.Path)
+		}
+		io.WriteString(w, `{"event_id":"$fixture"}`)
+	}))
+	defer sink.Close()
+	c := automationConfig(Matrix, sink.URL)
+	c.Matrix.RoomID = room
+	data, _ := json.Marshal(c)
+	var decoded Config
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if result := Send(context.Background(), decoded, Message{Text: "fixture", IdempotencyKey: "stable"}); !result.Accepted {
+		t.Fatal(result)
+	}
+	c.Matrix.RoomID = "!"
+	if Validate(c) == nil {
+		t.Fatal("empty opaque room ID accepted")
+	}
+}

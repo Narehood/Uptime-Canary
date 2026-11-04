@@ -87,7 +87,8 @@ retries if your automation needs its own deduplication.
 ## Matrix
 
 Use the homeserver base URL, an access token for a bot/user that has already
-joined the room, and its internal room ID (`!room:example.org`, not a `#alias`).
+joined the room, and its internal room ID (`!room:example.org` or a domainless `!opaque_hash`,
+not a `#alias`).
 Only **unencrypted rooms** are supported. The adapter sends a plain `m.notice`
 using the [Matrix room send API](https://spec.matrix.org/latest/client-server-api/#put_matrixclientv3roomsroomidsendeventtypetxnid).
 There is no login, room joining, encryption or key storage in Canary.

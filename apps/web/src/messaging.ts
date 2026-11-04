@@ -108,7 +108,7 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
         if (!d.haInsecure) delete config.homeassistant.allowInsecureHTTP;
       } else {
         const roomId = d.matrixRoom.trim();
-        if (!/^![^/\\?#%\s]+:[^/\\?#%\s]+$/u.test(roomId) || bytesOf(roomId) > 255) errors.roomId = 'Use the internal room ID, like !room:example.org, up to 255 bytes.';
+        if (!/^![^/\\?#%\s]+$/u.test(roomId) || bytesOf(roomId) > 255) errors.roomId = 'Use the internal room ID, like !room:example.org, up to 255 bytes.';
         config.matrix = { ...same?.matrix, baseURL, accessToken, roomId, ...(d.matrixInsecure ? { allowInsecureHTTP: true } : {}) };
         if (!d.matrixInsecure) delete config.matrix.allowInsecureHTTP;
       }

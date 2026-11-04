@@ -35,8 +35,29 @@ jobs:
           echo 'GOTOOLCHAIN=local' >> "$GITHUB_ENV"
           go mod download
           npm ci --ignore-scripts --no-audit --no-fund
-      - name: Provider and runtime tests with private loopback fixtures
-        run: python3 scripts/bounded_validation.py --timeout 600 -- go test -count=1 -timeout=8m ./apps/node-go/internal/notifyhttp ./apps/node-go/internal/delivery ./apps/node-go/internal/canary
+      # Separate invocations release compiler scratch between packages; the guard
+      # retains one shared build cache and enforces the same 512 MiB scratch cap.
+      - name: Native provider tests with private loopback fixtures
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 300 -- go test -count=1 ./apps/node-go/internal/notifyhttp
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
+      - name: Delivery adapter regressions
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 300 -- go test -count=1 ./apps/node-go/internal/delivery
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
+      - name: HA runtime and event-selection regressions
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 600 -- go test -count=1 -timeout=8m ./apps/node-go/internal/canary
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
       - name: Shared and frontend types
         run: python3 scripts/bounded_validation.py --timeout 120 -- npm run typecheck
       - name: Existing channel and template regressions
