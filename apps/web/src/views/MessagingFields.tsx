@@ -134,33 +134,49 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
       {kind === 'homeassistant' ? (
         <>
           <TextField full mono label="Home Assistant URL" value={d.haBase} onChange={value => patch({ haBase: value })} error={errors.serverUrl} placeholder="https://homeassistant.example.com:8123" disabled={saving}
-            hint={<>The instance address, with any path prefix but without <span className="mono">/api</span>. <span className="mono">/api/events/</span> and the event type are appended.</>} />
+            hint={<>Instance address and any path prefix, without <span className="mono">/api</span>.</>} />
           <TextField mono label="Event type" value={d.haEvent} onChange={value => patch({ haEvent: value })} error={errors.eventType} placeholder="uptime_canary" disabled={saving}
-            hint="1–64 letters, digits or underscores. Use it as the event trigger in your automations." />
+            hint="1-64 letters, digits or underscores; your automation's event trigger." />
           <SecretField label="Long-lived access token" value={d.haToken} onChange={value => patch({ haToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('haToken')}
-            hint={<>Your Home Assistant profile → Security → Long-lived access tokens. Sent only in the <span className="mono">Authorization</span> header.</>} />
+            hint="Home Assistant profile > Security > Long-lived access tokens." />
           {insecure(d.haInsecure, value => patch({ haInsecure: value }))}
-          <p className="full muted small">Each alert fires one event. Its data has <span className="mono">kind</span> (down, repeat, recovery or test), <span className="mono">monitor_id</span>, <span className="mono">monitor_name</span>, <span className="mono">incident_id</span>, <span className="mono">title</span>, <span className="mono">message</span> and <span className="mono">idempotency_key</span>.</p>
-          <p className="full fwarn small"><Glyph tone="warn" /><span>These events run real automations. A retry or a network partition can fire the same alert twice, so prefer actions that are safe to repeat, like <span className="mono">light.turn_on</span> for down and <span className="mono">light.turn_off</span> for recovery, over <span className="mono">toggle</span>. Check <span className="mono">trigger.event.data.kind</span> so a test isn’t treated as an outage, and use <span className="mono">idempotency_key</span> to deduplicate alerts.</span></p>
-          <p className="full muted small">Accepted means Home Assistant reported the event fired. It isn’t proof that any automation ran.</p>
+          <p className="full fwarn small"><Glyph tone="warn" /><span>Real events can switch real devices, and retries or partitions can duplicate them. Use repeat-safe actions and <span className="mono">idempotency_key</span>. Check <span className="mono">trigger.event.data.kind</span> for <span className="mono">test</span> before running outage actions.</span></p>
+          <details className="full channel-context-details">
+            <summary>Home Assistant API and delivery details</summary>
+            <div>
+              <p>Posts one event per alert to your URL plus <span className="mono">/api/events/&#123;event_type&#125;</span>, keeping any path prefix. The access token travels only in the <span className="mono">Authorization</span> header.</p>
+              <p>Payload: <span className="mono">kind</span> (down, repeat, recovery or test), <span className="mono">monitor_id</span>, <span className="mono">monitor_name</span>, <span className="mono">incident_id</span>, <span className="mono">title</span>, <span className="mono">message</span> and <span className="mono">idempotency_key</span>.</p>
+              <p>Prefer <span className="mono">light.turn_on</span> / <span className="mono">light.turn_off</span> to <span className="mono">toggle</span>: repeating a toggle reverses the action.</p>
+              <p><b>Destination.</b> {IDENTITY.homeassistant}</p>
+              <p><b>Acceptance.</b> Home Assistant reported the event fired; this does not prove an automation ran.</p>
+            </div>
+          </details>
         </>
       ) : null}
 
       {kind === 'matrix' ? (
         <>
           <TextField full mono label="Homeserver URL" value={d.matrixBase} onChange={value => patch({ matrixBase: value })} error={errors.serverUrl} placeholder="https://matrix.example.org" disabled={saving}
-            hint={<>The client API address itself, with any path prefix; <span className="mono">.well-known</span> delegation isn’t looked up. <span className="mono">/_matrix/client/v3/rooms/…</span> is appended.</>} />
+            hint="Client API server address, including any path prefix." />
           <TextField mono label="Room ID" value={d.matrixRoom} onChange={value => patch({ matrixRoom: value })} error={errors.roomId} placeholder="!AbCdEf:example.org" disabled={saving}
-            hint={<>The internal ID from the room’s advanced settings: <span className="mono">!room:server</span>, or <span className="mono">!</span> and an opaque ID on newer room versions. Not a <span className="mono">#alias</span>.</>} />
+            hint={<>From room advanced settings: <span className="mono">!room:server</span> or a newer opaque <span className="mono">!</span> ID; not a <span className="mono">#alias</span>.</>} />
           <SecretField label="Access token" value={d.matrixToken} onChange={value => patch({ matrixToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('matrixToken')}
-            hint={<>An existing token for the account that posts, ideally a bot account. Sent only in the <span className="mono">Authorization</span> header; Uptime-Canary never logs in or refreshes it.</>} />
+            hint="Use an existing token from the posting account's Matrix client, ideally a bot account." />
           {insecure(d.matrixInsecure, value => patch({ matrixInsecure: value }))}
-          <p className="full fwarn small"><Glyph tone="warn" /><span>Sends a plain-text notice to an <b>unencrypted</b> room the account has <b>already joined</b>. Invite it and accept the invite first. End-to-end encrypted rooms aren’t supported.</span></p>
-          <p className="full muted small">Accepted means the homeserver stored the notice and returned an event ID. It isn’t proof anyone’s client showed it.</p>
+          <p className="full fwarn small"><Glyph tone="warn" /><span>The account must have <b>already joined</b> this <b>unencrypted</b> room. Accept its invite first. End-to-end encrypted rooms are unsupported.</span></p>
+          <details className="full channel-context-details">
+            <summary>Matrix API and delivery details</summary>
+            <div>
+              <p>Uses your client API server directly; <span className="mono">.well-known</span> delegation is not looked up. Keeps any path prefix and appends <span className="mono">/_matrix/client/v3/rooms/&#123;roomId&#125;/send/m.room.message/&#123;idempotency_key&#125;</span> (PUT).</p>
+              <p>Sends a plain-text <span className="mono">m.notice</span>. The access token travels only in the <span className="mono">Authorization</span> header; Uptime-Canary never logs in or refreshes it.</p>
+              <p><b>Destination.</b> {IDENTITY.matrix}</p>
+              <p><b>Acceptance.</b> The homeserver stored the notice and returned an event ID; this does not prove a client showed it.</p>
+            </div>
+          </details>
         </>
       ) : null}
 
-      <p className="full muted small id-note"><b>Destination.</b> {IDENTITY[kind]}</p>
+      {kind !== 'homeassistant' && kind !== 'matrix' ? <p className="full muted small id-note"><b>Destination.</b> {IDENTITY[kind]}</p> : null}
       {moved ? <p className="full fwarn small"><Glyph tone="warn" /><span>This is a new destination. Alerts already owed to the old one aren’t moved, and finished outages aren’t replayed to the new one.</span></p>
         : rotated && kind === 'gotify' ? <p className="full fwarn small"><Glyph tone="warn" /><span>Only the token changes. Use a token from the same Gotify application; for another application, create a new channel.</span></p>
         : rotated ? <p className="full muted small">Only the credential changes: the destination and its receipts stay the same.</p>

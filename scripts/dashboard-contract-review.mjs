@@ -147,7 +147,16 @@ window.__field = (label, scope) => { const root = scope ? document.querySelector
 window.__set = (e,v) => { const p = e.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : e.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(p,'value').set.call(e,v); e.dispatchEvent(new Event(e.tagName === 'SELECT' ? 'change' : 'input',{bubbles:true})); };
 window.__button = (label,scope) => { const root = scope ? document.querySelector(scope) : document; const all = [...root.querySelectorAll('button,a')].filter(e => __vis(e) && [__norm(e.innerText),__norm(e.getAttribute('aria-label'))].includes(label)); if(all.length !== 1) throw Error('button '+label+' matched '+all.length); return all[0]; }; true;`;
 async function ready() { await page.eval(DOM); }
-async function nav(hash) { await page.eval(`location.hash=${J(hash)}`); await sleep(180); await ready(); }
+async function nav(hash) {
+  await page.eval(`location.hash=${J(hash)}`); await sleep(180); await ready();
+  // Existing fixture cases intentionally leave scratch edits. The channel editor now protects real
+  // users from that navigation; explicitly discard only this exact owned-fixture confirmation.
+  if (await page.eval(`document.querySelector('dialog[open] h2')?.textContent === 'Discard unsaved channel changes?'`)) {
+    await click('Discard changes', 'dialog[open]');
+    await until(() => page.eval(`location.hash === ${J(hash)}`), 'fixture navigation after explicit discard');
+    await ready();
+  }
+}
 async function fill(label, value, scope) { await ready(); await page.eval(`__set(__field(${J(label)},${J(scope)}),${J(value)})`); await sleep(45); }
 async function click(label, scope) { await ready(); await page.eval(`(() => { const e=__button(${J(label)},${J(scope)}); if(e.disabled) throw Error('disabled'); e.click(); })()`); await sleep(120); }
 async function choose(label, scope) { await page.eval(`(() => { const r=${scope ? `document.querySelector(${J(scope)})` : 'document'}; const e=[...r.querySelectorAll('label')].find(e => __vis(e) && __norm(e.innerText).startsWith(${J(label)}) && e.querySelector('input[type=radio],input[type=checkbox]')); if(e) { e.querySelector('input').click(); return; } const select=r.querySelector('select[aria-label="Provider"]'); const option=select && [...select.options].find(o => o.label === ${J(label)} || o.label.startsWith(${J(label)}+' ?')); if(!option || option.disabled) throw Error('choice missing or disabled'); __set(select,option.value); })()`); await sleep(50); }
@@ -727,6 +736,15 @@ async function automationBrowserReview() {
       assert.equal(await page.eval(`__field(${J(tokenLabel)}).type`), 'password');
       assert.equal(await page.eval(`document.body.innerText.includes(${J(token)})`), false);
       await fill('Name', name + ' renamed');
+      await page.eval(`document.querySelector('main a[href="#/notifications"]').click()`);
+      await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), name + ' renamed', 'declining navigation keeps the draft');
+      await page.eval('history.back()');
+      await text('Discard unsaved channel changes?');
+      await until(() => page.eval(`location.hash === ${J(`#/channels/${saved.id}/edit`)}`), 'Back restores the mounted editor');
+      await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), name + ' renamed', 'declining Back keeps the draft');
       await choose('Repeats'); // First enable it so clearing down proves the UI dependency.
       await choose('Down alerts');
       assert.deepEqual(await page.eval(`(() => { const field = label => [...document.querySelectorAll('input[type=checkbox]')].find(e => [...e.labels].some(l => __norm(l.innerText).startsWith(label))); const repeat = field('Repeats'); return { down: field('Down alerts').checked, repeat: repeat.checked, repeatDisabled: repeat.disabled, recovery: field('Recoveries').checked }; })()`), { down: false, repeat: false, repeatDisabled: true, recovery: true });
@@ -748,11 +766,11 @@ async function automationBrowserReview() {
       assert.equal(saved.events, undefined, 'all events retain the omitted default');
       if (kind === 'homeassistant') {
         await page.eval(`(() => { const row=[...document.querySelectorAll('.chan-list li')].find(row => row.querySelector('.t b')?.textContent === ${J(name + ' renamed')}); [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Test').click(); })()`);
-        await text('This fires a real');
+        await text('test event can switch real devices');
         await click('Cancel', 'dialog[open]');
       }
       assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
-      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, allEventsRestored: true, realSends: 0 };
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, allEventsRestored: true, realSends: 0 };
     });
   }
 }

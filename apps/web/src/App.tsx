@@ -572,7 +572,7 @@ function View({ route }: { route: Route }) {
     case 'group-edit': return <GroupFormView key={route.id} id={route.id} />;
     case 'incidents': return <IncidentsView />;
     case 'notifications': return <ChannelsView />;
-    case 'deliveries': return <DeliveriesView />;
+    case 'deliveries': return <DeliveriesView channelFilter={route.channelId} />;
     case 'receipts': return <NotificationsView />;
     case 'channel-new': return <ChannelFormView />;
     case 'channel-edit': return <ChannelFormView key={route.id} id={route.id} />;

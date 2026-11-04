@@ -12,7 +12,7 @@ assert.ok(existsSync(join(root, '.canary/bounded-validation.lock')), 'Use bounde
 const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
-let protocol = 22, role = 'admin', channels, revision = 1;
+let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [];
 const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
@@ -20,6 +20,7 @@ const makeChannel = (id, name, config, extra = {}) => ({ channel: {
   updatedBy: 'canary-eu', enabled: true, ...extra,
 }, configConflict: false });
 function reset(empty = false) {
+  attempts = [];
   channels = empty ? [] : [
     makeChannel('ha-office', 'Office status light', { kind: 'homeassistant', homeassistant: {
       baseURL: 'https://home.example.test', accessToken: 'private-fixture-ha-token', eventType: 'uptime_canary',
@@ -51,6 +52,7 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === '/__fixture/reset') {
       protocol = Number(url.searchParams.get('protocol') || 22); role = url.searchParams.get('role') || 'admin';
+      testMode = url.searchParams.get('test') || 'reject';
       reset(url.searchParams.get('empty') === '1'); requests.length = 0; return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
@@ -61,7 +63,20 @@ const server = createServer(async (req, res) => {
       if (url.pathname === '/api/tags') return reply([]);
       if (url.pathname === '/api/notification-channels' && req.method === 'GET') return reply(role === 'viewer'
         ? channels.map(view => ({ ...view, channel: { ...view.channel, config: { kind: view.channel.config.kind } } })) : channels);
-      if (url.pathname.includes('test')) return reply({ error: 'Visual fixture never sends notifications.' }, 400);
+      if (url.pathname.endsWith('/test') || url.pathname.endsWith('/preview-test')) {
+        if (role === 'viewer') return reply({ error: 'Viewer access refused by fixture.' }, 403);
+        if (testMode === 'reject') return reply({ error: 'Visual fixture rejected the test; no notification was sent.' }, 400);
+        let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
+        const body = JSON.parse(bytes), preview = url.pathname.endsWith('/preview-test');
+        const channelId = preview ? undefined : url.pathname.split('/').at(-2);
+        const provider = preview ? body.config.kind : channels.find(view => view.channel.id === channelId)?.channel.config.kind;
+        const attempt = { id: `fixture-test-${revision++}`, nodeId: 'canary-eu', kind: 'test', provider,
+          state: testMode === 'accepted' ? 'accepted' : 'queued', failures: 0, channelId, lastAttemptAt: now() };
+        attempts.unshift(attempt);
+        // Simulates queueing followed by an unusable acknowledgement, never an external provider send.
+        if (testMode === 'malformed') return reply({ fixture: true, acknowledgementUnreadable: true }, 202);
+        return reply({ ...(preview ? { preview: true } : {}), attempts: [attempt] }, 202);
+      }
       if (url.pathname.startsWith('/api/notification-channels') && ['POST', 'PUT'].includes(req.method)) {
         let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
         const body = JSON.parse(bytes), id = req.method === 'PUT' ? url.pathname.split('/').at(-1) : `fixture-created-${revision}`;
@@ -71,7 +86,8 @@ const server = createServer(async (req, res) => {
         return reply(saved.channel, req.method === 'POST' ? 201 : 200);
       }
       if (url.pathname === '/api/monitors') return reply(overview().monitors);
-      if (url.pathname === '/api/notification-deliveries') return reply([]);
+      if (url.pathname === '/api/notification-deliveries') return role === 'viewer'
+        ? reply({ error: 'Viewer access refused by fixture.' }, 403) : reply(attempts);
       return reply({ error: 'Not implemented by visual fixture' }, 404);
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {

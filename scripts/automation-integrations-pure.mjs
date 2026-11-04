@@ -17,8 +17,10 @@ globalThis.React ??= React;
 const { register } = await import('tsx/esm/api');
 const scope = register({ namespace: 'automation-integrations', tsconfig: resolve(root, 'apps/web/tsconfig.json') });
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
-const { channelFormModel: form, PROVIDERS, toggleAlertEvent } = await load('views/Channels.tsx');
+const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged } = await load('views/Channels.tsx');
 const messaging = await load('messaging.ts');
+const apiModel = await load('api.ts');
+const routes = await load('router.ts');
 let passed = 0;
 const check = (name, fn) => { fn(); console.log(`PASS ${name}`); passed++; };
 const channels = [
@@ -79,6 +81,39 @@ check('Matrix list summaries distinguish rooms on one homeserver and never inclu
   assert.notDeepEqual(first, second);
   assert.ok(JSON.stringify(first).includes('!first:example.test'));
   assert.ok(!JSON.stringify(first).includes('private-matrix-token'));
+});
+check('test submission classification never treats timeouts, proxy failures or unreadable successes as unsent', () => {
+  for (const status of [0, 200, 202, 204, 408, 418, 500, 502, 503, 504]) assert.equal(testSubmissionDisposition(new apiModel.ApiFailure(status, 'fixture')), 'unconfirmed', status);
+  for (const status of [400, 401, 403, 404, 409, 413, 422, 429]) assert.equal(testSubmissionDisposition(new apiModel.ApiFailure(status, 'fixture')), 'rejected', status);
+  assert.equal(testSubmissionDisposition(new TypeError('network fixture')), 'unconfirmed');
+});
+check('test reply validation accepts real attempt records and rejects missing or ambiguous acknowledgements', () => {
+  const valid = { id: 'attempt-1', nodeId: 'node-a', kind: 'test', provider: 'homeassistant', state: 'queued', failures: 0, channelId: 'ha-1' };
+  assert.deepEqual(apiModel.readChannelTestAttempts([valid]), [valid]);
+  for (const value of [undefined, {}, [], [valid, valid], [{ ...valid, kind: 'down' }], [{ ...valid, state: 'invented' }], [{ ...valid, failures: -1 }], [{ ...valid, id: '' }]]) assert.equal(apiModel.readChannelTestAttempts(value), undefined);
+});
+check('dirty state ignores recipient row keys and detects configuration and credential changes', () => {
+  const original = form.channelDraft({ name: 'Mail', enabled: true, config: { kind: 'smtp', smtp: { server: 'mail.example.test', tlsMode: 'starttls' }, recipients: [{ email: 'ops@example.test', name: 'Ops' }] } });
+  const same = structuredClone(original); same.recipients[0].key += 99;
+  assert.equal(channelDraftChanged(same, original), false);
+  for (const changed of [{ ...same, name: 'Renamed' }, { ...same, enabled: false }, { ...same, smtpPass: 'new-private-value' }, { ...same, events: ['recovery'] }]) assert.equal(channelDraftChanged(changed, original), true);
+  const recipient = structuredClone(same); recipient.recipients[0].email = 'other@example.test'; assert.equal(channelDraftChanged(recipient, original), true);
+});
+check('channel delivery links round-trip IDs without allowing unrelated or ambiguous query parameters', () => {
+  assert.deepEqual(routes.parseRoute(routes.deliveryHref()), { name: 'deliveries' });
+  for (const id of ['ha-1', 'opaque ?&#/room']) assert.deepEqual(routes.parseRoute(routes.deliveryHref(id)), { name: 'deliveries', channelId: id });
+  for (const hash of ['#/notifications/deliveries?channel=a&channel=b', '#/notifications/deliveries?channel=a&token=private', '#/monitors?channel=a']) assert.equal(routes.parseRoute(hash).name, 'not-found');
+});
+check('navigation registration holds a dirty route and releases without disturbing a newer editor', () => {
+  const before = globalThis.location; globalThis.location = { hash: '#/channels/ha-1/edit' }; let proceed;
+  try {
+    const release = routes.registerNavigationGuard(action => { proceed = action; return true; });
+    routes.navigate('#/notifications'); assert.equal(location.hash, '#/channels/ha-1/edit');
+    proceed(); assert.equal(location.hash, '#/notifications');
+    const newer = routes.registerNavigationGuard(() => true); release();
+    routes.navigate('#/monitors'); assert.equal(location.hash, '#/notifications');
+    newer(); routes.navigate('#/monitors'); assert.equal(location.hash, '#/monitors');
+  } finally { globalThis.location = before; }
 });
 check('domainless and legacy Matrix room IDs remain usable', () => {
   const channel = { name: 'Matrix', enabled: true, config: channels[1] };
@@ -186,7 +221,7 @@ check('new provider fields warn before removing a stored secret and show their o
     const markup = fields(kind, errors);
     assert.ok(markup.includes('Saving removes the stored value.'), kind);
     for (const message of Object.values(errors)) assert.ok(markup.includes(message), `${kind} ${message}`);
-    assert.ok(markup.includes('id-note'), `${kind} names what picks the destination`);
+    assert.ok(text(markup).includes('Destination.'), `${kind} still explains destination identity inside its contextual reference disclosure`);
   }
 });
 check('alert events render the stored selection, editable on protocol 22', () => {
@@ -238,7 +273,10 @@ check('unknown stored Home Assistant and Matrix keys survive an unrelated edit',
 check('both test confirmations warn that a Home Assistant test fires a real event', () => {
   const source = readFileSync(resolve(root, 'apps/web/src/views/Channels.tsx'), 'utf8');
   assert.equal(source.split('<HaTestWarning eventType=').length - 1, 2);
-  assert.match(source, /Automations that trigger on it run and can switch real devices/u);
+  // Council copy is shorter; the real-device, test-kind and duplicate warning remains explicit.
+  assert.match(source, /test event can switch real devices/u);
+  assert.match(source, /kind=test/u);
+  assert.match(source, /Duplicates are possible: use repeat-safe actions/u);
 });
 check('Grafana dashboard: classic JSON, scoped variables and the exact exported metric names', () => {
   const dash = JSON.parse(readFileSync(resolve(root, 'deploy/observability/grafana-dashboard.json'), 'utf8'));

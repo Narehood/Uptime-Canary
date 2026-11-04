@@ -44,6 +44,27 @@ export class ApiFailure extends Error {
   }
 }
 
+/** A successful test reply must identify real one-shot attempts; an unreadable reply never proves rejection. */
+export function readChannelTestAttempts(value: unknown): DeliveryAttemptView[] | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 50) return undefined;
+  const states = new Set(['queued', 'sending', 'retrying', 'accepted', 'held', 'failed', 'cancelled', 'unknown', 'unavailable']);
+  const ids = new Set<string>();
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.id !== 'string' || !item.id || ids.has(item.id)
+      || typeof item.nodeId !== 'string' || !item.nodeId || typeof item.provider !== 'string' || !item.provider
+      || item.kind !== 'test' || typeof item.state !== 'string' || !states.has(item.state)
+      || !Number.isInteger(item.failures) || (item.failures as number) < 0) return undefined;
+    for (const key of ['channelId', 'destinationId', 'errorCode', 'providerId'] as const) {
+      if (item[key] !== undefined && typeof item[key] !== 'string') return undefined;
+    }
+    for (const key of ['httpStatus', 'lastAttemptAt', 'nextAttemptAt'] as const) {
+      if (item[key] !== undefined && (typeof item[key] !== 'number' || !Number.isFinite(item[key]))) return undefined;
+    }
+    ids.add(item.id);
+  }
+  return value as DeliveryAttemptView[];
+}
+
 export function normalizeApiUrl(input: string): string {
   let url: URL;
   try { url = new URL(input.trim()); }
@@ -767,8 +788,11 @@ export class CanaryApi {
   resolveChannel(id: string, input: NotificationChannelInput & { revisions: string[] }): Promise<NotificationChannel> {
     return this.call(`/api/notification-channels/${encodeURIComponent(id)}/resolve`, 'POST', input);
   }
-  testChannel(id: string, revision: string): Promise<{ attempts: DeliveryAttemptView[] }> {
-    return this.call(`/api/notification-channels/${encodeURIComponent(id)}/test`, 'POST', { revision });
+  async testChannel(id: string, revision: string): Promise<{ attempts: DeliveryAttemptView[] }> {
+    const value = await this.call<unknown>(`/api/notification-channels/${encodeURIComponent(id)}/test`, 'POST', { revision });
+    const attempts = readChannelTestAttempts(isRecord(value) ? value.attempts : undefined);
+    if (!attempts || attempts.some(attempt => attempt.channelId !== id)) throw new ApiFailure(200, 'The node sent a test submission reply this dashboard could not read.');
+    return { attempts };
   }
   /**
    * Editors and admins (protocol 19): one test send with settings that aren't saved, disabled ones included. The node
@@ -778,8 +802,9 @@ export class CanaryApi {
   async previewChannelTest(input: NotificationChannelInput, signal?: AbortSignal): Promise<{ attempts: DeliveryAttemptView[] }> {
     const value = await this.call<unknown>('/api/notification-channels/preview-test', 'POST', input, signal);
     const reply = typeof value === 'object' && value !== null ? value as { preview?: unknown; attempts?: unknown } : {};
-    if (reply.preview !== true || !Array.isArray(reply.attempts)) throw new ApiFailure(200, 'The node didn’t confirm a test of unsaved settings. Nothing was saved.');
-    return { attempts: reply.attempts as DeliveryAttemptView[] };
+    const attempts = readChannelTestAttempts(reply.attempts);
+    if (reply.preview !== true || !attempts) throw new ApiFailure(200, 'The node did not confirm a test of unsaved settings. Nothing was saved.');
+    return { attempts };
   }
   /**
    * Editors and admins (protocol 19): adds this channel to the named monitors, keeping their other destinations, in one

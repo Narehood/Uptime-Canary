@@ -18,7 +18,7 @@ export type Route =
   | { name: 'group-edit'; id: string }
   | { name: 'incidents' }
   | { name: 'notifications' }
-  | { name: 'deliveries' }
+  | { name: 'deliveries'; channelId?: string }
   | { name: 'receipts' }
   | { name: 'channel-new' }
   | { name: 'channel-edit'; id: string }
@@ -51,6 +51,11 @@ export function parseRoute(hash: string): Route {
     const nodes = params.getAll('node').filter(Boolean).slice(0, 8);
     const registration = params.get('registration');
     return registration ? { name: 'public-status', slug: id, nodes, registration } : { name: 'public-status', slug: id, nodes };
+  }
+  if (section === 'notifications' && id === 'deliveries' && parts.length === 2 && query) {
+    const params = new URLSearchParams(query);
+    const channelId = params.get('channel');
+    if (channelId && [...params.keys()].every(key => key === 'channel') && params.getAll('channel').length === 1) return { name: 'deliveries', channelId };
   }
   if (query) return { name: 'not-found', path: raw };
   switch (section) {
@@ -111,16 +116,97 @@ export function publicHref(slug: string, nodes: string[], registration?: string)
   return `#/status/${encodeURIComponent(slug)}${text ? `?${text}` : ''}`;
 }
 
+/** Only a public channel ID enters this link; delivery data stays in the existing private view. */
+export const deliveryHref = (channelId?: string): string => `${href('notifications', 'deliveries')}${channelId ? `?channel=${encodeURIComponent(channelId)}` : ''}`;
+
+type NavigationGuard = (proceed: () => void) => boolean;
+let navigationGuard: NavigationGuard | undefined;
+
+/** The channel editor owns the registration. Returning true holds the route and its mounted draft. */
+export function registerNavigationGuard(guard: NavigationGuard): () => void {
+  navigationGuard = guard;
+  return () => { if (navigationGuard === guard) navigationGuard = undefined; };
+}
+
 export function navigate(target: string): void {
-  if (location.hash !== target) location.hash = target;
+  if (location.hash === target) return;
+  const proceed = (): void => { location.hash = target; };
+  if (!navigationGuard?.(proceed)) proceed();
 }
 
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(location.hash));
   useEffect(() => {
-    const update = (): void => setRoute(parseRoute(location.hash));
+    const indexKey = 'canaryRouteIndex';
+    const historyIndex = (): number | undefined => {
+      const value: unknown = history.state?.[indexKey];
+      return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
+    };
+    const stamp = (index: number): void => history.replaceState({ ...history.state, [indexKey]: index }, '');
+    let acceptedHash = location.hash;
+    let acceptedIndex = historyIndex() ?? 0;
+    stamp(acceptedIndex);
+    let restoring: { after?: () => void } | null = null;
+    let indexedTraversal = true;
+    const commit = (target: string, index: number): void => {
+      acceptedHash = target;
+      acceptedIndex = index;
+      stamp(index);
+      setRoute(parseRoute(target));
+    };
+    const update = (): void => {
+      const target = location.hash;
+      if (target === acceptedHash) {
+        const after = restoring?.after;
+        restoring = null;
+        after?.();
+        return;
+      }
+      const reportedIndex = historyIndex();
+      const targetIndex = reportedIndex ?? acceptedIndex + 1;
+      const traversal = indexedTraversal && reportedIndex !== undefined && targetIndex !== acceptedIndex;
+      const proceed = (): void => {
+        if (traversal) {
+          const move = (): void => history.go(targetIndex - acceptedIndex);
+          // Discard may be chosen before the browser finishes restoring the editor's entry.
+          if (restoring) restoring.after = move; else move();
+        } else {
+          history.replaceState(history.state, '', `${location.pathname}${location.search}${target}`);
+          commit(target, targetIndex);
+        }
+      };
+      // Consult the editor BEFORE React can update/unmount it. Back/Forward restore the actual history entry,
+      // so Keep editing also preserves the next Back destination, rather than overwriting that entry's URL.
+      if (navigationGuard?.(proceed)) {
+        if (traversal) {
+          stamp(targetIndex);
+          restoring = {};
+          history.go(acceptedIndex - targetIndex);
+        } else {
+          // Legacy/unindexed entries and direct hash edits have no reliable traversal offset. Hold the mounted
+          // editor and URL; stop using offsets after this gap, since their distance can no longer be trusted.
+          if (reportedIndex === undefined) indexedTraversal = false;
+          history.replaceState(history.state, '', `${location.pathname}${location.search}${acceptedHash}`);
+        }
+        return;
+      }
+      commit(target, targetIndex);
+    };
+    const click = (event: MouseEvent): void => {
+      if (!navigationGuard || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
+      if (!anchor || anchor.hasAttribute('download') || anchor.target && anchor.target !== '_self') return;
+      const target = new URL(anchor.href, location.href);
+      if (target.origin !== location.origin || target.pathname !== location.pathname || target.search !== location.search || !target.hash) return;
+      event.preventDefault();
+      navigate(target.hash);
+    };
     window.addEventListener('hashchange', update);
-    return () => window.removeEventListener('hashchange', update);
+    document.addEventListener('click', click);
+    return () => {
+      window.removeEventListener('hashchange', update);
+      document.removeEventListener('click', click);
+    };
   }, []);
   return route;
 }
