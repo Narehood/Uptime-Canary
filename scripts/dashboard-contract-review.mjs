@@ -826,14 +826,15 @@ async function automationBrowserReview() {
       // A readback must recover the stored resource without a second write or any provider send.
       await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
       const recoveredName = name + ' recovered save', beforeSaveHook = requestHook;
-      let committed, interruptedWrites = 0;
+      let committed, interruptedWrites = 0, mismatchedAcknowledgement = false;
       requestHook = async paused => {
         if (paused.request.url === A.url + '/api/notification-channels/' + saved.id && paused.request.method === 'PUT') {
           interruptedWrites++;
           committed = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', JSON.parse(paused.request.postData));
+          const reply = committed.status === 200 ? mismatchedAcknowledgement ? structuredClone(committed.value) : { acknowledgementUnreadable: true } : committed.value;
+          if (committed.status === 200 && mismatchedAcknowledgement) reply.config[kind].accessToken = 'private-mismatched-acknowledgement';
           await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: committed.status,
-            responseHeaders: jsonReplyHeaders(paused),
-            body: Buffer.from(JSON.stringify(committed.status === 200 ? { acknowledgementUnreadable: true } : committed.value)).toString('base64') });
+            responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify(reply)).toString('base64') });
           return true;
         }
         return Boolean(await beforeSaveHook?.(paused));
@@ -848,7 +849,62 @@ async function automationBrowserReview() {
         assert.equal(committed.status, 200);
         saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
         assert.equal(saved.name, recoveredName); assert.deepEqual(saved.config, config);
+        // A structurally valid acknowledgement with different credentials is also unconfirmed.
+        mismatchedAcknowledgement = true;
+        await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+        await fill('Name', name + ' mismatched acknowledgement'); await click('Save changes'); await text('Save unconfirmed');
+        assert.equal(await page.eval(`__field('Name').value`), name + ' mismatched acknowledgement');
+        await text('Stored settings, including credentials, match your current draft.');
+        await click('Use this stored channel'); await heading('Notifications');
+        assert.equal(interruptedWrites, 2, 'each interrupted update is written only once');
+        saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+        assert.deepEqual(saved.config, config);
       } finally { requestHook = beforeSaveHook; }
+      // A 409 recovery must read current node data, not discard edits into the cached old revision.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      await fill('Name', name + ' conflict draft');
+      const concurrent = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', {
+        name: name + ' changed elsewhere', enabled: saved.enabled, config: saved.config, revision: saved.revision,
+      });
+      assert.equal(concurrent.status, 200, concurrent.text);
+      await click('Save changes'); await text('Load the latest version');
+      await click('Load the latest version');
+      await until(() => page.eval(`__field('Name').value === ${J(name + ' changed elsewhere')}`), 'conflict recovery reads fresh settings');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, concurrent.value.revision, 'loading latest never writes');
+      saved = concurrent.value;
+      // The background-change banner has no preceding save failure: failed latest reads must still be visible.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const backgroundDraft = name + ' background draft', backgroundName = name + ' changed again';
+      await fill('Name', backgroundDraft);
+      const background = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', {
+        name: backgroundName, enabled: saved.enabled, config: saved.config, revision: saved.revision,
+      });
+      assert.equal(background.status, 200, background.text);
+      await until(() => page.eval(`document.body.innerText.includes('while you were editing')`), 'background catalogue update', 30000);
+      const actualViews = (await api(A, '/api/notification-channels')).value, beforeLatestHook = requestHook;
+      let latestMode = 'unavailable';
+      requestHook = async paused => {
+        if (paused.request.url === A.url + '/api/notification-channels' && paused.request.method === 'GET') {
+          const value = latestMode === 'unavailable' ? { error: 'Private latest read unavailable' } : latestMode === 'missing' ? []
+            : actualViews.map(view => view.channel.id === saved.id ? { ...view, configConflict: true } : view);
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: latestMode === 'unavailable' ? 503 : 200,
+            responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify(value)).toString('base64') });
+          return true;
+        }
+        return Boolean(await beforeLatestHook?.(paused));
+      };
+      try {
+        for (latestMode of ['unavailable', 'conflicting', 'missing']) {
+          await click(latestMode === 'unavailable' ? 'Load latest (discards your edits)' : 'Retry loading latest');
+          await text('Latest settings could not be loaded');
+          assert.equal(await page.eval(`__field('Name').value`), backgroundDraft, 'failed background latest read retains the draft');
+          assert.equal(await page.eval(`document.activeElement === document.querySelector('.errsum')`), true, 'latest-read errors receive focus without a prior Save');
+        }
+      } finally { requestHook = beforeLatestHook; }
+      await click('Retry loading latest');
+      await until(() => page.eval(`__field('Name').value === ${J(backgroundName)}`), 'background latest read recovers');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, background.value.revision, 'latest read retries never write');
+      saved = background.value;
       // A catalogue change is not a navigation decision: keep the exact mounted field and its dirty draft.
       await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
       await fill('Name', name + ' retained after deletion');
@@ -914,6 +970,20 @@ async function automationBrowserReview() {
       assert.equal(await page.eval(`__field('Name').value`), 'Keep editor B draft', 'a held slot does not shift the next accepted entry index');
       await page.eval('history.go(-2)'); await text('Discard unsaved channel changes?');
       await click('Discard changes', 'dialog[open]'); await heading(`Edit ${saved.name}`);
+      await nav('#/notifications'); await heading('Notifications');
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('deferred-source');
+      await fill('Name', 'Discard after Back while the prompt stays open');
+      await page.eval(`location.hash = '#/incidents'`); await text('Discard unsaved channel changes?'); await mark('held-fragment');
+      await page.eval('history.back()'); await at('deferred-source');
+      await click('Discard changes', 'dialog[open]'); await heading('Incidents');
+      await page.eval('history.forward()'); await at('held-fragment'); await heading(`Edit ${saved.name}`);
+      await fill('Name', 'Keep the next draft');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('held-fragment');
+      assert.equal(await page.eval(`__field('Name').value`), 'Keep the next draft');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+      await click('Discard changes', 'dialog[open]'); await heading('Incidents');
+      assert.equal(await page.eval('location.hash'), '#/incidents', 'deferred discard preserves the original Incidents entry');
       await nav('#/notifications'); await heading('Notifications');
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'history decisions never save');
       assert.equal((await api(A, `/api/notification-channels/${second.value.id}`)).value.revision, second.value.revision, 'editor B also remains unsaved');

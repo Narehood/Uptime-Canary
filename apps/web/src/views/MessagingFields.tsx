@@ -35,7 +35,7 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
   const loginProblem = errors.ntfyAuth ? ntfyLoginProblem(d) : undefined;
   const emergencyProblem = errors.emergency ? pushoverEmergencyProblem(d) : undefined;
   const insecure = (checked: boolean, onChange: (value: boolean) => void, label = 'Allow plain HTTP for this server'): ReactNode => (
-    <CheckField label={label} checked={checked} onChange={onChange} disabled={saving} danger hint="Only for a private network you trust: credentials and the message travel unencrypted." />
+    <CheckField label={label} checked={checked} onChange={onChange} disabled={saving} danger hint="Trusted private networks only: credentials and messages travel unencrypted." />
   );
   const endpoint = (value: string, onChange: (value: string) => void, checked: boolean, onCheck: (value: boolean) => void, fallback: string, hint: ReactNode): ReactNode => (
     <Disclosure title="API endpoint" summary={value || `Official (${fallback.replace(/^https:\/\//u, '')})`} open={apiOpen} onToggle={onApiToggle}>
@@ -140,9 +140,9 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
           <TextField mono label="Event type" value={d.haEvent} onChange={value => patch({ haEvent: value })} error={errors.eventType} placeholder="uptime_canary" disabled={saving}
             hint="1-64 letters, digits or underscores; your automation's event trigger." />
           <SecretField label="Long-lived access token" value={d.haToken} onChange={value => patch({ haToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('haToken')}
-            hint="Home Assistant profile > Security > Long-lived access tokens." />
+            hint="Profile > Security > Long-lived access tokens." />
           {insecure(d.haInsecure, value => patch({ haInsecure: value }))}
-          <p className="full fwarn small"><Glyph tone="warn" /><span>Real events can switch real devices, and retries or partitions can duplicate them. Use repeat-safe actions and <span className="mono">idempotency_key</span>. Check <span className="mono">trigger.event.data.kind</span> for <span className="mono">test</span> before running outage actions.</span></p>
+          <p className="full fwarn small"><Glyph tone="warn" /><span>Events can switch real devices. Retries or partitions can duplicate them. Use repeat-safe actions and deduplicate with <span className="mono">idempotency_key</span>. Check <span className="mono">trigger.event.data.kind</span> for <span className="mono">test</span> before outage actions.</span></p>
           <details className="full channel-context-details">
             <summary>Home Assistant API and delivery details</summary>
             <div>
@@ -163,9 +163,9 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
           <TextField mono label="Room ID" value={d.matrixRoom} onChange={value => patch({ matrixRoom: value })} error={errors.roomId} placeholder="!AbCdEf:example.org" disabled={saving}
             hint={<>From room advanced settings: <span className="mono">!room:server</span> or a newer opaque <span className="mono">!</span> ID; not a <span className="mono">#alias</span>.</>} />
           <SecretField label="Access token" value={d.matrixToken} onChange={value => patch({ matrixToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('matrixToken')}
-            hint="Use an existing token from the posting account's Matrix client, ideally a bot account." />
+            hint="From the posting account's Matrix client; preferably a bot account." />
           {insecure(d.matrixInsecure, value => patch({ matrixInsecure: value }))}
-          <p className="full fwarn small"><Glyph tone="warn" /><span>The account must have <b>already joined</b> this <b>unencrypted</b> room. Accept its invite first. End-to-end encrypted rooms are unsupported.</span></p>
+          <p className="full fwarn small"><Glyph tone="warn" /><span>The account must have <b>already joined</b> this <b>unencrypted</b> room; accept its invite first. End-to-end encrypted rooms are unsupported.</span></p>
           <details className="full channel-context-details">
             <summary>Matrix API and delivery details</summary>
             <div>

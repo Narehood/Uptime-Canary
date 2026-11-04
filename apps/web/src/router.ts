@@ -177,7 +177,8 @@ export function useRoute(): Route {
           if (restoring) restoring.after = move; else move();
         } else {
           history.replaceState(history.state, '', `${location.pathname}${location.search}${target}`);
-          commit(target, targetIndex);
+          // The prompt can outlive a same-hash traversal to another editor entry.
+          commit(target, historyIndex() ?? targetIndex);
         }
       };
       // Consult the editor BEFORE React can update/unmount it. Back/Forward restore the actual history entry,

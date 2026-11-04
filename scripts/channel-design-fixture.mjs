@@ -95,7 +95,9 @@ const server = createServer(async (req, res) => {
       if (url.pathname.endsWith('/apply') && req.method === 'POST') {
         let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
         const body = JSON.parse(bytes), id = url.pathname.split('/').at(-2), changedIds = [];
-        for (const item of body.monitors ?? []) if (monitorChannels[item.id] && !monitorChannels[item.id].includes(id)) { monitorChannels[item.id].push(id); changedIds.push(item.id); }
+        const selected = body.monitors ?? [];
+        if (selected.some(item => !monitorChannels[item.id])) return reply({ error: 'A selected monitor is missing; refresh before applying.' }, 409);
+        for (const item of selected) if (!monitorChannels[item.id].includes(id)) { monitorChannels[item.id].push(id); changedIds.push(item.id); }
         return assignMode === 'malformed' ? brokenReply() : reply({ changedIds });
       }
       if (url.pathname.startsWith('/api/notification-channels/') && req.method === 'DELETE') {
