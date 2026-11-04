@@ -793,6 +793,7 @@ async function automationBrowserReview() {
       try {
         await click('Test these settings'); await text('Test these settings?');
         await click('Send test', 'dialog[open]'); await text('Test submission unconfirmed');
+        assert.equal(await page.eval(`document.activeElement === document.querySelector('dialog[open] .modal-h h2')`), true, 'submission results receive keyboard focus');
         assert.equal(await page.eval(`!![...document.querySelectorAll('dialog[open] button')].find(button => button.textContent.trim() === 'Send test')`), false, 'unknown submission offers no immediate resend');
         await click('View delivery attempts', 'dialog[open]'); await text('Your channel settings stay in the form.');
         assert.equal(await page.eval(`location.hash`), `#/channels/${saved.id}/edit`, 'inspection does not leave the editor');

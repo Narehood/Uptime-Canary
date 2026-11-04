@@ -17,7 +17,7 @@ globalThis.React ??= React;
 const { register } = await import('tsx/esm/api');
 const scope = register({ namespace: 'automation-integrations', tsconfig: resolve(root, 'apps/web/tsconfig.json') });
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
-const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged, sameChannelSettings } = await load('views/Channels.tsx');
+const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged, sameChannelSettings, PreviewOutcomeList, previewRecipientLabels } = await load('views/Channels.tsx');
 const messaging = await load('messaging.ts');
 const apiModel = await load('api.ts');
 const routes = await load('router.ts');
@@ -226,6 +226,54 @@ check('new provider fields warn before removing a stored secret and show their o
     for (const message of Object.values(errors)) assert.ok(markup.includes(message), `${kind} ${message}`);
     assert.ok(text(markup).includes('Destination.'), `${kind} still explains destination identity inside its contextual reference disclosure`);
   }
+});
+check('compound ntfy and Pushover errors identify and describe the corrective input once', () => {
+  const cases = [
+    { kind: 'ntfy', changes: { ntfyAuth: 'basic', ntfyUser: 'fixture-user', ntfyPass: '' }, key: 'ntfyAuth', problem: messaging.ntfyLoginProblem, label: 'Password' },
+    { kind: 'pushover', changes: { poPriority: '2', poRetry: '60', poExpire: '30' }, key: 'emergency', problem: messaging.pushoverEmergencyProblem, label: 'Keep repeating for (seconds)' },
+  ];
+  for (const item of cases) {
+    const draft = { ...form.channelDraft(undefined), ...item.changes }, issue = item.problem(draft);
+    const markup = plain(renderToStaticMarkup(React.createElement(MessagingFields, { kind: item.kind, draft, patch() {}, errors: { [item.key]: issue.message }, stored: () => false, saving: false, formId: 'f', apiOpen: false, onApiToggle() {} })));
+    const labels = [...markup.matchAll(/<label[^>]*for="([^"]+)"[^>]*>([\s\S]*?)<\/label>/gu)];
+    const label = labels.find(match => text(match[2]).trim() === item.label);
+    assert.ok(label, item.label);
+    const attrs = attributes([...markup.matchAll(/<input\b[^>]*>/gu)].find(match => attributes(match[0]).get('id') === label[1])[0]);
+    assert.equal(attrs.get('aria-invalid'), 'true');
+    const id = attrs.get('aria-describedby').split(' ').find(id => id.endsWith('-e'));
+    assert.ok(id && markup.includes(`id="${id}"`));
+    assert.equal(text(markup).split(issue.message).length - 1, 1, 'one shared message, linked to the corrective field');
+  }
+});
+check('plain SMTP keeps retained credentials reachable and offers explicit draft removal', () => {
+  const config = { kind: 'smtp', smtp: { server: 'smtp.example.test', tlsMode: 'plain', username: 'fixture-user', password: 'private-fixture-password' } };
+  const markup = renderForm(saved(config), 22);
+  assert.ok(text(markup).includes('Remove SMTP credentials'));
+  assert.ok(markup.includes('value="fixture-user"'));
+  assert.equal(inputWith(markup, 'value="private-fixture-password"').get('type'), 'password');
+  assert.ok(!text(markup).includes('private-fixture-password'));
+});
+check('multi-destination preview results retain distinct full identities and fallback attempt IDs', () => {
+  const attempts = [
+    { id: 'attempt-one', provider: 'smtp', state: 'accepted', destinationId: 'destination-shared-prefix-one' },
+    { id: 'attempt-two', provider: 'smtp', state: 'failed', destinationId: 'destination-shared-prefix-two', errorCode: 'recipient_rejected' },
+    { id: 'attempt-three', provider: 'smtp', state: 'unknown' },
+  ];
+  const markup = text(renderToStaticMarkup(React.createElement(PreviewOutcomeList, { attempts })));
+  for (const identity of ['Destination destination-shared-prefix-one', 'Destination destination-shared-prefix-two', 'Attempt attempt-three']) assert.ok(markup.includes(identity), identity);
+});
+check('email preview labels follow acknowledgement IDs through later outcome reordering', () => {
+  const config = { kind: 'smtp', recipients: [{ email: 'z-last@example.test' }, { email: 'a-first@example.test' }] };
+  const initial = [{ id: 'first', provider: 'smtp', state: 'queued' }, { id: 'second', provider: 'smtp', state: 'queued' }];
+  const recipientLabels = previewRecipientLabels(config, initial);
+  assert.equal(recipientLabels.get('first'), 'z-last@example.test');
+  const attempts = [{ ...initial[1], state: 'failed' }, { ...initial[0], state: 'accepted' }];
+  const markup = renderToStaticMarkup(React.createElement(PreviewOutcomeList, { attempts, recipientLabels }));
+  const rows = [...markup.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gu)].map(match => text(match[1]));
+  assert.ok(rows[0].includes('a-first@example.test') && rows[0].includes('Failed'));
+  assert.ok(rows[1].includes('z-last@example.test') && rows[1].includes('Accepted'));
+  assert.equal(previewRecipientLabels(config, initial.slice(1)).size, 0, 'ambiguous response counts get IDs, not guessed addresses');
+  assert.equal(previewRecipientLabels(config, initial.map(item => ({ ...item, provider: 'webhook' }))).size, 0);
 });
 check('alert events render the stored selection, editable on protocol 22', () => {
   let fieldset = eventsFieldset(renderForm(saved(channels[0], ['down', 'recovery']), 22));

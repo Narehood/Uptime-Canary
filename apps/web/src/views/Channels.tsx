@@ -304,11 +304,23 @@ function TestSubmissionError({ failure }: { failure: TestFailure }) {
   </div></div>;
 }
 
+/** Move focus once when a submitted confirmation becomes a result; polling must not steal it again. */
+function useTestResultFocus(phase: string) {
+  const anchor = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    if (phase === 'confirm') return;
+    const heading = anchor.current?.closest('dialog')?.querySelector<HTMLElement>('.modal-h h2');
+    if (heading) { heading.tabIndex = -1; heading.focus(); }
+  }, [phase]);
+  return anchor;
+}
+
 function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClose: () => void }) {
   const { api, endpoint, stillCurrent } = useCanary();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DeliveryAttemptView[] | null>(null);
   const [error, setError] = useState<TestFailure | null>(null);
+  const focusAnchor = useTestResultFocus(result ? 'submitted' : error?.disposition ?? 'confirm');
   const destinations = destinationCount(channel);
   const emergency = channel.config.kind === 'pushover' && channel.config.pushover?.priority === 2 ? channel.config.pushover : undefined;
   const send = async (): Promise<void> => {
@@ -324,7 +336,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
   };
   return (
     <Modal title={result ? 'Test queued' : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : `Send a test from ${channel.name}?`} onClose={onClose} busy={busy}>
-      <p className="vh" role="status" aria-live="polite" aria-atomic="true">{result ? `${endpoint} queued ${plural(result.length, 'test attempt')}. Outcomes are available in delivery attempts; queued does not mean delivered.` : ''}</p>
+      <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{result ? `${endpoint} queued ${plural(result.length, 'test attempt')}. Outcomes are available in delivery attempts; queued does not mean delivered.` : ''}</p>
       {result ? (
         <>
           <p><Glyph tone="up" /> {endpoint} queued {plural(result.length, 'test attempt')}. Each makes one attempt per destination, without automatic retries.</p>
@@ -391,12 +403,40 @@ function TestAttemptsInspector({ provider, attemptIds, onBack, onClose }: { prov
   </section>;
 }
 
+/** Queue acknowledgements follow configured recipient order; subsequent reads may reorder attempts. */
+export function previewRecipientLabels(config: NotificationConfig, attempts: DeliveryAttemptView[]): ReadonlyMap<string, string> {
+  const recipients = PROVIDER.get(config.kind)?.email ? config.recipients : undefined;
+  if (!recipients || recipients.length !== attempts.length || attempts.some(attempt => attempt.provider !== config.kind)
+    || new Set(attempts.map(attempt => attempt.id)).size !== attempts.length) return new Map();
+  return new Map(attempts.map((attempt, index) => [attempt.id, recipients[index]!.email]));
+}
+
+export function PreviewOutcomeList({ attempts, recipientLabels }: { attempts: DeliveryAttemptView[]; recipientLabels?: ReadonlyMap<string, string> }) {
+  return <ul className="preview-out">
+      {attempts.map(attempt => {
+        const state = attemptState(attempt.state), recipient = recipientLabels?.get(attempt.id);
+        return (
+          <li key={attempt.id}>
+            <ProviderIcon kind={attempt.provider} />
+            <span className="grow">{recipient ?? providerLabel(attempt.provider)}{attempt.httpStatus ? <span className="muted small"> · HTTP {attempt.httpStatus}</span> : null}
+              {recipient ? <small className="muted small">{providerLabel(attempt.provider)}</small> : attempts.length > 1 ? <small className="preview-destination mono">{attempt.destinationId ? `Destination ${attempt.destinationId}` : `Attempt ${attempt.id}`}</small> : null}
+              {errorText(attempt.errorCode) ? <span className="muted small"> · {errorText(attempt.errorCode)}</span> : null}</span>
+            <Chip tone={state.tone} label={state.label} />
+          </li>
+        );
+      })}
+  </ul>;
+}
+
 function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput; onClose: () => void }) {
   const { api, endpoint, stillCurrent } = useCanary();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<TestFailure | null>(null);
   const [attempts, setAttempts] = useState<DeliveryAttemptView[] | null>(null);
   const [waiting, setWaiting] = useState(false);
+  const [readFailure, setReadFailure] = useState<string | null>(null);
+  const recipientLabels = useRef<ReadonlyMap<string, string>>(new Map());
+  const focusAnchor = useTestResultFocus(attempts ? 'submitted' : error?.disposition ?? 'confirm');
   const [inspecting, setInspecting] = useState(false);
   const inspectButton = useRef<HTMLButtonElement>(null);
   const wasInspecting = useRef(false);
@@ -413,17 +453,19 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
     const controller = new AbortController();
     stop.current = controller;
     const until = Date.now() + PREVIEW_WAIT_MS;
-    setWaiting(true);
+    setWaiting(true); setReadFailure(null);
     const poll = async (): Promise<void> => {
       if (controller.signal.aborted) return;
       try {
         const all = await api.deliveries({ limit: 200 }, controller.signal);
         if (controller.signal.aborted || !stillCurrent()) return;
+        setReadFailure(null);
         const mine = ids.map(id => all.find(attempt => attempt.id === id)).filter((attempt): attempt is DeliveryAttemptView => Boolean(attempt));
         if (mine.length) setAttempts(previous => ids.map(id => mine.find(attempt => attempt.id === id) ?? previous?.find(attempt => attempt.id === id)).filter((attempt): attempt is DeliveryAttemptView => Boolean(attempt)));
         if (mine.length === ids.length && mine.every(attempt => SETTLED.has(attempt.state))) { setWaiting(false); return; }
       } catch (failure) {
-        if (controller.signal.aborted || isAbort(failure)) return;
+        if (controller.signal.aborted || isAbort(failure) || !stillCurrent()) return;
+        setReadFailure(describeFailure(failure, { preferDetail: true }));
       }
       if (Date.now() >= until) { setWaiting(false); return; }
       setTimeout(() => { void poll(); }, PREVIEW_POLL_MS);
@@ -435,6 +477,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
     try {
       const response = await api.previewChannelTest(input);
       if (!stillCurrent()) return;
+      recipientLabels.current = previewRecipientLabels(input.config, response.attempts);
       setAttempts(response.attempts);
       follow(response.attempts.map(attempt => attempt.id).filter(id => typeof id === 'string'));
     } catch (failure) {
@@ -447,28 +490,15 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
     return count ? `${count} ${label.label.toLowerCase()}` : '';
   }).filter(Boolean).join(', ') : '';
   const settled = Boolean(attempts?.every(attempt => SETTLED.has(attempt.state)));
-  const completion = waiting ? 'Waiting for outcomes.' : settled ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
+  const completion = readFailure ? waiting ? 'Retrying updates; these are the last reported results.' : 'Stopped waiting after outcome updates failed. Check delivery attempts for later outcomes.' : waiting ? 'Waiting for outcomes.' : settled ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
   return (
     <Modal title={inspecting ? 'Recent test attempts' : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
-      <p className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
+      <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${readFailure ? `Outcome updates unavailable: ${readFailure}. ` : ''}${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
       {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
         <>
           <p><Glyph tone="up" /> {endpoint} queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
-          {attempts.length ? (
-            <ul className="preview-out">
-              {attempts.map(attempt => {
-                const state = attemptState(attempt.state);
-                return (
-                  <li key={attempt.id}>
-                    <ProviderIcon kind={attempt.provider} />
-                    <span className="grow">{providerLabel(attempt.provider)}{attempt.httpStatus ? <span className="muted small"> · HTTP {attempt.httpStatus}</span> : null}
-                      {errorText(attempt.errorCode) ? <span className="muted small"> · {errorText(attempt.errorCode)}</span> : null}</span>
-                    <Chip tone={state.tone} label={state.label} />
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
+          {readFailure ? <p className="fwarn"><Glyph tone="warn" /><span><b>Outcome updates unavailable.</b> {readFailure} The last reported results are kept; use View delivery attempts to investigate.</span></p> : null}
+          <PreviewOutcomeList attempts={attempts} recipientLabels={recipientLabels.current} />
           <p>{completion}</p>
           <p className="muted small">Accepted means the provider acknowledged the request, not that it reached an inbox, chat or device.</p>
           <div className="row-wrap modal-acts"><button ref={inspectButton} type="button" className="btn primary" onClick={() => setInspecting(true)}>View delivery attempts</button><button type="button" className="btn" onClick={onClose}>Close</button></div>
@@ -1060,6 +1090,7 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
   const visible = showErrors ? errors : {};
   const set = <K extends keyof ChannelDraft>(key: K, value: ChannelDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));
+  const smtpAuthField = !visible.smtpAuth ? undefined : control(draft.smtpUser) ? 'user' : control(draft.smtpPass) ? 'password' : draft.smtpTls === 'plain' ? 'both' : !draft.smtpUser ? 'user' : 'password';
   const provider = PROVIDER.get(draft.kind)!;
   const current = existing?.channel ?? base;
   const missing = Boolean(id && base && !existing);
@@ -1136,7 +1167,9 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
     if (!entry || !form) return;
     const message = entry[1];
     const error = [...form.querySelectorAll<HTMLElement>('[id]')].find(element => element.textContent?.trim() === message);
-    const control = error?.closest('.fld')?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)');
+    const clearSmtp = entry[0] === 'smtpAuth' && draft.smtpTls === 'plain' ? form.querySelector<HTMLElement>('[data-clear-smtp]') : null;
+    const described = error?.id ? [...form.querySelectorAll<HTMLElement>('input,select,textarea')].find(element => !element.matches(':disabled') && element.getAttribute('aria-describedby')?.split(/\s+/u).includes(error.id)) : null;
+    const control = clearSmtp ?? described ?? error?.closest('.fld')?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)');
     const target = control ?? error;
     if (target) { if (!control) target.tabIndex = -1; target.scrollIntoView({ block: 'center' }); target.focus({ preventScroll: true }); }
   };
@@ -1215,10 +1248,18 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
               <Seg legend="Security" name={`${formId}-smtp`} value={draft.smtpTls} onChange={value => set('smtpTls', value)} disabled={saving} full
                 options={[{ value: 'starttls', label: 'STARTTLS' }, { value: 'implicit', label: 'Implicit TLS' }, { value: 'plain', label: 'Plain relay' }]}
                 hint={draft.smtpTls === 'plain' ? 'Unencrypted and without login, for a trusted local relay only.' : 'Certificates and host name are verified (TLS 1.2+), with no plaintext fallback.'} />
-              {draft.smtpTls !== 'plain' ? (
+              {draft.smtpTls === 'plain' && (draft.smtpUser || draft.smtpPass) ? <div className="full">
+                <p className="fwarn"><Glyph tone="warn" /><span>Plain relay cannot log in. Remove the credentials from this draft, or choose STARTTLS / implicit TLS.</span></p>
+                <button type="button" className="btn" data-clear-smtp disabled={saving} onClick={event => {
+                  const radio = event.currentTarget.closest('form')?.querySelector<HTMLInputElement>('input[type="radio"][value="plain"]');
+                  patch({ smtpUser: '', smtpPass: '' }); radio?.focus();
+                }}>Remove SMTP credentials</button>
+              </div> : null}
+              {draft.smtpTls === 'plain' && !draft.smtpUser && !draft.smtpPass && (stored('smtpUser') || stored('smtpPass')) ? <p className="full fwarn"><Glyph tone="warn" /><span>Saving Plain relay removes the stored SMTP login.</span></p> : null}
+              {draft.smtpTls !== 'plain' || draft.smtpUser || draft.smtpPass ? (
                 <>
-                  <TextField label="User name (optional)" value={draft.smtpUser} onChange={value => set('smtpUser', value)} disabled={saving} autoComplete="off" />
-                  <SecretField optional label="Password" value={draft.smtpPass} onChange={value => set('smtpPass', value)} disabled={saving} storedSet={stored('smtpPass')} hint="AUTH PLAIN over TLS." />
+                  <TextField label="User name (optional)" value={draft.smtpUser} onChange={value => set('smtpUser', value)} error={smtpAuthField === 'user' || smtpAuthField === 'both' ? visible.smtpAuth : undefined} errorId={`${formId}-smtpauth`} disabled={saving} autoComplete="off" />
+                  <SecretField optional label="Password" value={draft.smtpPass} onChange={value => set('smtpPass', value)} error={smtpAuthField === 'password' || smtpAuthField === 'both' ? visible.smtpAuth : undefined} errorId={`${formId}-smtpauth`} disabled={saving} storedSet={stored('smtpPass')} hint={draft.smtpTls === 'plain' ? 'Remove the login to use a plain relay.' : 'AUTH PLAIN over TLS.'} />
                 </>
               ) : null}
               {visible.smtpAuth ? <div className="full"><ErrorText id={`${formId}-smtpauth`}>{visible.smtpAuth}</ErrorText></div> : null}

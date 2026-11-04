@@ -13,16 +13,17 @@ const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
 let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [], channelReadsFail = false;
-let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels;
+let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels, deliveriesFail = false;
 const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
   id, name, config, revision: `fixture-revision-${revision++}`, updatedAt: now() - 3600_000,
   enabled: true, ...extra, // Go Channel metadata is id/revision/updatedAt, with no updatedBy field.
 }, configConflict: false });
-function reset(empty = false) {
+function reset(empty = false, extras = false) {
   attempts = [];
   channelReadsFail = false;
+  deliveriesFail = false;
   monitorChannels = { website: ['ha-office', 'matrix-ops'], api: ['matrix-ops'] };
   channels = empty ? [] : [
     makeChannel('ha-office', 'Office status light', { kind: 'homeassistant', homeassistant: {
@@ -32,6 +33,11 @@ function reset(empty = false) {
       baseURL: 'https://matrix.example.test', accessToken: 'private-fixture-matrix-token', roomId: '!operations:example.test',
     } }, { isDefault: true }),
   ];
+  if (!empty && extras) channels.push(
+    makeChannel('smtp-ops', 'Operations email', { kind: 'smtp', sender: { email: 'canary@example.test' }, recipients: [{ email: 'ops-one@example.test' }, { email: 'ops-two@example.test' }], smtp: { server: 'smtp.example.test', port: 587, tlsMode: 'starttls', username: 'fixture-user', password: 'private-fixture-smtp-pass' } }),
+    makeChannel('ntfy-ops', 'Operations topic', { kind: 'ntfy', ntfy: { topic: 'private-fixture-topic', username: 'fixture-user', password: 'private-fixture-ntfy-pass' } }),
+    makeChannel('pushover-ops', 'Emergency phone', { kind: 'pushover', pushover: { appToken: 'a'.repeat(30), userKey: 'b'.repeat(30), priority: 2, retrySeconds: 60, expireSeconds: 3600 } }),
+  );
 }
 reset();
 const monitor = (id, name, notificationIds) => ({ monitor: {
@@ -58,7 +64,7 @@ const server = createServer(async (req, res) => {
       protocol = Number(url.searchParams.get('protocol') || 22); role = url.searchParams.get('role') || 'admin';
       testMode = url.searchParams.get('test') || 'reject';
       saveMode = url.searchParams.get('save') || 'normal'; deleteMode = url.searchParams.get('remove') || 'normal'; assignMode = url.searchParams.get('assign') || 'normal';
-      reset(url.searchParams.get('empty') === '1'); requests.length = 0; return reply({ fixture: true });
+      reset(url.searchParams.get('empty') === '1', url.searchParams.get('extras') === '1'); requests.length = 0; return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
     if (url.pathname === '/__fixture/channels-failure') {
@@ -66,6 +72,9 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === '/__fixture/remove-channel') {
       channels = channels.filter(view => view.channel.id !== url.searchParams.get('id')); return reply({ fixture: true });
+    }
+    if (url.pathname === '/__fixture/deliveries-failure') {
+      deliveriesFail = url.searchParams.get('on') === '1'; return reply({ fixture: true, deliveriesFail });
     }
     if (url.pathname.startsWith('/api/')) {
       requests.push({ method: req.method, path: url.pathname });
@@ -91,13 +100,18 @@ const server = createServer(async (req, res) => {
         let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
         const body = JSON.parse(bytes), preview = url.pathname.endsWith('/preview-test');
         const channelId = preview ? undefined : url.pathname.split('/').at(-2);
-        const provider = preview ? body.config.kind : channels.find(view => view.channel.id === channelId)?.channel.config.kind;
-        const attempt = { id: `fixture-test-${revision++}`, nodeId: 'canary-eu', kind: 'test', provider,
-          state: testMode === 'accepted' ? 'accepted' : 'queued', failures: 0, channelId, lastAttemptAt: now() };
-        attempts.unshift(attempt);
+        const config = preview ? body.config : channels.find(view => view.channel.id === channelId)?.channel.config;
+        const provider = config.kind;
+        const batch = (config.recipients?.length ? config.recipients : [null]).map((_, index) => ({
+          id: `fixture-test-${revision++}`, nodeId: 'canary-eu', kind: 'test', provider,
+          destinationId: 'f'.repeat(63) + (index + 1), channelId, lastAttemptAt: now(), failures: 0,
+          state: testMode === 'mixed' ? index === 0 ? 'accepted' : 'failed' : testMode === 'accepted' ? 'accepted' : 'queued',
+          ...(testMode === 'mixed' && index > 0 ? { errorCode: 'recipient_rejected' } : {}),
+        }));
+        attempts.unshift(...batch);
         // Simulates queueing followed by an unusable acknowledgement, never an external provider send.
         if (testMode === 'malformed') return reply({ fixture: true, acknowledgementUnreadable: true }, 202);
-        return reply({ ...(preview ? { preview: true } : {}), attempts: [attempt] }, 202);
+        return reply({ ...(preview ? { preview: true } : {}), attempts: batch }, 202);
       }
       if (url.pathname.startsWith('/api/notification-channels') && ['POST', 'PUT'].includes(req.method)) {
         if (saveMode === 'reject') return reply({ error: 'Visual fixture rejected the save; nothing changed.' }, 400);
@@ -111,7 +125,7 @@ const server = createServer(async (req, res) => {
       }
       if (url.pathname === '/api/monitors') return reply(overview().monitors);
       if (url.pathname === '/api/notification-deliveries') return role === 'viewer'
-        ? reply({ error: 'Viewer access refused by fixture.' }, 403) : reply(attempts);
+        ? reply({ error: 'Viewer access refused by fixture.' }, 403) : deliveriesFail ? reply({ error: 'The delivery log cannot be read in the private fixture.' }, 503) : reply(attempts);
       return reply({ error: 'Not implemented by visual fixture' }, 404);
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {

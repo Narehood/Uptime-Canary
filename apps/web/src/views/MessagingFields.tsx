@@ -5,7 +5,7 @@ import { CheckField, Disclosure, SecretField, Seg, SelectField, TextField } from
 import { Glyph } from '../ui/icons';
 import {
   DEFAULT_BASE, GOTIFY_PRIORITIES, NTFY_PRIORITIES, PUSHOVER_PRIORITIES, credentialKey, routeKey,
-  type MField, type MessagingDraft, type MessagingKind, type NtfyAuth,
+  ntfyLoginProblem, pushoverEmergencyProblem, type MField, type MessagingDraft, type MessagingKind, type NtfyAuth,
 } from '../messaging';
 
 /** What picks each provider's destination, and what is only a credential. Shown under its fields. */
@@ -32,6 +32,8 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
   /** The stored channel's draft when editing the same provider, to explain route and credential changes. */
   previous?: MessagingDraft;
 }) {
+  const loginProblem = errors.ntfyAuth ? ntfyLoginProblem(d) : undefined;
+  const emergencyProblem = errors.emergency ? pushoverEmergencyProblem(d) : undefined;
   const insecure = (checked: boolean, onChange: (value: boolean) => void, label = 'Allow plain HTTP for this server'): ReactNode => (
     <CheckField label={label} checked={checked} onChange={onChange} disabled={saving} danger hint="Only for a private network you trust: credentials and the message travel unencrypted." />
   );
@@ -79,11 +81,11 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
           <Seg<NtfyAuth> legend="Login" name={`${formId}-ntfyauth`} value={d.ntfyAuth} onChange={value => patch({ ntfyAuth: value })} disabled={saving} full
             options={[{ value: 'none', label: 'No login' }, { value: 'token', label: 'Token' }, { value: 'basic', label: 'User and password' }]}
             hint={d.ntfyAuth === 'none' ? 'Publishes without credentials, for open topics.' : 'Sent only to this server, never in the address.'} />
-          {d.ntfyAuth === 'token' ? <SecretField full label="Access token" value={d.ntfyToken} onChange={value => patch({ ntfyToken: value })} disabled={saving} storedSet={stored('ntfyToken')} placeholder="tk_…" /> : null}
+          {d.ntfyAuth === 'token' ? <SecretField full label="Access token" value={d.ntfyToken} onChange={value => patch({ ntfyToken: value })} error={loginProblem?.field === 'ntfyToken' ? errors.ntfyAuth : undefined} errorId={`${formId}-ntfyauth-e`} disabled={saving} storedSet={stored('ntfyToken')} placeholder="tk_…" /> : null}
           {d.ntfyAuth === 'basic' ? (
             <>
-              <TextField label="User name" value={d.ntfyUser} onChange={value => patch({ ntfyUser: value })} disabled={saving} />
-              <SecretField label="Password" value={d.ntfyPass} onChange={value => patch({ ntfyPass: value })} disabled={saving} storedSet={stored('ntfyPass')} />
+              <TextField label="User name" value={d.ntfyUser} onChange={value => patch({ ntfyUser: value })} error={loginProblem?.field === 'ntfyUser' ? errors.ntfyAuth : undefined} errorId={`${formId}-ntfyauth-e`} disabled={saving} />
+              <SecretField label="Password" value={d.ntfyPass} onChange={value => patch({ ntfyPass: value })} error={loginProblem?.field === 'ntfyPass' ? errors.ntfyAuth : undefined} errorId={`${formId}-ntfyauth-e`} disabled={saving} storedSet={stored('ntfyPass')} />
             </>
           ) : null}
           {errors.ntfyAuth ? <div className="full"><ErrorText id={`${formId}-ntfyauth-e`}>{errors.ntfyAuth}</ErrorText></div> : null}
@@ -119,8 +121,8 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
             onChange={value => patch(value === '2' ? { poPriority: value, poRetry: d.poRetry || '60', poExpire: d.poExpire || '3600' } : { poPriority: value })} />
           {d.poPriority === '2' ? (
             <>
-              <TextField mono label="Repeat every (seconds)" value={d.poRetry} onChange={value => patch({ poRetry: value })} inputMode="numeric" placeholder="60" disabled={saving} hint="30 to 10,800." />
-              <TextField mono label="Keep repeating for (seconds)" value={d.poExpire} onChange={value => patch({ poExpire: value })} inputMode="numeric" placeholder="3600" disabled={saving} hint="At most 10,800 (3 hours), and at least the repeat interval." />
+              <TextField mono label="Repeat every (seconds)" value={d.poRetry} onChange={value => patch({ poRetry: value })} inputMode="numeric" placeholder="60" error={emergencyProblem?.field === 'poRetry' ? errors.emergency : undefined} errorId={`${formId}-emerg-e`} disabled={saving} hint="30 to 10,800." />
+              <TextField mono label="Keep repeating for (seconds)" value={d.poExpire} onChange={value => patch({ poExpire: value })} inputMode="numeric" placeholder="3600" error={emergencyProblem?.field === 'poExpire' ? errors.emergency : undefined} errorId={`${formId}-emerg-e`} disabled={saving} hint="At most 10,800 (3 hours), and at least the repeat interval." />
               <p className="full muted small">Pushover itself repeats the alert until someone acknowledges it or the time runs out. Uptime-Canary doesn’t poll the receipt or record who acknowledged it.</p>
               {errors.emergency ? <div className="full"><ErrorText id={`${formId}-emerg-e`}>{errors.emergency}</ErrorText></div> : null}
             </>
