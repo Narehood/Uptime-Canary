@@ -13,6 +13,7 @@ const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
 let protocol = 22, role = 'admin', channels, revision = 1;
+const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
   id, name, config, revision: `fixture-revision-${revision++}`, updatedAt: now() - 3600_000,
@@ -50,13 +51,16 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === '/__fixture/reset') {
       protocol = Number(url.searchParams.get('protocol') || 22); role = url.searchParams.get('role') || 'admin';
-      reset(url.searchParams.get('empty') === '1'); return reply({ fixture: true });
+      reset(url.searchParams.get('empty') === '1'); requests.length = 0; return reply({ fixture: true });
     }
+    if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
     if (url.pathname.startsWith('/api/')) {
+      requests.push({ method: req.method, path: url.pathname });
       if (url.pathname === '/api/overview') return reply(overview());
       if (url.pathname === '/api/auth/me') return reply({ id: 'fixture-admin', name: 'Alex Morgan', role, passwordEnabled: true });
       if (url.pathname === '/api/tags') return reply([]);
-      if (url.pathname === '/api/notification-channels' && req.method === 'GET') return reply(channels);
+      if (url.pathname === '/api/notification-channels' && req.method === 'GET') return reply(role === 'viewer'
+        ? channels.map(view => ({ ...view, channel: { ...view.channel, config: { kind: view.channel.config.kind } } })) : channels);
       if (url.pathname.includes('test')) return reply({ error: 'Visual fixture never sends notifications.' }, 400);
       if (url.pathname.startsWith('/api/notification-channels') && ['POST', 'PUT'].includes(req.method)) {
         let bytes = ''; for await (const chunk of req) { bytes += chunk; if (bytes.length > 262144) return reply({ error: 'Too large' }, 413); }
@@ -67,7 +71,7 @@ const server = createServer(async (req, res) => {
         return reply(saved.channel, req.method === 'POST' ? 201 : 200);
       }
       if (url.pathname === '/api/monitors') return reply(overview().monitors);
-      if (url.pathname === '/api/deliveries') return reply([]);
+      if (url.pathname === '/api/notification-deliveries') return reply([]);
       return reply({ error: 'Not implemented by visual fixture' }, 404);
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {

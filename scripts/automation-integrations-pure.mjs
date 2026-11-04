@@ -126,6 +126,13 @@ const inputWith = (markup, needle) => {
   assert.ok(tag, `an input with ${needle} renders`);
   return attributes(tag);
 };
+// The UI council refinement replaces provider radio cards with native select options.
+// Keep the original protocol gating assertions against those real controls.
+const providerOption = (markup, kind) => {
+  const tag = markup.match(/<option\b[^>]*>/gu)?.find(tag => tag.includes(`value="${kind}"`));
+  assert.ok(tag, `provider option ${kind} renders`);
+  return attributes(tag);
+};
 const openTag = markup => markup.slice(0, markup.indexOf('>') + 1);
 const catalog = (list = []) => ({ list, map: new Map(list.map(entry => [entry.channel.id, entry])), loading: false, error: undefined, unsupported: false, reload() {} });
 const NODES = [{ id: 'a', name: 'Node A', state: 'local', lastSeenAt: null }];
@@ -191,7 +198,7 @@ check('alert events render the stored selection, editable on protocol 22', () =>
   boxes = eventBoxes(eventsFieldset(renderForm(undefined, 22)));
   assert.ok(Object.values(boxes).every(box => box.has('checked')), 'a new channel starts with all three');
   const markup = renderForm(undefined, 22);
-  for (const kind of ['homeassistant', 'matrix']) assert.equal(inputWith(markup, `value="${kind}"`).has('disabled'), false, kind);
+  for (const kind of ['homeassistant', 'matrix']) assert.equal(providerOption(markup, kind).has('disabled'), false, kind);
   assert.equal(text(markup).includes('Needs peer protocol'), false);
 });
 check('older or unreported protocol: read-only events with an upgrade note, and the new providers gated', () => {
@@ -202,12 +209,11 @@ check('older or unreported protocol: read-only events with an upgrade note, and 
     const words = text(fieldset);
     assert.ok(words.includes('Choosing events needs peer protocol 22') && words.includes('Upgrade every node in the cluster together'));
     assert.ok(words.includes(protocol ? 'reports peer protocol 21' : 'report a peer protocol'));
-    for (const kind of ['homeassistant', 'matrix']) assert.ok(inputWith(markup, `value="${kind}"`).has('disabled'), `${kind} gated at ${protocol}`);
-    for (const kind of ['discord', 'slack', 'webhook']) assert.equal(inputWith(markup, `value="${kind}"`).has('disabled'), false, kind);
+    for (const kind of ['homeassistant', 'matrix']) assert.ok(providerOption(markup, kind).has('disabled'), `${kind} gated at ${protocol}`);
+    for (const kind of ['discord', 'slack', 'webhook']) assert.equal(providerOption(markup, kind).has('disabled'), false, kind);
   }
   const stale = renderForm(saved(channels[0]), 21);
-  const radio = inputWith(stale, 'value="homeassistant"');
-  assert.ok(radio.has('checked') && !radio.has('disabled'), 'a stored provider stays selected');
+  assert.ok(text(stale).includes('Home Assistant') && text(stale).includes('Change provider'), 'a stored provider remains identified while its chooser is collapsed');
   assert.ok(text(stale).includes('Home Assistant needs peer protocol 22'));
 });
 check('channel list summarises a narrowed event selection and shows no credential', () => {

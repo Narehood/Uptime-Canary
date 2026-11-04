@@ -150,7 +150,7 @@ async function ready() { await page.eval(DOM); }
 async function nav(hash) { await page.eval(`location.hash=${J(hash)}`); await sleep(180); await ready(); }
 async function fill(label, value, scope) { await ready(); await page.eval(`__set(__field(${J(label)},${J(scope)}),${J(value)})`); await sleep(45); }
 async function click(label, scope) { await ready(); await page.eval(`(() => { const e=__button(${J(label)},${J(scope)}); if(e.disabled) throw Error('disabled'); e.click(); })()`); await sleep(120); }
-async function choose(label, scope) { await page.eval(`(() => { const r=${scope ? `document.querySelector(${J(scope)})` : 'document'}; const e=[...r.querySelectorAll('label')].find(e => __vis(e) && __norm(e.innerText).startsWith(${J(label)}) && e.querySelector('input[type=radio],input[type=checkbox]')); if(!e) throw Error('choice missing'); e.querySelector('input').click(); })()`); await sleep(50); }
+async function choose(label, scope) { await page.eval(`(() => { const r=${scope ? `document.querySelector(${J(scope)})` : 'document'}; const e=[...r.querySelectorAll('label')].find(e => __vis(e) && __norm(e.innerText).startsWith(${J(label)}) && e.querySelector('input[type=radio],input[type=checkbox]')); if(e) { e.querySelector('input').click(); return; } const select=r.querySelector('select[aria-label="Provider"]'); const option=select && [...select.options].find(o => o.label === ${J(label)} || o.label.startsWith(${J(label)}+' ?')); if(!option || option.disabled) throw Error('choice missing or disabled'); __set(select,option.value); })()`); await sleep(50); }
 async function text(s, timeout) { return until(() => page.eval(`document.body.innerText.includes(${J(s)})`), `text ${s}`, timeout); }
 async function heading(s) { return until(() => page.eval(`document.querySelector('main h1')?.textContent.includes(${J(s)})`), `heading ${s}`); }
 async function disclose(s) { await page.eval(`(() => { const e=[...document.querySelectorAll('.disc-h')].find(e => __norm(e.querySelector('.disc-t')?.textContent) === ${J(s)}); if(!e) throw Error('disclosure missing'); if(e.getAttribute('aria-expanded') !== 'true') e.click(); })()`); await sleep(70); }
@@ -727,7 +727,9 @@ async function automationBrowserReview() {
       assert.equal(await page.eval(`__field(${J(tokenLabel)}).type`), 'password');
       assert.equal(await page.eval(`document.body.innerText.includes(${J(token)})`), false);
       await fill('Name', name + ' renamed');
+      await choose('Repeats'); // First enable it so clearing down proves the UI dependency.
       await choose('Down alerts');
+      assert.deepEqual(await page.eval(`(() => { const field = label => [...document.querySelectorAll('input[type=checkbox]')].find(e => [...e.labels].some(l => __norm(l.innerText).startsWith(label))); const repeat = field('Repeats'); return { down: field('Down alerts').checked, repeat: repeat.checked, repeatDisabled: repeat.disabled, recovery: field('Recoveries').checked }; })()`), { down: false, repeat: false, repeatDisabled: true, recovery: true });
       await click('Save changes'); await heading('Notifications');
       saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
       assert.deepEqual(saved.config, config, 'rename preserves provider settings');
@@ -736,6 +738,9 @@ async function automationBrowserReview() {
       await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
       await choose('Recoveries'); await click('Save changes');
       await text('Select at least one event.');
+      assert.equal(await page.eval(`document.activeElement === document.querySelector('.errsum')`), true, 'invalid selection focuses the error summary');
+      await page.eval(`document.querySelector('.errsum button').click()`);
+      assert.equal(await page.eval(`[...document.activeElement.labels || []].some(l => __norm(l.innerText).startsWith('Down alerts'))`), true, 'summary link focuses the event control');
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, revision, 'invalid selection saves nothing');
       await choose('Recoveries'); await choose('Down alerts'); await choose('Repeats');
       await click('Save changes'); await heading('Notifications');
@@ -747,7 +752,7 @@ async function automationBrowserReview() {
         await click('Cancel', 'dialog[open]');
       }
       assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
-      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, allEventsRestored: true, realSends: 0 };
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, allEventsRestored: true, realSends: 0 };
     });
   }
 }
