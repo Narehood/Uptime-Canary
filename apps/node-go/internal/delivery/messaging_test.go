@@ -17,7 +17,9 @@ import (
 var messagingKinds = []Kind{Slack, Telegram, Ntfy, Gotify, Pushover}
 
 func TestMatrixDefaultMessageFitsCombinedBudget(t *testing.T) {
+	var calls atomic.Int32
 	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
 		var payload struct {
 			Body string `json:"body"`
 		}
@@ -28,9 +30,19 @@ func TestMatrixDefaultMessageFitsCombinedBudget(t *testing.T) {
 	}))
 	defer sink.Close()
 	c := Config{Kind: Matrix, Matrix: &notifyhttp.MatrixConfig{BaseURL: sink.URL, AccessToken: "fixture-token", RoomID: "!fixture", AllowInsecureHTTP: true}}
-	r := Send(context.Background(), c, Message{EventKind: "down", MonitorName: "Boundary", ObservationsSummary: strings.Repeat("x", 20<<10), IdempotencyKey: "stable"})
+	// prepareMessage admits observation summaries up to 16 KiB. At that
+	// boundary, the generated title still has to share Matrix's message budget.
+	message := Message{EventKind: "down", MonitorName: "Boundary", ObservationsSummary: strings.Repeat("x", 16<<10), IdempotencyKey: "stable"}
+	r := Send(context.Background(), c, message)
 	if !r.Accepted {
 		t.Fatal(r)
+	}
+	// Preserve rejection of the original oversized fixture instead of raising
+	// the shared admission limit to make the provider test pass.
+	message.ObservationsSummary = strings.Repeat("x", 20<<10)
+	r = Send(context.Background(), c, message)
+	if r.Accepted || r.ErrorCode != "invalid_message" || calls.Load() != 1 {
+		t.Fatal("oversized summary bypassed admission", r, calls.Load())
 	}
 }
 
