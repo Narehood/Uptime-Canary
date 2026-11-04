@@ -298,7 +298,7 @@ export const testSubmissionDisposition = requestDisposition;
 type TestFailure = { message: string; disposition: ReturnType<typeof testSubmissionDisposition> };
 function TestSubmissionError({ failure }: { failure: TestFailure }) {
   return <div className="errsum" role="alert"><Glyph tone="down" /><div>
-    <b>{failure.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test not sent'}</b>
+    {failure.disposition === 'unconfirmed' ? null : <b>Test not sent</b>}
     <p>{failure.message}</p>
     {failure.disposition === 'unconfirmed' ? <p>A test may already be queued. Sending another can duplicate real messages or device actions. Check delivery attempts before considering another test.</p> : <p>Correct the problem before trying again.</p>}
   </div></div>;
@@ -586,7 +586,7 @@ function ApplyDialog({ channelId, onClose }: { channelId: string; onClose: () =>
   }
   return (
     <Modal title={error?.disposition === 'unconfirmed' ? 'Assignment unconfirmed' : `Add ${channel.name} to monitors`} onClose={onClose} busy={busy} wide>
-      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>{error.disposition === 'unconfirmed' ? 'Assignment unconfirmed' : 'Assignment rejected'}</b><p>{error.message}</p>{error.disposition === 'unconfirmed' ? <p>The node may already have added this channel. Refresh and review the monitors before another request.</p> : null}</div></div> : null}
+      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div>{error.disposition === 'unconfirmed' ? null : <b>Assignment rejected</b>}<p>{error.message}</p>{error.disposition === 'unconfirmed' ? <p>The node may already have added this channel. Refresh and review the monitors before another request.</p> : null}</div></div> : null}
       <p>Choose the monitors that should also alert through <b>{channel.name}</b> ({providerLabel(channel.config.kind)}). Each keeps its other channels. Nothing about what’s checked changes, so open incidents continue.</p>
       {opened && channel.revision !== opened ? <p className="small fwarn"><Glyph tone="warn" /><span>This channel was edited since you opened this. Check its destination before adding it.</span></p> : null}
       {!channel.enabled ? <p className="small fwarn"><Glyph tone="warn" /><span>This channel is disabled. Enable it before adding it to monitors.</span></p> : null}
@@ -642,7 +642,7 @@ function DeleteChannelDialog({ channel, users, onClose }: { channel: Notificatio
   return (
     <Modal title={error?.disposition === 'unconfirmed' ? 'Deletion unconfirmed' : `Delete channel ${channel.name}?`} onClose={onClose} busy={busy}>
       <p>{users ? `${plural(users, 'monitor')} still list${users === 1 ? 's' : ''} it. Their alerts to this channel stop; other destinations are unaffected.` : 'No monitor uses this channel.'} Accepted receipts stay accepted.</p>
-      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>{error.disposition === 'unconfirmed' ? 'Deletion unconfirmed' : 'Delete request rejected'}</b><p>{error.message}</p>{error.disposition === 'unconfirmed' ? <p>The channel may already be deleted. Refresh the list before another request.</p> : null}</div></div> : null}
+      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div>{error.disposition === 'unconfirmed' ? null : <b>Delete request rejected</b>}<p>{error.message}</p>{error.disposition === 'unconfirmed' ? <p>The channel may already be deleted. Refresh the list before another request.</p> : null}</div></div> : null}
       <div className="row-wrap modal-acts">
         <button type="button" className={error?.disposition === 'unconfirmed' ? 'btn primary' : 'btn danger-solid'} onClick={() => { if (error?.disposition === 'unconfirmed') { channels.reload(); onClose(); } else void remove(); }} disabled={busy}><Icon name={error?.disposition === 'unconfirmed' ? 'refresh' : 'trash'} />{error?.disposition === 'unconfirmed' ? 'Refresh channels and close' : busy ? 'Deleting…' : 'Delete channel'}</button>
         <button type="button" className="btn" onClick={onClose} disabled={busy}>{error?.disposition === 'unconfirmed' ? 'Close' : 'Cancel'}</button>

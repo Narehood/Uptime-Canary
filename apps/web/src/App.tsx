@@ -471,7 +471,7 @@ function LinkBanner({ connection, onReconnect, onChoose }: { connection: Connect
     return (
       <Banner tone="down" role="alert" title={passwordSession ? <>Your sign-in on {endpoint} ended</> : <>{endpoint} rejected this tab’s token</>} actions={<>
         <button type="button" className="btn sm primary" onClick={onReconnect}><Icon name="lock" />Sign in again</button>
-        <button type="button" className="btn sm" onClick={forget}><Icon name="logout" />Leave</button>
+        <button type="button" className="btn sm" onClick={() => requestNavigation(forget)}><Icon name="logout" />Leave</button>
       </>}>
         {passwordSession
           ? 'The 12-hour session expired, someone signed it out, or the account’s password, role, token or two-factor setting changed.'
@@ -502,7 +502,7 @@ function ControlPlaneLinkBanner({ connection, since, now, onReconnect, onChoose 
     return (
       <Banner tone="down" role="alert" title={passwordSession ? <>Your sign-in to this dashboard ended</> : <>This dashboard rejected this tab’s token</>} actions={<>
         <button type="button" className="btn sm primary" onClick={onReconnect}><Icon name="lock" />Sign in again</button>
-        <button type="button" className="btn sm" onClick={forget}><Icon name="logout" />Leave</button>
+        <button type="button" className="btn sm" onClick={() => requestNavigation(forget)}><Icon name="logout" />Leave</button>
       </>}>
         {passwordSession
           ? 'The 12-hour session expired, someone signed it out, or the account’s password, role, token or two-factor setting changed.'

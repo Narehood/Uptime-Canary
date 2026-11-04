@@ -13,7 +13,7 @@ const output = join(root, '.canary/work/current/outputs');
 const stop = join(root, '.canary/channel-design-stop');
 if (existsSync(stop)) unlinkSync(stop);
 let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', attempts = [], channelReadsFail = false;
-let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels, deliveriesFail = false, deliveriesMalformed = false;
+let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels, deliveriesFail = false, deliveriesMalformed = false, rejectOverview = false;
 const requests = [];
 const now = () => Date.now();
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
@@ -25,6 +25,7 @@ function reset(empty = false, extras = false) {
   channelReadsFail = false;
   deliveriesFail = false;
   deliveriesMalformed = false;
+  rejectOverview = false;
   monitorChannels = { website: ['ha-office', 'matrix-ops'], api: ['matrix-ops'] };
   channels = empty ? [] : [
     makeChannel('ha-office', 'Office status light', { kind: 'homeassistant', homeassistant: {
@@ -68,6 +69,7 @@ const server = createServer(async (req, res) => {
       reset(url.searchParams.get('empty') === '1', url.searchParams.get('extras') === '1'); requests.length = 0; return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
+    if (url.pathname === '/__fixture/overview-rejection') { rejectOverview = url.searchParams.get('on') === '1'; return reply({ fixture: true, rejectOverview }); }
     if (url.pathname === '/__fixture/channels-failure') {
       channelReadsFail = url.searchParams.get('on') === '1'; return reply({ fixture: true, channelReadsFail });
     }
@@ -79,7 +81,7 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/')) {
       requests.push({ method: req.method, path: url.pathname });
-      if (url.pathname === '/api/overview') return reply(overview());
+      if (url.pathname === '/api/overview') return rejectOverview ? reply({ error: 'The private fixture rejected this credential.' }, 401) : reply(overview());
       if (url.pathname === '/api/auth/me') return reply({ id: 'fixture-admin', name: 'Alex Morgan', role, passwordEnabled: true });
       if (url.pathname === '/api/tags') return reply([]);
       if (url.pathname === '/api/notification-channels' && req.method === 'GET') return channelReadsFail

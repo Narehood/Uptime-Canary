@@ -864,6 +864,43 @@ async function automationBrowserReview() {
       return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, unreadableReadRetainsAttempts: true, uncertainSaveReadback: true, deletedChannelDraftRetained: true, allEventsRestored: true, realSends: 0 };
     });
   }
+  await step('Automation browser: rejected-sign-in Leave preserves a dirty draft until discard', async () => {
+    const token = secret(); secrets.add(token);
+    const made = await api(A, '/api/notification-channels', 'POST', {
+      name: 'Browser rejected-sign-in draft', enabled: true,
+      config: { kind: 'homeassistant', homeassistant: { serverUrl: state.sink + '/ha', accessToken: token, eventType: 'uptime_canary', allowInsecureHttp: true } },
+    });
+    assert.equal(made.status, 201, made.text);
+    const saved = made.value, originalHook = requestHook;
+    await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+    await fill('Name', 'Retain this rejected-sign-in draft');
+    await page.eval(`window.__rejectedSignInDraft = __field('Name'); true`);
+    // The private Go node remains authenticated; only this browser's overview read is refused.
+    requestHook = async paused => {
+      if (paused.request.method === 'GET' && paused.request.url === A.url + '/api/overview') {
+        await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 401,
+          responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify({ error: 'Private browser credential rejection fixture.' })).toString('base64') });
+        return true;
+      }
+      return Boolean(await originalHook?.(paused));
+    };
+    try {
+      await text('rejected this tab');
+      await click('Leave'); await text('Discard unsaved channel changes?');
+      assert.equal(await page.eval(`getComputedStyle(document.querySelector('dialog[open]')).opacity`), '1', 'the stale-data treatment does not fade the decision dialog');
+      await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`window.__rejectedSignInDraft === __field('Name')`), true, 'keeping the draft retains its mounted field');
+      assert.equal(await page.eval(`__field('Name').value`), 'Retain this rejected-sign-in draft');
+      await click('Leave'); await text('Discard unsaved channel changes?');
+      await click('Discard changes', 'dialog[open]'); await text('Signed out of this tab.');
+      assert.equal(await page.eval(`!!document.querySelector('.channel-editor')`), false, 'explicit discard completes Leave');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'leaving never saves the draft');
+    } finally {
+      requestHook = originalHook;
+      await api(A, `/api/notification-channels/${saved.id}`, 'DELETE', { revision: saved.revision });
+    }
+    return { rejectedSignInLeaveHeld: true, keptDraftRetainsField: true, explicitDiscardLeaves: true, realSends: 0 };
+  });
 }
 async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows }) {
   await launchBrowser(); await step('Browser: sign in to private A', () => signIn(A));
