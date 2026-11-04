@@ -16,9 +16,13 @@ let protocol = 22, role = 'admin', channels, revision = 1, testMode = 'reject', 
 let saveMode = 'normal', deleteMode = 'normal', assignMode = 'normal', monitorChannels, deliveriesFail = false, deliveriesMalformed = false, rejectOverview = false;
 const requests = [];
 const now = () => Date.now();
+// Go keeps these value-typed zero structs in provider JSON even when unused.
+const nativeConfig = config => ({ sender: { email: '' }, smtp: { server: '', port: 0 },
+  mailgun: { apiKey: '', domain: '' }, brevo: { apiKey: '' }, mandrill: { apiKey: '' },
+  webhook: { url: '' }, templates: {}, ...config });
 const makeChannel = (id, name, config, extra = {}) => ({ channel: {
-  id, name, config, revision: `fixture-revision-${revision++}`, updatedAt: now() - 3600_000,
-  enabled: true, ...extra, // Go Channel metadata is id/revision/updatedAt, with no updatedBy field.
+  id, name, revision: `fixture-revision-${revision++}`, updatedAt: now() - 3600_000,
+  enabled: true, ...extra, config: nativeConfig(config), // Match native metadata and provider JSON.
 }, configConflict: false });
 function reset(empty = false, extras = false) {
   attempts = [];

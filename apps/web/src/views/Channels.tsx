@@ -991,8 +991,19 @@ export const channelFormModel = { channelDraft, buildChannel };
 export function sameChannelSettings(left: NotificationChannelInput, right: NotificationChannelInput): boolean {
   const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable)
     : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, stable(item)])) : value;
+  // Go's value-typed provider structs encode these exact zero values even with omitempty.
+  // Keep every nonempty option and unknown key, including credentials in inactive providers.
+  const configValues = (config: NotificationConfig): Record<string, unknown> => {
+    const copy: Record<string, unknown> = { ...config };
+    const empty = { sender: { email: '' }, smtp: { server: '', port: 0 }, mailgun: { apiKey: '', domain: '' },
+      brevo: { apiKey: '' }, mandrill: { apiKey: '' }, webhook: { url: '' }, templates: {} };
+    for (const [key, value] of Object.entries(empty)) {
+      if (JSON.stringify(stable(copy[key])) === JSON.stringify(stable(value))) delete copy[key];
+    }
+    return copy;
+  };
   const values = (item: NotificationChannelInput): string => JSON.stringify(stable({ ...storedExtras(item, CHANNEL_KEYS), name: item.name, enabled: item.enabled,
-    config: item.config, isDefault: Boolean(item.isDefault), events: [...(item.events ?? EVENT_ORDER)].sort() }));
+    config: configValues(item.config), isDefault: Boolean(item.isDefault), events: [...(item.events ?? EVENT_ORDER)].sort() }));
   return values(left) === values(right);
 }
 

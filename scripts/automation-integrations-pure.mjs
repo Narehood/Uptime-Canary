@@ -443,6 +443,23 @@ check('Grafana dashboard: classic JSON, scoped variables and the exact exported 
   const scrape = panels.find(panel => panel.targets.some(target => target.expr === 'up{job=~"$job"}'));
   assert.ok(scrape && /not monitored-site health/u.test(scrape.description), 'exporter reachability is labelled apart from site health');
 });
+check('native Go empty config objects reconcile with a matching interrupted save', () => {
+  const defaults = { sender: { email: '' }, smtp: { server: '', port: 0 }, mailgun: { apiKey: '', domain: '' }, brevo: { apiKey: '' }, mandrill: { apiKey: '' }, webhook: { url: '' }, templates: {} };
+  for (const config of channels) {
+    const input = { name: 'Automation', enabled: true, config };
+    const stored = { ...input, id: 'native-channel', revision: 'native-revision', updatedAt: 1, config: { ...defaults, ...config } };
+    assert.ok(sameChannelSettings(stored, input), `${config.kind}: Go's value-typed zero objects are equivalent to omitted defaults`);
+    assert.deepEqual(stored.config, { ...defaults, ...config }, 'inspection does not mutate stored settings');
+    for (const [key, value] of Object.entries(defaults)) {
+      const changed = { ...stored, config: { ...stored.config, [key]: { ...value, unknownFutureKey: false } } };
+      assert.equal(sameChannelSettings(changed, input), false, `${key}: extra fields are retained`);
+    }
+    const otherCredential = { ...stored, config: { ...stored.config, [config.kind]: { ...config[config.kind], accessToken: 'different-private-token' } } };
+    assert.equal(sameChannelSettings(otherCredential, input), false, 'credentials still participate in reconciliation');
+    const inactiveCredential = { ...stored, config: { ...stored.config, smtp: { ...defaults.smtp, password: 'private-inactive-credential' } } };
+    assert.equal(sameChannelSettings(inactiveCredential, input), false, 'nonempty inactive options are never discarded');
+  }
+});
 check('save readback compares writable settings and credentials, ignoring resource metadata and default encoding', () => {
   const input = { name: 'Automation', enabled: true, config: channels[0] };
   const stored = { ...input, id: 'stored', revision: 'revision', updatedAt: 1, isDefault: false, events: ['recovery', 'down', 'repeat'] };
