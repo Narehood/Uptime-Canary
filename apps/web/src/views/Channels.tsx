@@ -320,7 +320,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
     } finally { setBusy(false); }
   };
   return (
-    <Modal title={error?.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : `Send a test from ${channel.name}?`} onClose={onClose} busy={busy}>
+    <Modal title={result ? 'Test queued' : error?.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : `Send a test from ${channel.name}?`} onClose={onClose} busy={busy}>
       <p className="vh" role="status" aria-live="polite" aria-atomic="true">{result ? `${endpoint} queued ${plural(result.length, 'test attempt')}. Outcomes are available in delivery attempts; queued does not mean delivered.` : ''}</p>
       {result ? (
         <>
@@ -365,12 +365,42 @@ const PREVIEW_WAIT_MS = 30_000;
  * delivery attempts, read by their IDs until they settle or 30 seconds pass. The node allows one test batch at a time, at
  * least 5 seconds apart, shared with saved channels' tests.
  */
+/** Read-only inspection stays inside the test dialog, so the editor and its credentials remain mounted. */
+function TestAttemptsInspector({ provider, attemptIds, onBack, onClose }: { provider: Kind; attemptIds?: string[]; onBack: () => void; onClose: () => void }) {
+  const { api, endpoint, connection } = useCanary();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const recent = useResource<DeliveryAttemptView[]>(`${connection.identity}|inspect-test|${provider}|${attemptIds?.join(',') ?? 'unconfirmed'}`, signal => api.deliveries({ limit: 200 }, signal), 15_000);
+  useEffect(() => { heading.current?.focus(); }, []);
+  const rows = (recent.data ?? []).filter(attempt => attempt.kind === 'test' && attempt.provider === provider && (!attemptIds || attemptIds.includes(attempt.id)));
+  return <section aria-label="Recent test attempts">
+    <h3 ref={heading} tabIndex={-1}>Recent {providerLabel(provider)} test attempts</h3>
+    <p className="muted small">Read from <span className="mono">{endpoint}</span>'s 200 most recent attempts. {attemptIds ? 'Only IDs confirmed by this test reply are shown.' : 'These may include other test batches; a match to this submission is not confirmed.'} Older or delayed attempts may be outside this view. Your channel settings stay in the form.</p>
+    {recent.error ? <Banner title="Test attempts could not be read" tone="down">{describeFailure(recent.error)}</Banner>
+      : !recent.data ? <p role="status">Loading recent test attempts...</p>
+      : rows.length ? <DeliveryTable attempts={rows} compact />
+      : <p>No matching attempts in this recent view. This does not prove the test was not queued.</p>}
+    <p className="muted small">Accepted means the provider acknowledged the request; it is not proof of device or inbox delivery. Do not resend an unconfirmed test just because it is absent here.</p>
+    <div className="row-wrap modal-acts">
+      <button type="button" className="btn primary" onClick={onBack}>Back to test result</button>
+      <button type="button" className="btn" onClick={recent.reload}>Refresh attempts</button>
+      <button type="button" className="btn" onClick={onClose}>Close</button>
+    </div>
+  </section>;
+}
+
 function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput; onClose: () => void }) {
   const { api, endpoint, stillCurrent } = useCanary();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<TestFailure | null>(null);
   const [attempts, setAttempts] = useState<DeliveryAttemptView[] | null>(null);
   const [waiting, setWaiting] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
+  const inspectButton = useRef<HTMLButtonElement>(null);
+  const wasInspecting = useRef(false);
+  useEffect(() => {
+    if (!inspecting && wasInspecting.current) inspectButton.current?.focus();
+    wasInspecting.current = inspecting;
+  }, [inspecting]);
   const stop = useRef<AbortController | null>(null);
   useEffect(() => () => stop.current?.abort(), []);
   const kind = input.config.kind;
@@ -413,11 +443,12 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
     const count = attempts.filter(attempt => attempt.state === state).length;
     return count ? `${count} ${label.label.toLowerCase()}` : '';
   }).filter(Boolean).join(', ') : '';
-  const completion = waiting ? 'Waiting for outcomes.' : attempts?.every(attempt => SETTLED.has(attempt.state)) ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
+  const settled = Boolean(attempts?.every(attempt => SETTLED.has(attempt.state)));
+  const completion = waiting ? 'Waiting for outcomes.' : settled ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
   return (
-    <Modal title={error?.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test these settings?'} onClose={onClose} busy={busy}>
+    <Modal title={inspecting ? 'Recent test attempts' : error?.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
       <p className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
-      {attempts ? (
+      {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
         <>
           <p><Glyph tone="up" /> {endpoint} queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
           {attempts.length ? (
@@ -435,8 +466,9 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
               })}
             </ul>
           ) : null}
-          <p className="muted small">{waiting ? 'Waiting for the outcome…' : 'Accepted means the provider acknowledged the message, not that it reached an inbox, chat or device.'} These attempts are listed under Delivery attempts too.</p>
-          <div className="row-wrap modal-acts"><button type="button" className="btn" onClick={onClose}>Close</button></div>
+          <p>{completion}</p>
+          <p className="muted small">Accepted means the provider acknowledged the request, not that it reached an inbox, chat or device.</p>
+          <div className="row-wrap modal-acts"><button ref={inspectButton} type="button" className="btn primary" onClick={() => setInspecting(true)}>View delivery attempts</button><button type="button" className="btn" onClick={onClose}>Close</button></div>
         </>
       ) : (
         <>
@@ -450,7 +482,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
           <p className="muted small">A node sends one test batch at a time, at least 5 seconds apart, shared with saved channels’ tests.</p>
           {error ? <TestSubmissionError failure={error} /> : null}
           <div className="row-wrap modal-acts">
-            {error?.disposition === 'unconfirmed' ? <a className="btn primary" href={deliveryHref()} onClick={onClose}>View delivery attempts</a>
+            {error?.disposition === 'unconfirmed' ? <button ref={inspectButton} type="button" className="btn primary" onClick={() => setInspecting(true)}>View delivery attempts</button>
               : <button type="button" className="btn primary" onClick={() => { void send(); }} disabled={busy}><Icon name="send" />{busy ? 'Queuing…' : 'Send test'}</button>}
             <button type="button" className="btn" onClick={onClose} disabled={busy}>{error?.disposition === 'unconfirmed' ? 'Close' : 'Cancel'}</button>
           </div>
@@ -645,11 +677,16 @@ export function ChannelsView() {
                     </div>
                     {editable ? (
                       <div className="acts">
-                        <button type="button" className="btn sm" onClick={() => setTesting(c)} aria-label={`Test ${c.name}`} disabled={view.configConflict || !c.enabled} data-tip={c.enabled ? 'Send one real test message' : 'Enable the channel to test it'}><Icon name="send" />Test</button>
-                        <a className="btn sm" href={deliveryHref(c.id)} aria-label={`View attempts for ${c.name}`}>View attempts</a>
-                        <button type="button" className="btn sm" onClick={() => setApplying(c.id)} disabled={view.configConflict || !c.enabled} data-tip={c.enabled ? 'Choose existing monitors to add it to' : 'Enable the channel to add it to monitors'} aria-label={`Add ${c.name} to monitors`}><Icon name="plus" />Add to monitors</button>
                         <a className={`btn sm${view.configConflict ? ' is-disabled' : ''}`} href={view.configConflict ? undefined : href('channels', c.id, 'edit')} aria-disabled={view.configConflict || undefined} aria-label={`Edit ${c.name}`}><Icon name="edit" />Edit</a>
-                        <button type="button" className="btn sm danger" onClick={() => setDeleting(c)} disabled={view.configConflict} aria-label={`Delete ${c.name}`}><Icon name="trash" /></button>
+                        <button type="button" className="btn sm" onClick={() => setTesting(c)} aria-label={`Test ${c.name}`} disabled={view.configConflict || !c.enabled} data-tip={c.enabled ? 'Send one real test message' : 'Enable the channel to test it'}><Icon name="send" />Test</button>
+                        <details className="channel-more-actions">
+                          <summary className="btn sm" aria-label={`More actions for ${c.name}`}>More<Icon name="chevDown" /></summary>
+                          <div className="channel-secondary-actions">
+                            <a className="btn sm" href={deliveryHref(c.id)} aria-label={`View attempts for ${c.name}`}>View attempts</a>
+                            <button type="button" className="btn sm" onClick={() => setApplying(c.id)} disabled={view.configConflict || !c.enabled} data-tip={c.enabled ? 'Choose existing monitors to add it to' : 'Enable the channel to add it to monitors'} aria-label={`Add ${c.name} to monitors`}><Icon name="plus" />Add to monitors</button>
+                            <button type="button" className="btn sm danger" onClick={() => setDeleting(c)} disabled={view.configConflict} aria-label={`Delete ${c.name}`}><Icon name="trash" /></button>
+                          </div>
+                        </details>
                       </div>
                     ) : null}
                   </li>
@@ -1191,7 +1228,7 @@ function ChannelFormBody({ id }: { id?: string }) {
             <button type="submit" className="btn primary" disabled={saving || conflicted || providerBlocked} aria-describedby={providerBlocked ? `${formId}-blocked` : undefined}><Icon name={current ? 'check' : 'plus'} />{saving ? `Saving to ${endpoint}…` : current ? 'Save changes' : 'Create channel'}</button>
             <button type="button" className="btn" disabled={saving || providerBlocked} aria-describedby={providerBlocked ? `${formId}-blocked` : undefined} onClick={testSettings}><Icon name="send" />Test these settings</button>
             <a className="btn" href={href('notifications')}>Cancel</a>
-            {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : <span className="muted small">Saving or cancelling sends nothing. Testing asks for confirmation and uses these settings without saving.</span>}
+            {saving ? <span className="muted small" role="status">Waiting for {endpoint} to acknowledge…</span> : <span className="muted small">Saving sends no test; applying settings can resume pending alerts. Testing asks for confirmation. Cancel leaves settings unchanged.</span>}
           </div>
         </form>
       </Card>
@@ -1202,8 +1239,9 @@ function ChannelFormBody({ id }: { id?: string }) {
           <button type="button" className="btn primary" disabled={saving} onClick={() => setPendingNavigation(null)}>Keep editing</button>
           <button type="button" className="btn" disabled={saving} onClick={() => {
             const proceed = pendingNavigation.proceed;
+            // Discard is real even if the next action only opens a node picker and is later cancelled.
+            setDraft(baseline.current);
             guardState.current.dirty = false;
-            releaseGuard.current();
             setPendingNavigation(null);
             proceed();
           }}>Discard changes</button>

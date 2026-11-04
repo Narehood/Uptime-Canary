@@ -128,10 +128,14 @@ export function registerNavigationGuard(guard: NavigationGuard): () => void {
   return () => { if (navigationGuard === guard) navigationGuard = undefined; };
 }
 
+/** Deliberate context changes can discard the same draft as route changes. Forced authentication changes are unaffected. */
+export function requestNavigation(proceed: () => void): void {
+  if (!navigationGuard?.(proceed)) proceed();
+}
+
 export function navigate(target: string): void {
   if (location.hash === target) return;
-  const proceed = (): void => { location.hash = target; };
-  if (!navigationGuard?.(proceed)) proceed();
+  requestNavigation(() => { location.hash = target; });
 }
 
 export function useRoute(): Route {

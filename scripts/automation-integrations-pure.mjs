@@ -110,6 +110,9 @@ check('navigation registration holds a dirty route and releases without disturbi
     const release = routes.registerNavigationGuard(action => { proceed = action; return true; });
     routes.navigate('#/notifications'); assert.equal(location.hash, '#/channels/ha-1/edit');
     proceed(); assert.equal(location.hash, '#/notifications');
+    let switched = false; routes.requestNavigation(() => { switched = true; });
+    assert.equal(switched, false, 'context changes use the same discard decision');
+    proceed(); assert.equal(switched, true); assert.equal(location.hash, '#/notifications');
     const newer = routes.registerNavigationGuard(() => true); release();
     routes.navigate('#/monitors'); assert.equal(location.hash, '#/notifications');
     newer(); routes.navigate('#/monitors'); assert.equal(location.hash, '#/monitors');

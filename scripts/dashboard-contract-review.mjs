@@ -769,8 +769,42 @@ async function automationBrowserReview() {
         await text('test event can switch real devices');
         await click('Cancel', 'dialog[open]');
       }
+      // These UI failures are simulated at the browser's API boundary. The real node receives no test POST,
+      // so the fixture proves draft-safe recovery without sending even a loopback provider notification.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const unsavedName = name + ' private draft';
+      await fill('Name', unsavedName);
+      await page.eval(`document.querySelector('.topbar .tb-btn').click()`);
+      await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'endpoint switching consults the draft guard');
+      await page.eval(`document.querySelector('button[aria-label="Disconnect"]').click()`);
+      await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'disconnect consults the draft guard');
+      const originalHook = requestHook;
+      requestHook = async paused => {
+        if (paused.request.url === A.url + '/api/notification-channels/preview-test' && paused.request.method === 'POST') {
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 202,
+            responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+            body: Buffer.from(JSON.stringify({ fixture: true, acknowledgementUnreadable: true })).toString('base64') });
+          return true;
+        }
+        return Boolean(await originalHook?.(paused));
+      };
+      try {
+        await click('Test these settings'); await text('Test these settings?');
+        await click('Send test', 'dialog[open]'); await text('Test submission unconfirmed');
+        assert.equal(await page.eval(`!![...document.querySelectorAll('dialog[open] button')].find(button => button.textContent.trim() === 'Send test')`), false, 'unknown submission offers no immediate resend');
+        await click('View delivery attempts', 'dialog[open]'); await text('Your channel settings stay in the form.');
+        assert.equal(await page.eval(`location.hash`), `#/channels/${saved.id}/edit`, 'inspection does not leave the editor');
+        assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'inspection preserves the unsaved draft');
+        await text('No matching attempts in this recent view.');
+        await click('Back to test result', 'dialog[open]'); await text('Test submission unconfirmed');
+        await page.eval(`document.querySelector('dialog[open] .modal-h button').click()`);
+      } finally { requestHook = originalHook; }
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'unsaved test recovery never changes the stored revision');
+      await nav('#/notifications'); await heading('Notifications');
       assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
-      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, allEventsRestored: true, realSends: 0 };
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, allEventsRestored: true, realSends: 0 };
     });
   }
 }

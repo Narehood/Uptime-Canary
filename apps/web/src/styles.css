@@ -1440,7 +1440,7 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .channels-view .chan-list > li { gap: 10px; padding: 18px 0; }
   .channels-view .chan-list .t { align-items: flex-start; }
   .channels-view .chan-list .t > .muted { flex-basis: 100%; }
-  .channels-view .chan-list .acts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-top: 4px; }
+  .channels-view .chan-list .acts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; margin-top: 4px; }
   .channels-view .chan-list .acts > .btn { justify-content: center; }
   .channels-view .chan-list .acts > .danger { justify-self: start; }
   .channels-view .btn.sm, .channel-editor .btn.sm, .channels-view .modal .btn, .channel-editor .modal .btn { min-height: 44px; min-width: 44px; white-space: normal; overflow-wrap: anywhere; }
@@ -1454,4 +1454,16 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .channel-editor .disc-t { white-space: normal; overflow-wrap: anywhere; }
   .channel-delivery-body { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .channel-test-destination dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+}
+
+/* Secondary actions expand in flow: no clipped overlay, source order matches the visual order. */
+.channels-view .channel-more-actions > summary { list-style: none; justify-content: center; min-height: 30px; }
+.channels-view .channel-more-actions > summary::-webkit-details-marker { display: none; }
+.channels-view .channel-more-actions[open] { flex-basis: 100%; }
+.channels-view .channel-secondary-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
+@container app (max-width: 699px) {
+  .channels-view .channel-more-actions > summary { min-height: 44px; min-width: 44px; width: 100%; }
+  .channels-view .channel-more-actions[open] { grid-column: 1 / -1; }
+  .channels-view .channel-secondary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .channels-view .channel-secondary-actions > .danger { grid-column: 1 / -1; justify-self: start; }
 }

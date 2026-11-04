@@ -10,7 +10,7 @@ import { useFleetCatalog } from './fleetState';
 import { FleetController } from './views/FleetController';
 import { assessAll, canEdit, nodeColumns, type Assessment, type NodeColumn } from './model';
 import { dismiss, useNotices } from './notices';
-import { href, navigate, sectionOf, useRoute, type Route } from './router';
+import { href, navigate, requestNavigation, sectionOf, useRoute, type Route } from './router';
 import { forget, POLL_MS, session, signOut, useSession, type Connection } from './session';
 import { ThemeButton, useTheme, type ThemeControl } from './theme';
 import { Banner, Card, EmptyState, PageHead, Spinner } from './ui/bits';
@@ -167,6 +167,8 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
   const [search, setSearch] = useState('');
   const [switching, setSwitching] = useState<SwitchRequest | null>(null);
   const [picking, setPicking] = useState(false);
+  const askSwitch = (request: SwitchRequest): void => requestNavigation(() => setSwitching(request));
+  const askNodePicker = (): void => requestNavigation(() => setPicking(true));
   const searchRef = useRef<HTMLInputElement>(null);
   const { overview, api, account, selection } = connection;
   const endpoint = overview.node.id;
@@ -226,10 +228,10 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
       channels, tags,
       search, setSearch,
       refresh: () => session.refresh(),
-      openSwitch: request => setSwitching(request ?? {}),
+      openSwitch: request => askSwitch(request ?? {}),
       stillCurrent: () => session.isCurrent({ identity: connection.identity, api }),
       controlPlane, selection, registry, accountHome, fleet: controlPlane ? fleetCatalog : undefined,
-      select: node => { session.select(node, connection); },
+      select: node => { requestNavigation(() => session.select(node, connection)); },
     };
   }, [connection, api, overview, endpoint, role, account, search, channels, tags, controlPlane, selection, registry, accountHome, fleetCatalog]);
 
@@ -310,7 +312,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
           <header className="topbar">
             {/* Control plane: Overview and Monitors show every node, so only pages about one node offer a node choice. */}
             {controlPlane ? null : (
-              <button type="button" className="tb-btn" onClick={() => setSwitching({})} aria-haspopup="dialog">
+              <button type="button" className="tb-btn" onClick={() => askSwitch({})} aria-haspopup="dialog">
                 <EndpointMark />
                 <span className="tb-txt">
                   <span className="t1">Viewing from <span className="mono">{endpoint}</span></span>
@@ -339,13 +341,13 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
             </a>
             <button
               type="button" className="icon-btn" disabled={signingOut}
-              onClick={() => { setSigningOut(true); void signOut().finally(() => setSigningOut(false)); }}
+              onClick={() => requestNavigation(() => { setSigningOut(true); void signOut().finally(() => setSigningOut(false)); })}
               aria-label={api.credential === 'session' ? 'Sign out' : 'Disconnect'}
               data-tip={api.credential === 'session' ? `Sign out: ends this session on ${accountHome}` : 'Disconnect: forget the account token in this tab'}
             ><Icon name="logout" /></button>
           </header>
 
-          {!fleetRoute || connection.link === 'rejected' ? <LinkBanner connection={connection} onChoose={() => setPicking(true)} onReconnect={() => setSwitching({
+          {!fleetRoute || connection.link === 'rejected' ? <LinkBanner connection={connection} onChoose={() => askNodePicker()} onReconnect={() => askSwitch({
             url: api.baseUrl,
             reason: controlPlane
               ? api.credential === 'session'
@@ -355,7 +357,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
                 ? `Your sign-in on ${endpoint} ended. Sign in again to continue.`
                 : `${endpoint} no longer accepts the token this tab was using. Sign in again to continue.`,
           })} /> : null}
-          <ExpiryBanner connection={connection} onRenew={() => setSwitching({ url: api.baseUrl, reason: controlPlane ? 'Sign in to this dashboard again to start a new 12-hour session.' : `Sign in to ${endpoint} again to start a new 12-hour session.` })} />
+          <ExpiryBanner connection={connection} onRenew={() => askSwitch({ url: api.baseUrl, reason: controlPlane ? 'Sign in to this dashboard again to start a new 12-hour session.' : `Sign in to ${endpoint} again to start a new 12-hour session.` })} />
           {account && account.passwordEnabled === false && api.credential === 'token' && section !== 'account' && !nudgeDismissed && connection.link === 'live' ? (
             <Banner tone="info" title={<>Set a password for {account.name}</>} actions={<>
               <a className="btn sm primary" href={href('account')}><Icon name="key" />Set a password</a>
@@ -371,7 +373,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
               title={<>{endpoint} can’t reach {andList(out.map(node => node.id))}</>}
               actions={<>
                 <a className="btn sm" href={href('nodes')}><Icon name="nodes" />Open nodes</a>
-                {out[0]?.url ? <button type="button" className="btn sm" onClick={() => setSwitching({ url: out[0]!.url })}><Icon name="plug" />View from {out[0]!.id}</button> : null}
+                {out[0]?.url ? <button type="button" className="btn sm" onClick={() => askSwitch({ url: out[0]!.url })}><Icon name="plug" />View from {out[0]!.id}</button> : null}
               </>}
             >
               Every node keeps monitoring on its own. Their locations show as <b>unknown</b>, never as up or down. Until they reconnect, each side may send its own alerts, so a duplicate is possible.
@@ -379,7 +381,7 @@ function Shell({ connection, theme, route }: { connection: Connection; theme: Th
           ) : null}
 
           <main id="main" tabIndex={-1} className={connection.link !== 'live' && !connection.awaiting ? 'is-stale' : undefined}>
-            {controlPlane ? <ControlPlaneView route={route} connection={connection} onChoose={() => setPicking(true)} /> : <View route={route} />}
+            {controlPlane ? <ControlPlaneView route={route} connection={connection} onChoose={() => askNodePicker()} /> : <View route={route} />}
           </main>
         </div>
       </div>
@@ -516,7 +518,7 @@ function ControlPlaneLinkBanner({ connection, since, now, onReconnect, onChoose 
       </Banner>
     );
   }
-  const leave = <button type="button" className="btn sm" onClick={() => session.select(null, connection)}><Icon name="nodes" />All nodes</button>;
+  const leave = <button type="button" className="btn sm" onClick={() => requestNavigation(() => session.select(null, connection))}><Icon name="nodes" />All nodes</button>;
   // While an operation changes the node's access, the dashboard's server refuses to read it (409): not an outage.
   const operation = selectedOperation(registry.map.get(selection.id), failure);
   if (operation) {
