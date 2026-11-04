@@ -51,6 +51,13 @@ jobs:
           validation_status=$?
           cat .canary/work/current/latest.log
           exit "$validation_status"
+      - name: Focused automation scheduling regressions
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 300 -- go test -count=1 -run 'TestAutomationChannel|TestChannelEvent' ./apps/node-go/internal/canary
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
       - name: HA runtime and event-selection regressions
         run: |
           set +e

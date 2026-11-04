@@ -483,10 +483,10 @@ async function review() {
     pushover: { kind: 'pushover', pushover: { appToken: 'a'.repeat(30), userKey: 'u'.repeat(30), device: 'phone_1', priority: 2, sound: 'siren', retrySeconds: 60, expireSeconds: 3600, baseURL: state.sink + '/po', allowInsecureHTTP: true } },
   }, channels = {};
   for (const [kind, config] of Object.entries(channelConfigs)) await step(`Channel ${kind} API + form rename preserves credentials and provider options`, async () => {
-    const made = await api(A, '/api/notification-channels', 'POST', { name: `Review ${kind}`, enabled: false, config }); assert.equal(made.status, 201, made.text); const m = made.value;
+    const made = await api(A, '/api/notification-channels', 'POST', { name: `Review ${kind}`, enabled: false, config, ...(['homeassistant', 'matrix'].includes(config.kind) ? { events: ['down', 'recovery'] } : {}) }); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.channelDraft(m); d.name += ' renamed'; const built = f.buildChannel(d, m); assert.ok(built.input, JSON.stringify(built.errors));
     for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'homeassistant', 'matrix', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
-    const saved = await api(A, `/api/notification-channels/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.config, m.config); channels[kind] = saved.value;
+    const saved = await api(A, `/api/notification-channels/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.config, m.config); assert.deepEqual(saved.value.events, m.events); channels[kind] = saved.value;
     return { id: m.id, savedWithoutSending: !existsSync(join(runDir, 'sink.json')) };
   });
   let emptyKafka, emptyRabbit;
@@ -1009,7 +1009,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   });
   for (const [kind, c] of Object.entries(channels)) await step(`Browser: rename ${kind} channel preserves credentials`, async () => {
     await nav(`#/channels/${c.id}/edit`); await heading('Edit'); await fill('Name', c.name + ' browser'); await click('Save changes'); await heading('Notifications');
-    const got = await api(A, `/api/notification-channels/${c.id}`); assert.equal(got.status, 200); assert.deepEqual(got.value.config, c.config); return { id: c.id, configPreserved: true };
+    const got = await api(A, `/api/notification-channels/${c.id}`); assert.equal(got.status, 200); assert.deepEqual(got.value.config, c.config); assert.deepEqual(got.value.events, c.events); return { id: c.id, configPreserved: true, eventsPreserved: true };
   });
   if (emptyKafka) await step('Browser regression: empty Kafka payload can be renamed', async () => {
     await nav(`#/monitors/${emptyKafka.id}/edit`); await heading('Edit monitor'); await fill('Name', 'Empty Kafka renamed'); await click('Save changes'); await sleep(300);

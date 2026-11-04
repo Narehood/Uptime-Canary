@@ -62,10 +62,9 @@ func TestAutomationChannelEventsReplicateAndSurviveRestart(t *testing.T) {
 	in := input([]string{"a", "b"}, "http://127.0.0.1:1", "")
 	in.RepeatAfterMs = Ptr(int64(1000))
 	in.IntervalMs, in.TimeoutMs, in.NotificationIDs = 60000, 1000, []string{hc.ID, mc.ID}
-	m, err := a.writeMonitor(in, nil, "automation-monitor", false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Use management admission so immutable payloads contain the same canonical
+	// target that peer ingress validates (http://host:port/ with the trailing /).
+	m := add(t, a, in)
 	drive := func() {
 		partitionDrive(t, a)
 		messagingPeerPage(t, a, b)
