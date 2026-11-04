@@ -151,6 +151,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 const { CanaryContext } = await load('context.tsx');
 const { ChannelFormView, ChannelsView, eventsSummary } = await load('views/Channels.tsx');
 const { MessagingFields } = await load('views/MessagingFields.tsx');
+const { Seg } = await load('ui/forms.tsx');
 // React's static markup separates adjacent text nodes with <!-- -->; text() also drops tags, so attribute values aren't text.
 const plain = markup => markup.replaceAll('<!-- -->', '');
 const text = markup => plain(markup).replace(/<[^>]*>/gu, ' ');
@@ -182,6 +183,21 @@ const ctx = (list, peerProtocol) => ({
   channels: catalog(list), tags: catalog(),
 });
 const render = (element, list, peerProtocol) => plain(renderToStaticMarkup(React.createElement(CanaryContext.Provider, { value: ctx(list, peerProtocol) }, element)));
+check('segmented groups expose uniquely associated help and omit absent descriptions', () => {
+  const control = (legend, hint) => React.createElement(Seg, { legend, hint, name: legend, value: 'one', options: [{ value: 'one', label: 'One' }], onChange() {} });
+  const markup = renderToStaticMarkup(React.createElement(React.Fragment, null, control('Security', 'Encrypted relay'), control('Login', 'Joined account')));
+  const groups = [...markup.matchAll(/<fieldset\b[^>]*>[\s\S]*?<\/fieldset>/gu)];
+  assert.equal(groups.length, 2);
+  const descriptions = groups.map(([group]) => {
+    const id = attributes(group.match(/^<fieldset[^>]*>/u)[0]).get('aria-describedby');
+    assert.ok(id, 'radio group has an accessible description');
+    assert.ok(group.includes(`<small id="${id}">`), 'description resolves to its visible help');
+    return id;
+  });
+  assert.notEqual(descriptions[0], descriptions[1], 'separate groups never share a help ID');
+  const without = renderToStaticMarkup(control('No help'));
+  assert.equal(attributes(without.match(/^<fieldset[^>]*>/u)[0]).has('aria-describedby'), false);
+});
 const saved = (config, events) => ({ id: `${config.kind}-1`, revision: 'r1', updatedAt: 1, name: 'Automation', enabled: true, config, ...(events ? { events } : {}) });
 const renderForm = (channel, peerProtocol) => render(React.createElement(ChannelFormView, channel ? { id: channel.id } : {}), channel ? [{ channel, configConflict: false }] : [], peerProtocol);
 const eventsFieldset = markup => {

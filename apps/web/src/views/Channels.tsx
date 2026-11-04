@@ -219,7 +219,7 @@ export function DeliveriesView({ channelFilter }: { channelFilter?: string }) {
   const unsupported = attempts.error instanceof ApiFailure && attempts.error.status === 404;
   if (!privateAttempts) return <div className="view"><PageHead title="Notifications" /><NotificationTabs current="deliveries" /><ReadOnly>Viewers see channel names and providers only. Delivery attempts are private.</ReadOnly></div>;
   return (
-    <div className="view">
+    <div className="view delivery-view">
       <PageHead title="Notifications" sub={<>Delivery attempts known to <span className="mono">{endpoint}</span>, newest first. Each email recipient, and each chat, push or webhook channel, is its own destination with its own retries.</>} />
       <NotificationTabs current="deliveries" />
       <Card

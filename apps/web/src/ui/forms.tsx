@@ -339,13 +339,14 @@ export function SecretField({ label, value, onChange, disabled, full, mono = tru
 export function Seg<T extends string>({ legend, name, value, options, onChange, disabled, full, hint }: {
   legend: string; name: string; value: T; options: { value: T; label: string }[]; onChange: (value: T) => void; disabled?: boolean; full?: boolean; hint?: ReactNode;
 }) {
+  const hintId = useId();
   return (
-    <fieldset className={`fld seg-f${full ? ' full' : ''}`} disabled={disabled}>
+    <fieldset className={`fld seg-f${full ? ' full' : ''}`} disabled={disabled} aria-describedby={hint ? hintId : undefined}>
       <legend>{legend}</legend>
       <div className="seg">
         {options.map(option => <label key={option.value}><input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} /><span>{option.label}</span></label>)}
       </div>
-      {hint ? <small>{hint}</small> : null}
+      {hint ? <small id={hintId}>{hint}</small> : null}
     </fieldset>
   );
 }

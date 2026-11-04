@@ -1509,3 +1509,8 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .channel-recipient > label:nth-child(2) { grid-column: 1; }
   .channel-recipient > button { align-self: center; }
 }
+
+@container app (max-width: 699px) {
+  .delivery-view .fchip, .delivery-view .inline-sel select { min-height: 44px; }
+  .delivery-view .icon-btn.sm { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
