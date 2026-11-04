@@ -17,7 +17,7 @@ globalThis.React ??= React;
 const { register } = await import('tsx/esm/api');
 const scope = register({ namespace: 'automation-integrations', tsconfig: resolve(root, 'apps/web/tsconfig.json') });
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
-const { channelFormModel: form, PROVIDERS } = await load('views/Channels.tsx');
+const { channelFormModel: form, PROVIDERS, toggleAlertEvent } = await load('views/Channels.tsx');
 const messaging = await load('messaging.ts');
 let passed = 0;
 const check = (name, fn) => { fn(); console.log(`PASS ${name}`); passed++; };
@@ -58,6 +58,28 @@ for (const config of channels) {
     assert.notEqual(messaging.credentialKey(config.kind, next), messaging.credentialKey(config.kind, draft));
   });
 }
+check('event controls immediately remove dependent repeats while keeping recovery-only usable', () => {
+  assert.deepEqual(toggleAlertEvent(['down', 'repeat', 'recovery'], 'down', false), ['recovery']);
+  assert.deepEqual(toggleAlertEvent(['recovery'], 'repeat', true), ['recovery']);
+  assert.deepEqual(toggleAlertEvent(['recovery'], 'down', true), ['down', 'recovery']);
+  assert.deepEqual(toggleAlertEvent(['down', 'recovery'], 'repeat', true), ['down', 'repeat', 'recovery']);
+  assert.deepEqual(toggleAlertEvent(['recovery'], 'recovery', false), []);
+});
+check('native target summaries identify exact routing without credentials or query data', () => {
+  const ha = messaging.automationDestination({ kind: 'homeassistant', homeassistant: { baseURL: 'https://user:password@home.example.test/relay/?token=private#secret', accessToken: 'private-ha', eventType: 'office_status' } });
+  assert.deepEqual(ha, { server: 'https://home.example.test/relay', targetLabel: 'Event type', target: 'office_status' });
+  const matrix = messaging.automationDestination({ kind: 'matrix', matrix: { baseURL: 'https://matrix.example.test/prefix/', accessToken: 'private-matrix', roomId: '!operations:example.test' } });
+  assert.deepEqual(matrix, { server: 'https://matrix.example.test/prefix', targetLabel: 'Room ID', target: '!operations:example.test' });
+  assert.equal(messaging.automationDestination({ kind: 'webhook', webhook: { url: 'https://example.test/private-webhook-token' } }), undefined);
+});
+check('Matrix list summaries distinguish rooms on one homeserver and never include access tokens', () => {
+  const base = { kind: 'matrix', matrix: { baseURL: 'https://matrix.example.test', accessToken: 'private-matrix-token', roomId: '!first:example.test' } };
+  const first = messaging.messagingRoute(base);
+  const second = messaging.messagingRoute({ ...base, matrix: { ...base.matrix, roomId: '!second:example.test' } });
+  assert.notDeepEqual(first, second);
+  assert.ok(JSON.stringify(first).includes('!first:example.test'));
+  assert.ok(!JSON.stringify(first).includes('private-matrix-token'));
+});
 check('domainless and legacy Matrix room IDs remain usable', () => {
   const channel = { name: 'Matrix', enabled: true, config: channels[1] };
   const draft = form.channelDraft(channel);

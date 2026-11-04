@@ -244,12 +244,26 @@ export function pushoverPriorityText(p: NotificationConfig['pushover']): string 
   return PUSHOVER_PRIORITIES.find(option => option.value === String(priority))?.label.replace(/^\S+ · /u, '') ?? `priority ${priority}`;
 }
 
+/** Public routing fields for native automation destinations, never their access token or URL credentials. */
+export function automationDestination(c: NotificationConfig): { server: string; targetLabel: string; target: string } | undefined {
+  const native = c.kind === 'homeassistant' ? c.homeassistant : c.kind === 'matrix' ? c.matrix : undefined;
+  if (!native) return undefined;
+  let server = 'No server';
+  try {
+    const url = new URL(native.baseURL);
+    if (url.protocol === 'https:' || url.protocol === 'http:') server = url.origin + url.pathname.replace(/\/+$/u, '');
+  } catch { /* Incomplete drafts have no usable server yet. */ }
+  return c.kind === 'homeassistant'
+    ? { server, targetLabel: 'Event type', target: c.homeassistant?.eventType || 'uptime_canary' }
+    : { server, targetLabel: 'Room ID', target: c.matrix?.roomId || 'No room' };
+}
+
 /** A masked route for lists and conflict review: the API origin plus non-secret options. */
 export function messagingRoute(c: NotificationConfig): { where: string; facts: string[] } | undefined {
   const facts = (...items: (string | false | undefined)[]): string[] => items.filter((item): item is string => Boolean(item));
   switch (c.kind) {
     case 'homeassistant': return { where: c.homeassistant?.baseURL ? maskedUrl(c.homeassistant.baseURL) : 'no server', facts: [c.homeassistant?.eventType ?? 'uptime_canary'] };
-    case 'matrix': return { where: c.matrix?.baseURL ? maskedUrl(c.matrix.baseURL) : 'no server', facts: ['one unencrypted room'] };
+    case 'matrix': return { where: c.matrix?.baseURL ? maskedUrl(c.matrix.baseURL) : 'no server', facts: [c.matrix?.roomId || 'no room', 'unencrypted room'] };
     case 'slack': return { where: c.slack?.webhookURL ? maskedUrl(c.slack.webhookURL) : 'no URL', facts: [] };
     case 'telegram': {
       const t = c.telegram;

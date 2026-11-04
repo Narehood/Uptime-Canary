@@ -119,14 +119,14 @@ export function CandidateOrder({ ids, nodes, sender, label = 'Notification order
   );
 }
 
-export const ErrorSummary = forwardRef<HTMLDivElement, { title: string; errors: string[]; children?: ReactNode }>(function ErrorSummary({ title, errors, children }, ref) {
+export const ErrorSummary = forwardRef<HTMLDivElement, { title: string; errors: string[]; children?: ReactNode; onErrorSelect?: (index: number) => void }>(function ErrorSummary({ title, errors, children, onErrorSelect }, ref) {
   if (!errors.length && !children) return null;
   return (
     <div className="errsum" ref={ref} tabIndex={-1} role="alert">
       <Glyph tone="down" />
       <div>
         <b>{title}</b>
-        {errors.length ? <ul>{errors.map(error => <li key={error}>{error}</li>)}</ul> : null}
+        {errors.length ? <ul>{errors.map((error, index) => <li key={error}>{onErrorSelect ? <button type="button" className="linkbtn" onClick={() => onErrorSelect(index)}>{error}</button> : error}</li>)}</ul> : null}
         {children}
       </div>
     </div>

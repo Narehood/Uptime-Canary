@@ -97,6 +97,14 @@ const EVENT_CHOICE: Record<AlertEvent, { label: string; hint: string; noun: stri
   repeat: { label: 'Repeats', hint: 'Reminders while it stays down. Needs down alerts.', noun: 'repeats' },
   recovery: { label: 'Recoveries', hint: 'When it’s back up.', noun: 'recoveries' },
 };
+/** UI dependencies are applied immediately; the API builder still rejects invalid explicit selections. */
+export function toggleAlertEvent(events: readonly AlertEvent[], event: AlertEvent, on: boolean): AlertEvent[] {
+  const next = new Set(events);
+  if (on) next.add(event); else next.delete(event);
+  if (!next.has('down')) next.delete('repeat');
+  return EVENT_ORDER.filter(item => next.has(item));
+}
+
 /** A stored selection that isn't all three, in words; nothing for the default. */
 export const eventsSummary = (events: readonly string[] | undefined): string | undefined => {
   if (!events) return undefined;
@@ -861,7 +869,7 @@ function ChannelFormBody({ id }: { id?: string }) {
   const eventsReady = (capability.protocol ?? 0) >= EVENTS_PROTOCOL;
   const reported = capability.protocol ? `reports peer protocol ${capability.protocol}` : 'doesn’t report a peer protocol';
   const toggleEvent = (event: AlertEvent, on: boolean): void =>
-    setDraft(d => ({ ...d, events: on ? EVENT_ORDER.filter(other => other === event || d.events.includes(other)) : d.events.filter(other => other !== event) }));
+    setDraft(d => ({ ...d, events: toggleAlertEvent(d.events, event, on) }));
   const visible = showErrors ? errors : {};
   const set = <K extends keyof ChannelDraft>(key: K, value: ChannelDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));
@@ -909,7 +917,17 @@ function ChannelFormBody({ id }: { id?: string }) {
     }
     setPreviewing(input);
   };
-  const errorList = Object.entries(visible).map(([field, message]) => `${CFIELD_LABEL[field as CField]}: ${message}`);
+  const errorEntries = Object.entries(visible);
+  const errorList = errorEntries.map(([field, message]) => `${CFIELD_LABEL[field as CField]}: ${message}`);
+  const focusError = (index: number): void => {
+    const entry = errorEntries[index], form = summaryRef.current?.closest('form');
+    if (!entry || !form) return;
+    const message = entry[1];
+    const error = [...form.querySelectorAll<HTMLElement>('[id]')].find(element => element.textContent?.trim() === message);
+    const control = error?.closest('.fld')?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)');
+    const target = control ?? error;
+    if (target) { if (!control) target.tabIndex = -1; target.scrollIntoView({ block: 'center' }); target.focus({ preventScroll: true }); }
+  };
   const updateRecipient = (key: number, change: Partial<Recipient>): void => set('recipients', draft.recipients.map(row => row.key === key ? { ...row, ...change } : row));
 
   return (
@@ -924,7 +942,7 @@ function ChannelFormBody({ id }: { id?: string }) {
         : null}
       <Card>
         <form className="form" onSubmit={event => { void submit(event); }} noValidate aria-busy={saving}>
-          <ErrorSummary ref={summaryRef} title={failure ? (failure.stale ? 'Not saved: the channel changed or has a conflict' : 'Not saved') : 'Check these fields'} errors={failure ? [] : errorList}>
+          <ErrorSummary ref={summaryRef} title={failure ? (failure.stale ? 'Not saved: the channel changed or has a conflict' : 'Not saved') : 'Check these fields'} errors={failure ? [] : errorList} onErrorSelect={focusError}>
             {failure ? <p>{failure.message}{failure.stale && current ? <> <button type="button" className="linkbtn" onClick={loadLatest}>Load the latest version</button> and apply your change again.</> : null}</p> : null}
           </ErrorSummary>
           <h3 className="fsec full">Channel</h3>
@@ -932,13 +950,13 @@ function ChannelFormBody({ id }: { id?: string }) {
           <CheckField full={false} label="Enabled" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Disabled channels receive nothing; owed alerts resume if you enable it during an outage." />
           <CheckField full={false} label="Default for new monitors" checked={draft.isDefault} onChange={value => set('isDefault', value)} disabled={saving}
             hint={draft.isDefault && !draft.enabled ? 'Only while enabled: a disabled default isn’t preselected.' : 'Preselected on every new monitor while enabled; each one can still clear it. Existing monitors change only when you add it to them from the channel list.'} />
-          <fieldset className="fld full" disabled={saving || !eventsReady} aria-invalid={visible.events ? true : undefined}>
+          <fieldset className="fld full" id={`${formId}-events`} tabIndex={-1} disabled={saving || !eventsReady} aria-invalid={visible.events ? true : undefined} aria-describedby={`${formId}-events-h${visible.events ? ` ${formId}-events-e` : ''}`}>
             <legend>Alert events</legend>
             {EVENT_ORDER.map(event => (
-              <CheckField key={event} full={false} label={EVENT_CHOICE[event].label} hint={EVENT_CHOICE[event].hint} checked={draft.events.includes(event)} onChange={on => toggleEvent(event, on)} />
+              <CheckField key={event} full={false} label={EVENT_CHOICE[event].label} hint={EVENT_CHOICE[event].hint} disabled={event === 'repeat' && !draft.events.includes('down')} checked={draft.events.includes(event)} onChange={on => toggleEvent(event, on)} />
             ))}
-            {eventsReady ? <small>Alerts for an event left out are cancelled for this channel without sending. Monitors and their other channels are unaffected.</small>
-              : <small className="fwarn"><Glyph tone="warn" />Choosing events needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Upgrade every node in the cluster together. Until then this selection is read-only.</small>}
+            {eventsReady ? <small id={`${formId}-events-h`}>Alerts for an event left out are cancelled for this channel without sending. Monitors and their other channels are unaffected.</small>
+              : <small id={`${formId}-events-h`} className="fwarn"><Glyph tone="warn" />Choosing events needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Upgrade every node in the cluster together. Until then this selection is read-only.</small>}
             <ErrorText id={`${formId}-events-e`}>{visible.events}</ErrorText>
           </fieldset>
           <fieldset className="fld full types-f" disabled={saving}>
