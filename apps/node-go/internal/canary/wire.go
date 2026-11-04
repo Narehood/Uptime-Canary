@@ -316,7 +316,7 @@ func (n *Node) validateSnapshot(b []byte, expected string) (Snapshot, error) {
 		}
 	}
 	for _, r := range s.Receipts {
-		if r.DestinationID != "" && identifier(r.DestinationID, "destinationId") != nil || r.ChannelID != "" && identifier(r.ChannelID, "channelId") != nil || r.Provider != "" && !slices.Contains([]string{"generic", "webhook", "discord", "smtp", "mailgun", "brevo", "mandrill", "slack", "telegram", "ntfy", "gotify", "pushover"}, r.Provider) {
+		if r.DestinationID != "" && identifier(r.DestinationID, "destinationId") != nil || r.ChannelID != "" && identifier(r.ChannelID, "channelId") != nil || r.Provider != "" && !slices.Contains([]string{"generic", "webhook", "discord", "smtp", "mailgun", "brevo", "mandrill", "slack", "telegram", "ntfy", "gotify", "pushover", "homeassistant", "matrix"}, r.Provider) {
 			return bad()
 		}
 		if identifier(r.ID, "id") != nil || identifier(r.MonitorID, "monitorId") != nil || identifier(r.IncidentID, "incidentId") != nil || !n.known[r.NodeID] || (r.Kind != "down" && r.Kind != "recovery" && r.Kind != "repeat") || !validTime(r.SentAt) || r.Slot < 0 || r.Slot > maxSafe {

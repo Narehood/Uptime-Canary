@@ -2,9 +2,11 @@
 
 The runtime supports reusable Discord, SMTP, Mailgun, Brevo,
 Mailchimp Transactional (Mandrill), JSON webhook, Slack, Telegram, ntfy, Gotify
-and Pushover channels. Channel configuration is
+and Pushover channels, plus Home Assistant events and Matrix notices. Channel configuration is
 replicated with explicit revision conflicts and deletion tombstones. Account
 credentials, browser sessions and delivery attempts remain local to each node.
+
+See [automation integrations](automation-integrations.md) for Home Assistant light automations, Matrix setup and protocol-22 event selection.
 
 ## Message presets and previews (protocol 20)
 

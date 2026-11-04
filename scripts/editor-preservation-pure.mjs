@@ -161,10 +161,14 @@ check('sources: each editor saves through its model with the version it edits', 
   // spread, written only when on, between config and the stored extras. The extras still come from storedExtras over the same
   // original and CHANNEL_KEYS; CHANNEL_KEYS now lists isDefault, so a stored flag never overrides the draft's. The flag's
   // behavior (off omitted, kept across a provider change) is asserted in scripts/channel-defaults-pure.mjs.
+  // Protocol 22 explicitly adds optional events (docs/automation-integrations.md).
+  // All three remain omitted; narrower selections precede the preserved extras.
+  // Runtime preservation/selection is covered by automation-integrations-pure.mjs
+  // and the private Linux Chrome automation proof; retain all original F1 checks.
   const c = source('views/Channels.tsx');
-  assert.ok(c.includes('{ name, enabled: draft.enabled, config, ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) }'),
-    'the channel save builds name, enabled, config and the on-only default flag, then the stored extras');
-  assert.ok(c.includes("const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault'];"), 'the modeled keys include the default flag');
+  assert.ok(c.includes('{ name, enabled: draft.enabled, config, ...(draft.events.length !== 3 ? { events: [...draft.events] } : {}), ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) }'),
+    'the channel save builds optional events and the on-only default flag before preserved extras');
+  assert.ok(c.includes("const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault', 'events'];"), 'the modeled keys include default and event selection');
 });
 
 console.log(failed ? `${failed} FAILED` : 'ALL PASSED');

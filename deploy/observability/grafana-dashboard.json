@@ -1,0 +1,492 @@
+{
+  "title": "Uptime Canary",
+  "uid": "uptime-canary-overview",
+  "id": null,
+  "version": 1,
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "tags": ["uptime-canary"],
+  "description": "Current Uptime Canary state exported at /api/metrics, as one selected viewing node sees it. Shows only what Prometheus scraped: no backfill of Canary's SQLite history, no SLA or uptime percentage, and short transitions between scrapes can be missed.",
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "timepicker": {},
+  "timezone": "",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "links": [],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "Uptime Canary Prometheus", "value": "uptime-canary-prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "job",
+        "label": "Scrape job",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(uptime_canary_monitor_state, job)",
+        "query": "label_values(uptime_canary_monitor_state, job)",
+        "current": { "selected": true, "text": "uptime-canary", "value": "uptime-canary" },
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "skipUrlSync": false
+      },
+      {
+        "name": "view_node",
+        "label": "Viewing node",
+        "description": "One node's view of the cluster. Every node exports the whole cluster, so views are never summed.",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(uptime_canary_monitor_state{job=~\"$job\"}, view_node)",
+        "query": "label_values(uptime_canary_monitor_state{job=~\"$job\"}, view_node)",
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "skipUrlSync": false
+      },
+      {
+        "name": "monitor_id",
+        "label": "Monitor ID",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\"}, monitor_id)",
+        "query": "label_values(uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\"}, monitor_id)",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "options": [],
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Monitor health (selected viewing node)",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Monitors by current state",
+      "description": "How many selected monitors are in each state right now, as the viewing node reports. Only states with at least one monitor appear. A current count, not uptime.",
+      "id": 2,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "count by (state) (\n  max by (monitor_id, state) (uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\"})\n)",
+          "legendFormat": "{{state}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "vertical",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "#8e8e8e" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "up" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }, { "id": "displayName", "value": "Up" }] },
+          { "matcher": { "id": "byName", "options": "down" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }, { "id": "displayName", "value": "Down" }] },
+          { "matcher": { "id": "byName", "options": "unknown" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#8e8e8e" } }, { "id": "displayName", "value": "Unknown" }] },
+          { "matcher": { "id": "byName", "options": "pending" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }, { "id": "displayName", "value": "Pending" }] },
+          { "matcher": { "id": "byName", "options": "paused" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "displayName", "value": "Paused" }] }
+        ]
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Monitor state",
+      "description": "uptime_canary_monitor_state is one-hot: each monitor has one series with value 1 whose state label is its current state. The query turns that label into one exclusive code per monitor (up 1, paused 2, pending 3, unknown 4, down 5) and drops the state label. Gaps mean no scrape sample, never up. If two samples ever disagree, the higher code shows. Unrecognised state labels are left out.",
+      "id": 3,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "max by (view_node, monitor_id) (\n    uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"up\"} * 1\n  or uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"paused\"} * 2\n  or uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"pending\"} * 3\n  or uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"unknown\"} * 4\n  or uptime_canary_monitor_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"down\"} * 5\n)",
+          "legendFormat": "{{monitor_id}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 0, "fillOpacity": 80, "spanNulls": false, "insertNulls": false, "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#8e8e8e", "value": null }] },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": { "text": "Up", "color": "green", "index": 0 },
+                "2": { "text": "Paused", "color": "blue", "index": 1 },
+                "3": { "text": "Pending", "color": "yellow", "index": 2 },
+                "4": { "text": "Unknown", "color": "#8e8e8e", "index": 3 },
+                "5": { "text": "Down", "color": "red", "index": 4 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Observations by probing node",
+      "id": 4,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "panels": []
+    },
+    {
+      "type": "state-timeline",
+      "title": "Observation state",
+      "description": "uptime_canary_observation_state: the latest fresh measurement from each assigned probing node; missing or stale measurements are unknown. One-hot like monitor state, coded up 1, pending 3, unknown 4, down 5 with the state label dropped. Gaps mean no scrape sample.",
+      "id": 5,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "max by (view_node, monitor_id, probe_node) (\n    uptime_canary_observation_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"up\"} * 1\n  or uptime_canary_observation_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"pending\"} * 3\n  or uptime_canary_observation_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"unknown\"} * 4\n  or uptime_canary_observation_state{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\", state=\"down\"} * 5\n)",
+          "legendFormat": "{{monitor_id}} @ {{probe_node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 0, "fillOpacity": 80, "spanNulls": false, "insertNulls": false, "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#8e8e8e", "value": null }] },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": { "text": "Up", "color": "green", "index": 0 },
+                "3": { "text": "Pending", "color": "yellow", "index": 1 },
+                "4": { "text": "Unknown", "color": "#8e8e8e", "index": 2 },
+                "5": { "text": "Down", "color": "red", "index": 3 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency of fresh measurements",
+      "description": "uptime_canary_observation_latency_milliseconds per monitor and probing node. Unknown or stale measurements have no sample, so they show as gaps rather than zero.",
+      "id": 6,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "max by (view_node, monitor_id, probe_node) (uptime_canary_observation_latency_milliseconds{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\"})",
+          "legendFormat": "{{monitor_id}} @ {{probe_node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": [] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "insertNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": { "type": "linear" },
+            "stacking": { "mode": "none", "group": "A" },
+            "thresholdsStyle": { "mode": "off" },
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Certificates and maintenance",
+      "id": 7,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Certificate days remaining (now)",
+      "description": "uptime_canary_certificate_days_remaining from fresh measurements only; a stale or unknown measurement has no sample and isn't listed. verified=false means trust validation didn't pass or wasn't performed for that check.",
+      "id": 8,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "min by (view_node, monitor_id, probe_node, verified) (uptime_canary_certificate_days_remaining{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\"})",
+          "legendFormat": "{{monitor_id}} @ {{probe_node}} (verified={{verified}})",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "maxVizHeight": 300
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "decimals": 0,
+          "min": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 7 },
+              { "color": "green", "value": 21 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Maintenance",
+      "description": "uptime_canary_monitor_maintenance_active: 1 while planned work holds the monitor's notifications. Separate from health: a monitor can be down during maintenance, and the state panels above still show it.",
+      "id": 9,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "max by (view_node, monitor_id) (uptime_canary_monitor_maintenance_active{job=~\"$job\", view_node=\"$view_node\", monitor_id=~\"$monitor_id\"})",
+          "legendFormat": "{{monitor_id}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 0, "fillOpacity": 80, "spanNulls": false, "insertNulls": false, "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#8e8e8e", "value": null }] },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "No maintenance", "color": "rgba(128, 128, 128, 0.25)", "index": 0 },
+                "1": { "text": "Maintenance", "color": "blue", "index": 1 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Cluster and exporter",
+      "id": 10,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "panels": []
+    },
+    {
+      "type": "state-timeline",
+      "title": "Peer reachability (from the viewing node)",
+      "description": "uptime_canary_peer_reachable: whether the viewing node recently exchanged an authenticated page with each configured peer. Peer health, not monitored-site health.",
+      "id": 11,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 30 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "max by (view_node, peer_node) (uptime_canary_peer_reachable{job=~\"$job\", view_node=\"$view_node\"})",
+          "legendFormat": "{{peer_node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 0, "fillOpacity": 80, "spanNulls": false, "insertNulls": false, "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#8e8e8e", "value": null }] },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "Unreachable", "color": "red", "index": 0 },
+                "1": { "text": "Reachable", "color": "green", "index": 1 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Exporter scrape (Prometheus up)",
+      "description": "Prometheus's own up series for this job: 1 when it scraped /api/metrics. Exporter reachability only, not monitored-site health. A failed scrape leaves gaps in the panels above; it never marks a monitor down or up.",
+      "id": 12,
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 30 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "up{job=~\"$job\"}",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 0, "fillOpacity": 80, "spanNulls": false, "insertNulls": false, "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#8e8e8e", "value": null }] },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "Scrape failed", "color": "red", "index": 0 },
+                "1": { "text": "Scraped", "color": "green", "index": 1 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

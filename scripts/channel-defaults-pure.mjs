@@ -133,7 +133,9 @@ await check('channel form: “Default for new monitors” is stored only when on
   assert.equal(fresh.isDefault, false);
   const moved = channelFormModel.buildChannel({ ...draft, kind: 'slack', slackUrl: 'https://hooks.slack.com/services/T0/B0/x' }, channel);
   if (moved.input) { assert.equal(moved.input.isDefault, true); assert.deepEqual(moved.input.futureChannelKey, { x: [1] }); }
-  assert.match(source('views/Channels.tsx'), /const CHANNEL_KEYS = \['name', 'enabled', 'config', 'isDefault'\];/u);
+  // Protocol 22 models channel events explicitly; default-flag behavior above is unchanged.
+  // See docs/automation-integrations.md and automation-integrations-pure.mjs.
+  assert.match(source('views/Channels.tsx'), /const CHANNEL_KEYS = \['name', 'enabled', 'config', 'isDefault', 'events'\];/u);
 });
 
 const ACCOUNT_TOKEN = 'channel-defaults-review-token';

@@ -28,6 +28,9 @@ var (
 	slackAppPattern  = regexp.MustCompile(`^B[A-Z0-9]{1,63}$`)
 )
 
+var eventTypePattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
+var transactionPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,256}$`)
+
 const maxChatID int64 = (1 << 52) - 1
 
 // UnmarshalJSON rejects unknown fields, alternate casing, duplicate keys, and
@@ -38,15 +41,17 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		return errConfig
 	}
 	value, err := strictObject(data)
-	if err != nil || !exactFields(value, "kind", "slack", "telegram", "ntfy", "gotify", "pushover") {
+	if err != nil || !exactFields(value, "kind", "slack", "telegram", "ntfy", "gotify", "pushover", "homeassistant", "matrix") {
 		return errConfig
 	}
 	fields := map[string][]string{
-		"slack":    {"webhookURL", "allowInsecureHTTP"},
-		"telegram": {"botToken", "chatId", "messageThreadId", "silent", "protectContent", "disableLinkPreview", "baseURL", "allowInsecureHTTP"},
-		"ntfy":     {"topic", "token", "username", "password", "priority", "tags", "baseURL", "allowInsecureHTTP"},
-		"gotify":   {"appToken", "priority", "baseURL", "allowInsecureHTTP"},
-		"pushover": {"appToken", "userKey", "device", "priority", "sound", "retrySeconds", "expireSeconds", "baseURL", "allowInsecureHTTP"},
+		"homeassistant": {"baseURL", "accessToken", "eventType", "allowInsecureHTTP"},
+		"matrix":        {"baseURL", "accessToken", "roomId", "allowInsecureHTTP"},
+		"slack":         {"webhookURL", "allowInsecureHTTP"},
+		"telegram":      {"botToken", "chatId", "messageThreadId", "silent", "protectContent", "disableLinkPreview", "baseURL", "allowInsecureHTTP"},
+		"ntfy":          {"topic", "token", "username", "password", "priority", "tags", "baseURL", "allowInsecureHTTP"},
+		"gotify":        {"appToken", "priority", "baseURL", "allowInsecureHTTP"},
+		"pushover":      {"appToken", "userKey", "device", "priority", "sound", "retrySeconds", "expireSeconds", "baseURL", "allowInsecureHTTP"},
 	}
 	for name, allowed := range fields {
 		if v, exists := value[name]; exists {
@@ -84,7 +89,7 @@ func exactFields(object map[string]any, fields ...string) bool {
 // Validate performs only local checks. It never resolves DNS or calls a provider.
 func Validate(c Config) error {
 	count := 0
-	for _, active := range []bool{c.Slack != nil, c.Telegram != nil, c.Ntfy != nil, c.Gotify != nil, c.Pushover != nil} {
+	for _, active := range []bool{c.Slack != nil, c.Telegram != nil, c.Ntfy != nil, c.Gotify != nil, c.Pushover != nil, c.HomeAssistant != nil, c.Matrix != nil} {
 		if active {
 			count++
 		}
@@ -93,6 +98,28 @@ func Validate(c Config) error {
 		return errConfig
 	}
 	switch c.Kind {
+	case HomeAssistant:
+		if c.HomeAssistant == nil {
+			return errConfig
+		}
+		p := c.HomeAssistant
+		if !secret(p.AccessToken, 4096) || !eventTypePattern.MatchString(p.EventType) {
+			return errConfig
+		}
+		if _, err := endpoint(p.BaseURL, "", p.AllowInsecureHTTP); err != nil {
+			return errConfig
+		}
+	case Matrix:
+		if c.Matrix == nil {
+			return errConfig
+		}
+		p := c.Matrix
+		if !secret(p.AccessToken, 4096) || !singleLine(p.RoomID, 255, false) || !strings.HasPrefix(p.RoomID, "!") || len(p.RoomID) < 2 || strings.ContainsAny(p.RoomID, "/\\?#% ") {
+			return errConfig
+		}
+		if _, err := endpoint(p.BaseURL, "", p.AllowInsecureHTTP); err != nil {
+			return errConfig
+		}
 	case Slack:
 		if c.Slack == nil {
 			return errConfig
@@ -294,6 +321,10 @@ func endpoint(raw, fallback string, allowHTTP bool) (*url.URL, error) {
 func baseEndpoint(c Config) *url.URL {
 	var u *url.URL
 	switch c.Kind {
+	case HomeAssistant:
+		u, _ = endpoint(c.HomeAssistant.BaseURL, "", c.HomeAssistant.AllowInsecureHTTP)
+	case Matrix:
+		u, _ = endpoint(c.Matrix.BaseURL, "", c.Matrix.AllowInsecureHTTP)
 	case Slack:
 		u, _ = endpoint(c.Slack.WebhookURL, "", c.Slack.AllowInsecureHTTP)
 	case Telegram:
@@ -327,6 +358,11 @@ func Identity(c Config) (string, error) {
 	u := baseEndpoint(c)
 	var route []string
 	switch c.Kind {
+	case HomeAssistant:
+		appendRoute(u, "api/events/"+c.HomeAssistant.EventType)
+	case Matrix:
+		u.Path = strings.TrimSuffix(u.Path, "/") // Same normalization as request's appendRoute.
+		route = []string{c.Matrix.RoomID}
 	case Slack:
 		parts := strings.Split(u.Path, "/")
 		if len(parts) == 5 && parts[1] == "services" && slackTeamPattern.MatchString(parts[2]) && slackAppPattern.MatchString(parts[3]) {
@@ -367,6 +403,9 @@ func validateMessage(c Config, m Message) error {
 			return errMessage
 		}
 	}
+	if (c.Kind == Matrix || c.Kind == HomeAssistant) && (m.IdempotencyKey == "" || !transactionPattern.MatchString(m.IdempotencyKey)) {
+		return errMessage
+	}
 	combined := combinedText(m)
 	switch c.Kind {
 	case Slack:
@@ -387,6 +426,10 @@ func validateMessage(c Config, m Message) error {
 		}
 	case Ntfy:
 		if len(m.Text) > 4096 {
+			return errMessage
+		}
+	case Matrix:
+		if len(combined) > MaxTextBytes {
 			return errMessage
 		}
 	case Gotify:

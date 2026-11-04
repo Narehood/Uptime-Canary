@@ -1,11 +1,11 @@
 # Native HTTP notification leaf
 
-`notifyhttp` implements five native adapters: Slack incoming webhooks, Telegram
-Bot API `sendMessage`, ntfy publication, Gotify message creation, and Pushover.
+`notifyhttp` implements seven native adapters: Slack incoming webhooks, Telegram
+Bot API `sendMessage`, ntfy publication, Gotify message creation, Pushover, Home Assistant events, and Matrix room notices.
 It uses only the Go standard library and imports no delivery or runtime package.
 This is a bounded send leaf, with no notification API, persistence, HA receipts,
 authorization, secret storage, destination admission, scheduler, UI, or SMS.
-Root owns those integration concerns. Five adapters do not imply a broader
+Root owns those integration concerns. These adapters do not imply a broader
 provider count or full Uptime Kuma option parity.
 
 ## Stable integration contract
@@ -40,10 +40,11 @@ _ = result
 
 Exact exported types, JSON names, and constants are in `types.go`.
 
-- `Kind` is `slack`, `telegram`, `ntfy`, `gotify`, or `pushover`.
+- `Kind` is `slack`, `telegram`, `ntfy`, `gotify`, `pushover`, `homeassistant`, or `matrix`.
 - `Config` has `Kind Kind` and `Slack *SlackConfig`,
   `Telegram *TelegramConfig`, `Ntfy *NtfyConfig`, `Gotify *GotifyConfig`,
-  `Pushover *PushoverConfig`. Exactly one matching pointer is required. An empty
+  `Pushover *PushoverConfig`, `HomeAssistant *HomeAssistantConfig`,
+  `Matrix *MatrixConfig`. Exactly one matching pointer is required. An empty
   foreign pointer is rejected, rather than silently ignored.
 - `Validate(Config) error` and `Identity(Config) (string, error)` are pure.
   Invalid inputs return fixed errors containing no field values.
@@ -54,7 +55,11 @@ Exact exported types, JSON names, and constants are in `types.go`.
   Package `Send` and nil/zero engines use shared safe defaults. A nil context is
   treated as a background context with the engine timeout.
 - `Message` has string fields `Title`, `Text`, `EventKind`, `MonitorName`,
-  `MonitorID`, `IncidentID`, and `IdempotencyKey`. Only title/text are sent.
+  `MonitorID`, `IncidentID`, and `IdempotencyKey`. Slack, Telegram, ntfy, Gotify and Pushover send only title/text.
+  Home Assistant additionally sends event kind, monitor name/ID, incident ID and
+  idempotency key as structured event data. Matrix uses the key as its transaction
+  ID and sends the joined title/text as a plain notice to an already-joined,
+  unencrypted room. Home Assistant does not deduplicate repeated event requests.
   Metadata is never implicitly added to a notification or request header.
 - `Result` has `Kind Kind`, `Status Status`, `Accepted bool`, `HTTPStatus int`,
   `RetryAfter time.Duration`, `ProviderID string`, `ErrorCode string`, and
@@ -152,7 +157,7 @@ Requests are at most 64 KiB; strict config JSON is at most 16 KiB.
 
 All message strings must be valid UTF-8. Title is single-line, at most 250
 Unicode code points/1,000 bytes. Text is nonempty, at most 16 KiB, with no
-control characters except CR, LF, and tab. Each local metadata field is
+control characters except CR, LF, and tab. Each metadata field is
 single-line and at most 256 bytes. Provider-specific text limits below apply
 before network I/O; no text is silently truncated or split into several sends.
 

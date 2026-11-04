@@ -257,6 +257,10 @@ async function functionsUnderReview() {
 async function review() {
   for (const n of state.nodes) secrets.add(n.token);
   report = { startedAt: new Date().toISOString(), runtime:process.version, harnessHash:sha(readFileSync(fileURLToPath(import.meta.url))), runDir, sourceHash: state.sourceHash, binaryHash: state.binaryHash, artifacts: state.artifacts, checks: [], exceptions: [], blocked: [], requests: [] }; save();
+  if (args.includes('--automation-only')) {
+    await automationBrowserReview();
+    return finishReview();
+  }
   // Same production executable, assets, browser and assertions; a focused entry
   // keeps fleet recovery diagnostics independent of the unrelated form corpus.
   if (args.includes('--fleet-only') || args.includes('--dashboard-only')) {
@@ -313,7 +317,10 @@ async function review() {
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'pm2'));
     assert.ok(f.CHECK_TYPES.some(v => v.type === 'tailscale-ping'));
     assert.equal(Object.keys(f.SERVICE_PROTOCOL).length, 16);
-    assert.equal(f.PROVIDERS.length, 11);
+    // Protocol 22 adds Home Assistant and Matrix; verify both alongside all original providers.
+    assert.equal(f.PROVIDERS.length, 13);
+    assert.ok(f.PROVIDERS.some(v => v.kind === 'homeassistant'));
+    assert.ok(f.PROVIDERS.some(v => v.kind === 'matrix'));
     return { types: f.CHECK_TYPES.map(v => v.type), serviceProtocols: Object.keys(f.SERVICE_PROTOCOL).length };
   });
   await step('All 16 structured service forms cover the Go DTO fields', async () => {
@@ -462,6 +469,8 @@ async function review() {
     return { id:m.id, schedulePreserved:true, nodeCompilesDST:true };
   });
   const channelConfigs = {
+    homeassistant: { kind: 'homeassistant', homeassistant: { baseURL: state.sink + '/ha', accessToken: 'review-homeassistant-token', eventType: 'uptime_canary', allowInsecureHTTP: true } },
+    matrix: { kind: 'matrix', matrix: { baseURL: state.sink + '/matrix', accessToken: 'review-matrix-token', roomId: '!review:example.test', allowInsecureHTTP: true } },
     webhook: { kind: 'webhook', webhook: { url: state.sink + '/hook-contract', bearerToken: 'review-hook-key', allowInsecureHTTP: true } },
     discord: { kind: 'discord', webhook: { url: 'https://discord.com/api/webhooks/123456789/review-fixture-never-send' } },
     smtp: { kind: 'smtp', smtp: { server: '127.0.0.1', port: 2525, tlsMode: 'starttls', username: 'review', password: 'review-smtp-password' }, sender: { email: 'review@example.test', name: 'Review' }, recipients: [{ email: 'recipient@example.test', name: 'Recipient' }] },
@@ -478,10 +487,10 @@ async function review() {
     pushover: { kind: 'pushover', pushover: { appToken: 'a'.repeat(30), userKey: 'u'.repeat(30), device: 'phone_1', priority: 2, sound: 'siren', retrySeconds: 60, expireSeconds: 3600, baseURL: state.sink + '/po', allowInsecureHTTP: true } },
   }, channels = {};
   for (const [kind, config] of Object.entries(channelConfigs)) await step(`Channel ${kind} API + form rename preserves credentials and provider options`, async () => {
-    const made = await api(A, '/api/notification-channels', 'POST', { name: `Review ${kind}`, enabled: false, config }); assert.equal(made.status, 201, made.text); const m = made.value;
+    const made = await api(A, '/api/notification-channels', 'POST', { name: `Review ${kind}`, enabled: false, config, ...(['homeassistant', 'matrix'].includes(config.kind) ? { events: ['down', 'recovery'] } : {}) }); assert.equal(made.status, 201, made.text); const m = made.value;
     const d = f.channelDraft(m); d.name += ' renamed'; const built = f.buildChannel(d, m); assert.ok(built.input, JSON.stringify(built.errors));
-    for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
-    const saved = await api(A, `/api/notification-channels/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.config, m.config); channels[kind] = saved.value;
+    for (const key of ['webhook', 'smtp', 'mailgun', 'brevo', 'mandrill', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'homeassistant', 'matrix', 'sender', 'recipients', 'templates']) if (config[key]) assert.deepEqual(serial(built.input.config[key]), serial(m.config[key]));
+    const saved = await api(A, `/api/notification-channels/${m.id}`, 'PUT', { ...built.input, revision: m.revision }); assert.equal(saved.status, 200, saved.text); assert.deepEqual(saved.value.config, m.config); assert.deepEqual(saved.value.events, m.events); channels[kind] = saved.value;
     return { id: m.id, savedWithoutSending: !existsSync(join(runDir, 'sink.json')) };
   });
   let emptyKafka, emptyRabbit;
@@ -681,6 +690,66 @@ async function finishReview() {
   report.finishedAt = new Date().toISOString(); report.summary = { passed: report.checks.filter(v => v.passed).length, failed: report.checks.filter(v => !v.passed).length, exceptions: report.exceptions.length, blocked: report.blocked.length }; save();
   console.log(JSON.stringify(report.summary));
   ws?.close(); return report.summary.failed || report.summary.exceptions || report.summary.blocked || report.sourceChangedAfterSnapshot.length ? 1 : 0;
+}
+
+// Real React forms and node API on private Linux loopback fixtures. No monitors
+// are attached and test confirmations are cancelled before provider I/O.
+async function automationBrowserReview() {
+  const [A] = state.nodes;
+  await launchBrowser();
+  await step('Automation browser: sign in', () => signIn(A));
+  for (const kind of ['homeassistant', 'matrix']) {
+    await step(`Automation browser: create, rename and select events for ${kind}`, async () => {
+      const name = `Browser ${kind}`, token = secret(); secrets.add(token);
+      await nav('#/channels/new'); await heading('New channel');
+      await fill('Name', name);
+      await choose(kind === 'homeassistant' ? 'Home Assistant' : 'Matrix');
+      if (kind === 'homeassistant') {
+        await fill('Home Assistant URL', state.sink + '/ha');
+        await fill('Long-lived access token', token);
+        await fill('Event type', 'uptime_canary');
+      } else {
+        await fill('Homeserver URL', state.sink + '/matrix');
+        await fill('Access token', token);
+        await fill('Room ID', '!domainless_hash');
+      }
+      await choose('Allow plain HTTP for this server');
+      await choose('Repeats');
+      await click('Create channel'); await heading('Notifications');
+      const views = await api(A, '/api/notification-channels');
+      let saved = views.value.find(v => v.channel.name === name)?.channel;
+      assert.ok(saved, 'the form created a channel');
+      assert.deepEqual(saved.events, ['down', 'recovery']);
+      assert.equal(saved.config[kind].accessToken, token);
+      const config = structuredClone(saved.config);
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const tokenLabel = kind === 'homeassistant' ? 'Long-lived access token' : 'Access token';
+      assert.equal(await page.eval(`__field(${J(tokenLabel)}).type`), 'password');
+      assert.equal(await page.eval(`document.body.innerText.includes(${J(token)})`), false);
+      await fill('Name', name + ' renamed');
+      await choose('Down alerts');
+      await click('Save changes'); await heading('Notifications');
+      saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+      assert.deepEqual(saved.config, config, 'rename preserves provider settings');
+      assert.deepEqual(saved.events, ['recovery']);
+      const revision = saved.revision;
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      await choose('Recoveries'); await click('Save changes');
+      await text('Select at least one event.');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, revision, 'invalid selection saves nothing');
+      await choose('Recoveries'); await choose('Down alerts'); await choose('Repeats');
+      await click('Save changes'); await heading('Notifications');
+      saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+      assert.equal(saved.events, undefined, 'all events retain the omitted default');
+      if (kind === 'homeassistant') {
+        await page.eval(`(() => { const row=[...document.querySelectorAll('.chan-list li')].find(row => row.querySelector('.t b')?.textContent === ${J(name + ' renamed')}); [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Test').click(); })()`);
+        await text('This fires a real');
+        await click('Cancel', 'dialog[open]');
+      }
+      assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, allEventsRestored: true, realSends: 0 };
+    });
+  }
 }
 async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows }) {
   await launchBrowser(); await step('Browser: sign in to private A', () => signIn(A));
@@ -1004,7 +1073,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   });
   for (const [kind, c] of Object.entries(channels)) await step(`Browser: rename ${kind} channel preserves credentials`, async () => {
     await nav(`#/channels/${c.id}/edit`); await heading('Edit'); await fill('Name', c.name + ' browser'); await click('Save changes'); await heading('Notifications');
-    const got = await api(A, `/api/notification-channels/${c.id}`); assert.equal(got.status, 200); assert.deepEqual(got.value.config, c.config); return { id: c.id, configPreserved: true };
+    const got = await api(A, `/api/notification-channels/${c.id}`); assert.equal(got.status, 200); assert.deepEqual(got.value.config, c.config); assert.deepEqual(got.value.events, c.events); return { id: c.id, configPreserved: true, eventsPreserved: true };
   });
   if (emptyKafka) await step('Browser regression: empty Kafka payload can be renamed', async () => {
     await nav(`#/monitors/${emptyKafka.id}/edit`); await heading('Edit monitor'); await fill('Name', 'Empty Kafka renamed'); await click('Save changes'); await sleep(300);

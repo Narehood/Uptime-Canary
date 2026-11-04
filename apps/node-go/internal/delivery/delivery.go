@@ -16,16 +16,18 @@ import (
 type Kind string
 
 const (
-	SMTP     Kind = "smtp"
-	Mailgun  Kind = "mailgun"
-	Brevo    Kind = "brevo"
-	Mandrill Kind = "mandrill"
-	Webhook  Kind = "webhook"
-	Slack    Kind = "slack"
-	Telegram Kind = "telegram"
-	Ntfy     Kind = "ntfy"
-	Gotify   Kind = "gotify"
-	Pushover Kind = "pushover"
+	SMTP          Kind = "smtp"
+	Mailgun       Kind = "mailgun"
+	Brevo         Kind = "brevo"
+	Mandrill      Kind = "mandrill"
+	Webhook       Kind = "webhook"
+	Slack         Kind = "slack"
+	Telegram      Kind = "telegram"
+	Ntfy          Kind = "ntfy"
+	Gotify        Kind = "gotify"
+	Pushover      Kind = "pushover"
+	HomeAssistant Kind = "homeassistant"
+	Matrix        Kind = "matrix"
 )
 
 type Status string
@@ -95,20 +97,22 @@ type Templates struct {
 
 // Config contains credentials. Store privately and redact it before display.
 type Config struct {
-	Kind       Kind                       `json:"kind"`
-	Sender     Address                    `json:"sender,omitempty"`
-	Recipients []Address                  `json:"recipients,omitempty"`
-	SMTP       SMTPConfig                 `json:"smtp,omitempty"`
-	Mailgun    MailgunConfig              `json:"mailgun,omitempty"`
-	Brevo      BrevoConfig                `json:"brevo,omitempty"`
-	Mandrill   MandrillConfig             `json:"mandrill,omitempty"`
-	Webhook    WebhookConfig              `json:"webhook,omitempty"`
-	Templates  Templates                  `json:"templates,omitempty"`
-	Slack      *notifyhttp.SlackConfig    `json:"slack,omitempty"`
-	Telegram   *notifyhttp.TelegramConfig `json:"telegram,omitempty"`
-	Ntfy       *notifyhttp.NtfyConfig     `json:"ntfy,omitempty"`
-	Gotify     *notifyhttp.GotifyConfig   `json:"gotify,omitempty"`
-	Pushover   *notifyhttp.PushoverConfig `json:"pushover,omitempty"`
+	HomeAssistant *notifyhttp.HomeAssistantConfig `json:"homeassistant,omitempty"`
+	Matrix        *notifyhttp.MatrixConfig        `json:"matrix,omitempty"`
+	Kind          Kind                            `json:"kind"`
+	Sender        Address                         `json:"sender,omitempty"`
+	Recipients    []Address                       `json:"recipients,omitempty"`
+	SMTP          SMTPConfig                      `json:"smtp,omitempty"`
+	Mailgun       MailgunConfig                   `json:"mailgun,omitempty"`
+	Brevo         BrevoConfig                     `json:"brevo,omitempty"`
+	Mandrill      MandrillConfig                  `json:"mandrill,omitempty"`
+	Webhook       WebhookConfig                   `json:"webhook,omitempty"`
+	Templates     Templates                       `json:"templates,omitempty"`
+	Slack         *notifyhttp.SlackConfig         `json:"slack,omitempty"`
+	Telegram      *notifyhttp.TelegramConfig      `json:"telegram,omitempty"`
+	Ntfy          *notifyhttp.NtfyConfig          `json:"ntfy,omitempty"`
+	Gotify        *notifyhttp.GotifyConfig        `json:"gotify,omitempty"`
+	Pushover      *notifyhttp.PushoverConfig      `json:"pushover,omitempty"`
 }
 
 type Message struct {
@@ -240,7 +244,7 @@ func Send(ctx context.Context, config Config, message Message) Result {
 
 func failure(kind Kind, status Status, code string) Result {
 	switch kind {
-	case SMTP, Mailgun, Brevo, Mandrill, Webhook, Slack, Telegram, Ntfy, Gotify, Pushover:
+	case SMTP, Mailgun, Brevo, Mandrill, Webhook, Slack, Telegram, Ntfy, Gotify, Pushover, HomeAssistant, Matrix:
 	default:
 		kind = ""
 	}

@@ -11,7 +11,12 @@ import (
 
 type notificationTarget struct {
 	ID, ChannelID, Revision, Provider, URL string
+	Events                                 []string
 	Config                                 providerDelivery.Config
+}
+
+func (t notificationTarget) allows(kind string) bool {
+	return kind == "test" || len(t.Events) == 0 || slices.Contains(t.Events, kind)
 }
 
 // Connection pools are shared; every caller supplies its own bounded context.
@@ -19,7 +24,7 @@ var channelDeliveryEngine = providerDelivery.New(providerDelivery.Options{Timeou
 
 func targetsForChannel(c Channel) []notificationTarget {
 	config := c.Config
-	base := notificationTarget{ChannelID: c.ID, Revision: c.Revision, Provider: string(config.Kind), URL: config.Webhook.URL, Config: config}
+	base := notificationTarget{ChannelID: c.ID, Revision: c.Revision, Provider: string(config.Kind), URL: config.Webhook.URL, Config: config, Events: c.Events}
 	// A destination identity follows the route, not the secret used to reach it.
 	// Rotating credentials retains receipts; routing to a new address does not.
 	route := string(config.Kind)
@@ -41,7 +46,7 @@ func targetsForChannel(c Channel) []notificationTarget {
 		route += "\n" + config.Brevo.BaseURL
 	case providerDelivery.Mandrill:
 		route += "\n" + config.Mandrill.BaseURL
-	case providerDelivery.Slack, providerDelivery.Telegram, providerDelivery.Ntfy, providerDelivery.Gotify, providerDelivery.Pushover:
+	case providerDelivery.Slack, providerDelivery.Telegram, providerDelivery.Ntfy, providerDelivery.Gotify, providerDelivery.Pushover, providerDelivery.HomeAssistant, providerDelivery.Matrix:
 		identity, err := providerDelivery.MessagingIdentity(config)
 		if err != nil {
 			return nil
@@ -246,6 +251,9 @@ func (n *Node) deliveryHold(m Monitor, i Incident, t notificationTarget, held bo
 			break
 		}
 	}
+	if !found && !t.allows("down") && !held {
+		return 0
+	}
 	if !found {
 		a = attempt{ID: attemptIdentity(m.ID, i.ID, "down", 0, t.ID), MonitorID: m.ID, IncidentID: i.ID, Kind: "down", DestinationID: t.ID, ChannelID: t.ChannelID, TargetRevision: t.Revision, Provider: t.Provider, State: "queued"}
 	}
@@ -262,6 +270,9 @@ func (n *Node) deliveryHold(m Monitor, i Incident, t notificationTarget, held bo
 		a.ReleasedAt = n.now()
 	}
 	a.Held = held
+	if !t.allows("down") && !held {
+		a.State, a.ErrorCode = "cancelled", "event_filtered"
+	}
 	if !found || !equalJSON(previous, a) {
 		if n.dbPut("attempts", a.ID, a) {
 			n.attempts[a.ID] = a

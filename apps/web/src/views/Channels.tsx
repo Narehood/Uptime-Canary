@@ -3,7 +3,7 @@ import type { DeliveryAttemptView, EmailAddress, NotificationChannel, Notificati
 import { discordTemplateProblem, TEMPLATE_PROTOCOL, templateCapability, templateSummary, unsupportedPlaceholders, withoutAddedPlaceholders, type TemplateLevel } from '../alertTemplates';
 import { ApiFailure, describeFailure, isAbort, jsonBytes } from '../api';
 import { useCanary } from '../context';
-import { ago, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
+import { ago, andList, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
 import { useResource } from '../hooks';
 import { buildMessaging, control, isMessaging, messagingDraft, messagingRoute, MFIELD_LABEL, templateProblem, urlProblem, type MessagingDraft, type MField } from '../messaging';
 import { notify } from '../notices';
@@ -27,11 +27,13 @@ export const PROVIDERS: { kind: Kind; label: string; hint: string; icon: IconNam
   { kind: 'ntfy', label: 'ntfy', hint: 'Topic on ntfy.sh or your server', icon: 'bell', email: false, group: 'push' },
   { kind: 'gotify', label: 'Gotify', hint: 'Your Gotify server', icon: 'megaphone', email: false, group: 'push' },
   { kind: 'pushover', label: 'Pushover', hint: 'One user or group key', icon: 'phone', email: false, group: 'push' },
+  { kind: 'matrix', label: 'Matrix', hint: 'Notice in an unencrypted room', icon: 'chat', email: false, group: 'push' },
   { kind: 'smtp', label: 'SMTP', hint: 'Your own mail server', icon: 'mail', email: true, group: 'email' },
   { kind: 'mailgun', label: 'Mailgun', hint: 'US or EU API', icon: 'mail', email: true, group: 'email' },
   { kind: 'brevo', label: 'Brevo', hint: 'Transactional email API', icon: 'mail', email: true, group: 'email' },
   { kind: 'mandrill', label: 'Mailchimp Transactional', hint: 'Mandrill API, not Marketing', icon: 'mail', email: true, group: 'email' },
   { kind: 'webhook', label: 'Webhook', hint: 'JSON POST to your endpoint', icon: 'hook', email: false, group: 'custom' },
+  { kind: 'homeassistant', label: 'Home Assistant', hint: 'Event that triggers automations', icon: 'plug', email: false, group: 'custom' },
 ];
 const PROVIDER_GROUPS: { key: ProviderGroup; label: string }[] = [{ key: 'push', label: 'Chat and push' }, { key: 'email', label: 'Email' }, { key: 'custom', label: 'Your endpoint' }];
 const PROVIDER = new Map(PROVIDERS.map(entry => [entry.kind as string, entry]));
@@ -78,9 +80,35 @@ const ERROR_TEXT: Record<string, string> = {
   destination_unavailable: 'The channel is disabled or deleted, or the monitor no longer uses it.',
   channel_changed: 'The channel’s route changed before this attempt was sent.',
   completed_during_maintenance: 'The whole outage happened inside planned maintenance; this destination was never notified, so it isn’t replayed.',
+  event_filtered: 'The channel’s alert events leave out this kind of alert, so it was cancelled without sending.',
 };
 export const errorText = (code: string | undefined): string | undefined => code ? ERROR_TEXT[code] ?? code.replace(/_/gu, ' ') : undefined;
 const KIND_LABEL: Record<DeliveryAttemptView['kind'], string> = { down: 'Down alert', repeat: 'Repeat', recovery: 'Recovery', test: 'Test' };
+
+// ---------- alert events (peer protocol 22)
+
+/** The peer protocol that adds per-channel alert events and the Home Assistant and Matrix providers (buildChannel's gate). */
+const EVENTS_PROTOCOL = 22;
+const PROTOCOL_22_KINDS: ReadonlySet<string> = new Set(['homeassistant', 'matrix']);
+type AlertEvent = 'down' | 'repeat' | 'recovery';
+const EVENT_ORDER: readonly AlertEvent[] = ['down', 'repeat', 'recovery'];
+const EVENT_CHOICE: Record<AlertEvent, { label: string; hint: string; noun: string }> = {
+  down: { label: 'Down alerts', hint: 'When a monitor goes down.', noun: 'down alerts' },
+  repeat: { label: 'Repeats', hint: 'Reminders while it stays down. Needs down alerts.', noun: 'repeats' },
+  recovery: { label: 'Recoveries', hint: 'When it’s back up.', noun: 'recoveries' },
+};
+/** A stored selection that isn't all three, in words; nothing for the default. */
+export const eventsSummary = (events: readonly string[] | undefined): string | undefined => {
+  if (!events) return undefined;
+  const known = EVENT_ORDER.filter(event => events.includes(event));
+  if (known.length === EVENT_ORDER.length) return undefined;
+  return known.length ? `${andList(known.map(event => EVENT_CHOICE[event].noun))} only` : 'no alert events';
+};
+
+/** A Home Assistant test is a real event: automations that trigger on it run unless they check the kind. */
+function HaTestWarning({ eventType }: { eventType: string | undefined }) {
+  return <p className="fwarn"><Glyph tone="warn" />This fires a real <span className="mono">{eventType || 'uptime_canary'}</span> event in Home Assistant. Automations that trigger on it run and can switch real devices, unless they check that <span className="mono">kind</span> is <span className="mono">test</span>.</p>;
+}
 
 export function NotificationTabs({ current }: { current: 'channels' | 'deliveries' | 'receipts' }) {
   const tabs = [
@@ -217,7 +245,7 @@ export function DeliveriesView() {
             </>
           )}
         <p className="foot-note">
-          <b>Accepted</b> means the provider acknowledged the request (Discord with a saved message, Slack with “ok”, Telegram, ntfy, Gotify and Pushover with a message or request ID, email services and SMTP after DATA). It isn’t proof of inbox or device delivery.
+          <b>Accepted</b> means the provider acknowledged the request (Discord with a saved message, Slack with “ok”, Telegram, ntfy, Gotify and Pushover with a message or request ID, Matrix with an event ID, Home Assistant when it reports the event fired, email services and SMTP after DATA). It isn’t proof of inbox or device delivery, or that an automation ran.
           Outcomes, error codes and HTTP statuses are fixed values: provider bodies, addresses and secret URLs are never shown. Partitions can cause duplicate sends.
         </p>
       </Card>
@@ -263,6 +291,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
             It creates no monitor, incident or receipt.
           </p>
           {emergency ? <p className="fwarn"><Glyph tone="warn" />Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</p> : null}
+          {channel.config.kind === 'homeassistant' ? <HaTestWarning eventType={channel.config.homeassistant?.eventType} /> : null}
           <p className="muted small">Tests use revision <Rev revision={channel.revision} />. A node sends one batch at a time, at least 5 seconds apart.</p>
           {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Test not sent</b><p>{error}</p></div></div> : null}
           <div className="row-wrap modal-acts">
@@ -361,6 +390,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
             Nothing is saved, and no monitor, incident or receipt is created.
           </p>
           {emergency ? <p className="fwarn"><Glyph tone="warn" />Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</p> : null}
+          {kind === 'homeassistant' ? <HaTestWarning eventType={input.config.homeassistant?.eventType} /> : null}
           <p className="muted small">A node sends one test batch at a time, at least 5 seconds apart, shared with saved channels’ tests.</p>
           {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Test not sent</b><p>{error}</p></div></div> : null}
           <div className="row-wrap modal-acts">
@@ -555,6 +585,7 @@ export function ChannelsView() {
                       <div className="m">
                         {routeText(c, role === 'viewer')}
                         {recipientCount(c) ? <span> · {plural(recipientCount(c), 'recipient')}</span> : null}
+                        {eventsSummary(c.events) ? <span> · {eventsSummary(c.events)}</span> : null}
                         <span className="muted"> · used by {plural(count, 'monitor')} · <Rev revision={c.revision} /></span>
                       </div>
                     </div>
@@ -572,7 +603,7 @@ export function ChannelsView() {
             </ul>
           ) : (
             <EmptyState title={channels.list.length ? 'Nothing matches' : 'No channels yet'} action={!channels.list.length && editable ? <a className="btn primary" href={href('channels', 'new')}><Icon name="plus" />New channel</a> : undefined}>
-              {channels.list.length ? 'Try another search.' : 'Add Discord, Slack, Telegram, ntfy, Gotify, Pushover, an email service or a JSON webhook, then pick it in a monitor’s alerts.'}
+              {channels.list.length ? 'Try another search.' : 'Add Discord, Slack, Telegram, Matrix, ntfy, Gotify, Pushover, an email service, Home Assistant or a JSON webhook, then pick it in a monitor’s alerts.'}
             </EmptyState>
           )}
       </Card>
@@ -589,6 +620,7 @@ interface Recipient { key: number; email: string; name: string }
 let recipientKey = 0;
 
 interface ChannelDraft extends MessagingDraft {
+ events: ('down' | 'repeat' | 'recovery')[];
   name: string;
   enabled: boolean;
   /** Protocol 19: preselected for new monitors while enabled. Never applied to existing monitors by itself. */
@@ -610,6 +642,7 @@ interface ChannelDraft extends MessagingDraft {
 function channelDraft(channel: NotificationChannel | undefined): ChannelDraft {
   const c = channel?.config;
   return {
+    events: channel?.events ? [...channel.events] : ['down', 'repeat', 'recovery'],
     name: channel?.name ?? '',
     enabled: channel?.enabled ?? true,
     isDefault: channel?.isDefault === true,
@@ -628,9 +661,9 @@ function channelDraft(channel: NotificationChannel | undefined): ChannelDraft {
   };
 }
 
-type CField = MField | 'name' | 'discordUrl' | 'hookUrl' | 'hookBearer' | 'sender' | 'recipients' | 'smtpServer' | 'smtpPort' | 'smtpAuth' | 'apiKey' | 'mailgunDomain' | 'templates' | 'size';
+type CField = MField | 'events' | 'name' | 'discordUrl' | 'hookUrl' | 'hookBearer' | 'sender' | 'recipients' | 'smtpServer' | 'smtpPort' | 'smtpAuth' | 'apiKey' | 'mailgunDomain' | 'templates' | 'size';
 const CFIELD_LABEL: Record<CField, string> = {
-  ...MFIELD_LABEL,
+  ...MFIELD_LABEL, events: 'Alert events',
   name: 'Name', discordUrl: 'Discord webhook URL', hookUrl: 'Webhook URL', hookBearer: 'Bearer token', sender: 'Sender', recipients: 'Recipients', smtpServer: 'Server',
   smtpPort: 'Port', smtpAuth: 'Authentication', apiKey: 'API key', mailgunDomain: 'Sending domain', baseUrl: 'API base URL', templates: 'Templates', size: 'Size',
 };
@@ -640,17 +673,19 @@ const HOST = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?
 const DISCORD = /^https:\/\/(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\/\d+\/[\w-]+\/?$/u;
 
 /** Config keys this form models; anything else from a newer node is carried through unchanged. */
-const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun', 'brevo', 'mandrill', 'webhook', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'templates']);
+const MODELED_CONFIG = new Set(['kind', 'sender', 'recipients', 'smtp', 'mailgun', 'brevo', 'mandrill', 'webhook', 'slack', 'telegram', 'ntfy', 'gotify', 'pushover', 'homeassistant', 'matrix', 'templates']);
 /** Channel keys this form writes. Other stored keys belong to the channel, not its provider, so they survive a provider change. */
-const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault'];
+const CHANNEL_KEYS = ['name', 'enabled', 'config', 'isDefault', 'events'];
 
 /**
  * `level` is the selected node's template grammar (alertTemplates.ts templateCapability). Peer protocol 20 applies templates
  * to Discord and adds the card layout; for an older or unknown node the form writes neither the layout nor newly typed
  * protocol 20 placeholders, and keeps what the node already stores.
  */
-function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined, level: TemplateLevel = 'legacy'): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
+function buildChannel(draft: ChannelDraft, original: NotificationChannel | undefined, level: TemplateLevel = 'legacy', protocol = 22): { input?: NotificationChannelInput; errors: Partial<Record<CField, string>> } {
   const errors: Partial<Record<CField, string>> = {};
+  if (!draft.events.length || draft.events.includes('repeat') && !draft.events.includes('down')) errors.events = 'Select at least one event. Repeats require down alerts.';
+  if (protocol < 22 && (draft.kind === 'homeassistant' || draft.kind === 'matrix' || JSON.stringify(draft.events) !== JSON.stringify(original?.events ?? ['down', 'repeat', 'recovery']))) errors.events = 'These providers and event selection require node protocol 22. Upgrade the cluster together.';
   const name = draft.name.trim();
   if (!name || name.length > 128 || control(name)) errors.name = 'Enter a name of at most 128 characters.';
   const kind = draft.kind;
@@ -773,7 +808,7 @@ function buildChannel(draft: ChannelDraft, original: NotificationChannel | undef
   if (Object.keys(templates).length) config.templates = templates;
   if (Object.keys(errors).length) return { errors };
   // `isDefault` is written only when on, as Go's omitempty encoding stores it, so an unchanged channel saves as before.
-  const input: NotificationChannelInput = { name, enabled: draft.enabled, config, ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) };
+  const input: NotificationChannelInput = { name, enabled: draft.enabled, config, ...(draft.events.length !== 3 ? { events: [...draft.events] } : {}), ...(draft.isDefault ? { isDefault: true } : {}), ...storedExtras(original, CHANNEL_KEYS) };
   if (jsonBytes(input) > 250_000) return { errors: { size: 'This channel is larger than nodes accept. Shorten the templates.' } };
   return { input, errors };
 }
@@ -821,7 +856,12 @@ function ChannelFormBody({ id }: { id?: string }) {
 
   // What the selected node renders: its overview's reported peer protocol, or the six-placeholder grammar when it reports none.
   const capability = templateCapability(overview.build);
-  const { input, errors } = buildChannel(draft, base, capability.level);
+  const { input, errors } = buildChannel(draft, base, capability.level, capability.protocol ?? 0);
+  // Alert events and the protocol 22 providers: editable only when the selected node reports protocol 22 or later.
+  const eventsReady = (capability.protocol ?? 0) >= EVENTS_PROTOCOL;
+  const reported = capability.protocol ? `reports peer protocol ${capability.protocol}` : 'doesn’t report a peer protocol';
+  const toggleEvent = (event: AlertEvent, on: boolean): void =>
+    setDraft(d => ({ ...d, events: on ? EVENT_ORDER.filter(other => other === event || d.events.includes(other)) : d.events.filter(other => other !== event) }));
   const visible = showErrors ? errors : {};
   const set = <K extends keyof ChannelDraft>(key: K, value: ChannelDraft[K]): void => setDraft(d => ({ ...d, [key]: value }));
   const patch = (change: Partial<ChannelDraft>): void => setDraft(d => ({ ...d, ...change }));
@@ -892,22 +932,35 @@ function ChannelFormBody({ id }: { id?: string }) {
           <CheckField full={false} label="Enabled" checked={draft.enabled} onChange={value => set('enabled', value)} disabled={saving} hint="Disabled channels receive nothing; owed alerts resume if you enable it during an outage." />
           <CheckField full={false} label="Default for new monitors" checked={draft.isDefault} onChange={value => set('isDefault', value)} disabled={saving}
             hint={draft.isDefault && !draft.enabled ? 'Only while enabled: a disabled default isn’t preselected.' : 'Preselected on every new monitor while enabled; each one can still clear it. Existing monitors change only when you add it to them from the channel list.'} />
+          <fieldset className="fld full" disabled={saving || !eventsReady} aria-invalid={visible.events ? true : undefined}>
+            <legend>Alert events</legend>
+            {EVENT_ORDER.map(event => (
+              <CheckField key={event} full={false} label={EVENT_CHOICE[event].label} hint={EVENT_CHOICE[event].hint} checked={draft.events.includes(event)} onChange={on => toggleEvent(event, on)} />
+            ))}
+            {eventsReady ? <small>Alerts for an event left out are cancelled for this channel without sending. Monitors and their other channels are unaffected.</small>
+              : <small className="fwarn"><Glyph tone="warn" />Choosing events needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Upgrade every node in the cluster together. Until then this selection is read-only.</small>}
+            <ErrorText id={`${formId}-events-e`}>{visible.events}</ErrorText>
+          </fieldset>
           <fieldset className="fld full types-f" disabled={saving}>
             <legend>Provider</legend>
             {PROVIDER_GROUPS.map(group => (
               <div key={group.key} className="type-cat">
                 <span className="type-cat-h" aria-hidden="true">{group.label}</span>
                 <div className="types">
-                  {PROVIDERS.filter(entry => entry.group === group.key).map(entry => (
-                    <label key={entry.kind}>
-                      <input type="radio" name={`${formId}-kind`} value={entry.kind} checked={draft.kind === entry.kind} onChange={() => set('kind', entry.kind)} />
-                      <span><b><ProviderIcon kind={entry.kind} />{entry.label}</b><small>{entry.hint}</small></span>
-                    </label>
-                  ))}
+                  {PROVIDERS.filter(entry => entry.group === group.key).map(entry => {
+                    const gated = !eventsReady && PROTOCOL_22_KINDS.has(entry.kind);
+                    return (
+                      <label key={entry.kind}>
+                        <input type="radio" name={`${formId}-kind`} value={entry.kind} checked={draft.kind === entry.kind} onChange={() => set('kind', entry.kind)} disabled={gated && draft.kind !== entry.kind} />
+                        <span><b><ProviderIcon kind={entry.kind} />{entry.label}</b><small>{gated ? `Needs peer protocol ${EVENTS_PROTOCOL}` : entry.hint}</small></span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ))}
             {current && current.config.kind !== draft.kind ? <small className="fwarn"><Glyph tone="warn" />A different provider is a new destination. Alerts already owed to the old one aren’t moved.</small> : null}
+            {!eventsReady && PROTOCOL_22_KINDS.has(draft.kind) ? <small className="fwarn"><Glyph tone="warn" />{provider.label} needs peer protocol {EVENTS_PROTOCOL}; <span className="mono">{endpoint}</span> {reported}. Saving and testing are refused until every node is upgraded.</small> : null}
           </fieldset>
 
           <h3 className="fsec full">{provider.email ? 'Mail service' : 'Destination'}</h3>

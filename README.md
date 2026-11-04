@@ -584,7 +584,7 @@ Run `npm run canary -- <command>` from the repository root. Output is JSON.
 | Tags | `tags`, `add-tag`, `update-tag`, `delete-tag`, `tag-conflicts`, `resolve-tag` | editor to change |
 | Accounts and data | `accounts`, `add-account` (admin); `backup-database`, `prepare-restore`, `recover-account` (local file access) | varies |
 
-Edits carry the revision they change; a stale one is rejected with HTTP 409. Concurrent edits made while nodes were apart are kept side by side as a visible conflict until someone resolves it, in the CLI or field by field in the dashboard's Configuration page. Prometheus metrics are at `GET /api/metrics` with a viewer credential ([observability](docs/observability.md)). The same executable's `dashboard` command runs the dashboard server instead of a node (it's the web image's command, configured by the `CANARY_DASHBOARD_*` and `CANARY_LOCAL_NODE_*` variables).
+Edits carry the revision they change; a stale one is rejected with HTTP 409. Concurrent edits made while nodes were apart are kept side by side as a visible conflict until someone resolves it, in the CLI or field by field in the dashboard's Configuration page. Prometheus metrics are at `GET /api/metrics` with a viewer credential ([observability](docs/observability.md)). Ready-to-use [Prometheus/Grafana setup](docs/external-observability.md) supports external long-term storage. [Home Assistant events and Matrix notices](docs/automation-integrations.md) support automation and chat delivery, with per-channel down/repeat/recovery selection. The same executable's `dashboard` command runs the dashboard server instead of a node (it's the web image's command, configured by the `CANARY_DASHBOARD_*` and `CANARY_LOCAL_NODE_*` variables).
 
 ## Checks and validation
 

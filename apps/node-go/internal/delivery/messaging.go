@@ -13,7 +13,7 @@ import (
 
 func IsMessaging(kind Kind) bool {
 	switch kind {
-	case Slack, Telegram, Ntfy, Gotify, Pushover:
+	case Slack, Telegram, Ntfy, Gotify, Pushover, HomeAssistant, Matrix:
 		return true
 	}
 	return false
@@ -21,7 +21,7 @@ func IsMessaging(kind Kind) bool {
 
 func messagingConfig(c Config) notifyhttp.Config {
 	return notifyhttp.Config{Kind: notifyhttp.Kind(c.Kind), Slack: c.Slack,
-		Telegram: c.Telegram, Ntfy: c.Ntfy, Gotify: c.Gotify, Pushover: c.Pushover}
+		HomeAssistant: c.HomeAssistant, Matrix: c.Matrix, Telegram: c.Telegram, Ntfy: c.Ntfy, Gotify: c.Gotify, Pushover: c.Pushover}
 }
 
 func validateMessaging(c Config) error {
@@ -52,7 +52,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 	allowed := map[string]bool{"kind": true, "sender": true, "recipients": true,
 		"smtp": true, "mailgun": true, "brevo": true, "mandrill": true, "webhook": true,
-		"templates": true, "slack": true, "telegram": true, "ntfy": true, "gotify": true, "pushover": true}
+		"templates": true, "slack": true, "telegram": true, "ntfy": true, "gotify": true, "pushover": true, "homeassistant": true, "matrix": true}
 	raw, err := configFields(data, allowed)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 	projected := map[string]json.RawMessage{"kind": raw["kind"]}
 	hasProvider := false
-	for _, key := range []string{"slack", "telegram", "ntfy", "gotify", "pushover"} {
+	for _, key := range []string{"slack", "telegram", "ntfy", "gotify", "pushover", "homeassistant", "matrix"} {
 		if value, exists := raw[key]; exists {
 			projected[key], hasProvider = value, true
 		}
@@ -137,6 +137,10 @@ func (e *Engine) sendMessaging(ctx context.Context, c Config, m Message, default
 			limit, cost = 4000-slackCost(m.Subject+"\n"), slackCost
 		case Telegram:
 			limit, cost = 4096-telegramCost(m.Subject+"\n"), telegramCost
+		case Matrix:
+			if m.Subject != "" {
+				limit -= len(m.Subject) + 1
+			}
 		case Ntfy:
 			limit = 4096
 		case Pushover:

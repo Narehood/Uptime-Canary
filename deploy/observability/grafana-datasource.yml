@@ -1,0 +1,10 @@
+apiVersion: 1
+datasources:
+  - name: Uptime Canary Prometheus
+    uid: uptime-canary-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    editable: false
+    jsonData:
+      httpMethod: POST

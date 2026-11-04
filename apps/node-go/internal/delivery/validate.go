@@ -27,7 +27,7 @@ func Validate(c Config) error {
 	if IsMessaging(c.Kind) {
 		return validateMessaging(c)
 	}
-	if c.Slack != nil || c.Telegram != nil || c.Ntfy != nil || c.Gotify != nil || c.Pushover != nil {
+	if c.Slack != nil || c.Telegram != nil || c.Ntfy != nil || c.Gotify != nil || c.Pushover != nil || c.HomeAssistant != nil || c.Matrix != nil {
 		return errConfig
 	}
 	if c.Kind != Webhook {

@@ -19,7 +19,16 @@ func request(ctx context.Context, c Config, m Message) (*http.Request, error) {
 	var payload any
 	contentType := "application/json"
 	var body []byte
+	method := http.MethodPost
 	switch c.Kind {
+	case HomeAssistant:
+		appendRoute(u, "api/events/"+c.HomeAssistant.EventType)
+		payload = map[string]string{"kind": m.EventKind, "monitor_id": m.MonitorID, "monitor_name": m.MonitorName, "incident_id": m.IncidentID, "idempotency_key": m.IdempotencyKey, "title": m.Title, "message": m.Text}
+	case Matrix:
+		appendRoute(u, "_matrix/client/v3/rooms/"+c.Matrix.RoomID+"/send/m.room.message/"+m.IdempotencyKey)
+		method = http.MethodPut
+		payload = map[string]any{"msgtype": "m.notice", "body": combinedText(m), "m.mentions": map[string]any{}}
+
 	case Slack:
 		payload = struct {
 			Text        string `json:"text"`
@@ -94,7 +103,7 @@ func request(ctx context.Context, c Config, m Message) (*http.Request, error) {
 	if len(body) > MaxRequestBytes {
 		return nil, errMessage
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, errMessage
 	}
@@ -106,6 +115,10 @@ func request(ctx context.Context, c Config, m Message) (*http.Request, error) {
 	}
 	req.Header.Set("User-Agent", "Uptime-Canary-notifyhttp/1")
 	switch c.Kind {
+	case HomeAssistant:
+		req.Header.Set("Authorization", "Bearer "+c.HomeAssistant.AccessToken)
+	case Matrix:
+		req.Header.Set("Authorization", "Bearer "+c.Matrix.AccessToken)
 	case Ntfy:
 		p := c.Ntfy
 		if p.Token != "" {
@@ -138,6 +151,15 @@ var (
 
 func acknowledgement(c Config, r Result, object map[string]any) Result {
 	switch c.Kind {
+	case HomeAssistant:
+		if len(object) == 1 && stringField(object, "message") == "Event "+c.HomeAssistant.EventType+" fired." {
+			return accepted(r, "")
+		}
+	case Matrix:
+		id := stringField(object, "event_id")
+		if strings.HasPrefix(id, "$") && singleLine(id, 1024, false) && !hasAny(object, "errcode", "error") {
+			return accepted(r, id)
+		}
 	case Telegram:
 		ok, exists := object["ok"].(bool)
 		if !exists {

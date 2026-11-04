@@ -228,7 +228,7 @@ func accepted(result Result, rawID string) Result {
 
 func failure(kind Kind, status Status, code string) Result {
 	switch kind {
-	case Slack, Telegram, Ntfy, Gotify, Pushover:
+	case Slack, Telegram, Ntfy, Gotify, Pushover, HomeAssistant, Matrix:
 	default:
 		kind = ""
 	}
@@ -259,6 +259,11 @@ func retryHints(kind Kind, headers http.Header, object map[string]any, now time.
 			delay = max(delay, seconds)
 		} else if date, err := http.ParseTime(value); err == nil {
 			delay = max(delay, min(max(date.Sub(now), 0), MaxRetryAfter))
+		}
+	}
+	if kind == Matrix {
+		if ms, ok := integerField(object, "retry_after_ms"); ok && ms > 0 {
+			delay = max(delay, time.Duration(min(ms, int64(MaxRetryAfter/time.Millisecond)))*time.Millisecond)
 		}
 	}
 	if kind == Telegram {
