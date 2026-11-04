@@ -361,6 +361,7 @@ func Identity(c Config) (string, error) {
 	case HomeAssistant:
 		appendRoute(u, "api/events/"+c.HomeAssistant.EventType)
 	case Matrix:
+		u.Path = strings.TrimSuffix(u.Path, "/") // Same normalization as request's appendRoute.
 		route = []string{c.Matrix.RoomID}
 	case Slack:
 		parts := strings.Split(u.Path, "/")

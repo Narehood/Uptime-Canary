@@ -154,3 +154,18 @@ func TestMatrixDomainlessRoomID(t *testing.T) {
 		t.Fatal("empty opaque room ID accepted")
 	}
 }
+
+func TestMatrixEquivalentBaseURLsKeepDeliveryIdentity(t *testing.T) {
+	for _, base := range []string{"https://matrix.example.test", "https://matrix.example.test/prefix"} {
+		c := automationConfig(Matrix, base)
+		before, err := Identity(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Matrix.BaseURL += "/"
+		after, err := Identity(c)
+		if err != nil || before != after {
+			t.Fatal("equivalent base URL changed destination receipts", before, after, err)
+		}
+	}
+}
