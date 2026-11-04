@@ -16,6 +16,24 @@ import (
 
 var messagingKinds = []Kind{Slack, Telegram, Ntfy, Gotify, Pushover}
 
+func TestMatrixDefaultMessageFitsCombinedBudget(t *testing.T) {
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Body string `json:"body"`
+		}
+		if json.NewDecoder(r.Body).Decode(&payload) != nil || len(payload.Body) > notifyhttp.MaxTextBytes {
+			t.Error("generated Matrix default exceeded the combined title/text budget")
+		}
+		io.WriteString(w, `{"event_id":"$fixture"}`)
+	}))
+	defer sink.Close()
+	c := Config{Kind: Matrix, Matrix: &notifyhttp.MatrixConfig{BaseURL: sink.URL, AccessToken: "fixture-token", RoomID: "!fixture", AllowInsecureHTTP: true}}
+	r := Send(context.Background(), c, Message{EventKind: "down", MonitorName: "Boundary", ObservationsSummary: strings.Repeat("x", 20<<10), IdempotencyKey: "stable"})
+	if !r.Accepted {
+		t.Fatal(r)
+	}
+}
+
 func messagingFixture(kind Kind, base string) Config {
 	c := Config{Kind: kind}
 	switch kind {

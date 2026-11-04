@@ -137,6 +137,10 @@ func (e *Engine) sendMessaging(ctx context.Context, c Config, m Message, default
 			limit, cost = 4000-slackCost(m.Subject+"\n"), slackCost
 		case Telegram:
 			limit, cost = 4096-telegramCost(m.Subject+"\n"), telegramCost
+		case Matrix:
+			if m.Subject != "" {
+				limit -= len(m.Subject) + 1
+			}
 		case Ntfy:
 			limit = 4096
 		case Pushover:

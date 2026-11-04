@@ -68,6 +68,17 @@ check('Home Assistant event names cannot select a service path', () => {
   const channel = { name: 'HA', enabled: true, config: channels[0] };
   assert.ok(form.buildChannel({ ...form.channelDraft(channel), haEvent: '../services/light/turn_on' }, channel, 'enhanced', 22).errors.eventType);
 });
+check('native URL and room-ID constraints produce field errors before submission', () => {
+  for (const config of channels) {
+    const channel = { name: 'Invalid route', enabled: true, config };
+    const draft = form.channelDraft(channel);
+    for (const suffix of ['/relay/../api', '/relay/%2e/api', '/relay/.%2e/api']) {
+      const change = config.kind === 'matrix' ? { matrixBase: 'https://example.test' + suffix } : { haBase: 'https://example.test' + suffix };
+      assert.ok(form.buildChannel({ ...draft, ...change }, channel, 'enhanced', 22).errors.serverUrl);
+    }
+    if (config.kind === 'matrix') for (const matrixRoom of ['!room\u0001:example.test', '!room\u0080:example.test']) assert.ok(form.buildChannel({ ...draft, matrixRoom }, channel, 'enhanced', 22).errors.roomId);
+  }
+});
 check('Prometheus config scrapes the authenticated node API with a credential file', () => {
   const config = readFileSync(resolve(root, 'deploy/observability/prometheus.yml'), 'utf8');
   assert.match(config, /metrics_path: \/api\/metrics/u);

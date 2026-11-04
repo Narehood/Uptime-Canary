@@ -141,3 +141,95 @@ func TestChannelEventValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestChannelEventRecoveryIsTerminalAfterSelectionEdit(t *testing.T) {
+	for _, held := range []bool{false, true} {
+		t.Run(map[bool]string{false: "no-down-attempt", true: "filtered-hold-attempt"}[held], func(t *testing.T) {
+			var clock atomic.Int64
+			clock.Store(time.Now().UnixMilli())
+			n := maintenanceNode(t, &clock, ":memory:")
+			sink := webhook(t)
+			in := hookChannel("Recovery only", sink.URL)
+			in.Events = []string{"recovery"}
+			channel := addMessagingChannel(t, n, in)
+			var up atomic.Bool
+			n.probe = func(context.Context, Monitor) ProbeResult {
+				state := "down"
+				if up.Load() {
+					state = "up"
+				}
+				return ProbeResult{State: state, Message: "private fixture"}
+			}
+			monitorInput := input([]string{"a"}, "http://127.0.0.1:1", "")
+			monitorInput.IntervalMs, monitorInput.TimeoutMs = 60000, 1000
+			monitorInput.NotificationIDs = []string{channel.ID}
+			code, body := messagingAPI(n, "/api/monitors", "POST", monitorInput, adminToken)
+			var monitor Monitor
+			if code != 201 || json.Unmarshal(body, &monitor) != nil {
+				t.Fatal(code, string(body))
+			}
+			partitionDrive(t, n)
+			if sink.count("") != 0 {
+				t.Fatal("recovery-only channel sent down")
+			}
+			var episode Incident
+			for _, value := range n.episodes {
+				if value.MonitorID == monitor.ID {
+					episode = value
+				}
+			}
+			if episode.ID == "" {
+				t.Fatal("missing outage")
+			}
+			if held {
+				target := n.notificationTargets(monitor)[0]
+				n.deliveryHold(monitor, episode, target, true)
+				n.deliveryHold(monitor, episode, target, false)
+			}
+			up.Store(true)
+			clock.Add(1000)
+			n.nextProbe[monitor.ID] = 0
+			partitionDrive(t, n)
+			if sink.count("recovery") != 1 || sink.count("down") != 0 {
+				t.Fatal("missing recovery-only delivery", sink.all())
+			}
+			edit := func(events []string) {
+				t.Helper()
+				channel.Events = events
+				code, body := messagingAPI(n, "/api/notification-channels/"+channel.ID, "PUT", channel, adminToken)
+				if code != 200 || json.Unmarshal(body, &channel) != nil {
+					t.Fatal(code, string(body))
+				}
+				partitionDrive(t, n)
+			}
+			edit(nil) // Omission restores all events, including down.
+			if sink.count("down") != 0 || sink.count("recovery") != 1 {
+				t.Fatal("selection edit replayed a closed outage", sink.all())
+			}
+			// A job already queued before learning recovery must also recheck it.
+			for _, value := range n.episodes {
+				if value.MonitorID == monitor.ID && value.Closed != nil {
+					episode = value
+				}
+			}
+			target := n.notificationTargets(monitor)[0]
+			queued := attempt{ID: attemptIdentity(monitor.ID, episode.ID, "down", 0, target.ID), MonitorID: monitor.ID, IncidentID: episode.ID, Kind: "down", DestinationID: target.ID, ChannelID: channel.ID, TargetRevision: channel.Revision, Provider: target.Provider, State: "queued"}
+			n.sendNotification(monitor, episode, queued, "fixture-down", nil)
+			if sink.count("down") != 0 {
+				t.Fatal("queued down escaped the recovery recheck", sink.all())
+			}
+			edit([]string{"recovery"})
+			up.Store(false)
+			clock.Add(1000)
+			n.nextProbe[monitor.ID] = 0
+			partitionDrive(t, n)
+			if sink.count("down") != 0 {
+				t.Fatal("new outage ignored selection")
+			}
+			edit(nil)
+			if sink.count("down") != 1 {
+				t.Fatal("enabling down during an open outage lost the alert", sink.all())
+			}
+		})
+	}
+}

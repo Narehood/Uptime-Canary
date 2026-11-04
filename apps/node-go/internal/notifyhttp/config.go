@@ -428,6 +428,10 @@ func validateMessage(c Config, m Message) error {
 		if len(m.Text) > 4096 {
 			return errMessage
 		}
+	case Matrix:
+		if len(combined) > MaxTextBytes {
+			return errMessage
+		}
 	case Gotify:
 		if len(m.Text) > MaxTextBytes {
 			return errMessage

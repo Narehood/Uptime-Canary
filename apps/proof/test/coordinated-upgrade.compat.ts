@@ -74,11 +74,10 @@ test('published protocol18 state survives mixed refusal, coordinated upgrade and
   await cluster.wait('mixed live peers refuse both exchange directions', () =>
     [[a.id, b.id], [b.id, a.id]].every(([from, to]) => cluster.exchanges.some(exchange =>
       !exchanges.has(exchange) && exchange.from === from && exchange.to === to && exchange.status === 400)));
-  // User-required internal-use consent advances the snapshot format to 21;
-  // older decoders must not silently discard the new rate acknowledgement.
-  // The Linux upgrade gate rejected the stale protocol-19 probe with HTTP 400;
-  // keep the original published baseline at 18 and all retention checks intact.
-  const after = await sequence(a, b, 21);
+  // Protocol 22 adds event selection and native Home Assistant/Matrix resources
+  // (docs/automation-integrations.md, canary/wire_pages.go). The current probe
+  // must use 22; keep baseline 18, mixed refusal and every retention check intact.
+  const after = await sequence(a, b, 22);
   assert.ok(after > before && after >= 65537, 'retained sequence reservation must advance');
   assert.equal((await cluster.api(a, '/api/overview', { token: viewer })).status, 200);
   assert.equal((await cluster.api(a, '/api/monitors', { method: 'POST', body: {}, token: viewer })).status, 403);
@@ -105,7 +104,7 @@ test('published protocol18 state survives mixed refusal, coordinated upgrade and
   assert.deepEqual(new Set(cluster.alerts().filter(event => event.monitorId === monitor.id).map(event => event.event.idempotencyKey)), acceptedKeys);
   await cluster.stop(a);
   await cluster.start(a);
-  await cluster.wait('second current restart advances persisted sequence', () => sequence(a, b, 21).then(value => value > after));
+  await cluster.wait('second current restart advances persisted sequence', () => sequence(a, b, 22).then(value => value > after));
   await retainedReceipt('the original receipt survives another current-version restart');
   assert.equal((await cluster.api(a, '/api/overview', { token: viewer })).status, 200);
   const updated = await cluster.api<Monitor>(a, '/api/monitors/' + monitor.id, { method: 'PUT', body: {

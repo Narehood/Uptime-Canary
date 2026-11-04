@@ -169,3 +169,15 @@ func TestMatrixEquivalentBaseURLsKeepDeliveryIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestMatrixCombinedMessageBudget(t *testing.T) {
+	c := automationConfig(Matrix, "https://matrix.example.test")
+	m := Message{Title: "Boundary", Text: strings.Repeat("x", MaxTextBytes-len("Boundary\n")), IdempotencyKey: "stable"}
+	if validateMessage(c, m) != nil {
+		t.Fatal("exact combined limit rejected")
+	}
+	m.Text += "x"
+	if validateMessage(c, m) == nil {
+		t.Fatal("oversized combined Matrix body accepted")
+	}
+}

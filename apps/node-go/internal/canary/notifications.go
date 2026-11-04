@@ -23,6 +23,11 @@ func (n *Node) scheduleTargetNotification(m Monitor, observations []Sample, targ
 			continue
 		}
 		successes := receiptsForTarget(n.forEpisode(i), target.ID)
+		// A recovery-only send completes this closed lifetime too. Enabling down
+		// later must not turn an already recovered automation back into an outage.
+		if i.Closed != nil && hasReceipt(successes, "recovery") {
+			continue
+		}
 		superseded := false
 		for _, other := range records {
 			if other.ID != i.ID && intersects(other.Predecessors, episodeIDs(i)) {
@@ -307,6 +312,9 @@ func (n *Node) sendNotification(m Monitor, _ Incident, a attempt, inflight strin
 		}
 	}
 	if a.Kind != "recovery" {
+		if latest.Closed != nil && hasReceipt(successes, "recovery") {
+			valid = false
+		}
 		group, _, grace := n.suppressionForTarget(m, target)
 		valid = valid && group == ""
 		valid = valid && n.now() >= latest.OpenedAt+grace

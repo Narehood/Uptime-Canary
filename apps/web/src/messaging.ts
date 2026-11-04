@@ -101,6 +101,7 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
       const accessToken = ha ? d.haToken : d.matrixToken;
       if (!accessToken || accessToken.length > 4096 || !VISIBLE.test(accessToken)) errors.accessToken = 'Enter the access token without spaces or line breaks (at most 4,096 characters).';
       const baseURL = base(ha ? d.haBase : d.matrixBase, ha ? d.haInsecure : d.matrixInsecure, 'Server URL', 'serverUrl', true);
+      if (!errors.serverUrl && /\/(?:(?:\.|%2e){1,2})(?:\/|$)/iu.test(baseURL.replace(/^https?:\/\/[^/]+/iu, ''))) errors.serverUrl = 'Remove . and .. path segments from the server URL.';
       if (ha) {
         const eventType = d.haEvent.trim();
         if (!/^[A-Za-z0-9_]{1,64}$/u.test(eventType)) errors.eventType = 'Use 1 to 64 letters, digits or underscores.';
@@ -108,7 +109,7 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
         if (!d.haInsecure) delete config.homeassistant.allowInsecureHTTP;
       } else {
         const roomId = d.matrixRoom.trim();
-        if (!/^![^/\\?#%\s]+$/u.test(roomId) || bytesOf(roomId) > 255) errors.roomId = 'Use the internal room ID, like !room:example.org, up to 255 bytes.';
+        if (!/^![^/\\?#%\s]+$/u.test(roomId) || bytesOf(roomId) > 255 || /\p{Cc}/u.test(roomId)) errors.roomId = 'Use the internal room ID, like !room:example.org, up to 255 bytes.';
         config.matrix = { ...same?.matrix, baseURL, accessToken, roomId, ...(d.matrixInsecure ? { allowInsecureHTTP: true } : {}) };
         if (!d.matrixInsecure) delete config.matrix.allowInsecureHTTP;
       }
