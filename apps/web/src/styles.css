@@ -1457,6 +1457,7 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .channel-editor .secret .icon-btn.sm, .channel-editor .hdr-row .icon-btn.sm, .channel-editor .modal .icon-btn.sm, .channels-view .modal .icon-btn.sm { width: 44px; height: 44px; min-width: 44px; min-height: 44px; flex: none; }
   .channel-editor .channel-event-options { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .channel-editor .check, .channel-editor .linkbtn, .channels-view .modal .linkbtn, .channels-view .tabs a { min-height: 44px; }
+  .channel-editor .fld > small:not(.ferr), .channel-editor .check small, .channels-view .channel-meta { color: var(--text-2); }
   .channel-editor .form-acts { align-items: stretch; }
   .channel-editor .form-acts > .btn { justify-content: center; white-space: normal; }
   .channel-editor .form-acts > .muted { flex-basis: 100%; }

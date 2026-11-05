@@ -1255,7 +1255,7 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
           <ErrorSummary ref={summaryRef} title={latestError ? 'Latest settings could not be loaded' : failure ? (saveUnconfirmed ? 'Save unconfirmed' : failure.stale ? 'Save rejected: the channel changed or has a conflict' : 'Save request rejected') : 'Check these fields'} errors={failure || latestError ? [] : errorList} onErrorSelect={focusError}>
             {failure || latestError ? <>
               <p>{latestError ? <>Your draft is kept. {latestError}</> : failure?.message}</p>
-              {(latestError || failure?.stale) && current ? <p><button type="button" className="linkbtn" disabled={saving} onClick={() => { void loadLatest(); }}>Load latest (discards your edits)</button>{latestError ? null : ' and apply your change again.'}</p> : null}
+              {(latestError || failure?.stale) && current ? <p><button type="button" className="linkbtn" disabled={saving} onClick={() => { void loadLatest(); }}>Load latest (discards your edits)</button></p> : null}
             </> : null}
           </ErrorSummary>
           {saveUnconfirmed && failure ? <div className="full" id={`${formId}-savecheck`}>
