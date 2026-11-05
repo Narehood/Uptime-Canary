@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Monitor } from '@uptime-canary/shared';
 import { CHECK_TYPES, typeLabel } from '../checks';
 import { useCanary } from '../context';
+import { monitorInventory } from '../dashboardDerivations';
 import { maskedUrl, plural, span } from '../format';
-import { matchesFilter, matchesSearch, type StateFilter } from '../model';
+import type { StateFilter } from '../model';
 import { href, navigate } from '../router';
 import { Card, Dots, EmptyState, FilterChips, PageHead, ReadOnly, Rev, StateChip, Tag, TypeTag } from '../ui/bits';
 import { Glyph, Icon } from '../ui/icons';
@@ -25,11 +26,8 @@ export function MonitorsView() {
   const [filter, setFilter] = useState<StateFilter>('all');
   const [type, setType] = useState('');
   const [tagId, setTagId] = useState('');
-  const searched = assessed.filter(({ view }) => matchesSearch(view, search, groupMap.get(view.monitor.groupId ?? '')?.group.name, view.monitor.tags?.map(tag => `${tags.map.get(tag.tagId)?.tag.name ?? ''} ${tag.value ?? ''}`).join(' '))
-    && (!type || view.monitor.type === type) && (!tagId || view.monitor.tags?.some(tag => tag.tagId === tagId)));
-  const rows = searched.filter(({ a }) => matchesFilter(a, filter));
-  const count = (f: StateFilter): number => searched.filter(({ a }) => matchesFilter(a, f)).length;
-  const types = CHECK_TYPES.filter(entry => assessed.some(({ view }) => view.monitor.type === entry.type));
+  const { rows, counts, types } = useMemo(() => monitorInventory(assessed, search, filter, CHECK_TYPES, groupMap, tags.map, type, tagId),
+    [assessed, search, filter, groupMap, tags.map, type, tagId]);
   const tagList = (tags.list ?? []).filter(view => !view.tag.deleted).sort((a, b) => a.tag.name.localeCompare(b.tag.name));
   return (
     <div className="view">
@@ -44,11 +42,11 @@ export function MonitorsView() {
       <Card>
         <div className="filterbar">
           <FilterChips<StateFilter> label="Filter monitors by state" value={filter} onChange={setFilter} options={[
-            { value: 'all', label: 'All', count: count('all') },
-            { value: 'failing', label: 'Failing', count: count('failing') },
-            { value: 'unknown', label: 'Unknown or pending', count: count('unknown') },
-            { value: 'up', label: 'Up', count: count('up') },
-            { value: 'paused', label: 'Paused', count: count('paused') },
+            { value: 'all', label: 'All', count: counts.all },
+            { value: 'failing', label: 'Failing', count: counts.failing },
+            { value: 'unknown', label: 'Unknown or pending', count: counts.unknown },
+            { value: 'up', label: 'Up', count: counts.up },
+            { value: 'paused', label: 'Paused', count: counts.paused },
           ]} />
           <span className="grow" />
           {types.length > 1 ? (

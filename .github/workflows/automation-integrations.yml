@@ -75,6 +75,23 @@ jobs:
           validation_status=$?
           cat .canary/work/current/latest.log
           exit "$validation_status"
+      - name: Dashboard derivation equivalence and measured performance
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 180 -- node scripts/dashboard-operations-proof.mjs --benchmark
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
+      - name: Retain dashboard measurements
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: dashboard-operations-evidence
+          path: |
+            .canary/work/current/latest.log
+            .canary/work/current/latest.json
+          include-hidden-files: true
+          retention-days: 7
       - name: Real automation forms on Linux Chrome
         run: |
           set +e

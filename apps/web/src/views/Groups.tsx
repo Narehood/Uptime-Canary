@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Group, GroupInput, GroupView, HealthRollup } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure } from '../api';
 import { useCanary } from '../context';
+import { groupCardIndex, type GroupCardIndex } from '../dashboardDerivations';
 import { plural, shortRev, span } from '../format';
 import { candidateOrder, dependencyCycle, groupAncestors, groupDescendants, groupForest, groupPath, groupStateText, groupTone, parentProblem, stateTone, stateWord, type GroupNode } from '../model';
 import { notify } from '../notices';
@@ -74,15 +75,15 @@ export function HealthSummary({ view }: { view: GroupView }) {
   );
 }
 
-function GroupCard({ view, issue }: { view: GroupView; issue?: GroupNode['issue'] }) {
-  const { overview, monitorMap, assessmentOf, nodeMap, editable, endpoint, assessed, groups, groupMap } = useCanary();
+function GroupCard({ view, issue, index }: { view: GroupView; issue?: GroupNode['issue']; index: GroupCardIndex }) {
+  const { overview, monitorMap, assessmentOf, nodeMap, editable, endpoint, groupMap } = useCanary();
   const [deleting, setDeleting] = useState(false);
   const g = view.group;
   const ancestors = groupAncestors(g.id, groupMap).views;
-  const children = (groups ?? []).filter(other => other.group.parentId === g.id && other.group.id !== g.id).sort((a, b) => a.group.name.localeCompare(b.group.name));
+  const children = index.children.get(g.id) ?? [];
   const dependency = g.outageMonitorId ? monitorMap.get(g.outageMonitorId) : undefined;
   const dependencyA = g.outageMonitorId ? assessmentOf(g.outageMonitorId) : undefined;
-  const members = assessed.filter(({ view: m }) => m.monitor.groupId === g.id);
+  const members = index.members.get(g.id) ?? [];
   return (
     <article className="gcard" aria-labelledby={`g-${g.id}`}>
       <div className="gcard-h">
@@ -163,17 +164,18 @@ function GroupCard({ view, issue }: { view: GroupView; issue?: GroupNode['issue'
   );
 }
 
-function GroupBranch({ node }: { node: GroupNode }) {
+function GroupBranch({ node, index }: { node: GroupNode; index: GroupCardIndex }) {
   return (
     <div className="gtree">
-      <GroupCard view={node.view} issue={node.issue} />
-      {node.children.length ? <div className="gtree-kids" role="group" aria-label={`Nested in ${node.view.group.name}`}>{node.children.map(child => <GroupBranch key={child.view.group.id} node={child} />)}</div> : null}
+      <GroupCard view={node.view} issue={node.issue} index={index} />
+      {node.children.length ? <div className="gtree-kids" role="group" aria-label={`Nested in ${node.view.group.name}`}>{node.children.map(child => <GroupBranch key={child.view.group.id} node={child} index={index} />)}</div> : null}
     </div>
   );
 }
 
 export function GroupsView() {
-  const { groups, editable, endpoint, search, controlPlane } = useCanary();
+  const { groups, assessed, editable, endpoint, search, controlPlane } = useCanary();
+  const index = useMemo(() => groupCardIndex(groups ?? [], assessed), [groups, assessed]);
   if (groups === null) return <div className="view"><PageHead title="Groups" /><GroupsUnsupported /></div>;
   const q = search.trim().toLowerCase();
   const live = groups.filter(view => !view.group.deleted);
@@ -189,8 +191,8 @@ export function GroupsView() {
         actions={editable ? <a className="btn primary" href={href('groups', 'new')}><Icon name="plus" />New group</a> : <ReadOnly>Viewers can’t edit groups</ReadOnly>}
       />
       <HowGroupsWork />
-      {forest ? <div className="gcards">{forest.map(node => <GroupBranch key={node.view.group.id} node={node} />)}</div>
-        : shown.length ? <div className="gcards">{shown.map(view => <GroupCard key={view.group.id} view={view} issue={view.group.parentId && !groups.some(other => other.group.id === view.group.parentId) ? 'missing-parent' : undefined} />)}</div>
+      {forest ? <div className="gcards">{forest.map(node => <GroupBranch key={node.view.group.id} node={node} index={index} />)}</div>
+        : shown.length ? <div className="gcards">{shown.map(view => <GroupCard key={view.group.id} view={view} index={index} issue={view.group.parentId && !groups.some(other => other.group.id === view.group.parentId) ? 'missing-parent' : undefined} />)}</div>
         : <Card><EmptyState title={groups.length ? 'Nothing matches' : 'No groups yet'} action={!groups.length && editable ? <a className="btn primary" href={href('groups', 'new')}><Icon name="plus" />New group</a> : undefined}>
             {groups.length ? 'Try another search.' : 'Without groups, every monitor alerts on its own.'}
           </EmptyState></Card>}

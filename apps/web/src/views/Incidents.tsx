@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import type { IncidentView, NotificationView } from '@uptime-canary/shared';
 import { useCanary } from '../context';
+import { incidentReceiptIndex } from '../dashboardDerivations';
 import { andList, elapsed, plural, shortId, shortRev } from '../format';
 import { candidateOrder, duplicateReceipts, incidentReceipts, receiptKindLabel, retired } from '../model';
 import { href } from '../router';
@@ -106,13 +107,13 @@ function RetirementLine({ incident, receipts }: { incident: IncidentView; receip
   );
 }
 
-export function IncidentRow({ incident }: { incident: IncidentView }) {
+export function IncidentRow({ incident, receipts: knownReceipts }: { incident: IncidentView; receipts?: NotificationView[] }) {
   const { overview, monitorMap, assessmentOf } = useCanary();
   const view = monitorMap.get(incident.monitorId);
   const a = assessmentOf(incident.monitorId);
   const open = incident.resolvedAt === null;
   const closedByChange = retired(incident);
-  const receipts = incidentReceipts(incident, overview.notifications);
+  const receipts = knownReceipts ?? incidentReceipts(incident, overview.notifications);
   const name = view?.monitor.name ?? incident.monitorName;
   const title = open ? (a?.kind === 'unknown' ? `${name}: failing location out of view` : `${name} down`) : `${name} was down`;
   return (
@@ -144,6 +145,7 @@ type IncidentFilter = 'open' | 'closed' | 'all';
 export function IncidentsView() {
   const { overview, endpoint, search, monitorMap } = useCanary();
   const [filter, setFilter] = useState<IncidentFilter>('open');
+  const receiptIndex = useMemo(() => incidentReceiptIndex(overview.notifications), [overview.notifications]);
   const q = search.trim().toLowerCase();
   const matching = overview.incidents.filter(incident => !q || `${incident.monitorName} ${monitorMap.get(incident.monitorId)?.monitor.target ?? ''} ${incident.id}`.toLowerCase().includes(q));
   const open = matching.filter(incident => incident.resolvedAt === null).sort((a, b) => a.openedAt - b.openedAt);
@@ -162,7 +164,7 @@ export function IncidentsView() {
           { value: 'all', label: 'All', count: matching.length },
         ]} />
         {shown.length
-          ? <ul className="inc-list">{shown.map(incident => <IncidentRow key={incident.id} incident={incident} />)}</ul>
+          ? <ul className="inc-list">{shown.map(incident => <IncidentRow key={incident.id} incident={incident} receipts={receiptIndex.get(incident.id) ?? []} />)}</ul>
           : <EmptyState title={filter === 'open' ? 'No open incidents' : 'Nothing here'}>{q ? 'Nothing matches the search.' : filter === 'open' && closed.length ? `Every incident known to ${endpoint} is closed.` : `${endpoint} has no incidents in this list.`}</EmptyState>}
       </Card>
     </div>
