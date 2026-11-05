@@ -48,12 +48,12 @@ export function DurationField({ label, value, onChange, error, hint, units = ['m
   );
 }
 
-export function TextField({ label, value, onChange, error, hint, mono, type = 'text', placeholder, autoFocus, disabled, full, inputMode, autoComplete = 'off', maxLength }: {
-  label: string; value: string; onChange: (value: string) => void; error?: string; hint?: ReactNode; mono?: boolean; type?: string;
+export function TextField({ label, value, onChange, error, errorId, hint, mono, type = 'text', placeholder, autoFocus, disabled, full, inputMode, autoComplete = 'off', maxLength }: {
+  label: string; value: string; onChange: (value: string) => void; error?: string; errorId?: string; hint?: ReactNode; mono?: boolean; type?: string;
   placeholder?: string; autoFocus?: boolean; disabled?: boolean; full?: boolean; inputMode?: 'text' | 'url' | 'numeric'; autoComplete?: string; maxLength?: number;
 }) {
   const id = useId();
-  const describedBy = [hint ? `${id}-h` : '', error ? `${id}-e` : ''].filter(Boolean).join(' ') || undefined;
+  const describedBy = [hint ? `${id}-h` : '', error ? (errorId || `${id}-e`) : ''].filter(Boolean).join(' ') || undefined;
   return (
     <div className={`fld${full ? ' full' : ''}`}>
       <label htmlFor={id}>{label}</label>
@@ -64,7 +64,7 @@ export function TextField({ label, value, onChange, error, hint, mono, type = 't
         onChange={event => onChange(event.target.value)}
       />
       {hint ? <small id={`${id}-h`}>{hint}</small> : null}
-      <ErrorText id={`${id}-e`}>{error}</ErrorText>
+      {!errorId ? <ErrorText id={`${id}-e`}>{error}</ErrorText> : null}
     </div>
   );
 }
@@ -119,14 +119,14 @@ export function CandidateOrder({ ids, nodes, sender, label = 'Notification order
   );
 }
 
-export const ErrorSummary = forwardRef<HTMLDivElement, { title: string; errors: string[]; children?: ReactNode }>(function ErrorSummary({ title, errors, children }, ref) {
+export const ErrorSummary = forwardRef<HTMLDivElement, { title: string; errors: string[]; children?: ReactNode; onErrorSelect?: (index: number) => void }>(function ErrorSummary({ title, errors, children, onErrorSelect }, ref) {
   if (!errors.length && !children) return null;
   return (
     <div className="errsum" ref={ref} tabIndex={-1} role="alert">
       <Glyph tone="down" />
       <div>
         <b>{title}</b>
-        {errors.length ? <ul>{errors.map(error => <li key={error}>{error}</li>)}</ul> : null}
+        {errors.length ? <ul>{errors.map((error, index) => <li key={error}>{onErrorSelect ? <button type="button" className="linkbtn" onClick={() => onErrorSelect(index)}>{error}</button> : error}</li>)}</ul> : null}
         {children}
       </div>
     </div>
@@ -311,13 +311,13 @@ export function PemField({ label, value, onChange, kind, error, hint, disabled, 
 }
 
 /** Password-style input for stored credentials. Prefilled values stay unless edited; clearing one is called out. */
-export function SecretField({ label, value, onChange, disabled, full, mono = true, error, hint, placeholder, storedSet, optional }: {
-  label: string; value: string; onChange: (value: string) => void; disabled?: boolean; full?: boolean; mono?: boolean; error?: string; hint?: ReactNode;
+export function SecretField({ label, value, onChange, disabled, full, mono = true, error, errorId, hint, placeholder, storedSet, optional }: {
+  label: string; value: string; onChange: (value: string) => void; disabled?: boolean; full?: boolean; mono?: boolean; error?: string; errorId?: string; hint?: ReactNode;
   placeholder?: string; storedSet?: boolean; optional?: boolean;
 }) {
   const id = useId();
   const [shown, setShown] = useState(false);
-  const describedBy = [hint ? `${id}-h` : '', error ? `${id}-e` : ''].filter(Boolean).join(' ') || undefined;
+  const describedBy = [hint ? `${id}-h` : '', error ? (errorId || `${id}-e`) : ''].filter(Boolean).join(' ') || undefined;
   return (
     <div className={`fld${full ? ' full' : ''}`}>
       <label htmlFor={id}>{label}{optional ? <span className="muted"> (optional)</span> : null}</label>
@@ -330,7 +330,7 @@ export function SecretField({ label, value, onChange, disabled, full, mono = tru
       </div>
       {storedSet && !value ? <small className="fwarn"><Glyph tone="warn" />Saving removes the stored value.</small> : null}
       {hint ? <small id={`${id}-h`}>{hint}</small> : null}
-      <ErrorText id={`${id}-e`}>{error}</ErrorText>
+      {!errorId ? <ErrorText id={`${id}-e`}>{error}</ErrorText> : null}
     </div>
   );
 }
@@ -339,13 +339,14 @@ export function SecretField({ label, value, onChange, disabled, full, mono = tru
 export function Seg<T extends string>({ legend, name, value, options, onChange, disabled, full, hint }: {
   legend: string; name: string; value: T; options: { value: T; label: string }[]; onChange: (value: T) => void; disabled?: boolean; full?: boolean; hint?: ReactNode;
 }) {
+  const hintId = useId();
   return (
-    <fieldset className={`fld seg-f${full ? ' full' : ''}`} disabled={disabled}>
+    <fieldset className={`fld seg-f${full ? ' full' : ''}`} disabled={disabled} aria-describedby={hint ? hintId : undefined}>
       <legend>{legend}</legend>
       <div className="seg">
         {options.map(option => <label key={option.value}><input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} /><span>{option.label}</span></label>)}
       </div>
-      {hint ? <small>{hint}</small> : null}
+      {hint ? <small id={hintId}>{hint}</small> : null}
     </fieldset>
   );
 }

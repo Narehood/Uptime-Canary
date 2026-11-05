@@ -76,6 +76,27 @@ const SOUND = /^[A-Za-z0-9_-]{1,64}$/u;
 const int = (text: string): number | undefined => /^-?\d{1,16}$/u.test(text.trim()) ? Number(text.trim()) : undefined;
 const lineBreak = (text: string): boolean => /[\x00-\x1f\x7f\u2028\u2029]/u.test(text);
 
+/** Compound errors name the corrective control as well as retaining the original validation message. */
+export function ntfyLoginProblem(d: MessagingDraft): { field: 'ntfyToken' | 'ntfyUser' | 'ntfyPass'; message: string } | undefined {
+  if (d.ntfyAuth === 'token') {
+    if (!d.ntfyToken) return { field: 'ntfyToken', message: 'Enter the access token, or choose another login.' };
+    if (d.ntfyToken.length > 512 || !VISIBLE.test(d.ntfyToken)) return { field: 'ntfyToken', message: 'Paste the access token without spaces or line breaks (at most 512 characters).' };
+  } else if (d.ntfyAuth === 'basic') {
+    if (!d.ntfyUser) return { field: 'ntfyUser', message: 'Enter both a user name and a password.' };
+    if (!d.ntfyPass) return { field: 'ntfyPass', message: 'Enter both a user name and a password.' };
+    if (d.ntfyUser.includes(':') || bytesOf(d.ntfyUser) > 128 || lineBreak(d.ntfyUser)) return { field: 'ntfyUser', message: 'Use a user name of at most 128 bytes on one line, without “:”.' };
+    if (bytesOf(d.ntfyPass) > 512 || lineBreak(d.ntfyPass)) return { field: 'ntfyPass', message: 'Use a password of at most 512 bytes on one line.' };
+  }
+}
+
+export function pushoverEmergencyProblem(d: MessagingDraft): { field: 'poRetry' | 'poExpire'; message: string } | undefined {
+  if (d.poPriority !== '2') return;
+  const retry = int(d.poRetry), expire = int(d.poExpire);
+  if (retry === undefined || retry < 30 || retry > 10_800) return { field: 'poRetry', message: 'Repeat every 30 to 10,800 seconds.' };
+  if (expire === undefined || expire < 1 || expire > 10_800) return { field: 'poExpire', message: 'Stop repeating after at most 10,800 seconds (3 hours).' };
+  if (retry > expire) return { field: 'poExpire', message: 'The repeat interval can’t be longer than the time it keeps repeating.' };
+}
+
 /** Sets a value, or removes the key for the zero values Go omits, so unchanged channels round-trip exactly. */
 function put(target: Record<string, unknown>, key: string, value: unknown): void {
   if (value === undefined || value === '' || value === false || value === 0) delete target[key];
@@ -142,14 +163,11 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
       const topic = d.ntfyTopic.trim();
       if (!TOPIC.test(topic)) errors.topic = topic ? 'Use 1–64 letters, digits, - or _.' : 'Enter the topic.';
       const o: Record<string, unknown> = { ...(same?.ntfy ?? {}), topic };
+      const loginProblem = ntfyLoginProblem(d);
+      if (loginProblem) errors.ntfyAuth = loginProblem.message;
       if (d.ntfyAuth === 'token') {
-        if (!d.ntfyToken) errors.ntfyAuth = 'Enter the access token, or choose another login.';
-        else if (d.ntfyToken.length > 512 || !VISIBLE.test(d.ntfyToken)) errors.ntfyAuth = 'Paste the access token without spaces or line breaks (at most 512 characters).';
         put(o, 'token', d.ntfyToken); delete o.username; delete o.password;
       } else if (d.ntfyAuth === 'basic') {
-        if (!d.ntfyUser || !d.ntfyPass) errors.ntfyAuth = 'Enter both a user name and a password.';
-        else if (d.ntfyUser.includes(':') || bytesOf(d.ntfyUser) > 128 || lineBreak(d.ntfyUser)) errors.ntfyAuth = 'Use a user name of at most 128 bytes on one line, without “:”.';
-        else if (bytesOf(d.ntfyPass) > 512 || lineBreak(d.ntfyPass)) errors.ntfyAuth = 'Use a password of at most 512 bytes on one line.';
         delete o.token; put(o, 'username', d.ntfyUser); put(o, 'password', d.ntfyPass);
       } else { delete o.token; delete o.username; delete o.password; }
       put(o, 'priority', Number(d.ntfyPriority) || 0);
@@ -184,9 +202,8 @@ export function buildMessaging(kind: MessagingKind, d: MessagingDraft, same: Not
       put(o, 'device', device); put(o, 'priority', priority); put(o, 'sound', sound);
       if (priority === 2) {
         const retry = int(d.poRetry), expire = int(d.poExpire);
-        if (retry === undefined || retry < 30 || retry > 10_800) errors.emergency = 'Repeat every 30 to 10,800 seconds.';
-        else if (expire === undefined || expire < 1 || expire > 10_800) errors.emergency = 'Stop repeating after at most 10,800 seconds (3 hours).';
-        else if (retry > expire) errors.emergency = 'The repeat interval can’t be longer than the time it keeps repeating.';
+        const emergencyProblem = pushoverEmergencyProblem(d);
+        if (emergencyProblem) errors.emergency = emergencyProblem.message;
         put(o, 'retrySeconds', retry); put(o, 'expireSeconds', expire);
       } else { delete o.retrySeconds; delete o.expireSeconds; }
       put(o, 'baseURL', base(d.poBase, d.poInsecure, 'API base URL')); put(o, 'allowInsecureHTTP', d.poInsecure);
@@ -244,12 +261,26 @@ export function pushoverPriorityText(p: NotificationConfig['pushover']): string 
   return PUSHOVER_PRIORITIES.find(option => option.value === String(priority))?.label.replace(/^\S+ · /u, '') ?? `priority ${priority}`;
 }
 
+/** Public routing fields for native automation destinations, never their access token or URL credentials. */
+export function automationDestination(c: NotificationConfig): { server: string; targetLabel: string; target: string } | undefined {
+  const native = c.kind === 'homeassistant' ? c.homeassistant : c.kind === 'matrix' ? c.matrix : undefined;
+  if (!native) return undefined;
+  let server = 'No server';
+  try {
+    const url = new URL(native.baseURL);
+    if (url.protocol === 'https:' || url.protocol === 'http:') server = url.origin + url.pathname.replace(/\/+$/u, '');
+  } catch { /* Incomplete drafts have no usable server yet. */ }
+  return c.kind === 'homeassistant'
+    ? { server, targetLabel: 'Event type', target: c.homeassistant?.eventType || 'uptime_canary' }
+    : { server, targetLabel: 'Room ID', target: c.matrix?.roomId || 'No room' };
+}
+
 /** A masked route for lists and conflict review: the API origin plus non-secret options. */
 export function messagingRoute(c: NotificationConfig): { where: string; facts: string[] } | undefined {
   const facts = (...items: (string | false | undefined)[]): string[] => items.filter((item): item is string => Boolean(item));
   switch (c.kind) {
     case 'homeassistant': return { where: c.homeassistant?.baseURL ? maskedUrl(c.homeassistant.baseURL) : 'no server', facts: [c.homeassistant?.eventType ?? 'uptime_canary'] };
-    case 'matrix': return { where: c.matrix?.baseURL ? maskedUrl(c.matrix.baseURL) : 'no server', facts: ['one unencrypted room'] };
+    case 'matrix': return { where: c.matrix?.baseURL ? maskedUrl(c.matrix.baseURL) : 'no server', facts: [c.matrix?.roomId || 'no room', 'unencrypted room'] };
     case 'slack': return { where: c.slack?.webhookURL ? maskedUrl(c.slack.webhookURL) : 'no URL', facts: [] };
     case 'telegram': {
       const t = c.telegram;

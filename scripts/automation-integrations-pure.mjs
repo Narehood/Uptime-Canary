@@ -17,8 +17,10 @@ globalThis.React ??= React;
 const { register } = await import('tsx/esm/api');
 const scope = register({ namespace: 'automation-integrations', tsconfig: resolve(root, 'apps/web/tsconfig.json') });
 const load = file => scope.import(pathToFileURL(resolve(root, 'apps/web/src', file)).href, import.meta.url);
-const { channelFormModel: form, PROVIDERS } = await load('views/Channels.tsx');
+const { channelFormModel: form, PROVIDERS, toggleAlertEvent, testSubmissionDisposition, channelDraftChanged, sameChannelSettings, PreviewOutcomeList, previewRecipientLabels, channelAddresses, DeliveryTable } = await load('views/Channels.tsx');
 const messaging = await load('messaging.ts');
+const apiModel = await load('api.ts');
+const routes = await load('router.ts');
 let passed = 0;
 const check = (name, fn) => { fn(); console.log(`PASS ${name}`); passed++; };
 const channels = [
@@ -58,6 +60,64 @@ for (const config of channels) {
     assert.notEqual(messaging.credentialKey(config.kind, next), messaging.credentialKey(config.kind, draft));
   });
 }
+check('event controls immediately remove dependent repeats while keeping recovery-only usable', () => {
+  assert.deepEqual(toggleAlertEvent(['down', 'repeat', 'recovery'], 'down', false), ['recovery']);
+  assert.deepEqual(toggleAlertEvent(['recovery'], 'repeat', true), ['recovery']);
+  assert.deepEqual(toggleAlertEvent(['recovery'], 'down', true), ['down', 'recovery']);
+  assert.deepEqual(toggleAlertEvent(['down', 'recovery'], 'repeat', true), ['down', 'repeat', 'recovery']);
+  assert.deepEqual(toggleAlertEvent(['recovery'], 'recovery', false), []);
+});
+check('native target summaries identify exact routing without credentials or query data', () => {
+  const ha = messaging.automationDestination({ kind: 'homeassistant', homeassistant: { baseURL: 'https://user:password@home.example.test/relay/?token=private#secret', accessToken: 'private-ha', eventType: 'office_status' } });
+  assert.deepEqual(ha, { server: 'https://home.example.test/relay', targetLabel: 'Event type', target: 'office_status' });
+  const matrix = messaging.automationDestination({ kind: 'matrix', matrix: { baseURL: 'https://matrix.example.test/prefix/', accessToken: 'private-matrix', roomId: '!operations:example.test' } });
+  assert.deepEqual(matrix, { server: 'https://matrix.example.test/prefix', targetLabel: 'Room ID', target: '!operations:example.test' });
+  assert.equal(messaging.automationDestination({ kind: 'webhook', webhook: { url: 'https://example.test/private-webhook-token' } }), undefined);
+});
+check('Matrix list summaries distinguish rooms on one homeserver and never include access tokens', () => {
+  const base = { kind: 'matrix', matrix: { baseURL: 'https://matrix.example.test', accessToken: 'private-matrix-token', roomId: '!first:example.test' } };
+  const first = messaging.messagingRoute(base);
+  const second = messaging.messagingRoute({ ...base, matrix: { ...base.matrix, roomId: '!second:example.test' } });
+  assert.notDeepEqual(first, second);
+  assert.ok(JSON.stringify(first).includes('!first:example.test'));
+  assert.ok(!JSON.stringify(first).includes('private-matrix-token'));
+});
+check('test submission classification never treats timeouts, proxy failures or unreadable successes as unsent', () => {
+  for (const status of [0, 200, 202, 204, 408, 418, 500, 502, 503, 504]) assert.equal(testSubmissionDisposition(new apiModel.ApiFailure(status, 'fixture')), 'unconfirmed', status);
+  for (const status of [400, 401, 403, 404, 409, 413, 422, 429]) assert.equal(testSubmissionDisposition(new apiModel.ApiFailure(status, 'fixture')), 'rejected', status);
+  assert.equal(testSubmissionDisposition(new TypeError('network fixture')), 'unconfirmed');
+});
+check('test reply validation accepts real attempt records and rejects missing or ambiguous acknowledgements', () => {
+  const valid = { id: 'attempt-1', nodeId: 'node-a', kind: 'test', provider: 'homeassistant', state: 'queued', failures: 0, channelId: 'ha-1' };
+  assert.deepEqual(apiModel.readChannelTestAttempts([valid]), [valid]);
+  for (const value of [undefined, {}, [], [valid, valid], [{ ...valid, kind: 'down' }], [{ ...valid, state: 'invented' }], [{ ...valid, failures: -1 }], [{ ...valid, id: '' }]]) assert.equal(apiModel.readChannelTestAttempts(value), undefined);
+});
+check('dirty state ignores recipient row keys and detects configuration and credential changes', () => {
+  const original = form.channelDraft({ name: 'Mail', enabled: true, config: { kind: 'smtp', smtp: { server: 'mail.example.test', tlsMode: 'starttls' }, recipients: [{ email: 'ops@example.test', name: 'Ops' }] } });
+  const same = structuredClone(original); same.recipients[0].key += 99;
+  assert.equal(channelDraftChanged(same, original), false);
+  for (const changed of [{ ...same, name: 'Renamed' }, { ...same, enabled: false }, { ...same, smtpPass: 'new-private-value' }, { ...same, events: ['recovery'] }]) assert.equal(channelDraftChanged(changed, original), true);
+  const recipient = structuredClone(same); recipient.recipients[0].email = 'other@example.test'; assert.equal(channelDraftChanged(recipient, original), true);
+});
+check('channel delivery links round-trip IDs without allowing unrelated or ambiguous query parameters', () => {
+  assert.deepEqual(routes.parseRoute(routes.deliveryHref()), { name: 'deliveries' });
+  for (const id of ['ha-1', 'opaque ?&#/room']) assert.deepEqual(routes.parseRoute(routes.deliveryHref(id)), { name: 'deliveries', channelId: id });
+  for (const hash of ['#/notifications/deliveries?channel=a&channel=b', '#/notifications/deliveries?channel=a&token=private', '#/notifications/deliveries?channel=ha-1?token=private', '#/notifications/deliveries?channel=ha-1??x=1', '#/notifications/deliveries??channel=ha-1', '#/notifications/deliveries??', '#/monitors?channel=a']) assert.equal(routes.parseRoute(hash).name, 'not-found');
+});
+check('navigation registration holds a dirty route and releases without disturbing a newer editor', () => {
+  const before = globalThis.location; globalThis.location = { hash: '#/channels/ha-1/edit' }; let proceed;
+  try {
+    const release = routes.registerNavigationGuard(action => { proceed = action; return true; });
+    routes.navigate('#/notifications'); assert.equal(location.hash, '#/channels/ha-1/edit');
+    proceed(); assert.equal(location.hash, '#/notifications');
+    let switched = false; routes.requestNavigation(() => { switched = true; });
+    assert.equal(switched, false, 'context changes use the same discard decision');
+    proceed(); assert.equal(switched, true); assert.equal(location.hash, '#/notifications');
+    const newer = routes.registerNavigationGuard(() => true); release();
+    routes.navigate('#/monitors'); assert.equal(location.hash, '#/notifications');
+    newer(); routes.navigate('#/monitors'); assert.equal(location.hash, '#/monitors');
+  } finally { globalThis.location = before; }
+});
 check('domainless and legacy Matrix room IDs remain usable', () => {
   const channel = { name: 'Matrix', enabled: true, config: channels[1] };
   const draft = form.channelDraft(channel);
@@ -91,6 +151,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 const { CanaryContext } = await load('context.tsx');
 const { ChannelFormView, ChannelsView, eventsSummary } = await load('views/Channels.tsx');
 const { MessagingFields } = await load('views/MessagingFields.tsx');
+const { Seg } = await load('ui/forms.tsx');
 // React's static markup separates adjacent text nodes with <!-- -->; text() also drops tags, so attribute values aren't text.
 const plain = markup => markup.replaceAll('<!-- -->', '');
 const text = markup => plain(markup).replace(/<[^>]*>/gu, ' ');
@@ -104,6 +165,13 @@ const inputWith = (markup, needle) => {
   assert.ok(tag, `an input with ${needle} renders`);
   return attributes(tag);
 };
+// The UI council refinement replaces provider radio cards with native select options.
+// Keep the original protocol gating assertions against those real controls.
+const providerOption = (markup, kind) => {
+  const tag = markup.match(/<option\b[^>]*>/gu)?.find(tag => tag.includes(`value="${kind}"`));
+  assert.ok(tag, `provider option ${kind} renders`);
+  return attributes(tag);
+};
 const openTag = markup => markup.slice(0, markup.indexOf('>') + 1);
 const catalog = (list = []) => ({ list, map: new Map(list.map(entry => [entry.channel.id, entry])), loading: false, error: undefined, unsupported: false, reload() {} });
 const NODES = [{ id: 'a', name: 'Node A', state: 'local', lastSeenAt: null }];
@@ -115,6 +183,21 @@ const ctx = (list, peerProtocol) => ({
   channels: catalog(list), tags: catalog(),
 });
 const render = (element, list, peerProtocol) => plain(renderToStaticMarkup(React.createElement(CanaryContext.Provider, { value: ctx(list, peerProtocol) }, element)));
+check('segmented groups expose uniquely associated help and omit absent descriptions', () => {
+  const control = (legend, hint) => React.createElement(Seg, { legend, hint, name: legend, value: 'one', options: [{ value: 'one', label: 'One' }], onChange() {} });
+  const markup = renderToStaticMarkup(React.createElement(React.Fragment, null, control('Security', 'Encrypted relay'), control('Login', 'Joined account')));
+  const groups = [...markup.matchAll(/<fieldset\b[^>]*>[\s\S]*?<\/fieldset>/gu)];
+  assert.equal(groups.length, 2);
+  const descriptions = groups.map(([group]) => {
+    const id = attributes(group.match(/^<fieldset[^>]*>/u)[0]).get('aria-describedby');
+    assert.ok(id, 'radio group has an accessible description');
+    assert.ok(group.includes(`<small id="${id}">`), 'description resolves to its visible help');
+    return id;
+  });
+  assert.notEqual(descriptions[0], descriptions[1], 'separate groups never share a help ID');
+  const without = renderToStaticMarkup(control('No help'));
+  assert.equal(attributes(without.match(/^<fieldset[^>]*>/u)[0]).has('aria-describedby'), false);
+});
 const saved = (config, events) => ({ id: `${config.kind}-1`, revision: 'r1', updatedAt: 1, name: 'Automation', enabled: true, config, ...(events ? { events } : {}) });
 const renderForm = (channel, peerProtocol) => render(React.createElement(ChannelFormView, channel ? { id: channel.id } : {}), channel ? [{ channel, configConflict: false }] : [], peerProtocol);
 const eventsFieldset = markup => {
@@ -157,8 +240,56 @@ check('new provider fields warn before removing a stored secret and show their o
     const markup = fields(kind, errors);
     assert.ok(markup.includes('Saving removes the stored value.'), kind);
     for (const message of Object.values(errors)) assert.ok(markup.includes(message), `${kind} ${message}`);
-    assert.ok(markup.includes('id-note'), `${kind} names what picks the destination`);
+    assert.ok(text(markup).includes('Destination.'), `${kind} still explains destination identity inside its contextual reference disclosure`);
   }
+});
+check('compound ntfy and Pushover errors identify and describe the corrective input once', () => {
+  const cases = [
+    { kind: 'ntfy', changes: { ntfyAuth: 'basic', ntfyUser: 'fixture-user', ntfyPass: '' }, key: 'ntfyAuth', problem: messaging.ntfyLoginProblem, label: 'Password' },
+    { kind: 'pushover', changes: { poPriority: '2', poRetry: '60', poExpire: '30' }, key: 'emergency', problem: messaging.pushoverEmergencyProblem, label: 'Keep repeating for (seconds)' },
+  ];
+  for (const item of cases) {
+    const draft = { ...form.channelDraft(undefined), ...item.changes }, issue = item.problem(draft);
+    const markup = plain(renderToStaticMarkup(React.createElement(MessagingFields, { kind: item.kind, draft, patch() {}, errors: { [item.key]: issue.message }, stored: () => false, saving: false, formId: 'f', apiOpen: false, onApiToggle() {} })));
+    const labels = [...markup.matchAll(/<label[^>]*for="([^"]+)"[^>]*>([\s\S]*?)<\/label>/gu)];
+    const label = labels.find(match => text(match[2]).trim() === item.label);
+    assert.ok(label, item.label);
+    const attrs = attributes([...markup.matchAll(/<input\b[^>]*>/gu)].find(match => attributes(match[0]).get('id') === label[1])[0]);
+    assert.equal(attrs.get('aria-invalid'), 'true');
+    const id = attrs.get('aria-describedby').split(' ').find(id => id.endsWith('-e'));
+    assert.ok(id && markup.includes(`id="${id}"`));
+    assert.equal(text(markup).split(issue.message).length - 1, 1, 'one shared message, linked to the corrective field');
+  }
+});
+check('plain SMTP keeps retained credentials reachable and offers explicit draft removal', () => {
+  const config = { kind: 'smtp', smtp: { server: 'smtp.example.test', tlsMode: 'plain', username: 'fixture-user', password: 'private-fixture-password' } };
+  const markup = renderForm(saved(config), 22);
+  assert.ok(text(markup).includes('Remove SMTP credentials'));
+  assert.ok(markup.includes('value="fixture-user"'));
+  assert.equal(inputWith(markup, 'value="private-fixture-password"').get('type'), 'password');
+  assert.ok(!text(markup).includes('private-fixture-password'));
+});
+check('multi-destination preview results retain distinct full identities and fallback attempt IDs', () => {
+  const attempts = [
+    { id: 'attempt-one', provider: 'smtp', state: 'accepted', destinationId: 'destination-shared-prefix-one' },
+    { id: 'attempt-two', provider: 'smtp', state: 'failed', destinationId: 'destination-shared-prefix-two', errorCode: 'recipient_rejected' },
+    { id: 'attempt-three', provider: 'smtp', state: 'unknown' },
+  ];
+  const markup = text(renderToStaticMarkup(React.createElement(PreviewOutcomeList, { attempts })));
+  for (const identity of ['Destination destination-shared-prefix-one', 'Destination destination-shared-prefix-two', 'Attempt attempt-three']) assert.ok(markup.includes(identity), identity);
+});
+check('email preview labels follow acknowledgement IDs through later outcome reordering', () => {
+  const config = { kind: 'smtp', recipients: [{ email: 'z-last@example.test' }, { email: 'a-first@example.test' }] };
+  const initial = [{ id: 'first', provider: 'smtp', state: 'queued' }, { id: 'second', provider: 'smtp', state: 'queued' }];
+  const recipientLabels = previewRecipientLabels(config, initial);
+  assert.equal(recipientLabels.get('first'), 'z-last@example.test');
+  const attempts = [{ ...initial[1], state: 'failed' }, { ...initial[0], state: 'accepted' }];
+  const markup = renderToStaticMarkup(React.createElement(PreviewOutcomeList, { attempts, recipientLabels }));
+  const rows = [...markup.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gu)].map(match => text(match[1]));
+  assert.ok(rows[0].includes('a-first@example.test') && rows[0].includes('Failed'));
+  assert.ok(rows[1].includes('z-last@example.test') && rows[1].includes('Accepted'));
+  assert.equal(previewRecipientLabels(config, initial.slice(1)).size, 0, 'ambiguous response counts get IDs, not guessed addresses');
+  assert.equal(previewRecipientLabels(config, initial.map(item => ({ ...item, provider: 'webhook' }))).size, 0);
 });
 check('alert events render the stored selection, editable on protocol 22', () => {
   let fieldset = eventsFieldset(renderForm(saved(channels[0], ['down', 'recovery']), 22));
@@ -169,8 +300,31 @@ check('alert events render the stored selection, editable on protocol 22', () =>
   boxes = eventBoxes(eventsFieldset(renderForm(undefined, 22)));
   assert.ok(Object.values(boxes).every(box => box.has('checked')), 'a new channel starts with all three');
   const markup = renderForm(undefined, 22);
-  for (const kind of ['homeassistant', 'matrix']) assert.equal(inputWith(markup, `value="${kind}"`).has('disabled'), false, kind);
+  for (const kind of ['homeassistant', 'matrix']) assert.equal(providerOption(markup, kind).has('disabled'), false, kind);
   assert.equal(text(markup).includes('Needs peer protocol'), false);
+});
+check('recipient and sender validation retain the exact corrective row and control', () => {
+  const config = { kind: 'smtp', sender: { email: 'canary@example.test' }, recipients: [{ email: 'one@example.test' }, { email: 'two@example.test' }], smtp: { server: 'smtp.example.test', tlsMode: 'starttls' } };
+  const channel = saved(config), draft = form.channelDraft(channel), later = draft.recipients[1].key;
+  const cases = [
+    { ...draft, recipients: [draft.recipients[0], { ...draft.recipients[1], email: 'bad-address' }] },
+    { ...draft, recipients: [draft.recipients[0], { ...draft.recipients[1], name: 'x'.repeat(129) }] },
+    { ...draft, recipients: [draft.recipients[0], { ...draft.recipients[1], email: 'ONE@example.test' }] },
+  ];
+  for (const [index, changed] of cases.entries()) {
+    const issue = channelAddresses(changed).recipientProblem;
+    assert.equal(issue.key, later); assert.equal(issue.field, index === 1 ? 'name' : 'email');
+    assert.equal(form.buildChannel(changed, channel, 'enhanced', 22).errors.recipients, issue.message);
+  }
+  const sender = { ...draft, senderName: 'x'.repeat(129) };
+  assert.equal(channelAddresses(sender).senderProblem.field, 'name');
+  assert.equal(form.buildChannel(sender, channel, 'enhanced', 22).errors.sender, channelAddresses(sender).senderProblem.message);
+});
+check('delivery inspection preserves acknowledged email labels by attempt identity', () => {
+  const attempts = [{ id: 'attempt-one', kind: 'test', nodeId: 'a', channelId: 'preview-private', destinationId: 'destination-private', provider: 'smtp', state: 'accepted', failures: 0 }];
+  const markup = text(render(React.createElement(DeliveryTable, { attempts, compact: true, recipientLabels: new Map([['attempt-one', 'ops@example.test']]) }), [], 22));
+  assert.ok(markup.includes('ops@example.test'));
+  assert.ok(!markup.includes('channel preview-private'));
 });
 check('older or unreported protocol: read-only events with an upgrade note, and the new providers gated', () => {
   for (const protocol of [21, undefined]) {
@@ -180,12 +334,11 @@ check('older or unreported protocol: read-only events with an upgrade note, and 
     const words = text(fieldset);
     assert.ok(words.includes('Choosing events needs peer protocol 22') && words.includes('Upgrade every node in the cluster together'));
     assert.ok(words.includes(protocol ? 'reports peer protocol 21' : 'report a peer protocol'));
-    for (const kind of ['homeassistant', 'matrix']) assert.ok(inputWith(markup, `value="${kind}"`).has('disabled'), `${kind} gated at ${protocol}`);
-    for (const kind of ['discord', 'slack', 'webhook']) assert.equal(inputWith(markup, `value="${kind}"`).has('disabled'), false, kind);
+    for (const kind of ['homeassistant', 'matrix']) assert.ok(providerOption(markup, kind).has('disabled'), `${kind} gated at ${protocol}`);
+    for (const kind of ['discord', 'slack', 'webhook']) assert.equal(providerOption(markup, kind).has('disabled'), false, kind);
   }
   const stale = renderForm(saved(channels[0]), 21);
-  const radio = inputWith(stale, 'value="homeassistant"');
-  assert.ok(radio.has('checked') && !radio.has('disabled'), 'a stored provider stays selected');
+  assert.ok(text(stale).includes('Home Assistant') && text(stale).includes('Change provider'), 'a stored provider remains identified while its chooser is collapsed');
   assert.ok(text(stale).includes('Home Assistant needs peer protocol 22'));
 });
 check('channel list summarises a narrowed event selection and shows no credential', () => {
@@ -196,6 +349,27 @@ check('channel list summarises a narrowed event selection and shows no credentia
   const markup = render(React.createElement(ChannelsView), [{ channel: saved(channels[0], ['down', 'recovery']), configConflict: false }, { channel: saved(channels[1]), configConflict: false }], 22);
   assert.equal(text(markup).split('down alerts and recoveries only').length - 1, 1);
   for (const secret of ['private-ha-token', 'private-matrix-token']) assert.equal(markup.includes(secret), false, secret);
+});
+check('cached channel data has a local refresh warning and retry in both list and editor, including uncertain absence', () => {
+  const channel = saved(channels[0]);
+  const stale = ctx([{ channel, configConflict: false }], 22);
+  stale.channels.error = new apiModel.ApiFailure(503, 'fixture refresh failure');
+  const markup = element => plain(renderToStaticMarkup(React.createElement(CanaryContext.Provider, { value: stale }, element)));
+  for (const element of [React.createElement(ChannelsView), React.createElement(ChannelFormView, { id: channel.id })]) {
+    const html = markup(element);
+    assert.ok(text(html).includes('Channels could not be refreshed'));
+    assert.ok(text(html).includes('Showing the last loaded channel data'));
+    assert.ok(text(html).includes('Retry refresh'));
+  }
+  const missing = markup(React.createElement(ChannelFormView, { id: 'not-in-cached-list' }));
+  assert.ok(text(missing).includes('Channel could not be confirmed'));
+  assert.ok(!text(missing).includes('Channel not found'));
+  stale.channels.list = undefined;
+  stale.channels.map = new Map();
+  const unloaded = markup(React.createElement(ChannelFormView, { id: 'unloaded' }));
+  assert.ok(text(unloaded).includes('Channels could not be loaded'));
+  assert.ok(text(unloaded).includes('Retry loading'));
+  assert.ok(!text(unloaded).includes('Loading the channel from'));
 });
 check('unknown stored Home Assistant and Matrix keys survive an unrelated edit', () => {
   for (const config of channels) {
@@ -210,7 +384,10 @@ check('unknown stored Home Assistant and Matrix keys survive an unrelated edit',
 check('both test confirmations warn that a Home Assistant test fires a real event', () => {
   const source = readFileSync(resolve(root, 'apps/web/src/views/Channels.tsx'), 'utf8');
   assert.equal(source.split('<HaTestWarning eventType=').length - 1, 2);
-  assert.match(source, /Automations that trigger on it run and can switch real devices/u);
+  // Council copy is shorter; the real-device, test-kind and duplicate warning remains explicit.
+  assert.match(source, /test event can switch real devices/u);
+  assert.match(source, /kind=test/u);
+  assert.match(source, /Duplicates are possible: use repeat-safe actions/u);
 });
 check('Grafana dashboard: classic JSON, scoped variables and the exact exported metric names', () => {
   const dash = JSON.parse(readFileSync(resolve(root, 'deploy/observability/grafana-dashboard.json'), 'utf8'));
@@ -266,5 +443,61 @@ check('Grafana dashboard: classic JSON, scoped variables and the exact exported 
   const scrape = panels.find(panel => panel.targets.some(target => target.expr === 'up{job=~"$job"}'));
   assert.ok(scrape && /not monitored-site health/u.test(scrape.description), 'exporter reachability is labelled apart from site health');
 });
+check('native Go empty config objects reconcile with a matching interrupted save', () => {
+  const defaults = { sender: { email: '' }, smtp: { server: '', port: 0 }, mailgun: { apiKey: '', domain: '' }, brevo: { apiKey: '' }, mandrill: { apiKey: '' }, webhook: { url: '' }, templates: {} };
+  for (const config of channels) {
+    const input = { name: 'Automation', enabled: true, config };
+    const stored = { ...input, id: 'native-channel', revision: 'native-revision', updatedAt: 1, config: { ...defaults, ...config } };
+    assert.ok(sameChannelSettings(stored, input), `${config.kind}: Go's value-typed zero objects are equivalent to omitted defaults`);
+    assert.deepEqual(stored.config, { ...defaults, ...config }, 'inspection does not mutate stored settings');
+    for (const [key, value] of Object.entries(defaults)) {
+      const changed = { ...stored, config: { ...stored.config, [key]: { ...value, unknownFutureKey: false } } };
+      assert.equal(sameChannelSettings(changed, input), false, `${key}: extra fields are retained`);
+    }
+    const otherCredential = { ...stored, config: { ...stored.config, [config.kind]: { ...config[config.kind], accessToken: 'different-private-token' } } };
+    assert.equal(sameChannelSettings(otherCredential, input), false, 'credentials still participate in reconciliation');
+    const inactiveCredential = { ...stored, config: { ...stored.config, smtp: { ...defaults.smtp, password: 'private-inactive-credential' } } };
+    assert.equal(sameChannelSettings(inactiveCredential, input), false, 'nonempty inactive options are never discarded');
+  }
+});
+check('save readback compares writable settings and credentials, ignoring resource metadata and default encoding', () => {
+  const input = { name: 'Automation', enabled: true, config: channels[0] };
+  const stored = { ...input, id: 'stored', revision: 'revision', updatedAt: 1, isDefault: false, events: ['recovery', 'down', 'repeat'] };
+  assert.ok(sameChannelSettings(stored, input));
+  assert.ok(!sameChannelSettings(stored, { ...input, config: { ...channels[0], homeassistant: { ...channels[0].homeassistant, accessToken: 'different-private-value' } } }));
+  for (const change of [{ enabled: false }, { name: 'Other' }, { events: ['recovery'] }, { isDefault: true }, { futureKey: 1 }]) assert.ok(!sameChannelSettings(stored, { ...input, ...change }));
+  assert.ok(sameChannelSettings({ ...stored, futureKey: { a: 1, b: 2 } }, { ...input, futureKey: { b: 2, a: 1 } }));
+});
+// The actual API helpers run against bounded in-memory HTTP responses, never network or a database.
+{
+  const previousFetch = globalThis.fetch, previousLocation = globalThis.location;
+  const channel = { id: 'stored', revision: 'new-revision', updatedAt: 1, name: 'Automation', enabled: true, config: channels[0] };
+  let response;
+  globalThis.location = new URL('https://dashboard.example.test');
+  globalThis.fetch = async () => new Response(JSON.stringify(response), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  try {
+    const client = new apiModel.CanaryApi('https://node.example.test', 'private-fixture-token');
+    response = channel; assert.equal((await client.createChannel(channel)).id, 'stored');
+    assert.equal((await client.updateChannel('stored', channel)).revision, 'new-revision');
+    for (response of [null, {}, { ...channel, id: '' }, { ...channel, revision: '' }, { ...channel, config: {} }, { ...channel, deleted: true }, { ...channel, events: [['down']] }]) {
+      await assert.rejects(() => client.createChannel(channel), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    }
+    response = { ...channel, id: 'another-channel' };
+    await assert.rejects(() => client.updateChannel('stored', channel), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    for (response of [null, {}, [{ channel }], [{ channel, configConflict: false }, { channel, configConflict: false }]]) {
+      await assert.rejects(() => client.channels(), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    }
+    response = [{ channel, configConflict: false }]; assert.equal((await client.channels())[0].channel.id, 'stored');
+    response = []; assert.deepEqual(await client.channels(), []);
+    const attempt = { id: 'attempt', nodeId: 'a', kind: 'down', provider: 'homeassistant', state: 'queued', failures: 0 };
+    for (response of [null, {}, ['bad'], [{}], [{ ...attempt, failures: '0' }], [{ ...attempt, held: 'yes' }], [attempt, attempt]]) {
+      await assert.rejects(() => client.deliveries(), error => error instanceof apiModel.ApiFailure && error.status === 200);
+    }
+    response = []; assert.deepEqual(await client.deliveries(), [], 'a real empty array remains a successful empty read');
+    response = [attempt]; assert.deepEqual(await client.deliveries(), [attempt]);
+    check('malformed delivery responses surface as read failures rather than empty results', () => {});
+    check('save acknowledgements and catalogue reconciliation reject unreadable identities and malformed lists', () => {});
+  } finally { globalThis.fetch = previousFetch; globalThis.location = previousLocation; }
+}
 console.log(`${passed} automation integration contract checks passed`);
 scope.unregister();

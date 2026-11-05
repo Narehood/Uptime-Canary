@@ -44,6 +44,34 @@ export class ApiFailure extends Error {
   }
 }
 
+/** Delivery reads are arrays of identifiable attempts; unreadable JSON is never an empty successful read. */
+export function readDeliveryAttempts(value: unknown): DeliveryAttemptView[] | undefined {
+  if (!Array.isArray(value) || value.length > 1000) return undefined;
+  const states = new Set(['queued', 'sending', 'retrying', 'accepted', 'held', 'failed', 'cancelled', 'unknown', 'unavailable']);
+  const ids = new Set<string>();
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.id !== 'string' || !item.id || ids.has(item.id)
+      || typeof item.nodeId !== 'string' || !item.nodeId || typeof item.provider !== 'string' || !item.provider
+      || typeof item.kind !== 'string' || !['test', 'down', 'repeat', 'recovery'].includes(item.kind) || typeof item.state !== 'string' || !states.has(item.state)
+      || !Number.isInteger(item.failures) || (item.failures as number) < 0) return undefined;
+    for (const key of ['channelId', 'destinationId', 'monitorId', 'incidentId', 'sourceIncidentId', 'satisfiedByReceiptId', 'errorCode', 'providerId'] as const) {
+      if (item[key] !== undefined && typeof item[key] !== 'string') return undefined;
+    }
+    for (const key of ['httpStatus', 'lastAttemptAt', 'nextAttemptAt', 'slot'] as const) {
+      if (item[key] !== undefined && (typeof item[key] !== 'number' || !Number.isFinite(item[key]))) return undefined;
+    }
+    if (item.held !== undefined && typeof item.held !== 'boolean') return undefined;
+    ids.add(item.id);
+  }
+  return value as DeliveryAttemptView[];
+}
+
+/** A queue acknowledgement additionally requires a nonempty bounded one-shot batch. */
+export function readChannelTestAttempts(value: unknown): DeliveryAttemptView[] | undefined {
+  const attempts = readDeliveryAttempts(value);
+  return attempts && attempts.length > 0 && attempts.length <= 50 && attempts.every(attempt => attempt.kind === 'test') ? attempts : undefined;
+}
+
 export function normalizeApiUrl(input: string): string {
   let url: URL;
   try { url = new URL(input.trim()); }
@@ -100,6 +128,18 @@ export const codeProblem = (code: string): string | undefined => /^\d{6}$/u.test
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const list = <T>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+/** A save acknowledgement/readback needs resource identity and revision, not merely any JSON object. */
+export function readSavedChannel(value: unknown): NotificationChannel | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || !value.id || typeof value.revision !== 'string' || !value.revision
+    || typeof value.name !== 'string' || !value.name.trim() || typeof value.enabled !== 'boolean'
+    || typeof value.updatedAt !== 'number' || !Number.isFinite(value.updatedAt) || value.updatedAt < 0
+    || !isRecord(value.config) || typeof value.config.kind !== 'string' || !value.config.kind
+    || value.deleted !== undefined && typeof value.deleted !== 'boolean'
+    || value.isDefault !== undefined && typeof value.isDefault !== 'boolean'
+    || value.events !== undefined && (!Array.isArray(value.events) || !value.events.length || value.events.some(item => typeof item !== 'string' || !['down', 'repeat', 'recovery'].includes(item)))) return null;
+  return value as unknown as NotificationChannel;
+}
 const isRole = (value: unknown): value is Role => value === 'admin' || value === 'editor' || value === 'viewer';
 
 /**
@@ -754,11 +794,20 @@ export class CanaryApi {
     return shot;
   }
   async channels(signal?: AbortSignal): Promise<NotificationChannelView[]> {
-    return list(await this.call<unknown>('/api/notification-channels', 'GET', undefined, signal));
+    const value = await this.call<unknown>('/api/notification-channels', 'GET', undefined, signal);
+    if (!Array.isArray(value) || value.some(view => !isRecord(view) || typeof view.configConflict !== 'boolean' || !readSavedChannel(view.channel))
+      || new Set(value.map(view => view.channel.id)).size !== value.length) throw new ApiFailure(200, 'The node sent a channel list this dashboard could not read.');
+    return value as NotificationChannelView[];
   }
-  createChannel(input: NotificationChannelInput): Promise<NotificationChannel> { return this.call('/api/notification-channels', 'POST', input); }
-  updateChannel(id: string, input: NotificationChannelInput & { revision: string }): Promise<NotificationChannel> {
-    return this.call(`/api/notification-channels/${encodeURIComponent(id)}`, 'PUT', input);
+  async createChannel(input: NotificationChannelInput): Promise<NotificationChannel> {
+    const saved = readSavedChannel(await this.call<unknown>('/api/notification-channels', 'POST', input));
+    if (!saved || saved.deleted || saved.name !== input.name || saved.enabled !== input.enabled || saved.config.kind !== input.config.kind) throw new ApiFailure(200, 'The node sent a save acknowledgement this dashboard could not read.');
+    return saved;
+  }
+  async updateChannel(id: string, input: NotificationChannelInput & { revision: string }): Promise<NotificationChannel> {
+    const saved = readSavedChannel(await this.call<unknown>(`/api/notification-channels/${encodeURIComponent(id)}`, 'PUT', input));
+    if (!saved || saved.id !== id || saved.deleted || saved.name !== input.name || saved.enabled !== input.enabled || saved.config.kind !== input.config.kind) throw new ApiFailure(200, 'The node sent a save acknowledgement this dashboard could not read.');
+    return saved;
   }
   deleteChannel(id: string, revision: string): Promise<void> { return this.call(`/api/notification-channels/${encodeURIComponent(id)}`, 'DELETE', { revision }); }
   async channelConflicts(id: string, signal?: AbortSignal): Promise<NotificationChannel[]> {
@@ -767,8 +816,11 @@ export class CanaryApi {
   resolveChannel(id: string, input: NotificationChannelInput & { revisions: string[] }): Promise<NotificationChannel> {
     return this.call(`/api/notification-channels/${encodeURIComponent(id)}/resolve`, 'POST', input);
   }
-  testChannel(id: string, revision: string): Promise<{ attempts: DeliveryAttemptView[] }> {
-    return this.call(`/api/notification-channels/${encodeURIComponent(id)}/test`, 'POST', { revision });
+  async testChannel(id: string, revision: string): Promise<{ attempts: DeliveryAttemptView[] }> {
+    const value = await this.call<unknown>(`/api/notification-channels/${encodeURIComponent(id)}/test`, 'POST', { revision });
+    const attempts = readChannelTestAttempts(isRecord(value) ? value.attempts : undefined);
+    if (!attempts || attempts.some(attempt => attempt.channelId !== id)) throw new ApiFailure(200, 'The node sent a test submission reply this dashboard could not read.');
+    return { attempts };
   }
   /**
    * Editors and admins (protocol 19): one test send with settings that aren't saved, disabled ones included. The node
@@ -778,8 +830,9 @@ export class CanaryApi {
   async previewChannelTest(input: NotificationChannelInput, signal?: AbortSignal): Promise<{ attempts: DeliveryAttemptView[] }> {
     const value = await this.call<unknown>('/api/notification-channels/preview-test', 'POST', input, signal);
     const reply = typeof value === 'object' && value !== null ? value as { preview?: unknown; attempts?: unknown } : {};
-    if (reply.preview !== true || !Array.isArray(reply.attempts)) throw new ApiFailure(200, 'The node didn’t confirm a test of unsaved settings. Nothing was saved.');
-    return { attempts: reply.attempts as DeliveryAttemptView[] };
+    const attempts = readChannelTestAttempts(reply.attempts);
+    if (reply.preview !== true || !attempts) throw new ApiFailure(200, 'The node did not confirm a test of unsaved settings. Nothing was saved.');
+    return { attempts };
   }
   /**
    * Editors and admins (protocol 19): adds this channel to the named monitors, keeping their other destinations, in one
@@ -790,13 +843,15 @@ export class CanaryApi {
   async applyChannel(id: string, revision: string, monitors: { id: string; revision: string }[]): Promise<{ changedIds: string[] }> {
     const value = await this.call<unknown>(`/api/notification-channels/${encodeURIComponent(id)}/apply`, 'POST', { revision, monitors: monitors.map(m => ({ id: m.id, revision: m.revision })) });
     const changed = typeof value === 'object' && value !== null ? (value as { changedIds?: unknown }).changedIds : undefined;
-    if (!Array.isArray(changed) || !changed.every(item => typeof item === 'string')) throw new ApiFailure(200, 'The node applied the channel but sent a reply this dashboard could not read. Refresh to see the monitors.');
+    if (!Array.isArray(changed) || !changed.every(item => typeof item === 'string')) throw new ApiFailure(200, 'The node sent an assignment acknowledgement this dashboard could not read. Refresh to see the monitors.');
     return { changedIds: changed as string[] };
   }
   async deliveries(options: { monitorId?: string; incidentId?: string; limit?: number } = {}, signal?: AbortSignal): Promise<DeliveryAttemptView[]> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(options)) if (value !== undefined) query.set(key, String(value));
-    return list(await this.call<unknown>(`/api/notification-deliveries?${query}`, 'GET', undefined, signal));
+    const attempts = readDeliveryAttempts(await this.call<unknown>(`/api/notification-deliveries?${query}`, 'GET', undefined, signal));
+    if (!attempts) throw new ApiFailure(200, 'The node sent delivery attempts this dashboard could not read.');
+    return attempts;
   }
   async maintenance(signal?: AbortSignal): Promise<MaintenanceView[]> { return list(await this.call<unknown>('/api/maintenance', 'GET', undefined, signal)); }
   createMaintenance(input: MaintenanceInput): Promise<Maintenance> { return this.call('/api/maintenance', 'POST', input); }

@@ -147,10 +147,22 @@ window.__field = (label, scope) => { const root = scope ? document.querySelector
 window.__set = (e,v) => { const p = e.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : e.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(p,'value').set.call(e,v); e.dispatchEvent(new Event(e.tagName === 'SELECT' ? 'change' : 'input',{bubbles:true})); };
 window.__button = (label,scope) => { const root = scope ? document.querySelector(scope) : document; const all = [...root.querySelectorAll('button,a')].filter(e => __vis(e) && [__norm(e.innerText),__norm(e.getAttribute('aria-label'))].includes(label)); if(all.length !== 1) throw Error('button '+label+' matched '+all.length); return all[0]; }; true;`;
 async function ready() { await page.eval(DOM); }
-async function nav(hash) { await page.eval(`location.hash=${J(hash)}`); await sleep(180); await ready(); }
+async function nav(hash) {
+  await page.eval(`location.hash=${J(hash)}`); await ready();
+  // A new raw fragment is unindexed until the router accepts it. A guarded route restores its prior hash.
+  // Wait for that acceptance or this exact owned prompt, including a delayed dialog render.
+  await until(() => page.eval(`document.querySelector('dialog[open] h2')?.textContent === 'Discard unsaved channel changes?' || location.hash === ${J(hash)} && Number.isSafeInteger(history.state?.canaryRouteIndex)`), 'accepted fixture route or discard prompt');
+  // Existing fixture cases intentionally leave scratch edits. The channel editor now protects real
+  // users from that navigation; explicitly discard only this exact owned-fixture confirmation.
+  if (await page.eval(`document.querySelector('dialog[open] h2')?.textContent === 'Discard unsaved channel changes?'`)) {
+    await click('Discard changes', 'dialog[open]');
+    await until(() => page.eval(`location.hash === ${J(hash)}`), 'fixture navigation after explicit discard');
+    await ready();
+  }
+}
 async function fill(label, value, scope) { await ready(); await page.eval(`__set(__field(${J(label)},${J(scope)}),${J(value)})`); await sleep(45); }
 async function click(label, scope) { await ready(); await page.eval(`(() => { const e=__button(${J(label)},${J(scope)}); if(e.disabled) throw Error('disabled'); e.click(); })()`); await sleep(120); }
-async function choose(label, scope) { await page.eval(`(() => { const r=${scope ? `document.querySelector(${J(scope)})` : 'document'}; const e=[...r.querySelectorAll('label')].find(e => __vis(e) && __norm(e.innerText).startsWith(${J(label)}) && e.querySelector('input[type=radio],input[type=checkbox]')); if(!e) throw Error('choice missing'); e.querySelector('input').click(); })()`); await sleep(50); }
+async function choose(label, scope) { await page.eval(`(() => { const r=${scope ? `document.querySelector(${J(scope)})` : 'document'}; const e=[...r.querySelectorAll('label')].find(e => __vis(e) && __norm(e.innerText).startsWith(${J(label)}) && e.querySelector('input[type=radio],input[type=checkbox]')); if(e) { e.querySelector('input').click(); return; } const select=r.querySelector('select[aria-label="Provider"]'); const option=select && [...select.options].find(o => o.label === ${J(label)} || o.label.startsWith(${J(label)}+' ?')); if(!option || option.disabled) throw Error('choice missing or disabled'); __set(select,option.value); })()`); await sleep(50); }
 async function text(s, timeout) { return until(() => page.eval(`document.body.innerText.includes(${J(s)})`), `text ${s}`, timeout); }
 async function heading(s) { return until(() => page.eval(`document.querySelector('main h1')?.textContent.includes(${J(s)})`), `heading ${s}`); }
 async function disclose(s) { await page.eval(`(() => { const e=[...document.querySelectorAll('.disc-h')].find(e => __norm(e.querySelector('.disc-t')?.textContent) === ${J(s)}); if(!e) throw Error('disclosure missing'); if(e.getAttribute('aria-expanded') !== 'true') e.click(); })()`); await sleep(70); }
@@ -696,12 +708,16 @@ async function finishReview() {
 // are attached and test confirmations are cancelled before provider I/O.
 async function automationBrowserReview() {
   const [A] = state.nodes;
+  const jsonReplyHeaders = paused => [{ name: 'Content-Type', value: 'application/json' }, {
+    name: 'Access-Control-Allow-Origin', value: String(Object.entries(paused.request.headers ?? {}).find(([key]) => key.toLowerCase() === 'origin')?.[1] ?? '*'),
+  }];
   await launchBrowser();
   await step('Automation browser: sign in', () => signIn(A));
   for (const kind of ['homeassistant', 'matrix']) {
     await step(`Automation browser: create, rename and select events for ${kind}`, async () => {
       const name = `Browser ${kind}`, token = secret(); secrets.add(token);
       await nav('#/channels/new'); await heading('New channel');
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'pristine channel creation has no error summary');
       await fill('Name', name);
       await choose(kind === 'homeassistant' ? 'Home Assistant' : 'Matrix');
       if (kind === 'homeassistant') {
@@ -723,11 +739,23 @@ async function automationBrowserReview() {
       assert.equal(saved.config[kind].accessToken, token);
       const config = structuredClone(saved.config);
       await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'pristine channel editing has no error summary');
       const tokenLabel = kind === 'homeassistant' ? 'Long-lived access token' : 'Access token';
       assert.equal(await page.eval(`__field(${J(tokenLabel)}).type`), 'password');
       assert.equal(await page.eval(`document.body.innerText.includes(${J(token)})`), false);
       await fill('Name', name + ' renamed');
+      await page.eval(`document.querySelector('main a[href="#/notifications"]').click()`);
+      await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), name + ' renamed', 'declining navigation keeps the draft');
+      await page.eval('history.back()');
+      await text('Discard unsaved channel changes?');
+      await until(() => page.eval(`location.hash === ${J(`#/channels/${saved.id}/edit`)}`), 'Back restores the mounted editor');
+      await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), name + ' renamed', 'declining Back keeps the draft');
+      await choose('Repeats'); // First enable it so clearing down proves the UI dependency.
       await choose('Down alerts');
+      assert.deepEqual(await page.eval(`(() => { const field = label => [...document.querySelectorAll('input[type=checkbox]')].find(e => [...e.labels].some(l => __norm(l.innerText).startsWith(label))); const repeat = field('Repeats'); return { down: field('Down alerts').checked, repeat: repeat.checked, repeatDisabled: repeat.disabled, recovery: field('Recoveries').checked }; })()`), { down: false, repeat: false, repeatDisabled: true, recovery: true });
       await click('Save changes'); await heading('Notifications');
       saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
       assert.deepEqual(saved.config, config, 'rename preserves provider settings');
@@ -736,6 +764,9 @@ async function automationBrowserReview() {
       await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
       await choose('Recoveries'); await click('Save changes');
       await text('Select at least one event.');
+      assert.equal(await page.eval(`document.activeElement === document.querySelector('.errsum')`), true, 'invalid selection focuses the error summary');
+      await page.eval(`document.querySelector('.errsum button').click()`);
+      assert.equal(await page.eval(`[...document.activeElement.labels || []].some(l => __norm(l.innerText).startsWith('Down alerts'))`), true, 'summary link focuses the event control');
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, revision, 'invalid selection saves nothing');
       await choose('Recoveries'); await choose('Down alerts'); await choose('Repeats');
       await click('Save changes'); await heading('Notifications');
@@ -743,13 +774,282 @@ async function automationBrowserReview() {
       assert.equal(saved.events, undefined, 'all events retain the omitted default');
       if (kind === 'homeassistant') {
         await page.eval(`(() => { const row=[...document.querySelectorAll('.chan-list li')].find(row => row.querySelector('.t b')?.textContent === ${J(name + ' renamed')}); [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Test').click(); })()`);
-        await text('This fires a real');
+        await text('test event can switch real devices');
         await click('Cancel', 'dialog[open]');
       }
+      // These UI failures are simulated at the browser's API boundary. The real node receives no test POST,
+      // so the fixture proves draft-safe recovery without sending even a loopback provider notification.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const unsavedName = name + ' private draft';
+      await fill('Name', unsavedName);
+      await page.eval(`document.querySelector('.topbar .tb-btn').click()`);
+      await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'endpoint switching consults the draft guard');
+      await page.eval(`document.querySelector('button[aria-label="Disconnect"]').click()`);
+      await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'disconnect consults the draft guard');
+      const originalHook = requestHook;
+      let injectAttempts = false, malformedAttemptRead = false;
+      requestHook = async paused => {
+        if (paused.request.url === A.url + '/api/notification-channels/preview-test' && paused.request.method === 'POST') {
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 202,
+            responseHeaders: jsonReplyHeaders(paused),
+            body: Buffer.from(JSON.stringify({ fixture: true, acknowledgementUnreadable: true })).toString('base64') });
+          return true;
+        }
+        if (injectAttempts && paused.request.method === 'GET' && paused.request.url.startsWith(A.url + '/api/notification-deliveries?')) {
+          const attempts = [{ id: `private-${kind}-readback`, nodeId: A.id, kind: 'test', channelId: saved.id,
+            destinationId: 'private-readback-destination', provider: kind, state: 'queued', failures: 0 }];
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 200,
+            responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify(malformedAttemptRead ? {} : attempts)).toString('base64') });
+          return true;
+        }
+        return Boolean(await originalHook?.(paused));
+      };
+      try {
+        await click('Test these settings'); await text('Test these settings?');
+        await click('Send test', 'dialog[open]'); await text('Test submission unconfirmed');
+        assert.equal(await page.eval(`document.activeElement === document.querySelector('dialog[open] .modal-h h2')`), true, 'submission results receive keyboard focus');
+        assert.equal(await page.eval(`!![...document.querySelectorAll('dialog[open] button')].find(button => button.textContent.trim() === 'Send test')`), false, 'unknown submission offers no immediate resend');
+        await click('View delivery attempts', 'dialog[open]'); await text('Your channel settings stay in the form.');
+        assert.equal(await page.eval(`location.hash`), `#/channels/${saved.id}/edit`, 'inspection does not leave the editor');
+        assert.equal(await page.eval(`__field('Name').value`), unsavedName, 'inspection preserves the unsaved draft');
+        await text('No matching attempts in this recent view.');
+        injectAttempts = true;
+        await click('Refresh attempts', 'dialog[open]');
+        await until(() => page.eval(`document.querySelector('dialog .deliveries tbody')?.innerText.includes(${J(saved.name)})`), 'inspection displays the injected private attempt');
+        malformedAttemptRead = true;
+        await click('Refresh attempts', 'dialog[open]'); await text('Attempt refresh failed');
+        assert.equal(await page.eval(`document.querySelector('dialog .deliveries tbody').innerText.includes(${J(saved.name)})`), true, 'unreadable refresh retains last loaded rows');
+        await click('Back to test status', 'dialog[open]'); await text('Test submission unconfirmed');
+        await page.eval(`document.querySelector('dialog[open] .modal-h button').click()`);
+      } finally { requestHook = originalHook; }
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'unsaved test recovery never changes the stored revision');
+      await nav('#/notifications'); await heading('Notifications');
       assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'opening a confirmation sends nothing');
-      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, allEventsRestored: true, realSends: 0 };
+      // Commit on the real private Go node, then replace only its browser acknowledgement.
+      // A readback must recover the stored resource without a second write or any provider send.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const recoveredName = name + ' recovered save', beforeSaveHook = requestHook;
+      let committed, interruptedWrites = 0, mismatchedAcknowledgement = false;
+      requestHook = async paused => {
+        if (paused.request.url === A.url + '/api/notification-channels/' + saved.id && paused.request.method === 'PUT') {
+          interruptedWrites++;
+          committed = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', JSON.parse(paused.request.postData));
+          const reply = committed.status === 200 ? mismatchedAcknowledgement ? structuredClone(committed.value) : { acknowledgementUnreadable: true } : committed.value;
+          if (committed.status === 200 && mismatchedAcknowledgement) reply.config[kind].accessToken = 'private-mismatched-acknowledgement';
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: committed.status,
+            responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify(reply)).toString('base64') });
+          return true;
+        }
+        return Boolean(await beforeSaveHook?.(paused));
+      };
+      try {
+        await fill('Name', recoveredName); await click('Save changes'); await text('Save unconfirmed');
+        await text('Stored settings, including credentials, match your current draft.');
+        assert.equal(await page.eval(`__field('Name').value`), recoveredName);
+        assert.equal(await page.eval(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save changes').disabled`), true);
+        await click('Use this stored channel'); await heading('Notifications');
+        assert.equal(interruptedWrites, 1, 'readback does not repeat the update');
+        assert.equal(committed.status, 200);
+        saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+        assert.equal(saved.name, recoveredName); assert.deepEqual(saved.config, config);
+        // A structurally valid acknowledgement with different credentials is also unconfirmed.
+        mismatchedAcknowledgement = true;
+        await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+        await fill('Name', name + ' mismatched acknowledgement'); await click('Save changes'); await text('Save unconfirmed');
+        assert.equal(await page.eval(`__field('Name').value`), name + ' mismatched acknowledgement');
+        await text('Stored settings, including credentials, match your current draft.');
+        await click('Use this stored channel'); await heading('Notifications');
+        assert.equal(interruptedWrites, 2, 'each interrupted update is written only once');
+        saved = (await api(A, `/api/notification-channels/${saved.id}`)).value;
+        assert.deepEqual(saved.config, config);
+      } finally { requestHook = beforeSaveHook; }
+      // A 409 recovery must read current node data, not discard edits into the cached old revision.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      await fill('Name', name + ' conflict draft');
+      const concurrent = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', {
+        name: name + ' changed elsewhere', enabled: saved.enabled, config: saved.config, revision: saved.revision,
+      });
+      assert.equal(concurrent.status, 200, concurrent.text);
+      await click('Save changes'); await text('Load latest (discards your edits)');
+      await click('Load latest (discards your edits)', '.channel-editor .errsum');
+      await until(() => page.eval(`__field('Name').value === ${J(name + ' changed elsewhere')}`), 'conflict recovery reads fresh settings');
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'successful conflict recovery clears its error summary');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, concurrent.value.revision, 'loading latest never writes');
+      saved = concurrent.value;
+      // The background-change banner has no preceding save failure: failed latest reads must still be visible.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      const backgroundDraft = name + ' background draft', backgroundName = name + ' changed again';
+      await fill('Name', backgroundDraft);
+      const background = await api(A, `/api/notification-channels/${saved.id}`, 'PUT', {
+        name: backgroundName, enabled: saved.enabled, config: saved.config, revision: saved.revision,
+      });
+      assert.equal(background.status, 200, background.text);
+      await until(() => page.eval(`document.body.innerText.includes('while you were editing')`), 'background catalogue update', 30000);
+      const actualViews = (await api(A, '/api/notification-channels')).value, beforeLatestHook = requestHook;
+      let latestMode = 'unavailable';
+      requestHook = async paused => {
+        if (paused.request.url === A.url + '/api/notification-channels' && paused.request.method === 'GET') {
+          const value = latestMode === 'unavailable' ? { error: 'Private latest read unavailable' } : latestMode === 'missing' ? []
+            : actualViews.map(view => view.channel.id === saved.id ? { ...view, configConflict: true } : view);
+          await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: latestMode === 'unavailable' ? 503 : 200,
+            responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify(value)).toString('base64') });
+          return true;
+        }
+        return Boolean(await beforeLatestHook?.(paused));
+      };
+      try {
+        for (latestMode of ['unavailable', 'conflicting', 'missing']) {
+          await click('Load latest (discards your edits)', latestMode === 'unavailable' ? '.channel-editor > .banner' : '.channel-editor .errsum');
+          await text('Latest settings could not be loaded');
+          assert.equal(await page.eval(`__field('Name').value`), backgroundDraft, 'failed background latest read retains the draft');
+          assert.equal(await page.eval(`document.activeElement === document.querySelector('.errsum')`), true, 'latest-read errors receive focus without a prior Save');
+        }
+      } finally { requestHook = beforeLatestHook; }
+      await click('Load latest (discards your edits)', '.channel-editor .errsum');
+      await until(() => page.eval(`__field('Name').value === ${J(backgroundName)}`), 'background latest read recovers');
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'successful background recovery clears its error summary');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, background.value.revision, 'latest read retries never write');
+      saved = background.value;
+      // A catalogue change is not a navigation decision: keep the exact mounted field and its dirty draft.
+      await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      await fill('Name', name + ' retained after deletion');
+      await page.eval(`window.__retainedChannelField = __field('Name'); true`);
+      const removed = await api(A, `/api/notification-channels/${saved.id}`, 'DELETE', { revision: saved.revision });
+      assert.ok([200, 204].includes(removed.status), removed.text);
+      await until(() => page.eval(`document.body.innerText.includes('Channel no longer listed')`), 'catalogue deletion is visible without unmounting the editor', 35000);
+      assert.equal(await page.eval(`window.__retainedChannelField === __field('Name')`), true);
+      assert.equal(await page.eval(`__field('Name').value`), name + ' retained after deletion');
+      assert.equal(await page.eval(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save changes').disabled`), true);
+      await nav('#/notifications'); await heading('Notifications');
+      assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0, 'save readback and deletion recovery send no notifications');
+      return { created: true, maskedToken: true, recoveryOnly: true, invalidSelectionRefused: true, dependentRepeatsCleared: true, errorNavigation: true, unsavedDraftRetained: true, contextChangeHeld: true, uncertainInspectionKeepsDraft: true, unreadableReadRetainsAttempts: true, uncertainSaveReadback: true, deletedChannelDraftRetained: true, allEventsRestored: true, realSends: 0 };
     });
   }
+  await step('Automation browser: guarded history preserves indexed entries across same-hash traversal and unindexed gaps', async () => {
+    const token = secret(); secrets.add(token);
+    const made = await api(A, '/api/notification-channels', 'POST', {
+      name: 'Browser navigation history', enabled: true,
+      config: { kind: 'homeassistant', homeassistant: { baseURL: state.sink + '/ha', accessToken: token, eventType: 'uptime_canary', allowInsecureHTTP: true } },
+    });
+    assert.equal(made.status, 201, made.text);
+    const saved = made.value, edit = `#/channels/${saved.id}/edit`;
+    const second = await api(A, '/api/notification-channels', 'POST', { name: 'Browser navigation history B', enabled: true, config: saved.config });
+    assert.equal(second.status, 201, second.text);
+    const editB = `#/channels/${second.value.id}/edit`;
+    const mark = value => page.eval(`history.replaceState({...history.state, reviewEntry:${J(value)}}, ''); true`);
+    const at = (value, target = edit) => until(() => page.eval(`history.state?.reviewEntry === ${J(value)} && location.hash === ${J(target)}`), `restored history entry ${value}`);
+    try {
+      await nav('#/notifications'); await heading('Notifications');
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('early-editor');
+      await nav('#/notifications'); await heading('Notifications');
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('late-editor');
+      await fill('Name', 'Keep the multi-entry draft');
+      await page.eval('history.go(-2)'); await at('early-editor');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('early-editor');
+      assert.equal(await page.eval(`__field('Name').value`), 'Keep the multi-entry draft');
+      await page.eval('history.forward()'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('early-editor');
+      await nav('#/notifications'); await heading('Notifications');
+      for (const multiEntry of [false, true]) {
+        await nav(edit); await heading(`Edit ${saved.name}`);
+        const entry = multiEntry ? 'gap-multi-editor' : 'gap-single-editor';
+        await mark(entry); await fill('Name', 'Keep the unindexed-gap draft');
+        await page.eval(`window.__historyDraftField = __field('Name'); location.hash = '#/incidents'`);
+        await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]');
+        if (!multiEntry) { await page.eval('history.back()'); await at(entry); }
+        await page.eval(multiEntry ? 'history.go(-2)' : 'history.back()');
+        await text('Discard unsaved channel changes?'); await click('Keep editing', 'dialog[open]'); await at(entry);
+        assert.equal(await page.eval(`window.__historyDraftField === __field('Name')`), true, 'history restoration retains the mounted draft');
+        await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+        await click('Discard changes', 'dialog[open]'); await heading('Notifications');
+        assert.equal(await page.eval('location.hash'), '#/notifications', 'the indexed Back destination keeps its original URL');
+      }
+      await nav(edit); await heading(`Edit ${saved.name}`); await fill('Name', 'Discard A after its held fragment');
+      await page.eval(`location.hash = '#/incidents'`); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]');
+      await nav(editB); await heading(`Edit ${second.value.name}`);
+      await mark('editor-b'); await fill('Name', 'Keep editor B draft');
+      await page.eval('history.go(-2)'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('editor-b', editB);
+      assert.equal(await page.eval(`__field('Name').value`), 'Keep editor B draft', 'a held slot does not shift the next accepted entry index');
+      await page.eval('history.go(-2)'); await text('Discard unsaved channel changes?');
+      await click('Discard changes', 'dialog[open]'); await heading(`Edit ${saved.name}`);
+      await nav('#/notifications'); await heading('Notifications');
+      // Keep the original pending Back decision when another raw fragment is held before Discard.
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('pending-move-editor');
+      await fill('Name', 'Pending traversal draft');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?'); await at('pending-move-editor');
+      await page.eval(`location.hash = '#/incidents'`);
+      await until(() => page.eval(`location.hash === ${J(edit)} && !history.state?.reviewEntry`), 'intervening held fragment');
+      await click('Discard changes', 'dialog[open]'); await heading('Notifications');
+      // Controlled late opening exercises nav itself; no clock or acceptance deadline is extended.
+      await nav(edit); await heading(`Edit ${saved.name}`); await fill('Name', 'Delayed prompt fixture draft');
+      await page.eval(`(() => { window.__nativeShowModal = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { const dialog = this; if (dialog.querySelector('h2')?.textContent === 'Discard unsaved channel changes?') setTimeout(() => { if (dialog.isConnected) window.__nativeShowModal.call(dialog); }, 900); else window.__nativeShowModal.call(dialog); }; })()`);
+      try { await nav('#/notifications'); await heading('Notifications'); }
+      finally { await page.eval('HTMLDialogElement.prototype.showModal = window.__nativeShowModal'); }
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('deferred-source');
+      await fill('Name', 'Discard after Back while the prompt stays open');
+      await page.eval(`location.hash = '#/incidents'`); await text('Discard unsaved channel changes?'); await mark('held-fragment');
+      await page.eval('history.back()'); await at('deferred-source');
+      await click('Discard changes', 'dialog[open]'); await heading('Incidents');
+      await page.eval('history.forward()'); await at('held-fragment'); await heading(`Edit ${saved.name}`);
+      await fill('Name', 'Keep the next draft');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+      await click('Keep editing', 'dialog[open]'); await at('held-fragment');
+      assert.equal(await page.eval(`__field('Name').value`), 'Keep the next draft');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?');
+      await click('Discard changes', 'dialog[open]'); await heading('Incidents');
+      assert.equal(await page.eval('location.hash'), '#/incidents', 'deferred discard preserves the original Incidents entry');
+      await nav('#/notifications'); await heading('Notifications');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'history decisions never save');
+      assert.equal((await api(A, `/api/notification-channels/${second.value.id}`)).value.revision, second.value.revision, 'editor B also remains unsaved');
+      assert.equal((await api(A, '/api/notification-deliveries')).value.length, 0);
+    } finally {
+      await api(A, `/api/notification-channels/${saved.id}`, 'DELETE', { revision: saved.revision });
+      await api(A, `/api/notification-channels/${second.value.id}`, 'DELETE', { revision: second.value.revision });
+    }
+    return { sameHashTraversalPreserved: true, unindexedGapBackPreserved: true, multiEntryGapPreserved: true, heldSlotThenNavigation: true, realSends: 0 };
+  });
+  await step('Automation browser: rejected-sign-in Leave preserves a dirty draft until discard', async () => {
+    const token = secret(); secrets.add(token);
+    const made = await api(A, '/api/notification-channels', 'POST', {
+      name: 'Browser rejected-sign-in draft', enabled: true,
+      config: { kind: 'homeassistant', homeassistant: { baseURL: state.sink + '/ha', accessToken: token, eventType: 'uptime_canary', allowInsecureHTTP: true } },
+    });
+    assert.equal(made.status, 201, made.text);
+    const saved = made.value, originalHook = requestHook;
+    await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+    await fill('Name', 'Retain this rejected-sign-in draft');
+    await page.eval(`window.__rejectedSignInDraft = __field('Name'); true`);
+    // The private Go node remains authenticated; only this browser's overview read is refused.
+    requestHook = async paused => {
+      if (paused.request.method === 'GET' && paused.request.url === A.url + '/api/overview') {
+        await page.send('Fetch.fulfillRequest', { requestId: paused.requestId, responseCode: 401,
+          responseHeaders: jsonReplyHeaders(paused), body: Buffer.from(JSON.stringify({ error: 'Private browser credential rejection fixture.' })).toString('base64') });
+        return true;
+      }
+      return Boolean(await originalHook?.(paused));
+    };
+    try {
+      await text('rejected this tab');
+      await click('Leave'); await text('Discard unsaved channel changes?');
+      assert.equal(await page.eval(`getComputedStyle(document.querySelector('dialog[open]')).opacity`), '1', 'the stale-data treatment does not fade the decision dialog');
+      await click('Keep editing', 'dialog[open]');
+      assert.equal(await page.eval(`window.__rejectedSignInDraft === __field('Name')`), true, 'keeping the draft retains its mounted field');
+      assert.equal(await page.eval(`__field('Name').value`), 'Retain this rejected-sign-in draft');
+      await click('Leave'); await text('Discard unsaved channel changes?');
+      await click('Discard changes', 'dialog[open]'); await text('Signed out of this tab.');
+      assert.equal(await page.eval(`!!document.querySelector('.channel-editor')`), false, 'explicit discard completes Leave');
+      assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'leaving never saves the draft');
+    } finally {
+      requestHook = originalHook;
+      await api(A, `/api/notification-channels/${saved.id}`, 'DELETE', { revision: saved.revision });
+    }
+    return { rejectedSignInLeaveHeld: true, keptDraftRetainsField: true, explicitDiscardLeaves: true, realSends: 0 };
+  });
 }
 async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, emptyRabbit, networkMonitors, maintenanceWindows }) {
   await launchBrowser(); await step('Browser: sign in to private A', () => signIn(A));
@@ -1349,7 +1649,7 @@ async function browserReview({ f, A, B, base, monitors, channels, emptyKafka, em
   });
   await step('Alert templates: presets, Undo and explicit replacement stay local; Discord cards show each sample event without sending', async () => {
     await nav('#/channels/new'); await heading('New channel');
-    await page.eval('document.querySelector("input[type=radio][value=discord]").click()');
+    await choose('Discord');
     await disclose('Message templates'); await text('Sample data');
     const start = report.requests.length;
     const fields = () => page.eval('[__field("Title").value,__field("Text").value]');

@@ -5,7 +5,7 @@ import { CheckField, Disclosure, SecretField, Seg, SelectField, TextField } from
 import { Glyph } from '../ui/icons';
 import {
   DEFAULT_BASE, GOTIFY_PRIORITIES, NTFY_PRIORITIES, PUSHOVER_PRIORITIES, credentialKey, routeKey,
-  type MField, type MessagingDraft, type MessagingKind, type NtfyAuth,
+  ntfyLoginProblem, pushoverEmergencyProblem, type MField, type MessagingDraft, type MessagingKind, type NtfyAuth,
 } from '../messaging';
 
 /** What picks each provider's destination, and what is only a credential. Shown under its fields. */
@@ -32,8 +32,10 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
   /** The stored channel's draft when editing the same provider, to explain route and credential changes. */
   previous?: MessagingDraft;
 }) {
+  const loginProblem = errors.ntfyAuth ? ntfyLoginProblem(d) : undefined;
+  const emergencyProblem = errors.emergency ? pushoverEmergencyProblem(d) : undefined;
   const insecure = (checked: boolean, onChange: (value: boolean) => void, label = 'Allow plain HTTP for this server'): ReactNode => (
-    <CheckField label={label} checked={checked} onChange={onChange} disabled={saving} danger hint="Only for a private network you trust: credentials and the message travel unencrypted." />
+    <CheckField label={label} checked={checked} onChange={onChange} disabled={saving} danger hint="Trusted private networks only: credentials and messages travel unencrypted." />
   );
   const endpoint = (value: string, onChange: (value: string) => void, checked: boolean, onCheck: (value: boolean) => void, fallback: string, hint: ReactNode): ReactNode => (
     <Disclosure title="API endpoint" summary={value || `Official (${fallback.replace(/^https:\/\//u, '')})`} open={apiOpen} onToggle={onApiToggle}>
@@ -79,11 +81,11 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
           <Seg<NtfyAuth> legend="Login" name={`${formId}-ntfyauth`} value={d.ntfyAuth} onChange={value => patch({ ntfyAuth: value })} disabled={saving} full
             options={[{ value: 'none', label: 'No login' }, { value: 'token', label: 'Token' }, { value: 'basic', label: 'User and password' }]}
             hint={d.ntfyAuth === 'none' ? 'Publishes without credentials, for open topics.' : 'Sent only to this server, never in the address.'} />
-          {d.ntfyAuth === 'token' ? <SecretField full label="Access token" value={d.ntfyToken} onChange={value => patch({ ntfyToken: value })} disabled={saving} storedSet={stored('ntfyToken')} placeholder="tk_…" /> : null}
+          {d.ntfyAuth === 'token' ? <SecretField full label="Access token" value={d.ntfyToken} onChange={value => patch({ ntfyToken: value })} error={loginProblem?.field === 'ntfyToken' ? errors.ntfyAuth : undefined} errorId={`${formId}-ntfyauth-e`} disabled={saving} storedSet={stored('ntfyToken')} placeholder="tk_…" /> : null}
           {d.ntfyAuth === 'basic' ? (
             <>
-              <TextField label="User name" value={d.ntfyUser} onChange={value => patch({ ntfyUser: value })} disabled={saving} />
-              <SecretField label="Password" value={d.ntfyPass} onChange={value => patch({ ntfyPass: value })} disabled={saving} storedSet={stored('ntfyPass')} />
+              <TextField label="User name" value={d.ntfyUser} onChange={value => patch({ ntfyUser: value })} error={loginProblem?.field === 'ntfyUser' ? errors.ntfyAuth : undefined} errorId={`${formId}-ntfyauth-e`} disabled={saving} />
+              <SecretField label="Password" value={d.ntfyPass} onChange={value => patch({ ntfyPass: value })} error={loginProblem?.field === 'ntfyPass' ? errors.ntfyAuth : undefined} errorId={`${formId}-ntfyauth-e`} disabled={saving} storedSet={stored('ntfyPass')} />
             </>
           ) : null}
           {errors.ntfyAuth ? <div className="full"><ErrorText id={`${formId}-ntfyauth-e`}>{errors.ntfyAuth}</ErrorText></div> : null}
@@ -119,8 +121,8 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
             onChange={value => patch(value === '2' ? { poPriority: value, poRetry: d.poRetry || '60', poExpire: d.poExpire || '3600' } : { poPriority: value })} />
           {d.poPriority === '2' ? (
             <>
-              <TextField mono label="Repeat every (seconds)" value={d.poRetry} onChange={value => patch({ poRetry: value })} inputMode="numeric" placeholder="60" disabled={saving} hint="30 to 10,800." />
-              <TextField mono label="Keep repeating for (seconds)" value={d.poExpire} onChange={value => patch({ poExpire: value })} inputMode="numeric" placeholder="3600" disabled={saving} hint="At most 10,800 (3 hours), and at least the repeat interval." />
+              <TextField mono label="Repeat every (seconds)" value={d.poRetry} onChange={value => patch({ poRetry: value })} inputMode="numeric" placeholder="60" error={emergencyProblem?.field === 'poRetry' ? errors.emergency : undefined} errorId={`${formId}-emerg-e`} disabled={saving} hint="30 to 10,800." />
+              <TextField mono label="Keep repeating for (seconds)" value={d.poExpire} onChange={value => patch({ poExpire: value })} inputMode="numeric" placeholder="3600" error={emergencyProblem?.field === 'poExpire' ? errors.emergency : undefined} errorId={`${formId}-emerg-e`} disabled={saving} hint="At most 10,800 (3 hours), and at least the repeat interval." />
               <p className="full muted small">Pushover itself repeats the alert until someone acknowledges it or the time runs out. Uptime-Canary doesn’t poll the receipt or record who acknowledged it.</p>
               {errors.emergency ? <div className="full"><ErrorText id={`${formId}-emerg-e`}>{errors.emergency}</ErrorText></div> : null}
             </>
@@ -134,35 +136,51 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
       {kind === 'homeassistant' ? (
         <>
           <TextField full mono label="Home Assistant URL" value={d.haBase} onChange={value => patch({ haBase: value })} error={errors.serverUrl} placeholder="https://homeassistant.example.com:8123" disabled={saving}
-            hint={<>The instance address, with any path prefix but without <span className="mono">/api</span>. <span className="mono">/api/events/</span> and the event type are appended.</>} />
-          {insecure(d.haInsecure, value => patch({ haInsecure: value }))}
-          <SecretField label="Long-lived access token" value={d.haToken} onChange={value => patch({ haToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('haToken')}
-            hint={<>Your Home Assistant profile → Security → Long-lived access tokens. Sent only in the <span className="mono">Authorization</span> header.</>} />
+            hint={<>Address and path prefix, without <span className="mono">/api</span>.</>} />
           <TextField mono label="Event type" value={d.haEvent} onChange={value => patch({ haEvent: value })} error={errors.eventType} placeholder="uptime_canary" disabled={saving}
-            hint="1–64 letters, digits or underscores. Use it as the event trigger in your automations." />
-          <p className="full muted small">Each alert fires one event. Its data has <span className="mono">kind</span> (down, repeat, recovery or test), <span className="mono">monitor_id</span>, <span className="mono">monitor_name</span>, <span className="mono">incident_id</span>, <span className="mono">title</span>, <span className="mono">message</span> and <span className="mono">idempotency_key</span>.</p>
-          <p className="full fwarn small"><Glyph tone="warn" />These events run real automations. A retry or a network partition can fire the same alert twice, so prefer actions that are safe to repeat, like <span className="mono">light.turn_on</span> for down and <span className="mono">light.turn_off</span> for recovery, over <span className="mono">toggle</span>. Check <span className="mono">trigger.event.data.kind</span> so a test isn’t treated as an outage.</p>
-          <p className="full muted small">Accepted means Home Assistant reported the event fired. It isn’t proof that any automation ran.</p>
+            hint="1-64 letters, digits or underscores." />
+          <SecretField label="Long-lived access token" value={d.haToken} onChange={value => patch({ haToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('haToken')}
+            hint="Profile > Security > Long-lived access tokens." />
+          {insecure(d.haInsecure, value => patch({ haInsecure: value }))}
+          <p className="full fwarn small"><Glyph tone="warn" /><span>Events can switch real devices. Retries or partitions can duplicate them. Use repeat-safe actions and deduplicate with <span className="mono">idempotency_key</span>. Check <span className="mono">trigger.event.data.kind</span> for <span className="mono">test</span> before outage actions.</span></p>
+          <details className="full channel-context-details">
+            <summary>Home Assistant API and delivery details</summary>
+            <div>
+              <p>Posts one event per alert to your URL plus <span className="mono">/api/events/&#123;event_type&#125;</span>, keeping any path prefix. The access token travels only in the <span className="mono">Authorization</span> header.</p>
+              <p>Payload: <span className="mono">kind</span> (down, repeat, recovery or test), <span className="mono">monitor_id</span>, <span className="mono">monitor_name</span>, <span className="mono">incident_id</span>, <span className="mono">title</span>, <span className="mono">message</span> and <span className="mono">idempotency_key</span>.</p>
+              <p>Prefer <span className="mono">light.turn_on</span> / <span className="mono">light.turn_off</span> to <span className="mono">toggle</span>: repeating a toggle reverses the action.</p>
+              <p><b>Destination.</b> {IDENTITY.homeassistant}</p>
+              <p><b>Acceptance.</b> Home Assistant reported the event fired; this does not prove an automation ran.</p>
+            </div>
+          </details>
         </>
       ) : null}
 
       {kind === 'matrix' ? (
         <>
           <TextField full mono label="Homeserver URL" value={d.matrixBase} onChange={value => patch({ matrixBase: value })} error={errors.serverUrl} placeholder="https://matrix.example.org" disabled={saving}
-            hint={<>The client API address itself, with any path prefix; <span className="mono">.well-known</span> delegation isn’t looked up. <span className="mono">/_matrix/client/v3/rooms/…</span> is appended.</>} />
-          {insecure(d.matrixInsecure, value => patch({ matrixInsecure: value }))}
-          <SecretField label="Access token" value={d.matrixToken} onChange={value => patch({ matrixToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('matrixToken')}
-            hint={<>An existing token for the account that posts, ideally a bot account. Sent only in the <span className="mono">Authorization</span> header; Uptime-Canary never logs in or refreshes it.</>} />
+            hint="Client API address and path prefix." />
           <TextField mono label="Room ID" value={d.matrixRoom} onChange={value => patch({ matrixRoom: value })} error={errors.roomId} placeholder="!AbCdEf:example.org" disabled={saving}
-            hint={<>The internal ID from the room’s advanced settings: <span className="mono">!room:server</span>, or <span className="mono">!</span> and an opaque ID on newer room versions. Not a <span className="mono">#alias</span>.</>} />
-          <p className="full fwarn small"><Glyph tone="warn" />Sends a plain-text notice to an <b>unencrypted</b> room the account has <b>already joined</b>. Invite it and accept the invite first. End-to-end encrypted rooms aren’t supported.</p>
-          <p className="full muted small">Accepted means the homeserver stored the notice and returned an event ID. It isn’t proof anyone’s client showed it.</p>
+            hint={<>From room advanced settings: <span className="mono">!room:server</span> or opaque <span className="mono">!</span> ID, not <span className="mono">#alias</span>.</>} />
+          <SecretField label="Access token" value={d.matrixToken} onChange={value => patch({ matrixToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('matrixToken')}
+            hint="From the posting account's Matrix client; preferably a bot account." />
+          {insecure(d.matrixInsecure, value => patch({ matrixInsecure: value }))}
+          <p className="full fwarn small"><Glyph tone="warn" /><span>The account must have <b>already joined</b> this <b>unencrypted</b> room; accept its invite first. End-to-end encrypted rooms are unsupported.</span></p>
+          <details className="full channel-context-details">
+            <summary>Matrix API and delivery details</summary>
+            <div>
+              <p>Uses your client API server directly; <span className="mono">.well-known</span> delegation is not looked up. Keeps any path prefix and appends <span className="mono">/_matrix/client/v3/rooms/&#123;roomId&#125;/send/m.room.message/&#123;idempotency_key&#125;</span> (PUT).</p>
+              <p>Sends a plain-text <span className="mono">m.notice</span>. The access token travels only in the <span className="mono">Authorization</span> header; Uptime-Canary never logs in or refreshes it.</p>
+              <p><b>Destination.</b> {IDENTITY.matrix}</p>
+              <p><b>Acceptance.</b> The homeserver stored the notice and returned an event ID; this does not prove a client showed it.</p>
+            </div>
+          </details>
         </>
       ) : null}
 
-      <p className="full muted small id-note"><b>Destination.</b> {IDENTITY[kind]}</p>
-      {moved ? <p className="full fwarn small"><Glyph tone="warn" />This is a new destination. Alerts already owed to the old one aren’t moved, and finished outages aren’t replayed to the new one.</p>
-        : rotated && kind === 'gotify' ? <p className="full fwarn small"><Glyph tone="warn" />Only the token changes. Use a token from the same Gotify application; for another application, create a new channel.</p>
+      {kind !== 'homeassistant' && kind !== 'matrix' ? <p className="full muted small id-note"><b>Destination.</b> {IDENTITY[kind]}</p> : null}
+      {moved ? <p className="full fwarn small"><Glyph tone="warn" /><span>This is a new destination. Alerts already owed to the old one aren’t moved, and finished outages aren’t replayed to the new one.</span></p>
+        : rotated && kind === 'gotify' ? <p className="full fwarn small"><Glyph tone="warn" /><span>Only the token changes. Use a token from the same Gotify application; for another application, create a new channel.</span></p>
         : rotated ? <p className="full muted small">Only the credential changes: the destination and its receipts stay the same.</p>
         : null}
     </>

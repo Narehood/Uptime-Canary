@@ -141,7 +141,7 @@ kbd { font: 600 11px var(--mono); color: var(--text-3); border: 1px solid var(--
 .me .who span { display: block; color: var(--text-3); font-size: 12px; line-height: 1.2; }
 
 main { outline: none; min-width: 0; }
-main.is-stale .view > :not(.vhead) { opacity: .62; filter: saturate(.5); transition: opacity .15s; }
+main.is-stale .view > :not(.vhead):not(.modal) { opacity: .62; filter: saturate(.5); transition: opacity .15s; }
 
 /* ---------- views and cards ---------- */
 .view { display: flex; flex-direction: column; gap: 16px; }
@@ -1370,4 +1370,164 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 @media (forced-colors: active) {
   .fl-at { border: 1px solid CanvasText; }
   .fl-at.t-down, .fl-node.attn { border-left-width: 4px; }
+}
+
+/* Notification channels: compact setup, distinct routing and explicit test destinations. */
+.channels-view .channel-list-card { padding: 18px; }
+.channels-view .channel-list-card > .card-h { margin-bottom: 2px; }
+.channels-view .chan-list > li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px 14px; align-items: start; padding: 20px 0; }
+.channels-view .chan-list > li > .prov-ic { width: 36px; height: 36px; margin: 0; border-radius: 10px; }
+.channels-view .chan-list .t { gap: 5px 10px; }
+.channels-view .chan-list .t > b { font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.channels-view .chan-list .t > .tag { white-space: normal; }
+.channels-view .channel-route { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 6px; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.channels-view .channel-route > span { min-width: 0; }
+.channels-view .channel-route-server { flex-basis: 100%; }
+.channels-view .channel-route-fact { color: var(--text-2); }
+.channels-view .channel-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.channels-view .channel-revision { display: inline-flex; align-items: baseline; gap: 5px; }
+.channels-view .chan-list .acts { align-self: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
+.channels-view .channel-delivery-caveat { border-top: 1px solid var(--grid); padding-top: 12px; margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; max-width: 100%; overflow-wrap: anywhere; }
+.channel-delivery-details { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.channel-delivery-details > summary { padding: 12px 16px; min-height: 44px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.channel-delivery-details[open] > summary { border-bottom: 1px solid var(--grid); color: var(--text-1); }
+.channel-delivery-body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding: 16px; }
+.channel-delivery-body b { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.channel-delivery-body p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+.channel-editor > .card { padding: 20px; }
+.channel-editor .form { gap: 18px 20px; }
+.channel-editor .fsec { color: var(--text-2); padding-top: 16px; }
+.channel-editor .channel-provider { gap: 5px; }
+.channel-editor .channel-provider > legend { margin-bottom: 5px; }
+.channel-editor .channel-provider select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+.channel-unsaved { align-self: flex-start; color: var(--text-2); font-size: 12px; border-left: 2px solid var(--warning); padding-left: 8px; }
+.channel-editor .errsum .linkbtn { text-align: left; justify-content: flex-start; }
+.channel-editor .errsum p, .channels-view .errsum p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.55; }
+.channel-editor .errsum p:first-child, .channels-view .errsum p:first-child { margin-top: 0; }
+.channel-editor .errsum p + p, .channels-view .errsum p + p { margin-top: 8px; }
+.channel-editor .banner .bb, .channels-view .banner .bb { font-size: 13.5px; line-height: 1.55; }
+.channel-editor .banner .bt, .channels-view .banner .bt { margin-bottom: 4px; }
+.channel-context-details { min-width: 0; border: 1px solid var(--border); border-radius: 9px; color: var(--text-2); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.channel-context-details > summary { padding: 12px; min-height: 44px; cursor: pointer; font-weight: 600; }
+.channel-context-details > div { padding: 0 12px 12px; }
+.channel-context-details p { margin: 0; }
+.channel-context-details p + p { margin-top: 10px; }
+.channel-provider-current { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; min-height: 40px; }
+.channel-provider-current > span { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.channel-provider-current .prov-ic { width: 28px; height: 28px; margin: 0; border-radius: 8px; }
+.channel-editor .channel-event-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin: 3px 0 8px; }
+.channel-editor .channel-event-options .check { padding: 0; }
+.channel-editor .channel-events { scroll-margin-block: 20px; }
+.channel-editor .channel-events:focus { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 6px; }
+.channel-editor .fld small, .channel-editor .check small { font-size: 13px; line-height: 1.55; }
+.channel-editor .check small { margin-top: 3px; }
+.channel-editor .id-note { border-left: 2px solid var(--border-2); padding-left: 12px; margin: 0; line-height: 1.55; }
+.channel-editor p.full { margin: 0; }
+.channel-editor .fwarn, .channels-view .fwarn { padding: 10px 12px; background: var(--warning-wash); border: 1px solid var(--border); border-radius: 9px; font-size: 13px; line-height: 1.55; }
+.channel-editor .fwarn > span, .channels-view .fwarn > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.channel-editor .fwarn > .g, .channels-view .fwarn > .g { flex: none; margin-top: 3px; }
+.channel-editor .fld, .channel-editor .disc, .channel-editor .form-acts, .channel-editor .form-acts > *, .channels-view .modal-b > *, .channel-editor .modal-b > * { min-width: 0; max-width: 100%; }
+.channel-editor .fld small, .channel-editor .disc-b, .channel-editor .form-acts > .muted { overflow-wrap: anywhere; }
+.channel-editor .form-acts > .muted { flex: 1 1 240px; font-size: 13px; line-height: 1.55; }
+.channel-editor .modal-b .small, .channels-view .modal-b .small { font-size: 13px; line-height: 1.55; }
+.channel-editor .modal-b .why, .channels-view .modal-b .why { font-size: 13px; line-height: 1.55; }
+/* Attempt inspection nests its copy and actions inside a section, beyond the modal body gap. */
+.channel-editor .modal-b > section > * + *, .channels-view .modal-b > section > * + * { margin-top: 12px; }
+.channel-editor .secret input { min-width: 0; flex: 1; }
+.channel-test-destination { border: 1px solid var(--border-2); border-radius: 10px; padding: 12px; background: var(--surface-2); }
+.channel-test-destination h3 { font-size: 13px; font-weight: 650; }
+.channel-test-destination dl { display: grid; gap: 10px; margin: 12px 0 0; }
+.channel-test-destination dl > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px 12px; align-items: baseline; }
+.channel-test-destination dt { color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.channel-test-destination dd { margin: 0; overflow-wrap: anywhere; color: var(--text-1); font-size: 13px; line-height: 1.55; }
+.channel-test-destination > .fwarn { margin-top: 12px; }
+@container app (max-width: 1179px) {
+  .channels-view .chan-list > li { grid-template-columns: 36px minmax(0, 1fr); }
+  .channels-view .chan-list .acts { grid-column: 2; justify-content: flex-start; }
+}
+@container app (max-width: 699px) {
+  .channels-view .channel-list-card, .channel-editor > .card { padding: 16px; }
+  .channels-view .chan-list > li { gap: 10px; padding: 18px 0; }
+  .channels-view .chan-list .t { align-items: flex-start; }
+  .channels-view .chan-list .t > .muted { flex-basis: 100%; }
+  .channels-view .chan-list .acts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; margin-top: 4px; }
+  .channels-view .chan-list .acts > .btn { justify-content: center; }
+  .channels-view .chan-list .acts > .danger { justify-self: start; }
+  .channels-view .btn.sm, .channel-editor .btn.sm, .channels-view .modal .btn, .channel-editor .modal .btn { min-height: 44px; min-width: 44px; white-space: normal; overflow-wrap: anywhere; }
+  .channel-editor .secret .icon-btn.sm, .channel-editor .hdr-row .icon-btn.sm, .channel-editor .modal .icon-btn.sm, .channels-view .modal .icon-btn.sm { width: 44px; height: 44px; min-width: 44px; min-height: 44px; flex: none; }
+  .channel-editor .channel-event-options { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .channel-editor .check, .channel-editor .linkbtn, .channels-view .modal .linkbtn, .channels-view .tabs a { min-height: 44px; }
+  .channel-editor .fld > small:not(.ferr), .channel-editor .check small, .channels-view .channel-meta { color: var(--text-2); }
+  .channel-editor .form-acts { align-items: stretch; }
+  .channel-editor .form-acts > .btn { justify-content: center; white-space: normal; }
+  .channel-editor .form-acts > .muted { flex-basis: 100%; }
+  .channel-editor .disc-h { flex-wrap: wrap; }
+  .channel-editor .disc-t { white-space: normal; overflow-wrap: anywhere; }
+  .channel-delivery-body { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .channel-test-destination dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+}
+
+/* Secondary actions expand in flow: no clipped overlay, source order matches the visual order. */
+.channels-view .channel-more-actions > summary { list-style: none; justify-content: center; min-height: 30px; }
+.channels-view .channel-more-actions > summary::-webkit-details-marker { display: none; }
+.channels-view .channel-more-actions[open] { flex-basis: 100%; }
+.channels-view .channel-secondary-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
+@container app (max-width: 699px) {
+  .channels-view .channel-more-actions > summary { min-height: 44px; min-width: 44px; width: 100%; }
+  .channels-view .channel-more-actions[open] { grid-column: 1 / -1; }
+  .channels-view .channel-secondary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .channels-view .channel-secondary-actions > .danger { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* Resting controls remain distinct from the card in either theme; focus and error treatments stay intact. */
+.channel-editor { --channel-input-border: #85837d; }
+[data-mode="dark"] .channel-editor { --channel-input-border: #74746f; }
+.channel-editor .fld :is(input[type="text"], input[type="url"], input[type="email"], input[type="password"], input[type="number"], input[type="search"], select, textarea):not([aria-invalid="true"]):not(:focus) { border-color: var(--channel-input-border); }
+.channel-editor h1, .channel-editor .modal-h h2, .channels-view .modal-h h2 { min-width: 0; overflow-wrap: anywhere; }
+.attempt-destination { display: inline-flex; align-items: flex-start; gap: 6px; min-width: 0; max-width: 100%; white-space: normal; }
+.attempt-destination > .prov-ic { flex: none; }
+.attempt-destination > span:last-child, .attempt-destination a { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.attempt-destination a { display: inline-block; padding: 2px 4px; }
+.attempt-destination a:focus-visible { outline-offset: -2px; }
+
+.channel-save-candidate { margin-top: 14px; padding-block: 12px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.channel-save-candidate p { margin-top: 6px; }
+.channel-save-candidate .mono { overflow-wrap: anywhere; }
+
+.channel-save-readback > div { padding: 14px; }
+
+.channel-save-candidate .channel-route-server, .channel-save-candidate .channel-route-fact { display: block; }
+
+.preview-out .grow { min-width: 0; overflow-wrap: anywhere; }
+.preview-destination { display: block; margin-top: 4px; overflow-wrap: anywhere; font-size: 11.5px; }
+
+.preview-out .grow > small { display: block; }
+
+.channel-editor .modal, .channels-view .modal { scroll-padding-block-start: 84px; }
+@container app (max-width: 699px) {
+  .preview-out li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 8px 10px; }
+  .preview-out li > .prov-ic { grid-row: 1 / span 2; }
+  .preview-out li > .grow, .preview-out li > :last-child { grid-column: 2; }
+  .preview-out li > :last-child { justify-self: start; }
+}
+
+.channel-recipient > label { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--text-2); font-size: 12px; }
+.channel-recipient > label > input { width: 100%; min-width: 0; }
+.channel-recipient > button { align-self: end; }
+.channel-editor .hdr-rows:has(.channel-recipient) { gap: 14px; }
+@container app (max-width: 699px) {
+  .channel-editor .seg span { min-height: 44px; }
+  .channel-recipient > label:nth-child(2) { grid-column: 1; }
+  .channel-recipient > button { align-self: center; }
+}
+
+@container app (max-width: 699px) {
+  .delivery-view .fchip, .delivery-view .inline-sel select { min-height: 44px; }
+  .delivery-view .icon-btn.sm { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
+
+/* Give inspected destinations their full row on phones, including long channel names. */
+@container app (max-width: 699px) {
+  .channel-editor .modal .deliveries td[data-label="Destination"], .channels-view .modal .deliveries td[data-label="Destination"] { text-align: left; }
+  .channel-editor .modal .deliveries td[data-label="Destination"]::before, .channels-view .modal .deliveries td[data-label="Destination"]::before { float: none; display: block; margin-bottom: 4px; }
 }

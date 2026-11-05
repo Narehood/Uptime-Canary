@@ -153,7 +153,14 @@ await check('API: an unsaved test posts the whole channel once to preview-test a
   assert.equal(new Headers(calls[0].init.headers).get('Authorization'), `Bearer ${ACCOUNT_TOKEN}`);
   assert.equal(calls[0].init.cache, 'no-store');
   answer = () => json(202, { attempts: [] });
-  await assert.rejects(client.previewChannelTest(input), /didn’t confirm a test of unsaved settings/u, 'a saved test’s answer is not taken for a preview');
+  // api.ts treats unreadable 2xx test replies as unconfirmed. Preserve the original rejection case,
+  // and isolate the preview marker from the new nonempty-attempt validation.
+  const unconfirmed = error => error instanceof api.ApiFailure && error.status === 200 && /confirm a test of unsaved settings/u.test(error.message);
+  await assert.rejects(client.previewChannelTest(input), unconfirmed, 'a saved test answer is not taken for a preview');
+  answer = () => json(202, { attempts: [{ id: 'att-1', nodeId: 'a', kind: 'test', provider: 'webhook', state: 'queued', failures: 0 }] });
+  await assert.rejects(client.previewChannelTest(input), unconfirmed, 'valid attempts still need the explicit preview marker');
+  answer = () => json(202, { preview: true, attempts: [] });
+  await assert.rejects(client.previewChannelTest(input), unconfirmed, 'the preview marker alone is not an acknowledgement');
   answer = () => json(429, { error: 'Wait five seconds between notification tests' });
   await assert.rejects(client.previewChannelTest(input), error => error instanceof api.ApiFailure && error.status === 429 && /five seconds/u.test(error.detail ?? ''));
   answer = () => json(403, { error: 'Insufficient permissions' });
