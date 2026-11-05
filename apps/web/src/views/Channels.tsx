@@ -403,7 +403,7 @@ function TestAttemptsInspector({ provider, attemptIds, recipientLabels, onBack, 
       : !recent.error ? <p role="status">Loading recent test attempts...</p> : null}
     <p className="muted small">{rows.some(attempt => attempt.state === 'accepted') ? 'Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran. ' : null}Older or delayed attempts may be missing; absence doesn’t prove the test was unsent. Resending may duplicate it.</p>
     <div className="row-wrap modal-acts">
-      <button type="button" className="btn primary" onClick={onBack}>Back to test result</button>
+      <button type="button" className="btn primary" onClick={onBack}>Back to test status</button>
       <button type="button" className="btn" onClick={recent.reload}>Refresh attempts</button>
       <button type="button" className="btn" onClick={onClose}>Close</button>
     </div>
@@ -498,7 +498,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
     return count ? `${count} ${label.label.toLowerCase()}` : '';
   }).filter(Boolean).join(', ') : '';
   const settled = Boolean(attempts?.every(attempt => SETTLED.has(attempt.state)));
-  const completion = readFailure ? waiting ? 'Retrying updates; these are the last reported results.' : 'Stopped waiting after outcome updates failed. Check delivery attempts for later outcomes.' : waiting ? 'Waiting for outcomes.' : settled ? 'All one-shot outcomes reported.' : 'Stopped waiting; check delivery attempts for later outcomes.';
+  const completion = readFailure ? waiting ? 'Retrying updates; these are the last reported results.' : 'Stopped waiting after outcome updates failed. Check delivery attempts for later outcomes.' : waiting ? 'Waiting for outcomes.' : settled ? 'All test attempts have reported an outcome.' : 'Stopped waiting; check delivery attempts for later outcomes.';
   return (
     <Modal title={inspecting ? `Recent ${providerLabel(kind)} test attempts` : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
       <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${readFailure ? `Outcome updates unavailable: ${readFailure}. ` : ''}${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
@@ -1243,7 +1243,7 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
         sub={current ? <>Editing revision <Rev revision={base?.revision ?? current.revision} />{users ? ` · used by ${plural(users, 'monitor')}` : ''}. Saving writes a new revision on <span className="mono">{endpoint}</span>.</> : <>Creates a reusable channel on <span className="mono">{endpoint}</span>, shared with every peer.</>}
       />
       {conflicted ? <Banner title="This channel has a configuration conflict" actions={<a className="btn sm" href={href('config')}><Icon name="merge" />Resolve in Configuration</a>}>Edits are rejected until the conflict is resolved.</Banner>
-        : changedElsewhere ? <Banner title={<>This channel changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" disabled={saving} onClick={() => { void loadLatest(); }}><Icon name="refresh" />Load latest (discards your edits)</button>}>Saving your version will be rejected because it’s based on an older revision.</Banner>
+        : changedElsewhere && !latestError && !failure?.stale ? <Banner title={<>This channel changed on {endpoint} while you were editing</>} actions={<button type="button" className="btn sm" disabled={saving} onClick={() => { void loadLatest(); }}><Icon name="refresh" />Load latest (discards your edits)</button>}>Saving your version will be rejected because it’s based on an older revision.</Banner>
         : null}
       {missing ? <Banner tone="warn" title="Channel no longer listed" actions={<button type="button" className="btn sm" onClick={channels.reload}>Refresh channels</button>}>
         <span id={`${formId}-missing`}>Your draft is kept. This channel is absent from the last loaded list, possibly because it was deleted elsewhere. Saving is blocked until it appears again.</span>
@@ -1253,7 +1253,10 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
       <Card>
         <form className="form" onSubmit={event => { void submit(event); }} noValidate aria-busy={saving}>
           <ErrorSummary ref={summaryRef} title={latestError ? 'Latest settings could not be loaded' : failure ? (saveUnconfirmed ? 'Save unconfirmed' : failure.stale ? 'Save rejected: the channel changed or has a conflict' : 'Save request rejected') : 'Check these fields'} errors={failure || latestError ? [] : errorList} onErrorSelect={focusError}>
-            {failure || latestError ? <p>{latestError ? <>Your draft is kept. {latestError}</> : failure?.message}{(latestError || failure?.stale) && current ? <> <button type="button" className="linkbtn" disabled={saving} onClick={() => { void loadLatest(); }}>{latestError ? 'Retry loading latest' : 'Load the latest version'}</button>{latestError ? null : ' and apply your change again.'}</> : null}</p> : null}
+            {failure || latestError ? <>
+              <p>{latestError ? <>Your draft is kept. {latestError}</> : failure?.message}</p>
+              {(latestError || failure?.stale) && current ? <p><button type="button" className="linkbtn" disabled={saving} onClick={() => { void loadLatest(); }}>Load latest (discards your edits)</button>{latestError ? null : ' and apply your change again.'}</p> : null}
+            </> : null}
           </ErrorSummary>
           {saveUnconfirmed && failure ? <div className="full" id={`${formId}-savecheck`}>
             <p>The node may have saved this change and resumed owed alerts. Your draft is kept. Check stored settings before saving again{current ? '.' : ', which could create a duplicate channel.'}</p>

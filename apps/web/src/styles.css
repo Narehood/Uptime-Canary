@@ -1387,13 +1387,13 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .channels-view .channel-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
 .channels-view .channel-revision { display: inline-flex; align-items: baseline; gap: 5px; }
 .channels-view .chan-list .acts { align-self: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
-.channels-view .channel-delivery-caveat { border-top: 1px solid var(--grid); padding-top: 12px; margin: 0; color: var(--text-2); font-size: 12.5px; max-width: 100%; overflow-wrap: anywhere; }
+.channels-view .channel-delivery-caveat { border-top: 1px solid var(--grid); padding-top: 12px; margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; max-width: 100%; overflow-wrap: anywhere; }
 .channel-delivery-details { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .channel-delivery-details > summary { padding: 12px 16px; min-height: 44px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); }
 .channel-delivery-details[open] > summary { border-bottom: 1px solid var(--grid); color: var(--text-1); }
 .channel-delivery-body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding: 16px; }
 .channel-delivery-body b { display: flex; align-items: center; gap: 7px; font-size: 13px; }
-.channel-delivery-body p { margin: 6px 0 0; font-size: 12.5px; color: var(--text-2); }
+.channel-delivery-body p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
 .channel-editor > .card { padding: 20px; }
 .channel-editor .form { gap: 18px 20px; }
 .channel-editor .fsec { color: var(--text-2); padding-top: 16px; }
@@ -1402,7 +1402,12 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .channel-editor .channel-provider select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
 .channel-unsaved { align-self: flex-start; color: var(--text-2); font-size: 12px; border-left: 2px solid var(--warning); padding-left: 8px; }
 .channel-editor .errsum .linkbtn { text-align: left; justify-content: flex-start; }
-.channel-context-details { min-width: 0; border: 1px solid var(--border); border-radius: 9px; color: var(--text-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.channel-editor .errsum p, .channels-view .errsum p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.55; }
+.channel-editor .errsum p:first-child, .channels-view .errsum p:first-child { margin-top: 0; }
+.channel-editor .errsum p + p, .channels-view .errsum p + p { margin-top: 8px; }
+.channel-editor .banner .bb, .channels-view .banner .bb { font-size: 13.5px; line-height: 1.55; }
+.channel-editor .banner .bt, .channels-view .banner .bt { margin-bottom: 4px; }
+.channel-context-details { min-width: 0; border: 1px solid var(--border); border-radius: 9px; color: var(--text-2); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 .channel-context-details > summary { padding: 12px; min-height: 44px; cursor: pointer; font-weight: 600; }
 .channel-context-details > div { padding: 0 12px 12px; }
 .channel-context-details p { margin: 0; }
@@ -1414,22 +1419,27 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .channel-editor .channel-event-options .check { padding: 0; }
 .channel-editor .channel-events { scroll-margin-block: 20px; }
 .channel-editor .channel-events:focus { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 6px; }
-.channel-editor .fld small, .channel-editor .id-note { line-height: 1.55; }
-.channel-editor .id-note { border-left: 2px solid var(--border-2); padding-left: 12px; margin: 0; }
+.channel-editor .fld small, .channel-editor .check small { font-size: 13px; line-height: 1.55; }
+.channel-editor .check small { margin-top: 3px; }
+.channel-editor .id-note { border-left: 2px solid var(--border-2); padding-left: 12px; margin: 0; line-height: 1.55; }
 .channel-editor p.full { margin: 0; }
-.channel-editor .fwarn, .channels-view .fwarn { padding: 10px 12px; background: var(--warning-wash); border: 1px solid var(--border); border-radius: 9px; line-height: 1.55; }
+.channel-editor .fwarn, .channels-view .fwarn { padding: 10px 12px; background: var(--warning-wash); border: 1px solid var(--border); border-radius: 9px; font-size: 13px; line-height: 1.55; }
 .channel-editor .fwarn > span, .channels-view .fwarn > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .channel-editor .fwarn > .g, .channels-view .fwarn > .g { flex: none; margin-top: 3px; }
 .channel-editor .fld, .channel-editor .disc, .channel-editor .form-acts, .channel-editor .form-acts > *, .channels-view .modal-b > *, .channel-editor .modal-b > * { min-width: 0; max-width: 100%; }
 .channel-editor .fld small, .channel-editor .disc-b, .channel-editor .form-acts > .muted { overflow-wrap: anywhere; }
-.channel-editor .form-acts > .muted { flex: 1 1 240px; }
+.channel-editor .form-acts > .muted { flex: 1 1 240px; font-size: 13px; line-height: 1.55; }
+.channel-editor .modal-b .small, .channels-view .modal-b .small { font-size: 13px; line-height: 1.55; }
+.channel-editor .modal-b .why, .channels-view .modal-b .why { font-size: 13px; line-height: 1.55; }
+/* Attempt inspection nests its copy and actions inside a section, beyond the modal body gap. */
+.channel-editor .modal-b > section > * + *, .channels-view .modal-b > section > * + * { margin-top: 12px; }
 .channel-editor .secret input { min-width: 0; flex: 1; }
 .channel-test-destination { border: 1px solid var(--border-2); border-radius: 10px; padding: 12px; background: var(--surface-2); }
 .channel-test-destination h3 { font-size: 13px; font-weight: 650; }
 .channel-test-destination dl { display: grid; gap: 10px; margin: 12px 0 0; }
 .channel-test-destination dl > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px 12px; align-items: baseline; }
-.channel-test-destination dt { color: var(--text-2); font-size: 12px; }
-.channel-test-destination dd { margin: 0; overflow-wrap: anywhere; color: var(--text-1); font-size: 12.5px; }
+.channel-test-destination dt { color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.channel-test-destination dd { margin: 0; overflow-wrap: anywhere; color: var(--text-1); font-size: 13px; line-height: 1.55; }
 .channel-test-destination > .fwarn { margin-top: 12px; }
 @container app (max-width: 1179px) {
   .channels-view .chan-list > li { grid-template-columns: 36px minmax(0, 1fr); }
@@ -1513,4 +1523,10 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 @container app (max-width: 699px) {
   .delivery-view .fchip, .delivery-view .inline-sel select { min-height: 44px; }
   .delivery-view .icon-btn.sm { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
+
+/* Give inspected destinations their full row on phones, including long channel names. */
+@container app (max-width: 699px) {
+  .channel-editor .modal .deliveries td[data-label="Destination"], .channels-view .modal .deliveries td[data-label="Destination"] { text-align: left; }
+  .channel-editor .modal .deliveries td[data-label="Destination"]::before, .channels-view .modal .deliveries td[data-label="Destination"]::before { float: none; display: block; margin-bottom: 4px; }
 }

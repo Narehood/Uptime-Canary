@@ -148,7 +148,10 @@ window.__set = (e,v) => { const p = e.tagName === 'TEXTAREA' ? HTMLTextAreaEleme
 window.__button = (label,scope) => { const root = scope ? document.querySelector(scope) : document; const all = [...root.querySelectorAll('button,a')].filter(e => __vis(e) && [__norm(e.innerText),__norm(e.getAttribute('aria-label'))].includes(label)); if(all.length !== 1) throw Error('button '+label+' matched '+all.length); return all[0]; }; true;`;
 async function ready() { await page.eval(DOM); }
 async function nav(hash) {
-  await page.eval(`location.hash=${J(hash)}`); await sleep(180); await ready();
+  await page.eval(`location.hash=${J(hash)}`); await ready();
+  // A new raw fragment is unindexed until the router accepts it. A guarded route restores its prior hash.
+  // Wait for that acceptance or this exact owned prompt, including a delayed dialog render.
+  await until(() => page.eval(`document.querySelector('dialog[open] h2')?.textContent === 'Discard unsaved channel changes?' || location.hash === ${J(hash)} && Number.isSafeInteger(history.state?.canaryRouteIndex)`), 'accepted fixture route or discard prompt');
   // Existing fixture cases intentionally leave scratch edits. The channel editor now protects real
   // users from that navigation; explicitly discard only this exact owned-fixture confirmation.
   if (await page.eval(`document.querySelector('dialog[open] h2')?.textContent === 'Discard unsaved channel changes?'`)) {
@@ -714,6 +717,7 @@ async function automationBrowserReview() {
     await step(`Automation browser: create, rename and select events for ${kind}`, async () => {
       const name = `Browser ${kind}`, token = secret(); secrets.add(token);
       await nav('#/channels/new'); await heading('New channel');
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'pristine channel creation has no error summary');
       await fill('Name', name);
       await choose(kind === 'homeassistant' ? 'Home Assistant' : 'Matrix');
       if (kind === 'homeassistant') {
@@ -735,6 +739,7 @@ async function automationBrowserReview() {
       assert.equal(saved.config[kind].accessToken, token);
       const config = structuredClone(saved.config);
       await nav(`#/channels/${saved.id}/edit`); await heading(`Edit ${saved.name}`);
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'pristine channel editing has no error summary');
       const tokenLabel = kind === 'homeassistant' ? 'Long-lived access token' : 'Access token';
       assert.equal(await page.eval(`__field(${J(tokenLabel)}).type`), 'password');
       assert.equal(await page.eval(`document.body.innerText.includes(${J(token)})`), false);
@@ -816,7 +821,7 @@ async function automationBrowserReview() {
         malformedAttemptRead = true;
         await click('Refresh attempts', 'dialog[open]'); await text('Attempt refresh failed');
         assert.equal(await page.eval(`document.querySelector('dialog .deliveries tbody').innerText.includes(${J(saved.name)})`), true, 'unreadable refresh retains last loaded rows');
-        await click('Back to test result', 'dialog[open]'); await text('Test submission unconfirmed');
+        await click('Back to test status', 'dialog[open]'); await text('Test submission unconfirmed');
         await page.eval(`document.querySelector('dialog[open] .modal-h button').click()`);
       } finally { requestHook = originalHook; }
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, saved.revision, 'unsaved test recovery never changes the stored revision');
@@ -867,9 +872,10 @@ async function automationBrowserReview() {
         name: name + ' changed elsewhere', enabled: saved.enabled, config: saved.config, revision: saved.revision,
       });
       assert.equal(concurrent.status, 200, concurrent.text);
-      await click('Save changes'); await text('Load the latest version');
-      await click('Load the latest version');
+      await click('Save changes'); await text('Load latest (discards your edits)');
+      await click('Load latest (discards your edits)', '.channel-editor .errsum');
       await until(() => page.eval(`__field('Name').value === ${J(name + ' changed elsewhere')}`), 'conflict recovery reads fresh settings');
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'successful conflict recovery clears its error summary');
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, concurrent.value.revision, 'loading latest never writes');
       saved = concurrent.value;
       // The background-change banner has no preceding save failure: failed latest reads must still be visible.
@@ -895,14 +901,15 @@ async function automationBrowserReview() {
       };
       try {
         for (latestMode of ['unavailable', 'conflicting', 'missing']) {
-          await click(latestMode === 'unavailable' ? 'Load latest (discards your edits)' : 'Retry loading latest');
+          await click('Load latest (discards your edits)', latestMode === 'unavailable' ? '.channel-editor > .banner' : '.channel-editor .errsum');
           await text('Latest settings could not be loaded');
           assert.equal(await page.eval(`__field('Name').value`), backgroundDraft, 'failed background latest read retains the draft');
           assert.equal(await page.eval(`document.activeElement === document.querySelector('.errsum')`), true, 'latest-read errors receive focus without a prior Save');
         }
       } finally { requestHook = beforeLatestHook; }
-      await click('Retry loading latest');
+      await click('Load latest (discards your edits)', '.channel-editor .errsum');
       await until(() => page.eval(`__field('Name').value === ${J(backgroundName)}`), 'background latest read recovers');
+      assert.equal(await page.eval(`Boolean(document.querySelector('.channel-editor .errsum'))`), false, 'successful background recovery clears its error summary');
       assert.equal((await api(A, `/api/notification-channels/${saved.id}`)).value.revision, background.value.revision, 'latest read retries never write');
       saved = background.value;
       // A catalogue change is not a navigation decision: keep the exact mounted field and its dirty draft.
@@ -971,6 +978,18 @@ async function automationBrowserReview() {
       await page.eval('history.go(-2)'); await text('Discard unsaved channel changes?');
       await click('Discard changes', 'dialog[open]'); await heading(`Edit ${saved.name}`);
       await nav('#/notifications'); await heading('Notifications');
+      // Keep the original pending Back decision when another raw fragment is held before Discard.
+      await nav(edit); await heading(`Edit ${saved.name}`); await mark('pending-move-editor');
+      await fill('Name', 'Pending traversal draft');
+      await page.eval('history.back()'); await text('Discard unsaved channel changes?'); await at('pending-move-editor');
+      await page.eval(`location.hash = '#/incidents'`);
+      await until(() => page.eval(`location.hash === ${J(edit)} && !history.state?.reviewEntry`), 'intervening held fragment');
+      await click('Discard changes', 'dialog[open]'); await heading('Notifications');
+      // Controlled late opening exercises nav itself; no clock or acceptance deadline is extended.
+      await nav(edit); await heading(`Edit ${saved.name}`); await fill('Name', 'Delayed prompt fixture draft');
+      await page.eval(`(() => { window.__nativeShowModal = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { const dialog = this; if (dialog.querySelector('h2')?.textContent === 'Discard unsaved channel changes?') setTimeout(() => { if (dialog.isConnected) window.__nativeShowModal.call(dialog); }, 900); else window.__nativeShowModal.call(dialog); }; })()`);
+      try { await nav('#/notifications'); await heading('Notifications'); }
+      finally { await page.eval('HTMLDialogElement.prototype.showModal = window.__nativeShowModal'); }
       await nav(edit); await heading(`Edit ${saved.name}`); await mark('deferred-source');
       await fill('Name', 'Discard after Back while the prompt stays open');
       await page.eval(`location.hash = '#/incidents'`); await text('Discard unsaved channel changes?'); await mark('held-fragment');

@@ -102,7 +102,7 @@ check('dirty state ignores recipient row keys and detects configuration and cred
 check('channel delivery links round-trip IDs without allowing unrelated or ambiguous query parameters', () => {
   assert.deepEqual(routes.parseRoute(routes.deliveryHref()), { name: 'deliveries' });
   for (const id of ['ha-1', 'opaque ?&#/room']) assert.deepEqual(routes.parseRoute(routes.deliveryHref(id)), { name: 'deliveries', channelId: id });
-  for (const hash of ['#/notifications/deliveries?channel=a&channel=b', '#/notifications/deliveries?channel=a&token=private', '#/monitors?channel=a']) assert.equal(routes.parseRoute(hash).name, 'not-found');
+  for (const hash of ['#/notifications/deliveries?channel=a&channel=b', '#/notifications/deliveries?channel=a&token=private', '#/notifications/deliveries?channel=ha-1?token=private', '#/notifications/deliveries?channel=ha-1??x=1', '#/notifications/deliveries??channel=ha-1', '#/notifications/deliveries??', '#/monitors?channel=a']) assert.equal(routes.parseRoute(hash).name, 'not-found');
 });
 check('navigation registration holds a dirty route and releases without disturbing a newer editor', () => {
   const before = globalThis.location; globalThis.location = { hash: '#/channels/ha-1/edit' }; let proceed;

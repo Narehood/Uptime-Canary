@@ -31,12 +31,14 @@ func TestAutomationChannelPreviewRecipientOrder(t *testing.T) {
 	if len(views) != len(channel.Config.Recipients) {
 		t.Fatalf("got %d acknowledgements for %d recipients", len(views), len(channel.Config.Recipients))
 	}
+	seen := make(map[string]bool, len(views))
 	for index := range channel.Config.Recipients {
 		single := channel
 		single.Config.Recipients = channel.Config.Recipients[index : index+1]
 		want := targetsForChannel(single)[0].ID
-		if views[index].DestinationID != want || views[index].ID == "" {
+		if views[index].DestinationID != want || views[index].ID == "" || seen[views[index].ID] {
 			t.Fatalf("acknowledgement %d no longer follows its configured recipient", index)
 		}
+		seen[views[index].ID] = true
 	}
 }

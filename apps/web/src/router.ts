@@ -52,6 +52,7 @@ export function parseRoute(hash: string): Route {
     const registration = params.get('registration');
     return registration ? { name: 'public-status', slug: id, nodes, registration } : { name: 'public-status', slug: id, nodes };
   }
+  if (section === 'notifications' && id === 'deliveries' && parts.length === 2 && raw.indexOf('?') !== raw.lastIndexOf('?')) return { name: 'not-found', path: raw };
   if (section === 'notifications' && id === 'deliveries' && parts.length === 2 && query) {
     const params = new URLSearchParams(query);
     const channelId = params.get('channel');
@@ -172,7 +173,7 @@ export function useRoute(): Route {
       const traversal = reportedIndex !== undefined && targetIndex !== acceptedIndex;
       const proceed = (): void => {
         if (traversal) {
-          const move = (): void => history.go(targetIndex - acceptedIndex);
+          const move = (): void => history.go(targetIndex - currentIndex);
           // Discard may be chosen before the browser finishes restoring the editor's entry.
           if (restoring) restoring.after = move; else move();
         } else {
