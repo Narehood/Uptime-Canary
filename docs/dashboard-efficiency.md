@@ -5,6 +5,7 @@ specified 1,000-record fixtures, compared with merged PR #35 at
 `d78c81537a481f74bea4f648cb68bde4f72584a4`. They cover health assessment,
 node coverage, group membership, monitor inventory and incident receipts.
 The reductions range from **42.65% to 96.63%** in the Windows measurement.
+Hosted Linux execution also clears 25% for each primary workload.
 These are calculation benchmarks; they do not measure page loading, rendering,
 network requests or human task completion.
 
@@ -32,6 +33,26 @@ it rotates all five selected state filters. Monitors cycle through the actual
 check-type catalogue, health states and tags. Groups have nested parents and
 repeated names. Receipts span 100 incidents, three notification kinds and four
 destinations, arriving in descending timestamp order like the overview API.
+
+## Hosted Linux confirmation
+
+Linux x64, Node **24.22.1**, using the same workloads. Times are again in
+**milliseconds per calculation**, normalized from the recorded batch medians.
+
+| Operation | Before ms | After ms | Elapsed time reduction |
+| --- | ---: | ---: | ---: |
+| Health assessment | 2.27413 | 1.11275 | **51.07%** |
+| Node coverage | 1.24424 | 0.86693 | **30.32%** |
+| Group membership | 0.89153 | 0.03359 | **96.23%** |
+| Monitor inventory | 0.23475 | 0.03211 | **86.32%** |
+| Incident receipts | 1.04217 | 0.05830 | **94.41%** |
+
+[Automation run 42028412477](https://github.com/Narehood/Uptime-Canary/actions/runs/42028412477)
+executed these measurements at `7587868`. All six production-file hashes and
+the proof hash match the retained Windows run and current files. Its bounded
+runner reports an unchanged source tree, successful exit and no storage pause.
+[Linux raw measurements](dashboard-efficiency-linux-measurements.json) retain
+all samples and the workflow, job and artifact identifiers.
 
 ## What changed
 
@@ -71,15 +92,15 @@ current fetched snapshot; no persistent cache is introduced.
 The 25% finding is specific to the primary workloads above. Smaller fleets and
 search-dominated work do not improve uniformly.
 
-| Alternate workload | Elapsed time reduction |
-| --- | ---: |
-| Health, 50 monitors with 3 assignments each | 0.49% |
-| Node coverage, those 50 monitors across 4 nodes | **-2.27%** |
-| Membership, 10 groups and 50 monitors | 65.25% |
-| Inventory, 50 monitors without search | 86.97% |
-| Receipts, 10 displayed incidents and 50 receipts | 38.77% |
-| Inventory, 1,000 monitors searched for `service` | 4.83% |
-| Inventory, 1,000 monitors searched for `not-found` | 3.64% |
+| Alternate workload | Windows reduction | Linux reduction |
+| --- | ---: | ---: |
+| Health, 50 monitors with 3 assignments each | 0.49% | 8.81% |
+| Node coverage, those 50 monitors across 4 nodes | **-2.27%** | **-2.35%** |
+| Membership, 10 groups and 50 monitors | 65.25% | 61.47% |
+| Inventory, 50 monitors without search | 86.97% | 87.02% |
+| Receipts, 10 displayed incidents and 50 receipts | 38.77% | 18.28% |
+| Inventory, 1,000 monitors searched for `service` | 4.83% | **-1.48%** |
+| Inventory, 1,000 monitors searched for `not-found` | 3.64% | **-2.66%** |
 
 Negative values mean slower. The small node calculation changes from 0.00812ms
 to 0.00830ms; index overhead outweighs the reduced scans there. String creation
@@ -110,7 +131,7 @@ Each workload calibrates its batch size against the baseline to approximately
 for 12–40 pairs, requiring a recent four-sample range below 15% and median drift
 below 10% relative to the preceding four. Eleven measured pairs alternate order;
 the reported reduction compares their medians. All workloads met the warm-up
-stability check in this run. These are `performance.now()` elapsed times, not
+stability check in both recorded runs. These are `performance.now()` elapsed times, not
 process CPU time. Timing varies with runtime, hardware and contention.
 
 [Raw measurements](dashboard-efficiency-measurements.json) retain every warm-up
@@ -123,7 +144,13 @@ not used as a noisy CI pass threshold.
 
 One independent GPT-6.1 Sol review approved the behavior changes and benchmark
 method with no actionable findings. The final run above follows a whitespace-only
-proof-file cleanup; its arithmetic and source hashes were rechecked by root. Current-source hosted checks remain pending at this report
-snapshot. Local execution used no Go application/test executable, user database
+proof-file cleanup; its arithmetic and source hashes were rechecked by root.
+
+All four hosted workflows succeeded at `7587868`, including container Go, race
+and proof checks, all five real automation-browser cases on Linux Chrome, image
+builds and the Linux release package. Those browser records report zero real
+external sends. The broader Dashboard browser proof job was skipped;
+CodeRabbit also skipped this draft. No Opus or Cursor review was requested.
+Local execution used no Go application/test executable, user database
 or real notifications. These focused frontend results do not establish complete
 Go/SQLite HA release readiness.
