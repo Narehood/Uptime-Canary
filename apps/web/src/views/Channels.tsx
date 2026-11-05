@@ -270,7 +270,7 @@ export function DeliveriesView({ channelFilter }: { channelFilter?: string }) {
 // ---------- channel list
 
 /** Exact public routing fields, shared by saved and unsaved test confirmations. */
-function AutomationTestDestination({ config }: { config: NotificationConfig }) {
+function AutomationTestDestination({ config, beforeSend = true }: { config: NotificationConfig; beforeSend?: boolean }) {
   const destination = automationDestination(config);
   if (!destination) return null;
   return (
@@ -280,7 +280,7 @@ function AutomationTestDestination({ config }: { config: NotificationConfig }) {
         <div><dt>Server</dt><dd className="mono">{destination.server}</dd></div>
         <div><dt>{destination.targetLabel}</dt><dd className="mono">{destination.target}</dd></div>
       </dl>
-      {config.kind === 'matrix' ? <p className="fwarn"><Glyph tone="warn" /><span>The account must have joined this unencrypted room. End-to-end encrypted rooms are unsupported.</span></p> : null}
+      {beforeSend && config.kind === 'matrix' ? <p className="fwarn"><Glyph tone="warn" /><span>The account must have joined this unencrypted room. End-to-end encrypted rooms are unsupported.</span></p> : null}
     </section>
   );
 }
@@ -300,7 +300,7 @@ function TestSubmissionError({ failure }: { failure: TestFailure }) {
   return <div className="errsum" role="alert"><Glyph tone="down" /><div>
     {failure.disposition === 'unconfirmed' ? null : <b>Test not sent</b>}
     <p>{failure.message}</p>
-    {failure.disposition === 'unconfirmed' ? <p>A test may already be queued. Check delivery attempts before resending: another test can duplicate real messages or device actions.</p> : <p>Correct the problem before trying again.</p>}
+    {failure.disposition === 'unconfirmed' ? <p>A test may already be queued: real messages or device actions may occur. Check delivery attempts before resending; another test can duplicate them.</p> : <p>Correct the problem before trying again.</p>}
   </div></div>;
 }
 
@@ -323,6 +323,7 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
   const focusAnchor = useTestResultFocus(result ? 'submitted' : error?.disposition ?? 'confirm');
   const destinations = destinationCount(channel);
   const emergency = channel.config.kind === 'pushover' && channel.config.pushover?.priority === 2 ? channel.config.pushover : undefined;
+  const emergencyWarning = emergency ? <p className="fwarn"><Glyph tone="warn" /><span>Emergency priority: If accepted by Pushover, this test repeats every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</span></p> : null;
   const send = async (): Promise<void> => {
     setBusy(true); setError(null);
     try {
@@ -340,7 +341,8 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
       {result ? (
         <>
           <p><b>{endpoint}</b> queued {plural(result.length, 'test attempt')}. One attempt per destination; no automatic retries.</p>
-          <p className="muted small">Outcomes appear in Delivery attempts within seconds. Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran.</p>
+          {emergencyWarning}
+          <p className="muted small">Outcomes appear in Delivery attempts within seconds.{result.some(attempt => attempt.state === 'accepted') ? ' Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran.' : null}</p>
           <div className="row-wrap modal-acts">
             <a className="btn primary" href={deliveryHref(channel.id)} onClick={onClose}><Icon name="send" />Open delivery attempts</a>
             <button type="button" className="btn" onClick={onClose}>Close</button>
@@ -349,14 +351,14 @@ function TestDialog({ channel, onClose }: { channel: NotificationChannel; onClos
       ) : (
         <>
           {error ? <TestSubmissionError failure={error} /> : null}
-          {!error ? <p>
-            Sends a <b>real message</b> from <span className="mono">{endpoint}</span> through {providerLabel(channel.config.kind)} to {destinations === 1 ? 'this channel’s destination' : `all ${destinations} recipients`}.
+          {error?.disposition !== 'unconfirmed' ? <p>
+            Sends a <b>real message</b> from <span className="mono">{endpoint}</span> through {providerLabel(channel.config.kind)} to {destinations === 1 ? 'this channel’s destination' : `all ${destinations} recipients`} using saved settings.
             Saves no settings; creates no monitor, incident or receipt.
           </p> : null}
-          {emergency ? <p className="fwarn"><Glyph tone="warn" /><span>Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</span></p> : null}
-          <AutomationTestDestination config={channel.config} />
-          {channel.config.kind === 'homeassistant' ? <HaTestWarning eventType={channel.config.homeassistant?.eventType} /> : null}
-          <p className="muted small">Uses saved revision <Rev revision={channel.revision} />. All tests share this node’s limit: one batch at a time, at least 5 seconds apart.</p>
+          {emergencyWarning}
+          <AutomationTestDestination config={channel.config} beforeSend={error?.disposition !== 'unconfirmed'} />
+          {error?.disposition !== 'unconfirmed' && channel.config.kind === 'homeassistant' ? <HaTestWarning eventType={channel.config.homeassistant?.eventType} /> : null}
+          {error?.disposition !== 'unconfirmed' ? <p className="muted small">Uses saved revision <Rev revision={channel.revision} />. All tests share this node’s limit: one batch at a time, at least 5 seconds apart.</p> : null}
           <div className="row-wrap modal-acts">
             {error?.disposition === 'unconfirmed' ? <a className="btn primary" href={deliveryHref(channel.id)} onClick={onClose}>View delivery attempts</a>
               : <button type="button" className="btn primary" onClick={() => { void send(); }} disabled={busy || !channel.enabled}><Icon name="send" />{busy ? 'Queuing…' : 'Send test'}</button>}
@@ -394,12 +396,12 @@ function TestAttemptsInspector({ provider, attemptIds, recipientLabels, onBack, 
   }, []);
   const rows = (recent.data ?? []).filter(attempt => attempt.kind === 'test' && attempt.provider === provider && (!attemptIds || attemptIds.includes(attempt.id)));
   return <section ref={region}>
-    <p className="muted small">From <span className="mono">{endpoint}</span>'s latest 200 attempts. {attemptIds ? 'Only IDs confirmed in this test reply are shown.' : 'Other test batches may appear; none is confirmed as this submission.'} Older or delayed attempts may be missing. Your channel settings stay in the form.</p>
+    <p className="muted small">From <span className="mono">{endpoint}</span>'s latest 200 attempts. {attemptIds ? 'Only IDs confirmed in this test reply are shown.' : 'Other test batches may appear; none is confirmed as this submission.'} Your channel settings stay in the form.</p>
     {recent.error ? <Banner title={recent.data ? 'Attempt refresh failed' : 'Test attempts could not be read'} tone={recent.data ? 'warn' : 'down'}>{recent.data ? 'Showing the last loaded attempts. ' : ''}{describeFailure(recent.error)}</Banner> : null}
     {recent.data ? rows.length ? <DeliveryTable attempts={rows} compact recipientLabels={recipientLabels} explainAcceptance={false} />
       : <p>{recent.error ? 'No matching attempts in the last loaded view.' : 'No matching attempts in this recent view.'}</p>
       : !recent.error ? <p role="status">Loading recent test attempts...</p> : null}
-    <p className="muted small">Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran. Missing attempts don’t prove the test was unsent; resending may duplicate it.</p>
+    <p className="muted small">{rows.some(attempt => attempt.state === 'accepted') ? 'Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran. ' : null}Older or delayed attempts may be missing; absence doesn’t prove the test was unsent. Resending may duplicate it.</p>
     <div className="row-wrap modal-acts">
       <button type="button" className="btn primary" onClick={onBack}>Back to test result</button>
       <button type="button" className="btn" onClick={recent.reload}>Refresh attempts</button>
@@ -454,6 +456,7 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
   const kind = input.config.kind;
   const recipients = PROVIDER.get(kind)?.email ? input.config.recipients?.length ?? 0 : 1;
   const emergency = kind === 'pushover' && input.config.pushover?.priority === 2 ? input.config.pushover : undefined;
+  const emergencyWarning = emergency ? <p className="fwarn"><Glyph tone="warn" /><span>Emergency priority: If accepted by Pushover, this test repeats every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</span></p> : null;
   const follow = (ids: string[]): void => {
     const controller = new AbortController();
     stop.current = controller;
@@ -499,26 +502,27 @@ function PreviewTestDialog({ input, onClose }: { input: NotificationChannelInput
   return (
     <Modal title={inspecting ? `Recent ${providerLabel(kind)} test attempts` : error ? error.disposition === 'unconfirmed' ? 'Test submission unconfirmed' : 'Test request rejected' : attempts ? waiting ? 'Test queued' : settled ? 'Test results' : 'Waiting stopped' : 'Test these settings?'} onClose={onClose} busy={busy} wide={inspecting}>
       <p ref={focusAnchor} className="vh" role="status" aria-live="polite" aria-atomic="true">{attempts ? `${endpoint} queued ${plural(attempts.length, 'test attempt')}. ${outcomeSummary}. ${readFailure ? `Outcome updates unavailable: ${readFailure}. ` : ''}${completion} Accepted is not proof of delivery. Nothing was saved.` : ''}</p>
-      {inspecting ? <TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} recipientLabels={recipientLabels.current} onBack={() => setInspecting(false)} onClose={onClose} /> : attempts ? (
+      {inspecting ? <>{emergencyWarning}<TestAttemptsInspector provider={kind} attemptIds={attempts?.map(attempt => attempt.id)} recipientLabels={recipientLabels.current} onBack={() => setInspecting(false)} onClose={onClose} /></> : attempts ? (
         <>
           <p><b>{endpoint}</b> queued {plural(attempts.length, 'test attempt')} with these settings. Nothing was saved.</p>
+          {emergencyWarning}
           {readFailure ? <p className="fwarn"><Glyph tone="warn" /><span><b>Outcome updates unavailable.</b> {readFailure} Showing the last reported results. Check delivery attempts for updates.</span></p> : null}
           <PreviewOutcomeList attempts={attempts} recipientLabels={recipientLabels.current} />
           <p>{completion}</p>
-          <p className="muted small">Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran.</p>
+          {attempts.some(attempt => attempt.state === 'accepted') ? <p className="muted small">Accepted means the provider acknowledged it; it doesn’t confirm delivery or that an automation ran.</p> : null}
           <div className="row-wrap modal-acts"><button ref={inspectButton} type="button" className="btn primary" onClick={() => setInspecting(true)}>View delivery attempts</button><button type="button" className="btn" onClick={onClose}>Close</button></div>
         </>
       ) : (
         <>
           {error ? <TestSubmissionError failure={error} /> : null}
-          {!error ? <p>
+          {error?.disposition !== 'unconfirmed' ? <p>
             Sends a <b>real message</b> from <span className="mono">{endpoint}</span> through {providerLabel(kind)} to {recipients === 1 ? 'the destination' : `all ${recipients} recipients`} using current form settings, saved or not. {input.enabled ? '' : 'The channel stays disabled. '}
             Saves no settings; creates no monitor, incident or receipt.
           </p> : null}
-          {emergency ? <p className="fwarn"><Glyph tone="warn" /><span>Emergency priority: Pushover repeats this test every {span((emergency.retrySeconds ?? 0) * 1000)} until someone acknowledges it, for up to {span((emergency.expireSeconds ?? 0) * 1000)}.</span></p> : null}
-          <AutomationTestDestination config={input.config} />
-          {kind === 'homeassistant' ? <HaTestWarning eventType={input.config.homeassistant?.eventType} /> : null}
-          <p className="muted small">All tests share this node’s limit: one batch at a time, at least 5 seconds apart.</p>
+          {emergencyWarning}
+          <AutomationTestDestination config={input.config} beforeSend={error?.disposition !== 'unconfirmed'} />
+          {error?.disposition !== 'unconfirmed' && kind === 'homeassistant' ? <HaTestWarning eventType={input.config.homeassistant?.eventType} /> : null}
+          {error?.disposition !== 'unconfirmed' ? <p className="muted small">All tests share this node’s limit: one batch at a time, at least 5 seconds apart.</p> : null}
           <div className="row-wrap modal-acts">
             {error?.disposition === 'unconfirmed' ? <button ref={inspectButton} type="button" className="btn primary" onClick={() => setInspecting(true)}>View delivery attempts</button>
               : <button type="button" className="btn primary" onClick={() => { void send(); }} disabled={busy}><Icon name="send" />{busy ? 'Queuing…' : 'Send test'}</button>}
@@ -1179,7 +1183,8 @@ function ChannelFormBody({ id, seed }: { id?: string; seed?: NotificationChannel
       const views = await api.channels();
       if (!mounted.current || !stillCurrent()) return;
       const latest = views.find(view => view.channel.id === current.id);
-      if (!latest || latest.configConflict) throw new Error('The channel is missing or has conflicting versions.');
+      if (!latest) throw new Error('The channel is not in the latest list.');
+      if (latest.configConflict) throw new Error('The channel has conflicting versions. Resolve them before loading.');
       const next = channelDraft(latest.channel);
       baseline.current = next; setDraft(next); setBase(latest.channel); setFailure(null); setShowErrors(false); setProviderOpen(false);
       channels.reload();
