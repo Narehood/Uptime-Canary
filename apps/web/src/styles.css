@@ -1531,3 +1531,58 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
   .channel-editor .modal .deliveries td[data-label="Destination"], .channels-view .modal .deliveries td[data-label="Destination"] { text-align: left; }
   .channel-editor .modal .deliveries td[data-label="Destination"]::before, .channels-view .modal .deliveries td[data-label="Destination"]::before { float: none; display: block; margin-bottom: 4px; }
 }
+
+/* Delivery investigation keeps outcomes visible; identifiers are available per attempt. */
+.delivery-view .deliveries td { vertical-align: top; }
+.delivery-view .attempt-details { min-width: 100px; max-width: 280px; }
+.delivery-view .attempt-details > summary, .delivery-notes summary { min-height: 44px; padding-block: 10px; cursor: pointer; color: var(--text-2); font-size: 13px; }
+.delivery-view .attempt-details dl { display: grid; gap: 10px; margin: 4px 0 10px; font-size: 12px; line-height: 1.5; }
+.delivery-view .attempt-details dt { color: var(--text-2); }
+.delivery-view .attempt-details dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.delivery-view .delivery-notes { display: grid; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--grid); color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.delivery-view .delivery-notes p { margin: 0; }
+.delivery-view .delivery-notes details p + p { margin-top: 10px; }
+@container app (max-width: 699px) {
+  .delivery-view .deliveries tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 16px 0; }
+  .delivery-view .deliveries td { width: auto; min-width: 0; padding: 0; text-align: left; overflow: visible; }
+  .delivery-view .deliveries.tbl.stack td::before { display: none; }
+  .delivery-view .deliveries .delivery-event { grid-column: 1; grid-row: 1; }
+  .delivery-view .deliveries .delivery-when { grid-column: 2; grid-row: 1; font-size: 12px; color: var(--text-2); }
+  .delivery-view .deliveries .delivery-destination, .delivery-view .deliveries .delivery-outcome, .delivery-view .deliveries .delivery-diagnostics { grid-column: 1 / -1; }
+  .delivery-view .attempt-destination { justify-content: flex-start; text-align: left; }
+  .delivery-view .attempt-destination > span { min-width: 0; overflow-wrap: anywhere; }
+  .delivery-view .attempt-destination a { overflow-wrap: anywhere; }
+  .delivery-view .attempt-details { max-width: none; }
+  .delivery-view .attempt-details > summary { padding-block: 11px; }
+  .delivery-view .attempt-details dl { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .delivery-view .attempt-details dl > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; }
+  .delivery-view .attempt-details dd { margin: 0; }
+  .delivery-view .deliveries .why { font-size: 13px; line-height: 1.55; }
+}
+
+.delivery-view .delivery-acceptance { margin: 12px 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+
+.delivery-view .delivery-token { color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
+.delivery-view .delivery-scope { display: block; margin-top: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+.delivery-view .delivery-reset { justify-content: center; margin-top: 12px; }
+@container app (max-width: 699px) {
+  .delivery-view .delivery-reset .btn { min-height: 44px; white-space: normal; }
+}
+
+@container app (max-width: 699px) {
+  .delivery-view .attempt-details .btn { min-height: 44px; }
+}
+
+.delivery-view .delivery-freshness { margin: 0 0 12px; font-size: 12px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; }
+.delivery-view .delivery-next-step { margin: 8px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+@container app (max-width: 699px) {
+  .delivery-view { gap: 12px; }
+  .delivery-view .tabs a { min-height: 44px; }
+  .delivery-view .card-h { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .delivery-view .card-h > .r { flex-wrap: nowrap; min-width: 0; }
+  .delivery-view .inline-sel select { width: clamp(108px, 36cqw, 146px); min-width: 0; }
+  .delivery-view .filters { flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: thin; overscroll-behavior-inline: contain; }
+  .delivery-view .filters .fchip { flex: none; }
+  .delivery-view .filters .fchip:focus-visible { outline-offset: -3px; }
+  .delivery-view .delivery-freshness { margin-bottom: 8px; }
+}

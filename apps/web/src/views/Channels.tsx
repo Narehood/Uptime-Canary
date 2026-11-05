@@ -5,10 +5,11 @@ import { ApiFailure, describeFailure, isAbort, jsonBytes } from '../api';
 import { useCanary } from '../context';
 import { ago, andList, bytesOf, maskedUrl, plural, shortId, shortRev, span } from '../format';
 import { useResource } from '../hooks';
+import { deliveryDestinationTokens, deliveryView, type AttemptFilter } from '../deliveryView';
 import { automationDestination, buildMessaging, control, isMessaging, messagingDraft, messagingRoute, MFIELD_LABEL, templateProblem, urlProblem, type MessagingDraft, type MField } from '../messaging';
 import { notify } from '../notices';
 import { deliveryHref, href, navigate, registerNavigationGuard } from '../router';
-import { Banner, Card, Chip, EmptyState, ErrorText, FilterChips, Modal, PageHead, ReadOnly, Rev, Tag, Time } from '../ui/bits';
+import { Banner, Card, Chip, CopyButton, EmptyState, ErrorText, FilterChips, Modal, PageHead, ReadOnly, Rev, Tag, Time } from '../ui/bits';
 import { CheckField, Disclosure, ErrorSummary, SecretField, Seg, TextField } from '../ui/forms';
 import { Glyph, Icon, type IconName } from '../ui/icons';
 import type { Tone } from '../model';
@@ -153,7 +154,7 @@ function AttemptWhy({ attempt, explainAcceptance = true }: { attempt: DeliveryAt
   return <div className="why">{parts.map((part, index) => <span key={index}>{part}</span>)}</div>;
 }
 
-export function DeliveryTable({ attempts, compact, recipientLabels, explainAcceptance = true }: { attempts: DeliveryAttemptView[]; compact?: boolean; recipientLabels?: ReadonlyMap<string, string>; explainAcceptance?: boolean }) {
+export function DeliveryTable({ attempts, compact, recipientLabels, explainAcceptance = true, investigation = false, destinationTokens }: { attempts: DeliveryAttemptView[]; compact?: boolean; recipientLabels?: ReadonlyMap<string, string>; explainAcceptance?: boolean; investigation?: boolean; destinationTokens?: ReadonlyMap<string, string> }) {
   const { monitorMap, channels, overview } = useCanary();
   return (
     <div className="tbl-wrap">
@@ -161,8 +162,8 @@ export function DeliveryTable({ attempts, compact, recipientLabels, explainAccep
         <caption className="vh">Delivery attempts, newest first</caption>
         <thead>
           <tr>
-            <th scope="col">Last attempt</th><th scope="col">Event</th><th scope="col">Destination</th><th scope="col">Outcome</th>
-            {compact ? null : <th scope="col">Node</th>}<th scope="col" className="num">Failures</th>
+            {investigation ? null : <th scope="col">Last attempt</th>}<th scope="col">Event</th><th scope="col">Destination</th><th scope="col">Outcome</th>
+            {investigation ? <><th scope="col">Last attempt</th><th scope="col">Details</th></> : <>{compact ? null : <th scope="col">Node</th>}<th scope="col" className="num">Failures</th></>}
           </tr>
         </thead>
         <tbody>
@@ -170,28 +171,53 @@ export function DeliveryTable({ attempts, compact, recipientLabels, explainAccep
             const monitor = attempt.monitorId ? monitorMap.get(attempt.monitorId)?.monitor : undefined;
             const channel = attempt.channelId ? channels.map.get(attempt.channelId)?.channel : undefined;
             const state = attemptState(attempt.state), recipient = recipientLabels?.get(attempt.id);
+            const token = investigation && !recipient && attempt.destinationId ? destinationTokens?.get(attempt.destinationId) : undefined;
+            const when = <td data-label="Last attempt" className="tn delivery-when">{attempt.lastAttemptAt ? <Time at={attempt.lastAttemptAt} now={overview.now} /> : <span className="muted">not yet</span>}</td>;
             return (
               <tr key={attempt.id}>
-                <td data-label="Last attempt" className="tn">{attempt.lastAttemptAt ? <Time at={attempt.lastAttemptAt} now={overview.now} /> : <span className="muted">not yet</span>}</td>
-                <td data-label="Event" className="lead">
+                {investigation ? null : when}
+                <td data-label="Event" className="lead delivery-event">
                   <b>{KIND_LABEL[attempt.kind] ?? attempt.kind}{attempt.kind === 'repeat' && attempt.slot ? ` #${attempt.slot}` : ''}</b>
                   {attempt.kind === 'test' ? <span className="muted"> · channel test</span>
                     : monitor ? <> · <a href={href('monitors', monitor.id)}>{monitor.name}</a></>
                     : attempt.monitorId ? <span className="muted"> · deleted monitor</span> : null}
-                  {attempt.incidentId ? <div className="muted small">incident <span className="mono" title={attempt.incidentId}>{shortId(attempt.incidentId)}</span></div> : null}
+                  {!investigation && attempt.incidentId ? <div className="muted small">incident <span className="mono" title={attempt.incidentId}>{shortId(attempt.incidentId)}</span></div> : null}
                 </td>
-                <td data-label="Destination">
-                  <span className="attempt-destination"><ProviderIcon kind={attempt.provider} /><span>{recipient ?? (channel ? <a href={href('channels', channel.id, 'edit')}>{channel.name}</a> : attempt.channelId ? <span className="muted">channel {shortId(attempt.channelId)}</span> : providerLabel(attempt.provider))}</span></span>
-                  {attempt.destinationId ? <div className="muted small">destination <span className="mono" title={attempt.destinationId}>{shortId(attempt.destinationId)}</span></div> : null}
+                <td data-label="Destination" className="delivery-destination">
+                  <span className="attempt-destination"><ProviderIcon kind={attempt.provider} /><span>{recipient ?? (channel ? <a href={href('channels', channel.id, 'edit')}>{channel.name}</a> : attempt.channelId ? <span className="muted">channel {shortId(attempt.channelId)}</span> : providerLabel(attempt.provider))}{token ? <small className="delivery-token mono" title={`Destination ${attempt.destinationId}`}> · {token}</small> : null}</span></span>
+                  {!investigation && attempt.destinationId ? <div className="muted small">destination <span className="mono" title={attempt.destinationId}>{shortId(attempt.destinationId)}</span></div> : null}
                 </td>
-                <td data-label="Outcome" className="full">
+                <td data-label="Outcome" className="full delivery-outcome">
                   <span className="nowrap"><Chip tone={state.tone} label={state.label} />{attempt.httpStatus ? <span className="muted small"> HTTP {attempt.httpStatus}</span> : null}</span>
                   {attempt.nextAttemptAt ? <div className="muted small">next try <Time at={attempt.nextAttemptAt} now={overview.now} mode="short" /></div> : null}
-                  {attempt.providerId ? <div className="muted small">acknowledgement <span className="mono" title="SHA-256 of the provider’s ID">{attempt.providerId.slice(0, 10)}…</span></div> : null}
+                  {!investigation && attempt.providerId ? <div className="muted small">acknowledgement <span className="mono" title="SHA-256 of the provider’s ID">{attempt.providerId.slice(0, 10)}…</span></div> : null}
                   <AttemptWhy attempt={attempt} explainAcceptance={explainAcceptance} />
+                  {investigation && channel && attempt.state === 'failed' && ['provider_rejected', 'recipient_rejected', 'invalid_config', 'smtp_auth', 'redirect_refused'].includes(attempt.errorCode ?? '') ? <p className="delivery-next-step">
+                    Check destination settings and provider permissions. <a href={href('channels', channel.id, 'edit')} aria-label={`Review channel settings for ${channel.name}`}>Review channel settings</a>.
+                  </p> : null}
                 </td>
-                {compact ? null : <td data-label="Node"><span className="mono">{attempt.nodeId}</span></td>}
-                <td data-label="Failures" className="num">{attempt.failures}</td>
+                {investigation ? <>{when}<td data-label="Details" className="delivery-diagnostics">
+                  <details className="attempt-details">
+                    <summary aria-label={`Details${attempt.failures > 0 ? `, ${plural(attempt.failures, 'failure')}` : ''} for ${KIND_LABEL[attempt.kind]} to ${channel?.name ?? providerLabel(attempt.provider)}, attempt ${attempt.id}`}>
+                      Details{attempt.failures > 0 ? <span className="muted"> · {plural(attempt.failures, 'failure')}</span> : null}
+                    </summary>
+                    <dl>
+                      <div><dt>Node</dt><dd>{attempt.nodeId}</dd></div>
+                      <div><dt>Failures</dt><dd>{attempt.failures}</dd></div>
+                      <div><dt>Attempt ID</dt><dd className="mono">{attempt.id}</dd></div>
+                      {attempt.destinationId ? <div><dt>Destination ID</dt><dd className="mono">{attempt.destinationId}</dd></div> : null}
+                      {attempt.incidentId ? <div><dt>Incident ID</dt><dd className="mono">{attempt.incidentId}</dd></div> : null}
+                      {attempt.providerId ? <div><dt>Acknowledgement hash</dt><dd className="mono">{attempt.providerId}</dd></div> : null}
+                    </dl>
+                    <CopyButton label="Copy details" ariaLabel={`Copy details for attempt ${attempt.id}`} value={[
+                      `Node: ${attempt.nodeId}`, `Failures: ${attempt.failures}`, `Attempt ID: ${attempt.id}`,
+                      attempt.destinationId ? `Destination ID: ${attempt.destinationId}` : null,
+                      attempt.incidentId ? `Incident ID: ${attempt.incidentId}` : null,
+                      attempt.providerId ? `Acknowledgement hash: ${attempt.providerId}` : null,
+                    ].filter(Boolean).join('\n')} />
+                  </details>
+                </td></> : <>{compact ? null : <td data-label="Node"><span className="mono">{attempt.nodeId}</span></td>}
+                <td data-label="Failures" className="num">{attempt.failures}</td></>}
               </tr>
             );
           })}
@@ -201,30 +227,32 @@ export function DeliveryTable({ attempts, compact, recipientLabels, explainAccep
   );
 }
 
-type AttemptFilter = 'all' | 'problems' | 'accepted' | 'held' | 'tests';
-const PROBLEM = new Set(['failed', 'unknown', 'unavailable', 'retrying']);
-
 export function DeliveriesView({ channelFilter }: { channelFilter?: string }) {
-  const { api, endpoint, search, monitorMap, channels, connection, role, overview } = useCanary();
+  const { api, endpoint, search, setSearch, monitorMap, channels, connection, role, overview } = useCanary();
   const [limit, setLimit] = useState(200);
   const [filter, setFilter] = useState<AttemptFilter>('all');
+  const filtersRef = useRef<HTMLDivElement>(null);
   const channelId = channelFilter ?? '';
+  const query = search.trim();
   const privateAttempts = role !== 'viewer' && overview.user.role !== 'viewer';
   const attempts = useResource<DeliveryAttemptView[]>(`${connection.identity}|deliveries|${privateAttempts}|${limit}`, signal => privateAttempts ? api.deliveries({ limit }, signal) : Promise.resolve([]), privateAttempts ? 15_000 : undefined);
-  const q = search.trim().toLowerCase();
-  const all = (attempts.data ?? []).filter(attempt => (!channelId || attempt.channelId === channelId)
-    && (!q || `${monitorMap.get(attempt.monitorId ?? '')?.monitor.name ?? ''} ${channels.map.get(attempt.channelId ?? '')?.channel.name ?? ''} ${attempt.provider} ${attempt.nodeId} ${attempt.errorCode ?? ''} ${attempt.incidentId ?? ''}`.toLowerCase().includes(q)));
-  const keep = (attempt: DeliveryAttemptView, f: AttemptFilter): boolean => f === 'all' || (f === 'problems' ? PROBLEM.has(attempt.state) : f === 'accepted' ? attempt.state === 'accepted' : f === 'held' ? attempt.state === 'held' : attempt.kind === 'test');
-  const rows = all.filter(attempt => keep(attempt, filter));
+  const { rows, counts } = useMemo(() => deliveryView(attempts.data ?? [], channelId, search, filter, monitorMap, channels.map),
+    [attempts.data, channelId, search, filter, monitorMap, channels.map]);
+  const destinationTokens = useMemo(() => deliveryDestinationTokens(attempts.data ?? []), [attempts.data]);
+  const clearSearch = () => { document.querySelector<HTMLInputElement>('.topbar input[type=search]')?.focus(); setSearch(''); };
+  const resetFilters = () => {
+    setSearch(''); setFilter('all');
+    if (channelId) navigate(deliveryHref());
+    requestAnimationFrame(() => filtersRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+  };
   const unsupported = attempts.error instanceof ApiFailure && attempts.error.status === 404;
-  if (!privateAttempts) return <div className="view"><PageHead title="Notifications" /><NotificationTabs current="deliveries" /><ReadOnly>Viewers see channel names and providers only. Delivery attempts are private.</ReadOnly></div>;
+  if (!privateAttempts) return <div className="view delivery-view"><PageHead title="Notifications" /><NotificationTabs current="deliveries" /><Banner tone="info" title="Delivery attempts are private">Viewers see channel names and providers only.</Banner></div>;
   return (
     <div className="view delivery-view">
-      <PageHead title="Notifications" sub={<>Delivery attempts known to <span className="mono">{endpoint}</span>, newest first. Each email recipient, and each chat, push or webhook channel, is its own destination with its own retries.</>} />
+      <PageHead title="Notifications" />
       <NotificationTabs current="deliveries" />
       <Card
-        title="Delivery attempts"
-        hint={attempts.loadedAt ? <>Loaded {ago(attempts.loadedAt, Date.now())} · refreshes every 15 s · this node’s attempts and the receipts it has learned from peers</> : undefined}
+        title="Attempts"
         actions={<>
           {(channels.list?.length ?? 0) > 0 ? (
             <label className="inline-sel"><span className="vh">Channel</span>
@@ -239,29 +267,41 @@ export function DeliveriesView({ channelFilter }: { channelFilter?: string }) {
         </>}
         className={attempts.loading && attempts.data ? 'refetching' : undefined}
       >
+        {attempts.loadedAt ? <p className="delivery-freshness"><span className="mono">{endpoint}</span> · updated {ago(attempts.loadedAt, Date.now())} · refreshes every 15 s</p> : null}
         {unsupported ? <EmptyState title={`${endpoint} doesn’t report delivery attempts`}>It probably runs an older Uptime-Canary version. Receipts are still listed under Receipts.</EmptyState>
           : attempts.error && !attempts.data ? <Banner tone="down" title="Delivery attempts could not be loaded">{describeFailure(attempts.error)}</Banner>
           : !attempts.data ? <p className="muted">Loading delivery attempts from {endpoint}…</p>
           : (
             <>
-              <FilterChips<AttemptFilter> label="Filter attempts" value={filter} onChange={setFilter} options={[
-                { value: 'all', label: 'All', count: all.length },
-                { value: 'problems', label: 'Needs attention', count: all.filter(a => keep(a, 'problems')).length },
-                { value: 'accepted', label: 'Accepted', count: all.filter(a => keep(a, 'accepted')).length },
-                { value: 'held', label: 'Held', count: all.filter(a => keep(a, 'held')).length },
-                { value: 'tests', label: 'Tests', count: all.filter(a => keep(a, 'tests')).length },
-              ]} />
-              {rows.length ? <DeliveryTable attempts={rows} /> : <EmptyState title="No attempts here">{all.length ? 'Nothing matches this filter.' : 'No matching attempts in this recent, capped view. Older attempts may be outside it; this is not delivery-health evidence.'}</EmptyState>}
+              {attempts.error ? <Banner tone="warn" title="Delivery updates unavailable">Refresh failed. Showing the last loaded attempts; outcomes may have changed.</Banner> : null}
+              <div ref={filtersRef} onFocusCapture={event => { if (event.target instanceof HTMLButtonElement) event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }}><FilterChips<AttemptFilter> label="Filter attempts" value={filter} onChange={setFilter} options={[
+                { value: 'all', label: 'All', count: counts.all },
+                { value: 'problems', label: 'Needs attention', count: counts.problems },
+                { value: 'accepted', label: 'Accepted', count: counts.accepted },
+                { value: 'held', label: 'Held', count: counts.held },
+                { value: 'tests', label: 'Tests', count: counts.tests },
+              ]} /></div>
+              {rows.some(attempt => attempt.state === 'accepted') ? <p className="delivery-acceptance"><b>Accepted</b> confirms provider acknowledgement, not delivery or automation execution.</p> : null}
+              {rows.length ? <DeliveryTable attempts={rows} investigation destinationTokens={destinationTokens} explainAcceptance={false} /> : <EmptyState title="No attempts here" action={query || channelId || filter !== 'all' ? <div className="row-wrap delivery-reset">
+                {query ? <button type="button" className="btn sm" onClick={clearSearch}>Clear search</button> : null}
+                {channelId || filter !== 'all' ? <button type="button" className="btn sm" onClick={resetFilters}>Reset all filters</button> : null}
+              </div> : undefined}>
+                <span>{counts.all ? 'Nothing matches this filter.' : 'No matching attempts in this recent, capped view. Older attempts may be outside it; this is not delivery-health evidence.'}</span>
+                {query || channelId || filter !== 'all' ? <span className="delivery-scope">Channel: {channelId ? channels.map.get(channelId)?.channel.name ?? shortId(channelId) : 'All channels'}. Outcome: {{ all: 'All', problems: 'Needs attention', accepted: 'Accepted', held: 'Held', tests: 'Tests' }[filter]}.{query ? <> Search: <q>{query}</q>.</> : null}</span> : null}
+              </EmptyState>}
               {attempts.data.length >= limit && limit < 1000 ? <div className="row-wrap center"><button type="button" className="btn sm" onClick={() => setLimit(1000)}>Load up to 1,000 attempts</button></div> : null}
             </>
           )}
-        {attempts.error && attempts.data ? <p className="fwarn" role="alert">Refresh failed. Showing the last loaded attempts; outcomes may have changed.</p> : null}
-        <p className="foot-note">
-          {channelId ? <>Filtered to <b>{channels.map.get(channelId)?.channel.name ?? `channel ${shortId(channelId)}`}</b>. <a href={deliveryHref()}>Show all channels</a>. </> : null}
-          Showing up to {limit} recent attempts known to this node, including learned peer receipts; older attempts may be outside this view.{' '}
-          <b>Accepted</b> means the provider acknowledged the request (Discord with a saved message, Slack with “ok”, Telegram, ntfy, Gotify and Pushover with a message or request ID, Matrix with an event ID, Home Assistant when it reports the event fired, email services and SMTP after DATA). It isn’t proof of inbox or device delivery, or that an automation ran.
-          Outcomes, error codes and HTTP statuses are fixed values: provider bodies, addresses and secret URLs are never shown. Partitions can cause duplicate sends.
-        </p>
+        <div className="delivery-notes">
+          <p>{channelId ? <>Filtered to <b>{channels.map.get(channelId)?.channel.name ?? `channel ${shortId(channelId)}`}</b>. <a href={deliveryHref()}>Show all channels</a>. </> : null}
+            Up to {limit} recent attempts known to this node, including learned peer receipts. Older attempts may be outside this view. Partitions can cause duplicate sends.</p>
+          <details><summary>Search tips and log details</summary>
+            <p>Use the search at the top for monitor or channel names, provider, node, error codes and public attempt, destination or incident IDs. Short destination tokens also work.</p>
+            <p>Each email recipient, and each chat, push or webhook channel, is a separate destination with its own retries. An empty log is not delivery-health evidence.</p>
+            <p>Acceptance means Discord saved a message; Slack returned "ok"; Telegram, ntfy, Gotify, Pushover or Matrix returned an ID; Home Assistant reported the event fired; or an email service or SMTP accepted the message.</p>
+            <p>Outcomes, error codes and HTTP statuses are fixed values. Provider response bodies, email addresses and secret URLs are never shown here.</p>
+          </details>
+        </div>
       </Card>
     </div>
   );

@@ -326,6 +326,25 @@ check('delivery inspection preserves acknowledged email labels by attempt identi
   assert.ok(markup.includes('ops@example.test'));
   assert.ok(!markup.includes('channel preview-private'));
 });
+check('delivery investigation discloses full diagnostic IDs while keeping failure reasons visible', () => {
+  const attempt = { id: 'attempt-full-id', kind: 'down', nodeId: 'node-full-id', channelId: 'channel-full-id', destinationId: 'destination-full-id', incidentId: 'incident-full-id', provider: 'matrix', state: 'unknown', failures: 2, errorCode: 'delivery_unconfirmed' };
+  const markup = render(React.createElement(DeliveryTable, { attempts: [attempt], investigation: true, explainAcceptance: false }), [], 22);
+  const diagnostic = markup.match(/<details class="attempt-details">[\s\S]*?<\/details>/u)?.[0];
+  assert.ok(diagnostic && !diagnostic.includes(' open='));
+  for (const value of ['attempt-full-id', 'node-full-id', 'destination-full-id', 'incident-full-id', '2 failures']) assert.ok(text(diagnostic).includes(value));
+  assert.ok(text(markup.replace(diagnostic, '')).includes('A retry can duplicate it.'));
+  assert.ok(markup.includes('Details, 2 failures for Down alert to Matrix, attempt attempt-full-id'));
+});
+check('known delivery rejection links to correction without offering another send', () => {
+  const channel = { id: 'ops', name: 'Operations', config: channels[1], enabled: true, revision: 'r1' };
+  const attempt = { id: 'rejected', nodeId: 'a', channelId: 'ops', provider: 'matrix', kind: 'test', state: 'failed', failures: 1, errorCode: 'provider_rejected' };
+  const markup = render(React.createElement(DeliveryTable, { attempts: [attempt], investigation: true }), [{ channel, configConflict: false }], 22);
+  assert.ok(markup.includes('href="#/channels/ops/edit" aria-label="Review channel settings for Operations"'));
+  assert.ok(text(markup).includes('Check destination settings and provider permissions.'));
+  assert.ok(!text(markup).includes('Send test'));
+  const uncertain = render(React.createElement(DeliveryTable, { attempts: [{ ...attempt, state: 'unknown', errorCode: 'delivery_unconfirmed' }], investigation: true }), [{ channel, configConflict: false }], 22);
+  assert.ok(!text(uncertain).includes('Review channel settings'));
+});
 check('older or unreported protocol: read-only events with an upgrade note, and the new providers gated', () => {
   for (const protocol of [21, undefined]) {
     const markup = renderForm(undefined, protocol);

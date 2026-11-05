@@ -70,7 +70,24 @@ const server = createServer(async (req, res) => {
       protocol = Number(url.searchParams.get('protocol') || 22); role = url.searchParams.get('role') || 'admin';
       testMode = url.searchParams.get('test') || 'reject';
       saveMode = url.searchParams.get('save') || 'normal'; deleteMode = url.searchParams.get('remove') || 'normal'; assignMode = url.searchParams.get('assign') || 'normal';
-      reset(url.searchParams.get('empty') === '1', url.searchParams.get('extras') === '1'); requests.length = 0; return reply({ fixture: true });
+      reset(url.searchParams.get('empty') === '1', url.searchParams.get('extras') === '1');
+      if (url.searchParams.get('log') === '1') attempts = ['retrying', 'accepted', 'held', 'failed', 'unknown', 'queued', 'cancelled', 'unavailable', 'sending'].map((state, index) => ({
+        id: `fixture-log-${index}`, nodeId: index % 2 ? 'canary-us' : 'canary-eu', monitorId: index < 6 ? 'website' : 'api',
+        incidentId: `fixture-incident-${index}`, channelId: index % 2 ? 'matrix-ops' : 'ha-office',
+        destinationId: `fixture-destination-${index}`, provider: index % 2 ? 'matrix' : 'homeassistant',
+        kind: ['down', 'recovery', 'repeat', 'test'][index % 4], state, failures: ['retrying', 'failed', 'unknown'].includes(state) ? index + 1 : 0,
+        lastAttemptAt: now() - (index + 1) * 60_000,
+        ...(state === 'retrying' ? { nextAttemptAt: now() + 60_000, errorCode: 'rate_limited', httpStatus: 429 } : {}),
+        ...(state === 'failed' ? { errorCode: 'provider_rejected', httpStatus: 403 } : {}),
+        ...(state === 'unknown' ? { errorCode: 'delivery_unconfirmed' } : {}),
+        ...(state === 'accepted' ? { httpStatus: 200, providerId: 'f'.repeat(64) } : {}),
+      }));
+      if (url.searchParams.get('multi') === '1') attempts.unshift(...[0, 1].map(index => ({
+        id: `fixture-recipient-${index}`, nodeId: 'canary-eu', channelId: 'smtp-ops', provider: 'smtp', kind: 'test',
+        destinationId: 'd'.repeat(63) + (index + 1), state: index ? 'failed' : 'accepted', failures: index,
+        lastAttemptAt: now() - index * 60_000, ...(index ? { errorCode: 'recipient_rejected' } : {}),
+      })));
+      requests.length = 0; return reply({ fixture: true });
     }
     if (url.pathname === '/__fixture/report') return reply({ fixture: true, requests });
     if (url.pathname === '/__fixture/overview-rejection') { rejectOverview = url.searchParams.get('on') === '1'; return reply({ fixture: true, rejectOverview }); }

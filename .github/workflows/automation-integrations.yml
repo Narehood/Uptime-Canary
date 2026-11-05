@@ -68,6 +68,13 @@ jobs:
         run: python3 scripts/bounded_validation.py --timeout 120 -- node scripts/alert-templates-pure.mjs
       - name: Automation form and external dashboard contracts
         run: python3 scripts/bounded_validation.py --timeout 120 -- node scripts/automation-integrations-pure.mjs
+      - name: Delivery filtering equivalence
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 120 -- node scripts/delivery-view-proof.mjs --benchmark
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
       - name: Real automation forms on Linux Chrome
         run: |
           set +e
