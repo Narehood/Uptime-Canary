@@ -94,7 +94,7 @@ type AlertEvent = 'down' | 'repeat' | 'recovery';
 const EVENT_ORDER: readonly AlertEvent[] = ['down', 'repeat', 'recovery'];
 const EVENT_CHOICE: Record<AlertEvent, { label: string; hint: string; noun: string }> = {
   down: { label: 'Down alerts', hint: 'When a monitor goes down.', noun: 'down alerts' },
-  repeat: { label: 'Repeats', hint: 'Reminders while the monitor stays down. Needs down alerts.', noun: 'repeats' },
+  repeat: { label: 'Repeats', hint: 'Reminders while down. Needs down alerts.', noun: 'repeats' },
   recovery: { label: 'Recoveries', hint: 'When it’s back up.', noun: 'recoveries' },
 };
 /** UI dependencies are applied immediately; the API builder still rejects invalid explicit selections. */

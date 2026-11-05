@@ -136,9 +136,9 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
       {kind === 'homeassistant' ? (
         <>
           <TextField full mono label="Home Assistant URL" value={d.haBase} onChange={value => patch({ haBase: value })} error={errors.serverUrl} placeholder="https://homeassistant.example.com:8123" disabled={saving}
-            hint={<>Instance address and any path prefix, without <span className="mono">/api</span>.</>} />
+            hint={<>Address and path prefix, without <span className="mono">/api</span>.</>} />
           <TextField mono label="Event type" value={d.haEvent} onChange={value => patch({ haEvent: value })} error={errors.eventType} placeholder="uptime_canary" disabled={saving}
-            hint="1-64 letters, digits or underscores; your automation's event trigger." />
+            hint="1-64 letters, digits or underscores." />
           <SecretField label="Long-lived access token" value={d.haToken} onChange={value => patch({ haToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('haToken')}
             hint="Profile > Security > Long-lived access tokens." />
           {insecure(d.haInsecure, value => patch({ haInsecure: value }))}
@@ -159,9 +159,9 @@ export function MessagingFields({ kind, draft: d, patch, errors, stored, saving,
       {kind === 'matrix' ? (
         <>
           <TextField full mono label="Homeserver URL" value={d.matrixBase} onChange={value => patch({ matrixBase: value })} error={errors.serverUrl} placeholder="https://matrix.example.org" disabled={saving}
-            hint="Client API server address, including any path prefix." />
+            hint="Client API address and path prefix." />
           <TextField mono label="Room ID" value={d.matrixRoom} onChange={value => patch({ matrixRoom: value })} error={errors.roomId} placeholder="!AbCdEf:example.org" disabled={saving}
-            hint={<>From room advanced settings: <span className="mono">!room:server</span> or a newer opaque <span className="mono">!</span> ID; not a <span className="mono">#alias</span>.</>} />
+            hint={<>From room advanced settings: <span className="mono">!room:server</span> or opaque <span className="mono">!</span> ID, not <span className="mono">#alias</span>.</>} />
           <SecretField label="Access token" value={d.matrixToken} onChange={value => patch({ matrixToken: value })} error={errors.accessToken} disabled={saving} storedSet={stored('matrixToken')}
             hint="From the posting account's Matrix client; preferably a bot account." />
           {insecure(d.matrixInsecure, value => patch({ matrixInsecure: value }))}
