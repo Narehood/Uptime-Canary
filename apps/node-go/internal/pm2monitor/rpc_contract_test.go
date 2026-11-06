@@ -340,7 +340,7 @@ func TestPM2ContractPinnedVersionsPreserveStateRules(t *testing.T) {
 	// PM2 7.1.1 internalizes axon/rpc without changing the two read-only
 	// callbacks. Source: Unitech/pm2 commit 34dec9197301165850741b319890b2633ae797f4,
 	// modules/pm2-axon-rpc/lib/server.js and lib/Daemon.js.
-	for _, version := range []string{"6.0.8", "7.1.1"} {
+	for _, version := range []string{"6.0.8", "7.1.1", "7.1.2"} {
 		for _, tc := range []struct{ status, state, message string }{
 			{"online", "up", "PM2 process is online"},
 			{"stopped", "down", "PM2 process is not online"},
@@ -372,7 +372,7 @@ func TestPM2ContractPinnedVersionsPreserveStateRules(t *testing.T) {
 }
 
 func TestPM2ContractUnreviewedVersion7IsStillRefused(t *testing.T) {
-	for _, version := range []string{"6.0.9", "7.0.0", "7.1.0", "7.1.2", "7.1.1-dev", "7.1.1+custom", " 7.1.1", "7.1.1 "} {
+	for _, version := range []string{"6.0.9", "7.0.0", "7.1.0", "7.1.3", "7.1.2-dev", "7.1.1-dev", "7.1.1+custom", " 7.1.1", "7.1.1 "} {
 		t.Run(version, func(t *testing.T) {
 			result := pm2ContractRPC(t, pm2ContractConfig(), "getVersion", func(id string) []byte {
 				return pm2ContractReply(fmt.Sprintf(`{"args":[%q]}`, version), id)

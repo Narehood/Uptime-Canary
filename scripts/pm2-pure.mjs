@@ -368,13 +368,13 @@ check('form help and facts: the account and container rules, the Windows pipe pr
   assert.match(facts(monitor({ transport: 'windows-pipe' })).find(item => item.label === 'Connection').html, /running as Canary.s own account/u);
 });
 
-check('compatibility copy preserves 6.0.8 and names the patched 7.1.1 profile', () => {
-  // Accepted security-fixture upgrade: pm2monitor now admits both exact profiles.
-  assert.equal(p.PM2_VERSION, '6.0.8 or 7.1.1');
+check('compatibility copy preserves earlier profiles and names patched 7.1.2', () => {
+  // Accepted security-fixture upgrade: pm2monitor now also admits the exact 7.1.2 profile.
+  assert.equal(p.PM2_VERSION, '6.0.8, 7.1.1 or 7.1.2');
   const rendered = renderToStaticMarkup(React.createElement(Pm2Fields, {
     d: p.pm2DraftFrom(STORED, 'fixture-app'), set() {}, errors: {}, disabled: false,
   }));
-  assert.ok(rendered.includes('6.0.8 or 7.1.1'));
+  assert.ok(rendered.includes('6.0.8, 7.1.1 or 7.1.2'));
 });
 
 console.log(failed ? `${failed} FAILED` : 'ALL PASS');

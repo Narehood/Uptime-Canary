@@ -13,6 +13,15 @@ scratch against **512 MiB**, and shared module-cache growth against **256 MiB**
 from the recorded baseline. An unexpected external compiler cache over 16 MiB
 also stops the command. The idle target is **1.25 GiB**.
 
+The user authorized one exception for disposable GitHub-hosted Linux image
+scans: the Container images workflow may request up to **2.5 GiB (2560 MiB)**
+with `--scratch-limit-mib 2560`. The runner checks the hosted-runner metadata,
+workflow, workspace, working directory and direct image-scanner command before
+accepting it. Other commands and workstation runs retain the 512 MiB cap.
+The 3 GiB repository ceiling, single-command lock, bounded logs and automatic
+scratch cleanup remain enforced. This accommodates Trivy's expanded advisory
+database without relocating it outside storage accounting.
+
 The runner terminates its command tree on a limit or timeout. Afterward it
 removes its scratch and output files and trims its owned cache to 256 MiB.
 Only the latest bounded log and result are kept. It never deletes application

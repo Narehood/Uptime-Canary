@@ -1,4 +1,4 @@
-FROM golang:1.27.3-alpine AS build
+FROM golang:1.27.3-alpine3.24 AS build
 WORKDIR /app
 COPY go.mod go.sum ./
 COPY apps/node-go/third_party/goja ./apps/node-go/third_party/goja
@@ -9,8 +9,9 @@ ARG CANARY_BUILD_CREATED
 ARG CANARY_BUILD_VERSION
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X uptime-canary/apps/node-go/internal/canary.containerRevision=${CANARY_BUILD_COMMIT} -X uptime-canary/apps/node-go/internal/canary.containerBuiltAt=${CANARY_BUILD_CREATED} -X uptime-canary/apps/node-go/internal/canary.releaseVersion=${CANARY_BUILD_VERSION}" -o /out/canary ./apps/node-go/cmd/canary
 
-FROM alpine:3.24 AS runtime
-RUN apk add --no-cache ca-certificates iputils \
+FROM alpine:3.24.4 AS runtime
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates iputils \
     && addgroup -S canary && adduser -S -G canary canary \
     && mkdir -p /data /identity && chown canary:canary /data /identity \
     && chmod 0700 /identity

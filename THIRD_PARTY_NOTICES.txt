@@ -105,7 +105,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-github.com/dlclark/regexp2/v2 v2.8.1
+github.com/dlclark/regexp2/v2 v2.12.0
 ==============================================================================
 
 
@@ -134,7 +134,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-github.com/dop251/goja v0.0.0-20261022125820-07c4b9d6265b
+github.com/dop251/goja v0.0.0-20261105002551-2413f2132ac8
 ==============================================================================
 
 
@@ -159,7 +159,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 
 --- NOTICE.txt ---
 
-Goja, github.com/dop251/goja, version v0.0.0-20261022125820-07c4b9d6265b.
+Goja, github.com/dop251/goja, version v0.0.0-20261105002551-2413f2132ac8.
 Copyright and MIT terms are retained verbatim in LICENSE.
 
 This source replacement retains 81 upstream production/module/license files
@@ -199,7 +199,7 @@ SOFTWARE.
 <http://www.opensource.org/licenses/mit-license.php>
 
 ==============================================================================
-github.com/go-sourcemap/sourcemap v2.1.3+incompatible
+github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 ==============================================================================
 
 
@@ -1022,7 +1022,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50
+github.com/google/pprof v0.0.0-20261105003125-4bf881d7fb0b
 ==============================================================================
 
 
@@ -1278,7 +1278,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-github.com/gosnmp/gosnmp v1.46.0
+github.com/gosnmp/gosnmp v1.47.0
 ==============================================================================
 
 
@@ -1496,7 +1496,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-github.com/jackc/pgx/v5 v5.11.0
+github.com/jackc/pgx/v5 v5.12.0
 ==============================================================================
 
 
@@ -1990,7 +1990,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-github.com/pkg/sftp v1.13.11
+github.com/pkg/sftp v1.13.12
 ==============================================================================
 
 
@@ -2042,7 +2042,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-github.com/shopspring/decimal v1.4.0
+github.com/shopspring/decimal v1.6.0
 ==============================================================================
 
 
@@ -2188,7 +2188,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-github.com/xdg-go/scram v1.2.0
+github.com/xdg-go/scram v1.4.0
 ==============================================================================
 
 
@@ -2583,7 +2583,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-go.mongodb.org/mongo-driver/v2 v2.9.2
+go.mongodb.org/mongo-driver/v2 v2.9.3
 ==============================================================================
 
 
@@ -2792,7 +2792,7 @@ go.mongodb.org/mongo-driver/v2 v2.9.2
    limitations under the License.
 
 ==============================================================================
-golang.org/x/crypto v0.58.0
+golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 ==============================================================================
 
 
@@ -2827,7 +2827,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-golang.org/x/net v0.60.0
+golang.org/x/net v0.62.0
 ==============================================================================
 
 
@@ -2967,7 +2967,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
+google.golang.org/genproto/googleapis/rpc v0.0.0-20261104224025-d1e00e9f33ab
 ==============================================================================
 
 
@@ -3177,7 +3177,7 @@ google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
    limitations under the License.
 
 ==============================================================================
-google.golang.org/grpc v1.84.0
+google.golang.org/grpc v1.85.0
 ==============================================================================
 
 
@@ -3444,7 +3444,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-modernc.org/libc v1.79.0
+modernc.org/libc v1.80.1
 ==============================================================================
 
 
@@ -3986,7 +3986,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-modernc.org/sqlite v1.61.0
+modernc.org/sqlite v1.61.1
 ==============================================================================
 
 
@@ -4021,6 +4021,7 @@ Michael Hoffmann <mhoffm@posteo.de>
 Michael Rykov <mrykov@gmail.com>
 Morgan Bazalgette <morgan@howl.moe>
 Nathan Herring <nherring@google.com>
+Roman Khafizianov <roman@any.org>
 Ross Light <ross@zombiezen.com>
 SUSE LLC <moio@suse.com>
 Saed SayedAhmed <saadmtsa@gmail.com>

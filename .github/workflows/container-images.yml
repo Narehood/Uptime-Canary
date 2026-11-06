@@ -3,8 +3,10 @@ name: Container images
 on:
   push:
     branches: [main]
+    paths: ['**', '!README.md', '!docs/**', 'docs/node-onboarding.md', '!design/**']
   pull_request:
     branches: [main]
+    paths: ['**', '!README.md', '!docs/**', 'docs/node-onboarding.md', '!design/**']
   workflow_dispatch:
 
 permissions:
@@ -65,6 +67,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and optionally publish commit image
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -75,6 +78,7 @@ jobs:
             CANARY_BUILD_VERSION=${{ steps.image.outputs.version }}
           platforms: linux/amd64
           pull: true
+          load: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.image.outputs.tag }}
           labels: |
@@ -83,3 +87,66 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Bind the installed toolchain for bounded security validation
+        run: |
+          mkdir -p .canary/tools
+          ln -s "$(go env GOROOT)" .canary/tools/go
+          echo "GOCACHE=$GITHUB_WORKSPACE/.canary/cache/go-build" >> "$GITHUB_ENV"
+          echo 'GOTOOLCHAIN=local' >> "$GITHUB_ENV"
+      - name: Install pinned image scanner without persistent caches
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.2
+          cache: false
+          path: ${{ github.workspace }}/.canary/tools/security
+      - name: Verify hosted storage exception controls
+        if: matrix.component == 'node'
+        run: python3 scripts/bounded_validation.py --timeout 60 -- python3 -B scripts/bounded_validation_test.py
+      - name: Verify image scan admission controls
+        run: python3 scripts/bounded_validation.py --timeout 60 -- python3 -B scripts/image_security_check_test.py
+      - name: Scan the built image and gate high or critical CVEs
+        env:
+          SCAN_IMAGE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && format('{0}@{1}', steps.image.outputs.name, steps.build.outputs.digest) || steps.image.outputs.tag }}
+          SCAN_SOURCE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'remote' || 'docker' }}
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --scratch-limit-mib 2560 --timeout 240 -- python3 -B scripts/image-security-check.py --image "$SCAN_IMAGE" --source "$SCAN_SOURCE"
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
+      - name: Smoke test isolated query-service image
+        if: matrix.component == 'game-query'
+        env:
+          SMOKE_IMAGE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && format('{0}@{1}', steps.image.outputs.name, steps.build.outputs.digest) || steps.image.outputs.tag }}
+        run: |
+          trap 'docker rm -f canary-query-smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name canary-query-smoke --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 64 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=8m -e CANARY_GAME_QUERY_TOKEN=canary-ci-query-smoke-credential-2026 "$SMOKE_IMAGE"
+          for attempt in $(seq 1 30); do
+            if docker exec canary-query-smoke node -e "fetch('http://127.0.0.1:3121/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"; then
+              test "$(docker inspect --format '{{.Config.User}}' canary-query-smoke)" = node
+              docker exec canary-query-smoke /bin/sh -ec '
+                test "$(id -u)" = 1000
+                if command -v npm || command -v yarn; then exit 1; fi
+                test ! -d /usr/local/lib/node_modules/npm
+              '
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs --tail 20 canary-query-smoke
+          exit 1
+      - name: Retain bounded image security evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-security-${{ matrix.component }}
+          path: |
+            .canary/image-security-current.json
+            .canary/work/current/latest.json
+            .canary/work/current/latest.log
+          include-hidden-files: true
+          retention-days: 7

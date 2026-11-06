@@ -15,7 +15,9 @@ on:
       - 'scripts/capacity_recovery_profile_test.py'
       - 'scripts/validation_*'
       - 'scripts/verify-jsonquery-runtime.py'
-      - 'scripts/third-party-notices.py'
+      - 'scripts/third-party-notices*'
+      - 'scripts/security-check*'
+      - 'scripts/image*security*'
       - 'scripts/pm2-real*'
       - 'scripts/pm2_real*'
       - 'scripts/browser*'
@@ -74,7 +76,7 @@ jobs:
           cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.1'
+          node-version: '24.22.2'
           package-manager-cache: false
       - name: Bind installed Go without copying the toolchain
         shell: python
@@ -100,6 +102,22 @@ jobs:
         env:
           npm_config_cache: ${{ runner.temp }}/canary-release-npm-cache
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install pinned source vulnerability scanner
+        env:
+          GOBIN: ${{ github.workspace }}/.canary/tools/security
+        run: python scripts/bounded_validation.py --timeout 180 -- go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: Verify third-party attribution and advisory controls
+        run: |
+          python scripts/bounded_validation.py --timeout 60 -- python -B scripts/third-party-notices-test.py
+          python scripts/bounded_validation.py --timeout 120 -- python -B scripts/third-party-notices.py --check
+          python scripts/bounded_validation.py --timeout 60 -- python -B scripts/security-check-test.py
+      - name: Audit locked packages, reachable Go symbols and embedded sources
+        run: |
+          set +e
+          python scripts/bounded_validation.py --timeout 420 -- python -B scripts/security-check.py --goos linux
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
       - name: Verify storage guard fixtures
         run: python scripts/bounded_validation.py --timeout 60 -- python -B scripts/bounded_validation_test.py
       - name: Verify recovery profiler refuses workstation runtime execution
@@ -160,6 +178,7 @@ jobs:
         with:
           name: release-package-${{ matrix.target }}
           path: |
+            .canary/security-current.json
             .canary/release-package-current.json
             .canary/release-package-failure-current.log
             .canary/capacity-recovery-profile-current.json

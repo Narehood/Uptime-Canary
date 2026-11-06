@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+import { nodeCoverage } from '../dashboardDerivations';
 import { useCanary } from '../context';
 import { ago, plural } from '../format';
 import { gatewayMode } from '../gateway';
@@ -7,6 +9,7 @@ import { EndpointMark, Glyph, Icon } from '../ui/icons';
 
 export function NodesView() {
   const { nodes, endpoint, overview, api, openSwitch, assessed } = useCanary();
+  const coverage = useMemo(() => nodeCoverage(assessed, nodes), [assessed, nodes]);
   const peers = nodes.filter(node => node.id !== endpoint && node.state !== 'unlisted');
   const inView = peers.filter(node => node.state === 'connected').length;
   // Gateway mode: the browser reaches only the dashboard's server, which forwards to its one node. Peers' addresses
@@ -37,8 +40,7 @@ export function NodesView() {
       </Card>
       <div className="nodes-grid">
         {nodes.map(node => {
-          const assigned = assessed.filter(({ view }) => view.monitor.nodeIds.includes(node.id));
-          const fresh = assigned.filter(({ view }) => view.observations.some(o => o.nodeId === node.id && o.state !== 'unknown')).length;
+          const { assigned = 0, fresh = 0 } = coverage.get(node.id) ?? {};
           const isEndpoint = node.id === endpoint;
           return (
             <article key={node.id} className={`ncard${isEndpoint ? ' ep' : ''}${outOfView(node) ? ' out' : ''}`} aria-labelledby={`n-${node.id}`}>
@@ -51,8 +53,8 @@ export function NodesView() {
               </div>
               <p className="nc-state">{nodeStateText(node, endpoint, overview.now)}</p>
               <dl className="kv">
-                <dt>Monitors assigned</dt><dd>{assigned.length}</dd>
-                <dt>Fresh results</dt><dd>{assigned.length ? `${fresh} of ${assigned.length}` : '—'}</dd>
+                <dt>Monitors assigned</dt><dd>{assigned}</dd>
+                <dt>Fresh results</dt><dd>{assigned ? `${fresh} of ${assigned}` : '—'}</dd>
                 {!isEndpoint ? <><dt>Last sync</dt><dd>{node.lastSeenAt ? <><Time at={node.lastSeenAt} now={overview.now} /> <span className="muted">· {ago(node.lastSeenAt, overview.now)}</span></> : 'Never'}</dd></> : null}
               </dl>
               {gateway

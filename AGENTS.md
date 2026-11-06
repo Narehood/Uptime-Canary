@@ -16,8 +16,12 @@ that goal or describe component checks as a complete release validation.
   Never copy build/module caches or create per-task source snapshots, binary
   archives, browser-profile collections or persistent validation VMs.
 - The monitored repository ceiling is 3 GiB; the idle target is 1.25 GiB.
-  Disposable scratch is limited to 512 MiB. The runner trims its cache to
-  256 MiB and retains only bounded logs and twelve small command results.
+  Disposable scratch is limited to 512 MiB, except for the user-approved
+  2.5 GiB allowance for direct image scans on disposable GitHub-hosted Linux
+  runners in the Container images workflow. Workstation and other commands
+  retain 512 MiB; the 3 GiB repository ceiling and cleanup stay enforced.
+  The runner trims its cache to 256 MiB and retains only bounded logs and
+  twelve small command results.
 - Shared module-cache growth is also monitored. Do not shift artifact or cache
   growth to another directory to evade the repository limit.
 - If storage grows beyond the budget, stop the producing command and reclaim

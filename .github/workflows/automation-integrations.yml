@@ -2,8 +2,10 @@ name: Automation integrations
 
 on:
   pull_request:
+    paths-ignore: [README.md, 'docs/**', 'design/**']
   push:
     branches: [main]
+    paths-ignore: [README.md, 'docs/**', 'design/**']
   workflow_dispatch:
 
 permissions:
@@ -27,7 +29,7 @@ jobs:
           cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.1'
+          node-version: '24.22.2'
           package-manager-cache: false
       - name: Prepare one owned cache and installed toolchain
         run: |
@@ -39,29 +41,8 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           automation_chrome="$(command -v google-chrome || command -v chromium)"
           echo "CHROME_PATH=$automation_chrome" >> "$GITHUB_ENV"
-      # Separate invocations release compiler scratch between packages; the guard
-      # retains one shared build cache and enforces the same 512 MiB scratch cap.
-      - name: Native provider tests with private loopback fixtures
-        run: |
-          set +e
-          python3 scripts/bounded_validation.py --timeout 300 -- go test -count=1 ./apps/node-go/internal/notifyhttp
-          validation_status=$?
-          cat .canary/work/current/latest.log
-          exit "$validation_status"
-      - name: Delivery adapter regressions
-        run: |
-          set +e
-          python3 scripts/bounded_validation.py --timeout 300 -- go test -count=1 ./apps/node-go/internal/delivery
-          validation_status=$?
-          cat .canary/work/current/latest.log
-          exit "$validation_status"
-      - name: Focused automation scheduling regressions
-        run: |
-          set +e
-          python3 scripts/bounded_validation.py --timeout 300 -- go test -count=1 -run 'TestAutomationChannel|TestChannelEvent' ./apps/node-go/internal/canary
-          validation_status=$?
-          cat .canary/work/current/latest.log
-          exit "$validation_status"
+      # Native provider/delivery/scheduling tests remain in the shipped-mode
+      # Alpine go phase; delivery and canary also run under race.
       - name: Shared and frontend types
         run: python3 scripts/bounded_validation.py --timeout 120 -- npm run typecheck
       - name: Existing channel and template regressions
@@ -75,6 +56,23 @@ jobs:
           validation_status=$?
           cat .canary/work/current/latest.log
           exit "$validation_status"
+      - name: Dashboard derivation equivalence and measured performance
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 180 -- node scripts/dashboard-operations-proof.mjs --benchmark
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
+      - name: Retain dashboard measurements
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: dashboard-operations-evidence
+          path: |
+            .canary/work/current/latest.log
+            .canary/work/current/latest.json
+          include-hidden-files: true
+          retention-days: 7
       - name: Real automation forms on Linux Chrome
         run: |
           set +e

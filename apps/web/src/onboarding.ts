@@ -40,7 +40,7 @@ export function nodeIdProblem(id: string, taken: { nodes?: readonly RegisteredNo
  * A new node's administrator or cluster token, made in this browser: 32 random bytes as base64url (43 characters), which
  * meets the node's `tokenValue` rule (24 to 256 printable characters, at least 8 different ones).
  */
-export function newSecret(random: (bytes: Uint8Array) => Uint8Array = bytes => crypto.getRandomValues(bytes)): string {
+export function newSecret(random: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array = bytes => crypto.getRandomValues(bytes)): string {
   for (let attempt = 0; attempt < 8; attempt++) {
     const bytes = random(new Uint8Array(32));
     const text = btoa(String.fromCharCode(...bytes)).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');

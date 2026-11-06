@@ -14,11 +14,11 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/dop251/goja/parser"
 	"github.com/dop251/goja/unistring"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 	"golang.org/x/text/unicode/rangetable"
 )
 
@@ -166,7 +166,9 @@ func (b *unicodeStringBuilder) Grow(n int) {
 		panic(rangeError("Invalid string length"))
 	}
 	if len(b.buf) == 0 {
-		n++
+		// Reserve room for the BOM. With n == math.MaxInt the increment
+		// wraps around to a negative length.
+		n = toStringLen(n + 1)
 	}
 	if cap(b.buf)-len(b.buf) < n {
 		newCap := safeMul(2, cap(b.buf)) + n
@@ -420,7 +422,7 @@ func (s unicodeString) toTrimmedUTF8() string {
 	if len(s) == 0 {
 		return ""
 	}
-	return strings.Trim(s.String(), parser.WhitespaceChars)
+	return strings.Trim(s.String(), WhitespaceChars)
 }
 
 func (s unicodeString) ToNumber() Value {
@@ -709,6 +711,9 @@ func utf16IndexBytes(s, sep []uint16) int {
 }
 
 func (s unicodeString) index(substr String, start int) int {
+	if start > s.Length() {
+		return -1
+	}
 	var ss []uint16
 	a, u := devirtualizeString(substr)
 	if u != nil {
@@ -716,7 +721,7 @@ func (s unicodeString) index(substr String, start int) int {
 	} else {
 		ss = a.utf16()
 	}
-	idx := utf16Index(s[min(1+start, len(s)):], ss)
+	idx := utf16Index(s[1+start:], ss)
 	if idx != -1 {
 		return idx + start
 	}
@@ -884,7 +889,8 @@ func toUpper(s string, sb *StringBuilder) {
 	sb.WriteUTF8String(caserTransform(cases.Upper(language.Und), s))
 }
 
-func (s unicodeString) toCase(conv func(string, *StringBuilder)) String {
+// transform normalizes or maps valid Unicode spans while preserving lone UTF-16 units.
+func (s unicodeString) transform(conv func(string, *StringBuilder)) String {
 	var b StringBuilder
 	u := s[1:]
 	b.LikelyUnicode(len(u))
@@ -916,11 +922,17 @@ func (s unicodeString) toCase(conv func(string, *StringBuilder)) String {
 }
 
 func (s unicodeString) toLower() String {
-	return s.toCase(toLower)
+	return s.transform(toLower)
 }
 
 func (s unicodeString) toUpper() String {
-	return s.toCase(toUpper)
+	return s.transform(toUpper)
+}
+
+func (s unicodeString) normalize(form norm.Form) String {
+	return s.transform(func(span string, b *StringBuilder) {
+		b.WriteUTF8String(form.String(span))
+	})
 }
 
 func (s unicodeString) Export() interface{} {

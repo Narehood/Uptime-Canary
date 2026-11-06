@@ -73,10 +73,14 @@ export function observationFor(view: MonitorView, nodeId: string): Observation |
 /** Turns the node's verdict plus per-location evidence into the wording rules from docs/design.md. */
 export function assess(view: MonitorView, nodes: Map<string, NodeColumn>): Assessment {
   const ids = view.monitor.nodeIds;
-  const failing = ids.filter(id => observationFor(view, id)?.state === 'down');
-  const passing = ids.filter(id => observationFor(view, id)?.state === 'up');
-  const pending = ids.filter(id => isPending(observationFor(view, id)?.state));
-  const unknown = ids.filter(id => !failing.includes(id) && !passing.includes(id) && !pending.includes(id));
+  const failing: string[] = [], passing: string[] = [], pending: string[] = [], unknown: string[] = [];
+  for (const id of ids) {
+    const state = observationFor(view, id)?.state;
+    if (state === 'down') failing.push(id);
+    else if (state === 'up') passing.push(id);
+    else if (isPending(state)) pending.push(id);
+    else unknown.push(id);
+  }
   const base = { failing, passing, pending, unknown, total: ids.length };
   if (view.state === 'paused') return { ...base, kind: 'paused', tone: 'paused', label: 'Paused', detail: '', severity: 7 };
   if (view.configConflict) return { ...base, kind: 'conflict', tone: 'serious', label: 'Unknown', detail: 'config conflict', severity: 3 };

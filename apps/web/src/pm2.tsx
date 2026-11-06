@@ -17,7 +17,7 @@ export const PM2_TEXT_MAX = 256;
 export const PM2_SOCKET_MAX = 107;
 export const PM2_SOCKET = 'rpc.sock';
 /** Exact supported releases; unreviewed versions still stay pending. */
-export const PM2_VERSION = '6.0.8 or 7.1.1';
+export const PM2_VERSION = '6.0.8, 7.1.1 or 7.1.2';
 
 export interface Pm2Draft {
   /** The exact process name, which is the monitor's target. Never trimmed: names are compared exactly. */

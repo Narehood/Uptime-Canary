@@ -144,6 +144,25 @@ def breach(current, baseline):
     return None
 
 
+def scratch_budget_mib(requested, command, cwd):
+    # User-approved exception for disposable GitHub-hosted image scans only.
+    hosted_image_scan = (
+        sys.platform == 'linux'
+        and os.environ.get('GITHUB_ACTIONS') == 'true'
+        and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+        and os.environ.get('GITHUB_WORKFLOW') == 'Container images'
+        and Path(os.environ.get('GITHUB_WORKSPACE', '')).resolve() == ROOT
+        and cwd == ROOT
+        and len(command) == 7
+        and command[:4] == ['python3', '-B', 'scripts/image-security-check.py', '--image']
+        and bool(command[4])
+        and command[5] == '--source' and command[6] in ('docker', 'remote'))
+    maximum = 2560 if hosted_image_scan else 512
+    if not 1 <= requested <= maximum:
+        raise ValueError(f'Scratch limit must be between 1 and {maximum} MiB')
+    return requested
+
+
 def main():
     global SCRATCH_LIMIT
     parser = argparse.ArgumentParser(description=__doc__)
@@ -151,18 +170,19 @@ def main():
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--scratch-limit-mib', type=int, default=512,
-                        help='May lower the scratch budget, never increase it')
+                        help='Defaults to 512 MiB; up to 2560 only for disposable hosted image scans')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    if not 1 <= args.scratch_limit_mib <= 512:
-        parser.error('Scratch limit must be between 1 and 512 MiB')
-    SCRATCH_LIMIT = args.scratch_limit_mib * MIB
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
     if not args.check and not command:
         parser.error('Supply a command after --')
     cwd = args.cwd.resolve()
     if not cwd.is_relative_to(ROOT):
         parser.error('Command cwd must be inside this repository')
+    try:
+        SCRATCH_LIMIT = scratch_budget_mib(args.scratch_limit_mib, command, cwd) * MIB
+    except ValueError as error:
+        parser.error(str(error))
     go = GENERATED / 'tools' / 'go' / 'bin' / ('go.exe' if os.name == 'nt' else 'go')
     env = {k: v for k, v in os.environ.items() if not k.startswith('CANARY_')}
     env.update({'CGO_ENABLED': '0', 'GOTOOLCHAIN': 'local', 'PYTHONUTF8': '1'})
@@ -185,6 +205,7 @@ def main():
     os.write(lock_fd, str(os.getpid()).encode())
     os.close(lock_fd)
     result = {'command': command, 'cwd': str(cwd), 'before': current,
+              'scratchLimitBytes': SCRATCH_LIMIT, 'projectLimitBytes': PROJECT_LIMIT,
               'sourceBefore': source_digest(cwd), 'peakObserved': dict(current)}
     process = None
     reader = None
