@@ -586,6 +586,21 @@ Run `npm run canary -- <command>` from the repository root. Output is JSON.
 
 Edits carry the revision they change; a stale one is rejected with HTTP 409. Concurrent edits made while nodes were apart are kept side by side as a visible conflict until someone resolves it, in the CLI or field by field in the dashboard's Configuration page. Prometheus metrics are at `GET /api/metrics` with a viewer credential ([observability](docs/observability.md)). Ready-to-use [Prometheus/Grafana setup](docs/external-observability.md) supports external long-term storage. [Home Assistant events and Matrix notices](docs/automation-integrations.md) support automation and chat delivery, with per-channel down/repeat/recovery selection. The same executable's `dashboard` command runs the dashboard server instead of a node (it's the web image's command, configured by the `CANARY_DASHBOARD_*` and `CANARY_LOCAL_NODE_*` variables).
 
+## Measured calculation efficiency
+
+Three additional paths, measured against the PR #36 merge on Windows/Node
+24.22.1, use less elapsed calculation time on the declared fixtures:
+
+- **Fleet inventory with placement association: 90.92% less** (16 registrations, 200 monitors per node, 200 deployments with 16 placements).
+- **Maintenance holding monitors: 87.83% less** (200 monitors, 64 visible schedules, two holds per monitor).
+- **Registered-node summary: 67.35% less** (64 registrations across all eight registry states).
+
+Index construction and result lookup are included. Rendering, networking and
+memoization gains are excluded; smaller/selective workloads do not improve
+uniformly. See [measurements, reproduction and tradeoffs](docs/additional-efficiency.md).
+These are separate from the earlier [delivery-log](docs/notification-efficiency.md)
+and [five dashboard calculation](docs/dashboard-efficiency.md) improvements.
+
 ## Checks and validation
 
 Local Windows amd64 records include **4,518** passing Go test events, four

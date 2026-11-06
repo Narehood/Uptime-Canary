@@ -124,6 +124,40 @@ function peerScopes(sources: readonly FleetSource[]): Map<string, string> {
   return new Map(sources.map(source => [source.node.id, root(source.node.id)]));
 }
 
+/** Join placements to rows once, retaining row order and object identity for each deployment. */
+function deploymentRowCopies(rows: readonly FleetMonitorRow[], deployments: readonly FleetDeployment[]): Map<FleetDeployment, FleetMonitorRow[]> {
+  const links = new Map<string, Map<string, Set<FleetDeployment>>>();
+  const add = (registrationId: string, monitorId: string, deployment: FleetDeployment): void => {
+    let monitors = links.get(registrationId);
+    if (!monitors) { monitors = new Map(); links.set(registrationId, monitors); }
+    let owners = monitors.get(monitorId);
+    if (!owners) { owners = new Set(); monitors.set(monitorId, owners); }
+    owners.add(deployment);
+  };
+  for (const deployment of deployments) {
+    for (const placement of deployment.placements) {
+      if (placement.state === 'removed' && deployment.state !== 'removed') continue;
+      for (const id of [placement.registrationId, ...placement.registrationIds, ...(placement.retiringRegistrationIds ?? [])]) {
+        add(id, placement.monitorId, deployment);
+      }
+    }
+    if (deployment.source) add(deployment.source.registrationId, deployment.source.monitorId, deployment);
+  }
+  const copies = new Map<FleetDeployment, FleetMonitorRow[]>();
+  if (!links.size) return copies;
+  for (const row of rows) {
+    const matched = new Set<FleetDeployment>();
+    for (const { source, view } of row.sources) {
+      for (const owner of links.get(source.node.id)?.get(view.monitor.id) ?? []) matched.add(owner);
+    }
+    for (const deployment of matched) {
+      const bucket = copies.get(deployment) ?? [];
+      bucket.push(row); copies.set(deployment, bucket);
+    }
+  }
+  return copies;
+}
+
 /**
  * A central inventory of existing node monitors. Per-node observations keep their reporting source and read time.
  * Placement/deployment authority is deliberately separate: this projection never writes configuration or peers nodes.
@@ -185,11 +219,9 @@ export function fleetMonitorRows(sources: readonly FleetSource[], now: number, d
   }
   const consumed = new Set<string>();
   const managed: FleetMonitorRow[] = [];
+  const deploymentCopies = deploymentRowCopies(rows, deployments);
   for (const deployment of deployments) {
-    const matches = (row: FleetMonitorRow): boolean => row.sources.some(({ source, view }) =>
-      deployment.placements.some(p => (p.state !== 'removed' || deployment.state === 'removed') && p.monitorId === view.monitor.id && (p.registrationId === source.node.id || p.registrationIds.includes(source.node.id) || p.retiringRegistrationIds?.includes(source.node.id)))
-      || deployment.source?.registrationId === source.node.id && deployment.source.monitorId === view.monitor.id);
-    const copies = rows.filter(matches);
+    const copies = deploymentCopies.get(deployment) ?? [];
     copies.forEach(row => consumed.add(row.key));
     if (deployment.state === 'removed') continue;
     const retiring = new Set(deployment.placements.flatMap(p => p.retiringRegistrationIds ?? []));

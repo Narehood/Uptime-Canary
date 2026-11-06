@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27.3'
@@ -68,6 +69,23 @@ jobs:
         if: always()
         with:
           name: dashboard-operations-evidence
+          path: |
+            .canary/work/current/latest.log
+            .canary/work/current/latest.json
+          include-hidden-files: true
+          retention-days: 7
+      - name: Fleet, maintenance and registry equivalence and measurements
+        run: |
+          set +e
+          python3 scripts/bounded_validation.py --timeout 180 -- node scripts/additional-operations-proof.mjs --benchmark
+          validation_status=$?
+          cat .canary/work/current/latest.log
+          exit "$validation_status"
+      - name: Retain additional calculation measurements
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: additional-operations-evidence
           path: |
             .canary/work/current/latest.log
             .canary/work/current/latest.json

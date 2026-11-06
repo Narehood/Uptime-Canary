@@ -2,13 +2,14 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type React
 import type { Maintenance, MaintenanceInput, MaintenanceSchedule, MaintenanceView } from '@uptime-canary/shared';
 import { ApiFailure, describeFailure } from '../api';
 import { useCanary } from '../context';
+import { maintenanceHoldingIndex } from '../maintenanceIndex';
 import { ago, andList, elapsed, longStamp, plural, shortRev, utcStamp } from '../format';
 import { notify } from '../notices';
 import { href, navigate } from '../router';
 import { Banner, Card, Chip, EmptyState, ErrorText, Modal, PageHead, ReadOnly, Rev, Tag, TypeTag } from '../ui/bits';
 import { AmountField, CheckField, ErrorSummary, Seg, TextField } from '../ui/forms';
 import { Glyph, Icon } from '../ui/icons';
-import { groupPath, type Tone } from '../model';
+import { groupPath, type Assessed, type Tone } from '../model';
 import { storedExtras } from '../writable';
 
 type Strategy = MaintenanceSchedule['strategy'];
@@ -84,12 +85,11 @@ function Selection({ m }: { m: Maintenance }) {
   );
 }
 
-function MaintenanceCard({ view }: { view: MaintenanceView }) {
-  const { overview, editable, assessed } = useCanary();
+function MaintenanceCard({ view, held }: { view: MaintenanceView; held: Assessed[] }) {
+  const { overview, editable } = useCanary();
   const [deleting, setDeleting] = useState(false);
   const m = view.maintenance;
   const st = status(view);
-  const held = assessed.filter(({ view: monitor }) => monitor.maintenanceIds?.includes(m.id));
   return (
     <article className={`gcard mcard${view.active && m.enabled && !view.configConflict ? ' on' : ''}`} aria-labelledby={`mt-${m.id}`}>
       <div className="gcard-h">
@@ -120,14 +120,17 @@ function MaintenanceCard({ view }: { view: MaintenanceView }) {
 }
 
 export function MaintenanceListView() {
-  const { maintenance, editable, endpoint, search } = useCanary();
+  const { maintenance, editable, endpoint, search, assessed } = useCanary();
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const order = (view: MaintenanceView): number => view.configConflict ? 0 : view.active && view.maintenance.enabled ? 1 : view.nextStart && view.maintenance.enabled ? 2 : 3;
+    return (maintenance ?? []).filter(view => !q || view.maintenance.name.toLowerCase().includes(q))
+      .sort((a, b) => order(a) - order(b) || (a.nextStart ?? '').localeCompare(b.nextStart ?? '') || a.maintenance.name.localeCompare(b.maintenance.name));
+  }, [maintenance, search]);
+  const holds = useMemo(() => maintenanceHoldingIndex(assessed, shown.map(view => view.maintenance.id)), [assessed, shown]);
   if (maintenance === null) {
     return <div className="view"><PageHead title="Maintenance" /><Card><EmptyState title={`${endpoint} doesn’t offer planned maintenance`}>Its overview has no maintenance list, so it probably runs an older Uptime-Canary version.</EmptyState></Card></div>;
   }
-  const q = search.trim().toLowerCase();
-  const order = (view: MaintenanceView): number => view.configConflict ? 0 : view.active && view.maintenance.enabled ? 1 : view.nextStart && view.maintenance.enabled ? 2 : 3;
-  const shown = maintenance.filter(view => !q || view.maintenance.name.toLowerCase().includes(q))
-    .sort((a, b) => order(a) - order(b) || (a.nextStart ?? '').localeCompare(b.nextStart ?? '') || a.maintenance.name.localeCompare(b.maintenance.name));
   return (
     <div className="view">
       <PageHead
@@ -143,7 +146,7 @@ export function MaintenanceListView() {
         </ol>
         <p className="foot-note">Each node applies the schedules it knows, with its own clock. During a partition a node that hasn’t learned a new window can still alert. Disabled, deleted or conflicting schedules hold nothing.</p>
       </Card>
-      {shown.length ? <div className="gcards">{shown.map(view => <MaintenanceCard key={view.maintenance.id} view={view} />)}</div>
+      {shown.length ? <div className="gcards">{shown.map(view => <MaintenanceCard key={view.maintenance.id} view={view} held={holds.get(view.maintenance.id) ?? []} />)}</div>
         : <Card><EmptyState title={maintenance.length ? 'Nothing matches' : 'No maintenance scheduled'} action={!maintenance.length && editable ? <a className="btn primary" href={href('maintenance', 'new')}><Icon name="plus" />New window</a> : undefined}>
             {maintenance.length ? 'Try another search.' : 'Schedule a window to hold alerts during planned work.'}
           </EmptyState></Card>}
