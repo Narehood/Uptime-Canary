@@ -164,8 +164,11 @@ Use **Nodes > Add node** to enter a label, the private origin reachable from the
 dashboard server and an admin enrollment credential. Verification is read-only:
 check the proved node ID before confirming Add. Confirmation journals encrypted
 credentials before atomically creating three role accounts on the node. An
-interrupted enrollment/removal remains visible and retryable; removal is only
-confirmed after the node acknowledges revocation. Selecting another node needs
+interrupted enrollment/removal remains visible and retryable. Removing a node
+requires its exact dashboard name and queues durable membership/monitor cleanup,
+followed by access revocation. Shared monitors keep running elsewhere; monitors
+with no runners are retired. Offline or unconfirmed work stays visible and retries.
+See [node removal](node-removal.md). Selecting another node needs
 no additional sign-in. Administrators can rename
 an entry, move it after proving the same node and all three saved roles, or
 rotate and recover its delegated access in place. A bundled node's address

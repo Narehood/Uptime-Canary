@@ -655,7 +655,7 @@ await check('registry wording: outbound entries name their own connection; direc
   assert.equal(dashboard.nodeStateInfo({ ...ENTRY, state: 'different-node' }).label, 'Different node at this address');
   assert.equal(dashboard.nodeStateInfo({ ...OUTBOUND, state: 'different-node' }).label, 'Different node connected');
   assert.match(dashboard.nodeStateInfo({ ...OUTBOUND, state: 'not-answering' }).text, /isn’t connected to this dashboard right now.*may still be running/u);
-  assert.match(dashboard.nodeStateInfo({ ...OUTBOUND, state: 'removing' }).text, /only so the node can confirm/u);
+  assert.match(dashboard.nodeStateInfo({ ...OUTBOUND, state: 'removing' }).text, /queued group and monitor cleanup, followed by access revocation/u);
   assert.deepEqual(dashboard.nodeActions(OUTBOUND, true), { check: true, retry: null, edit: true, move: false, rotate: true, remove: true });
   assert.equal(dashboard.nodeActions({ ...OUTBOUND, url: 'http://10.0.0.9:3100' }, true).move, false, 'never moved, even with an address');
   assert.deepEqual(dashboard.nodeActions(OUTBOUND, false), { check: true, retry: null, edit: false, move: false, rotate: false, remove: false });
@@ -1038,10 +1038,31 @@ await check('node cards: an outbound entry has a tag and last connection, no add
   assert.match(text(edit), /This node connects to the dashboard itself, so its entry has no address to edit\. Renaming works even while it isn’t connected\./u);
   assert.doesNotMatch(text(edit), /Node address|bundled node/u);
   const remove = node => text(within('admin', [node], React.createElement(registryView.RemoveNodeDialog, { node, onClose: noop })));
-  assert.match(remove(OUTBOUND), /stops using the node’s connection for anything else at once, and asks the node over it to revoke.*A change sent to the node just before may still finish there\./u);
+  assert.match(remove(OUTBOUND), /connection stays available only for this cleanup and for revoking.*A change sent to the node just before may still finish there\./u);
   assert.match(remove({ ...OUTBOUND, state: 'not-answering' }), /isn’t connected right now.*Removal unfinished.*may still finish there/u);
   assert.match(remove(ENTRY), /The dashboard’s server also asks the node to revoke the access this dashboard set up there\./u);
   assert.doesNotMatch(remove(ENTRY), /connection/u, 'direct removal wording is unchanged');
+});
+
+// Accepted force-removal behavior: queued cleanup precedes revocation. The server
+// journal in dashboard_node_removal.go keeps internal management access meanwhile.
+await check('force removal requires typed confirmation and never offers another submission once started', () => {
+  const dialog = (opened, listed = [opened]) => within('admin', listed, React.createElement(registryView.RemoveNodeDialog, { node: opened, onClose: noop }));
+  const markup = dialog(ENTRY);
+  const inputs = tags(markup, 'input').map(attributes);
+  assert.equal(inputs.length, 1);
+  assert.equal(inputs[0].get('value'), '');
+  assert.equal(inputs[0].get('autocomplete'), 'off');
+  const submit = tags(markup, 'button').map(attributes).find(button => button.get('type') === 'submit');
+  assert.ok(submit.has('disabled'));
+  assert.match(text(markup), /Monitors that also run on other nodes keep running there/u);
+  assert.match(text(markup), /Monitors that run only on this node are retired and stop running/u);
+  for (const listed of [[{ ...ENTRY, state: 'removing' }], []]) {
+    const settled = dialog(ENTRY, listed);
+    assert.equal(tags(settled, 'input').length, 0);
+    assert.equal(tags(settled, 'button').map(attributes).filter(button => button.get('type') === 'submit').length, 0);
+  }
+  assert.match(text(dialog(ENTRY, [{ ...ENTRY, label: 'Renamed node' }])), /was renamed while this was open/u);
 });
 
 await check('sources: no storage, console, page address or navigation in the wizard; routes through own(); copy failure is explicit', () => {

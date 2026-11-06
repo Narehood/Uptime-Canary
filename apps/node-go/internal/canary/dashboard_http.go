@@ -385,7 +385,7 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 		d.mu.Unlock()
 		return row, fail(409, "This node operation is already running")
 	}
-	if !dashboardOperationPending(row.State) {
+	if !dashboardNodePending(row) {
 		d.mu.Unlock()
 		return row, nil
 	}
@@ -395,6 +395,37 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 	defer func() { d.mu.Lock(); delete(d.busy, id); d.mu.Unlock() }()
 	if err != nil {
 		return row, fail(503, "Saved node credentials are unavailable")
+	}
+	if row.ForceRemoving && row.State != "enrolling" && row.State != "rotating" {
+		ready, cleanupErr := d.finishNodeCleanup(ctx, row, secret)
+		d.mu.Lock()
+		row = d.registry[id]
+		if cleanupErr != nil {
+			row.Error = dashboardErrorMessage(cleanupErr)
+			if saveErr := d.saveRegistry(row); saveErr != nil {
+				cleanupErr = saveErr
+			}
+		}
+		d.mu.Unlock()
+		if cleanupErr != nil || !ready {
+			return row, cleanupErr
+		}
+		secret, err = d.openSecrets(row)
+		if err != nil {
+			return row, err
+		}
+		row.ForceRemoving, row.State, row.Error = false, "removing", ""
+		secret.Removal = nil
+		row.Credentials, err = d.sealSecrets(row, secret)
+		if err != nil {
+			return row, err
+		}
+		d.mu.Lock()
+		err = d.saveRegistry(row)
+		d.mu.Unlock()
+		if err != nil {
+			return row, err
+		}
 	}
 	if row.Local && row.Unproved {
 		if row.State == "removing" {
@@ -475,6 +506,21 @@ func (d *Dashboard) finishEnrollment(ctx context.Context, id string) (registered
 }
 
 func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor AccountView, id string) {
+	raw, bodyErr := readBounded(r.Body, 4096)
+	var input struct {
+		Force        bool   `json:"force"`
+		Confirmation string `json:"confirmation"`
+	}
+	if bodyErr == nil && len(raw) > 0 {
+		bodyErr = dashboardJSON(raw, &input, "force", "confirmation")
+	}
+	if bodyErr == nil && !input.Force && input.Confirmation != "" {
+		bodyErr = fail(400, "A removal confirmation requires force removal")
+	}
+	if bodyErr != nil {
+		errorReply(w, bodyErr)
+		return
+	}
 	if err := d.currentActor(r, actor, true); err != nil {
 		errorReply(w, err)
 		return
@@ -494,6 +540,21 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 	if d.busy[id] {
 		d.mu.Unlock()
 		errorReply(w, fail(409, "This node operation is already running"))
+		return
+	}
+	if input.Force {
+		queued, err := d.queueNodeRemoval(r, actor, row, input.Confirmation)
+		d.mu.Unlock()
+		if err != nil {
+			errorReply(w, err)
+			return
+		}
+		reply(w, 202, d.publicNode(queued, actor.Role))
+		return
+	}
+	if row.ForceRemoving {
+		d.mu.Unlock()
+		reply(w, 202, d.publicNode(row, actor.Role))
 		return
 	}
 	for _, deployment := range d.fleet {
@@ -533,7 +594,7 @@ func (d *Dashboard) checkNode(ctx context.Context, id string) (registeredNodeRec
 	if !ok {
 		return row, fail(404, "Registered node not found")
 	}
-	if dashboardOperationPending(row.State) {
+	if dashboardNodePending(row) {
 		return row, nil
 	}
 	secret, err := d.openSecrets(row)
@@ -553,7 +614,7 @@ func (d *Dashboard) checkNode(ctx context.Context, id string) (registeredNodeRec
 	if current.URL != row.URL || current.Credentials != row.Credentials {
 		return current, nil
 	}
-	if dashboardOperationPending(current.State) {
+	if dashboardNodePending(current) {
 		return current, nil
 	}
 	if err != nil {
@@ -583,7 +644,7 @@ func (d *Dashboard) proxyNode(w http.ResponseWriter, r *http.Request, actor Acco
 		errorReply(w, fail(404, "Registered node not found"))
 		return
 	}
-	if dashboardOperationPending(row.State) {
+	if dashboardNodePending(row) {
 		errorReply(w, fail(409, "This node enrollment or removal is not complete"))
 		return
 	}
@@ -598,7 +659,7 @@ func (d *Dashboard) proxyNode(w http.ResponseWriter, r *http.Request, actor Acco
 		d.mu.Unlock()
 		if !exists {
 			err = fail(404, "Registered node not found")
-		} else if dashboardOperationPending(row.State) {
+		} else if dashboardNodePending(row) {
 			err = fail(409, "This node operation is not complete")
 		}
 	}
@@ -664,7 +725,7 @@ func (d *Dashboard) publicRequest(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	row, ok := d.registry[id]
 	d.mu.Unlock()
-	if !ok || dashboardOperationPending(row.State) {
+	if !ok || dashboardNodePending(row) {
 		errorReply(w, fail(404, "Public node registration not found"))
 		return
 	}

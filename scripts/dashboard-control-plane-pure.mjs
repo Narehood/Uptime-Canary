@@ -292,6 +292,29 @@ await check('removal and retry: 204 removed, 202 still removing, and a finished 
   assert.equal(api.describeFailure(local, { preferDetail: true }), 'The bundled local node is managed in deployment settings.');
 });
 
+await check('force removal sends the exact typed name only to the dashboard and keeps accepted work pending', async () => {
+  on();
+  storageWrites.length = 0;
+  const client = new api.CanaryApi(PAGE, TOKEN).withRegisteredNode(REG);
+  const sent = await record(async () => {
+    answer = () => json(202, { ...ENTRY, state: 'removing', error: 'Cleaning assignments in the background' });
+    const result = await client.forceRemoveNode(REG, ENTRY.label);
+    assert.equal(result.removed, false);
+    assert.equal(result.node.state, 'removing');
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(pathOf(sent[0]), `/api/dashboard/nodes/${REG}`);
+  assert.equal(sent[0].init.method, 'DELETE');
+  assert.equal(header(sent[0], HEADER), null);
+  assert.deepEqual(JSON.parse(sent[0].init.body), { force: true, confirmation: ENTRY.label });
+  assert.deepEqual(storageWrites, []);
+  const rejected = await record(async () => {
+    answer = () => json(409, { error: 'Enter the current name exactly' });
+    assert.equal((await rejection(client.forceRemoveNode(REG, 'Wrong name'))).status, 409);
+  });
+  assert.equal(rejected.length, 1, 'no automatic repeat of a destructive request');
+});
+
 await check('failure wording: the dashboard’s answers are its own; a refused node credential is a node error, never a sign-out', async () => {
   on();
   const client = new api.CanaryApi(PAGE, TOKEN);

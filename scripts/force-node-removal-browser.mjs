@@ -1,0 +1,89 @@
+// Real React controls and real Go cleanup, using only the harness's private
+// dashboard, disabled monitors and loopback nodes. No provider sends.
+import assert from 'node:assert/strict';
+
+export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until, fill, click, ready, owner, registrations }) {
+  const q = JSON.stringify;
+  const node = registrations.find(row => row.nodeId === A.id);
+  const survivor = registrations.find(row => row.nodeId === B.id);
+  const api = (path, method = 'GET', body, registration) => fixture.api(path, method, body, owner, registration);
+  const shared = 'cd190001fe274968a5fe000000000001';
+  const solo = 'cd190001fe274968a5fe000000000002';
+  let physical;
+  const longName = 'R'.repeat(128), renamed = 'Retire private runner';
+  const deletes = () => fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${node.id}`).length;
+
+  await step('Node removal: real shared and last-runner assignments are ready before confirmation', async () => {
+    assert.ok(node && survivor);
+    assert.equal((await api(`/api/dashboard/nodes/${node.id}`, 'PATCH', { label: longName })).status, 200);
+    for (const [id, runners] of [[shared, [node.id, survivor.id]], [solo, [node.id]]]) {
+      const created = await api('/api/dashboard/fleet/monitors', 'POST', {
+        requestId: id, registrationIds: runners, monitor: {
+          name: id === shared ? 'Shared removal fixture' : 'Last-runner removal fixture', type: 'manual', target: 'manual',
+          enabled: false, intervalMs: 60000, timeoutMs: 1000, nodeIds: [A.id], notificationIds: [],
+        },
+      });
+      assert.equal(created.status, 202);
+    }
+    const rows = await until(async () => {
+      const result = await api('/api/dashboard/fleet/monitors');
+      return result.value?.filter(row => [shared, solo].includes(row.id)).length === 2 &&
+        result.value.filter(row => [shared, solo].includes(row.id)).every(row => row.state === 'applied') && result.value;
+    }, 'disabled removal fixtures applied', 45000);
+    physical = rows.find(row => row.id === shared).placements.find(p => p.registrationIds.includes(survivor.id)).monitorId;
+    return { managedAssignments: 2, sharedMonitorIDRetained: true, externalSends: 0 };
+  });
+
+  await step('Node removal: exact name, real focus and narrow long-name layout gate a destructive request', async () => {
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
+    await page.eval('location.hash="#/nodes"');
+    await until(() => page.eval(`document.getElementById(${q('r-' + node.id)})?.textContent===${q(longName)}`), 'updated node label in list', 30000);
+    await ready();
+    await page.eval(`(() => { const card=document.getElementById(${q('r-' + node.id)}).closest('article');const button=[...card.querySelectorAll('button')].find(e=>e.textContent.trim()==='Remove');if(!button)throw Error('Remove missing');button.click(); })()`);
+    await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'node confirmation dialog');
+    assert.ok(await page.eval('document.activeElement===document.querySelector("dialog[open] input")'), 'name field owns entry focus');
+    assert.ok(await page.eval('document.querySelector("dialog[open] button[type=submit]").disabled'));
+    const before = deletes();
+    await fill(`Type “${longName}” to confirm`, 'Wrong name', 'dialog[open]');
+    await page.eval('document.querySelector("dialog[open] form").requestSubmit()');
+    assert.equal(deletes(), before, 'a wrong name sends nothing');
+    const widths = await page.eval('({page:document.documentElement.clientWidth,pageScroll:document.documentElement.scrollWidth,dialog:document.querySelector("dialog[open]").clientWidth,dialogScroll:document.querySelector("dialog[open]").scrollWidth})');
+    assert.ok(widths.pageScroll <= widths.page + 1 && widths.dialogScroll <= widths.dialog + 1, 'long name must not create horizontal overflow');
+    return { initialFocus: 'name', invalidSubmissions: 0, viewport: 320, widths };
+  });
+
+  await step('Node removal: a polled rename invalidates old text; accepted cleanup does not wait for the browser', async () => {
+    assert.equal((await api(`/api/dashboard/nodes/${node.id}`, 'PATCH', { label: renamed })).status, 200);
+    await until(() => page.eval(`document.querySelector('dialog[open]')?.innerText.includes(${q('Type “' + renamed + '” to confirm')})`), 'polled rename updates confirmation', 30000);
+    assert.ok(await page.eval('document.querySelector("dialog[open] button[type=submit]").disabled'));
+    await fill(`Type “${renamed}” to confirm`, renamed, 'dialog[open]');
+    const before = deletes(), held = fixture.hold('DELETE', `/api/dashboard/nodes/${node.id}`);
+    try {
+      await click('Remove node', 'dialog[open]');
+      await until(() => held.answered() !== null, 'server accepted durable cleanup');
+      assert.equal(held.answered().status, 202);
+      assert.ok(await page.eval('document.querySelector("dialog[open] button[type=submit]").disabled'));
+      await page.eval('document.querySelector("dialog[open] form").requestSubmit()');
+      assert.equal(deletes(), before + 1, 'busy dialog does not submit twice');
+    } finally { held.release(); }
+    await until(() => page.eval('!document.querySelector("dialog[open]")'), 'accepted dialog closes');
+    return { renameInvalidatesConfirmation: true, acceptedStatus: 202, destructiveRequests: 1 };
+  });
+
+  await step('Node removal: cleanup retains the shared physical monitor and retires the last-runner monitor', async () => {
+    await until(async () => !(await api('/api/dashboard/nodes')).value.some(row => row.id === node.id), 'background cleanup and revocation finish', 90000);
+    const rows = (await api('/api/dashboard/fleet/monitors')).value;
+    const kept = rows.find(row => row.id === shared), retired = rows.find(row => row.id === solo);
+    assert.equal(kept.state, 'applied');
+    assert.deepEqual(kept.registrationIds, [survivor.id]);
+    assert.equal(retired.state, 'removed');
+    const monitors = await api('/api/monitors', 'GET', undefined, survivor.id);
+    assert.equal(monitors.status, 200);
+    assert.ok(monitors.value.some(row => row.monitor.id === physical && row.monitor.nodeIds.includes(B.id)));
+    assert.ok(kept.placements.every(p => p.state === 'removed' || p.registrationId !== node.id));
+    const accounts = await (await fetch(A.url + '/api/accounts', { headers: { Authorization: `Bearer ${A.token}` } })).json();
+    assert.equal(accounts.filter(account => account.id?.startsWith('dashboard-')).length, 0, 'revocation removed this dashboard delegation');
+    await page.send('Emulation.clearDeviceMetricsOverride');
+    return { sharedMonitorKept: true, lastRunnerRetired: true, oldManagementAnchorGone: true, revocationConfirmed: true };
+  });
+}
