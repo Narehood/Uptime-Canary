@@ -1,5 +1,5 @@
 {
-  "lockSha256": "1347e4a72435dcbd634088db66c7909529a8f530a789f5dd87eb604bf8395b2e",
+  "lockSha256": "0a3cbcf8160f9775bd038263c7bafc763f1a545f411418d6e7f5f2b7528acbe5",
   "packages": [
     {
       "name": "@nodable/entities",
@@ -298,8 +298,8 @@
     },
     {
       "name": "http2-wrapper",
-      "version": "2.2.1",
-      "integrity": "sha512-V5nVw1PAOgfI3Lmeaj2Exmeg7fenjhRUgz1lPSezy1CuhPYbgQtbQj4jZfEAEMlaL+vupsvhjqCyjzob0yxsmQ==",
+      "version": "2.2.4",
+      "integrity": "sha512-y5jx4isTOKEC5Hu1lswc+IxytGlqDmwF1qJtk9qIS8l1KVxuHO5g522UfmErt1H2pMcH/xq+KiFQUB8aVWIABA==",
       "notices": [
         {
           "file": "LICENSE",

@@ -1,5 +1,5 @@
 // SOURCE-REVIEWED ONLY: Linux/Alpine; never run this fixture on Windows.
-// Root installs a separate lockfile-pinned pm2@7.1.1 fixture package at
+// Root installs a separate lockfile-pinned pm2@7.1.2 fixture package at
 //   GUARD/pm2-package/node_modules/pm2
 // and launches: /absolute/node --max-old-space-size=64 /absolute/manager.mjs GUARD
 // GUARD must already be a real, current-UID-owned 0700 guarded output directory.
@@ -36,24 +36,24 @@ import cluster from 'node:cluster';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-const VERSION = '7.1.1';
-const COMMIT = '34dec9197301165850741b319890b2633ae797f4';
+const VERSION = '7.1.2';
+const COMMIT = '7a7fb4e22e9a26ec79c870ce8daafd2f78b648d1';
 const NAME = 'canary-pm2-fixture';
 const NAMESPACE = 'canary-fixture';
 const CORE = {
-  'package.json': 'de979d9fa51d17baf686ced802d18dcdb21eff12f5ba496119c641af4fa497f8',
+  'package.json': '4e567af3422550c84bc7c731020d96c731cdb05d9da36f57ccf9942a08f79b7e',
   'index.js': '7b99a3037651e0802349187be8f012feb09da740ccfcf65e9c5a373757f30590',
   'paths.js': 'e5773c2711f1d41b79de6575cda89e42e96fa4ba42b6c8de373c0785888f9749',
   'constants.js': 'f6ea58459ed2f60c0ac6385c786cc2be4eec4c92c37feb70db8835a2d47110bd',
-  'lib/API.js': '1bd03fd1800d6e66751ffdf8e0f11d18e35d6c621ad323a8c3dd499d16d4b275',
-  'lib/Client.js': '7fa92932e33f189c00604e76caf409f5d25924c2baefda2e0e2c249e430f57ce',
+  'lib/API.js': 'ac6d0bf5e6dd454c23de7d67d053010df36154a337e4626f6531717e38a8ce0e',
+  'lib/Client.js': 'df8b0c8b76ba6380b3c67c2ce096962f84bbf3a16f917dd85caf33030cb5071f',
   'lib/Daemon.js': 'c4e27c6a2b0f380c9846e298b7a1ef4c745c8f33f00bbd61d9a10eee19ee2fb9',
   'lib/God.js': '244e0c2e4725960b323394ac941a73a416e6db8cbbb5ddfb5cfdf2405ec64f91',
-  'lib/God/ClusterMode.js': 'a8f8c22bfd73d81aa35dc72f59740e2a0eb2d46c13a39d182f2669137a933b75',
+  'lib/God/ClusterMode.js': '39f239e4a005a5774d75b45369dfaba9e4d78fd54499f9a1fbe5a16532d1c1e1',
   'lib/God/ForkMode.js': 'a7f82fbbe3a40804b68a76f89a7b8092f21634cec359b6d7cf0ac554671e90c8',
   'lib/God/Methods.js': 'db19828776122ce43a44b4f971b8e9fc1e76804d2cf8df05d4b67e2b72a5684e',
-  'lib/God/ActionMethods.js': '2707f1f2d75929e4747b4ea170f64392ba773909b9a3c278042636ce22090f58',
-  'lib/Common.js': '223476aede876e172f8653e8a00227f536538ea1fc174fdb0c4eee198b5f9dbf',
+  'lib/God/ActionMethods.js': 'f029ebc8fdc290d2624ff9640d94fa9a66a0056bcabde4d86a61dc3c4fee255f',
+  'lib/Common.js': '61cb0b7c21a03670c9d24e79c4adf42fca1c4b57c70d487802e663035d057cef',
   'lib/ProcessContainer.js': '87474be33cd36f8a52e1a46695634e9a98a33ce46830e1e0e3168756f3a0c7c9',
   'lib/ProcessUtils.js': '4166ef73d883fa6871e43cdc94dcddd2f2e221219754e5faea14556bce2e5dfe',
   'lib/Worker.js': '479701c010251490fe8fcec3af4922e7e68b76a0f6bef8d61ec3a538c7edaa4f',

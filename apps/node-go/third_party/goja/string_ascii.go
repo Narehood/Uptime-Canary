@@ -1,6 +1,7 @@
 package goja
 
 import (
+	"errors"
 	"hash/maphash"
 	"io"
 	"math"
@@ -98,13 +99,13 @@ func stringToInt(ss string) (int64, error) {
 	if ss == "-0" {
 		return 0, strconv.ErrSyntax
 	}
-	if len(ss) > 2 {
-		switch ss[:2] {
-		case "0x", "0X":
+	if len(ss) > 2 && ss[0] == '0' {
+		switch ss[1] {
+		case 'x', 'X':
 			return strconv.ParseInt(ss[2:], 16, 64)
-		case "0b", "0B":
+		case 'b', 'B':
 			return strconv.ParseInt(ss[2:], 2, 64)
-		case "0o", "0O":
+		case 'o', 'O':
 			return strconv.ParseInt(ss[2:], 8, 64)
 		}
 	}
@@ -116,10 +117,7 @@ func (s asciiString) _toInt(trimmed string) (int64, error) {
 }
 
 func isRangeErr(err error) bool {
-	if err, ok := err.(*strconv.NumError); ok {
-		return err.Err == strconv.ErrRange
-	}
-	return false
+	return errors.Is(err, strconv.ErrRange)
 }
 
 func (s asciiString) _toFloat(trimmed string) (float64, error) {
@@ -165,6 +163,29 @@ func stringToFloat(trimmed string) (float64, error) {
 		err = nil
 	}
 	return f, err
+}
+
+// prefixedIntToFloat converts a trimmed 0x, 0o or 0b integer that does not fit into int64 to the nearest float64.
+func prefixedIntToFloat(ss string) (float64, error) {
+	if len(ss) > 2 && ss[0] == '0' {
+		var base int
+		switch ss[1] {
+		case 'x', 'X':
+			base = 16
+		case 'o', 'O':
+			base = 8
+		case 'b', 'B':
+			base = 2
+		}
+		// big.Int accepts a sign after the prefix, ECMAScript does not.
+		if base != 0 && ss[2] != '+' && ss[2] != '-' {
+			if n, ok := new(big.Int).SetString(ss[2:], base); ok {
+				f, _ := n.Float64()
+				return f, nil
+			}
+		}
+	}
+	return 0, strconv.ErrSyntax
 }
 
 func (s asciiString) ToInteger() int64 {
@@ -223,6 +244,9 @@ func trimmedToFloat(ss string) float64 {
 		if err == nil {
 			return float64(i)
 		}
+		if f, err := prefixedIntToFloat(ss); err == nil {
+			return f
+		}
 		f = math.NaN()
 	}
 	return f
@@ -249,6 +273,10 @@ func (s asciiString) ToNumber() Value {
 	}
 
 	if f, err := s._toFloat(ss); err == nil {
+		return floatToValue(f)
+	}
+
+	if f, err := prefixedIntToFloat(ss); err == nil {
 		return floatToValue(f)
 	}
 

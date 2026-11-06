@@ -2,8 +2,8 @@
 ARG CANARY_NODE_IMAGE
 FROM ${CANARY_NODE_IMAGE} AS canary
 
-FROM node:24.22.1-alpine
-RUN apk add --no-cache ca-certificates iputils
+FROM node:24.22.2-alpine3.24
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates iputils
 WORKDIR /work
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/proof/package.json ./apps/proof/package.json

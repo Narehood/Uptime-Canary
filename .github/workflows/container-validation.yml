@@ -2,10 +2,10 @@ name: Container validation
 
 on:
   pull_request:
-    paths-ignore: [README.md, 'docs/**', 'design/**']
+    paths: ['**', '!README.md', '!docs/**', 'docs/node-onboarding.md', '!design/**']
   push:
     branches: [main]
-    paths-ignore: [README.md, 'docs/**', 'design/**']
+    paths: ['**', '!README.md', '!docs/**', 'docs/node-onboarding.md', '!design/**']
   workflow_dispatch:
     inputs:
       dashboard_browser_only:
@@ -86,7 +86,7 @@ jobs:
           cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.1'
+          node-version: '24.22.2'
           package-manager-cache: false
       - name: Bind the installed toolchain and browser
         shell: bash

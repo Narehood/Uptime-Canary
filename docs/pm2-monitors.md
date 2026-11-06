@@ -86,14 +86,14 @@ unverified. There is no option to bypass account or permission checks.
 
 ## Compatibility, privacy and resource limits
 
-The compatibility profiles admit PM2 **6.0.8** and **7.1.1** exactly. The older
-profile remains for existing deployments; the development fixture now pins
-7.1.1 to remove the six reported dependency advisories. Other versions remain
-Pending until their protocol behavior is separately researched and exercised.
-Prefer 7.1.1 for a new or updated PM2 installation; retaining the older profile
-is compatibility, not a security recommendation. This candidate's real 7.1.1
-Linux gate remains required on its matching PR head. See
-[the advisory fixes and exact validation scope](security-validation.md#pm2-fixture-advisories-2026-10-26-candidate).
+The compatibility profiles admit PM2 **6.0.8**, **7.1.1** and **7.1.2** exactly.
+Earlier profiles remain for existing deployments; the development fixture now
+pins 7.1.2, with verified npm integrity and refreshed source hashes. Other
+versions remain Pending until their protocol behavior is separately researched
+and exercised. Prefer the current 7.1.2 profile for a new or updated PM2
+installation; retaining older profiles is compatibility, not a security
+recommendation. Native Linux interoperability remains a required matching-head
+gate. See [the security refresh](ci-security-refresh.md).
 Custom RPC endpoints and Windows account selection are not supported.
 This deliberately differs from Kuma's first matching name-or-ID behavior:
 Canary checks all exact name/namespace matches and keeps numeric names literal.
@@ -136,6 +136,11 @@ The 7.1.1 candidate pins
 [`34dec91`](https://github.com/Unitech/pm2/tree/34dec9197301165850741b319890b2633ae797f4),
 including its internalized
 [RPC callback envelope](https://github.com/Unitech/pm2/blob/34dec9197301165850741b319890b2633ae797f4/modules/pm2-axon-rpc/lib/server.js).
+The current 7.1.2 fixture pins
+[`7a7fb4e`](https://github.com/Unitech/pm2/tree/7a7fb4e22e9a26ec79c870ce8daafd2f78b648d1)
+and retains the same read-only methods and wire framing. Its changed callback,
+environment-filtering and cluster-launch sources are covered by the isolated
+real-manager release proof.
 The original 6.0.8 profile used independent codec research against
 [`pm2-axon-rpc`](https://github.com/Unitech/pm2-axon-rpc/blob/a040e0233649147894e1f5f2b0a24fd02ebb8675/lib/server.js),
 [`pm2-axon`](https://github.com/Unitech/pm2-axon/blob/e012e208f82b697fd8c0fa9795602cb3a7c82f54/lib/sockets/req.js),
@@ -196,7 +201,7 @@ Linux, Alpine, arm64, race acceptance, hosted checks or release readiness.
 Both Linux native-package jobs require the additional actual-PM2 gate against
 their same extracted executable. Its separate locked development-only dependency
 is installed below guarded outputs, not added to the product runtime. The
-fixture uses the real 7.1.1 RPC server and real cluster workers in disposable
+fixture uses the real 7.1.2 RPC server and real cluster workers in disposable
 PID, mount and loopback-only network namespaces. Only system programs run before
 the account, groups, capabilities and privilege escalation are dropped. An
 unchanged-credential system supervisor retains the parent-death relationship;

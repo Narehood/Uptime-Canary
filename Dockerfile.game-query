@@ -1,4 +1,4 @@
-FROM node:24.22.1-alpine AS dependencies
+FROM node:24.22.2-alpine3.24 AS dependencies
 WORKDIR /app/services/game-query
 COPY services/game-query/package.json services/game-query/package-lock.json ./
 RUN npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund --no-bin-links
@@ -7,7 +7,8 @@ COPY services/game-query/server.mjs services/game-query/worker.mjs services/game
 COPY apps/node-go/internal/gamedigmonitor/catalogue.json apps/node-go/internal/gamedigmonitor/upstream.json ./apps/node-go/internal/gamedigmonitor/
 RUN node --test --test-concurrency=1 services/game-query/server.test.mjs
 
-FROM node:24.22.1-alpine AS runtime
+FROM node:24.22.2-alpine3.24 AS runtime
+RUN apk upgrade --no-cache
 WORKDIR /app
 COPY --from=dependencies /app/services/game-query/node_modules ./services/game-query/node_modules
 COPY services/game-query/package.json services/game-query/server.mjs services/game-query/worker.mjs ./services/game-query/

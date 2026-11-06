@@ -1,4 +1,4 @@
-Goja, github.com/dop251/goja, version v0.0.0-20261022125820-07c4b9d6265b.
+Goja, github.com/dop251/goja, version v0.0.0-20261105002551-2413f2132ac8.
 Copyright and MIT terms are retained verbatim in LICENSE.
 
 This source replacement retains 81 upstream production/module/license files

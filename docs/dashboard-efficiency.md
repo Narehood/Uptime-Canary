@@ -10,8 +10,8 @@ These are calculation benchmarks; they do not measure page loading, rendering,
 network requests or human task completion.
 
 PR #35 merged at that baseline commit. Its delivery-log optimization is separate
-from these five operations. This follow-up remains a draft until the user elects
-to proceed.
+from these five operations. The user subsequently authorized the security refresh, final validation and
+merge; matching-head hosted results remain required before proceeding.
 
 ## Measured results
 

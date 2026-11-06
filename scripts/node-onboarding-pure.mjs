@@ -2000,7 +2000,7 @@ await check('TLS r2 tls-info and tls-init: container steps say how to print the 
   assert.match(transport, /if retained\s*\{\s*mode = "auto"\s*\}/u, 'an empty setting with a kept certificate means auto');
   assert.match(transport, /mode == "" \|\| mode == "off"/u, 'off stays plain HTTP');
   assert.ok(go('origin/connection_linux.go').includes('stat.Uid != uint32(os.Geteuid())'), 'the identity files must belong to the user reading them, so a VM gets no command');
-  // The image's command and user, when this runs with the repository (the web image's build has no Dockerfile.node).
+  // The image's command and user, when this runs with the repository (also copied into the web image's build).
   const imagePath = resolve(root, 'Dockerfile.node');
   if (existsSync(imagePath)) {
     const image = readFileSync(imagePath, 'utf8');
