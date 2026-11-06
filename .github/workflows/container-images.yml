@@ -128,6 +128,11 @@ jobs:
           for attempt in $(seq 1 30); do
             if docker exec canary-query-smoke node -e "fetch('http://127.0.0.1:3121/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"; then
               test "$(docker inspect --format '{{.Config.User}}' canary-query-smoke)" = node
+              docker exec canary-query-smoke /bin/sh -ec '
+                test "$(id -u)" = 1000
+                if command -v npm || command -v yarn; then exit 1; fi
+                test ! -d /usr/local/lib/node_modules/npm
+              '
               exit 0
             fi
             sleep 1

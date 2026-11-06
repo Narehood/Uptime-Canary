@@ -33,7 +33,7 @@ between jobs were introduced.
 
 | Component | Refresh |
 | --- | --- |
-| Alpine runtime | Explicit `alpine:3.24.3` for node/web; Alpine 3.24 variants for Node and Go builders. Runtime stages run `apk upgrade --no-cache` before package installation/use. |
+| Alpine runtime | Explicit `alpine:3.24.4` for all three runtime stages; Alpine 3.24 variants for Node and Go builders. Runtime stages run `apk upgrade --no-cache` before package installation/use. The first refresh targeted 3.24.3; the subsequent hosted scan and current release feed establish 3.24.4. |
 | Node | 24.22.1 to **24.22.2** in images, CI and the exact isolated PM2 launcher profile. |
 | Go toolchain | **1.27.3** retained: it is the latest stable release in the official release feed checked for this refresh. An upcoming release is not substituted for a published one. |
 | Go modules | Sixteen existing requirements updated, including SQLite, Goja, SSH/SFTP, SQL/Mongo clients and supporting packages; an unused PBKDF2 requirement disappears after `go mod tidy`. |
@@ -96,6 +96,30 @@ and locally replaced code. npm/embedded findings and scan failures block the
 job; Go's source-symbol policy blocks reachable vulnerable code and retains
 module-only findings. Third-party-notice verification and its controls are
 also release gates. Notices were regenerated for the updated dependencies.
+
+### Package-manager findings in the query image
+
+The first completed query-image scan at `fa50b38` inventoried Alpine 3.24.4
+and reported six HIGH, twelve MEDIUM and one LOW findings, all for package
+versions bundled with npm in Node 24.22.2. The matching package names and
+versions are present in the upstream Node release's `deps/npm/node_modules`
+source; none is in the 61-package service lockfile. In particular, npm bundles
+Undici 6.28.0 while Node's built-in fetch uses the fixed Undici 7.30.1.
+The failed scan and its original artifact remain retained evidence.
+
+The query runtime now follows the official
+[Node multi-stage guidance](https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md#smaller-images-without-npmyarn):
+copy the exact tested Node binary, entrypoint and license onto patched Alpine,
+then copy only the locked service dependencies and application files. npm and
+Yarn remain available for the dependency build but are absent from the runtime;
+no vulnerable dependency is hidden with a scanner exclusion. Node's upstream
+[image recipe](https://github.com/nodejs/docker-node/blob/main/24/alpine3.24/Dockerfile)
+identifies the required `libatomic` and `libstdc++` libraries. The UID/GID 1000
+node user, permission flags and service entrypoint remain. The hosted smoke
+now also checks the running UID and absence of package managers. All runtime
+base tags advance to 3.24.4, the current stable patch in the
+[Alpine release feed](https://www.alpinelinux.org/releases/).
+Fresh image scans and the actual hardened startup must pass before merge.
 
 ## Validation and remaining work
 

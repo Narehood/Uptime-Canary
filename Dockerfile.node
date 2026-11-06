@@ -9,7 +9,7 @@ ARG CANARY_BUILD_CREATED
 ARG CANARY_BUILD_VERSION
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X uptime-canary/apps/node-go/internal/canary.containerRevision=${CANARY_BUILD_COMMIT} -X uptime-canary/apps/node-go/internal/canary.containerBuiltAt=${CANARY_BUILD_CREATED} -X uptime-canary/apps/node-go/internal/canary.releaseVersion=${CANARY_BUILD_VERSION}" -o /out/canary ./apps/node-go/cmd/canary
 
-FROM alpine:3.24.3 AS runtime
+FROM alpine:3.24.4 AS runtime
 RUN apk upgrade --no-cache \
     && apk add --no-cache ca-certificates iputils \
     && addgroup -S canary && adduser -S -G canary canary \
