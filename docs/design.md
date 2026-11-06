@@ -376,6 +376,8 @@ Nodes and Accounts are unchanged in direct mode. In gateway-only mode (no curren
 
 ---
 
+Force removal now requires the current dashboard name and queues durable group/monitor cleanup before revoking access. Shared monitors and their physical IDs remain on surviving nodes; zero-runner monitors are retired. Offline cleanup remains pending, and independent removals can proceed. See [node removal](node-removal.md) for background phases and compatibility.
+
 ## 5. Primary workflows
 
 **W1 · Triage: the service or the path?** Headline → matrix row (which columns are red) → chip (*everywhere* or *n of m*) → monitor detail sentence → history on a node that runs it.

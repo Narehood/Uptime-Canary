@@ -42,7 +42,8 @@ type RegisteredNode struct {
 type registeredNodeRecord struct {
 	RegisteredNode
 	// Authenticated against ID, URL and proved node identity; never public JSON.
-	Credentials string `json:"credentials"`
+	Credentials   string `json:"credentials"`
+	ForceRemoving bool   `json:"forceRemoving,omitempty"`
 	// Distinguish an undiscovered placeholder from a real node named pending.
 	Unproved                 bool `json:"unproved,omitempty"`
 	build                    *BinaryIdentity
@@ -56,7 +57,8 @@ type dashboardNodeSecrets struct {
 	dashboardRoleTokens
 	// Bootstrap while enrolling, or the previous/recovery administrator
 	// credential while rotating. Cleared after role verification succeeds.
-	EnrollmentToken string `json:"enrollmentToken,omitempty"`
+	EnrollmentToken string                `json:"enrollmentToken,omitempty"`
+	Removal         *dashboardNodeRemoval `json:"removal,omitempty"`
 }
 
 func dashboardOperationPending(state string) bool {
@@ -223,7 +225,7 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 		if _, e := d.openSecrets(row); e != nil {
 			return nil, errors.New("Cannot decrypt saved node credentials; restore the matching dashboard key")
 		}
-		if !dashboardOperationPending(row.State) {
+		if !dashboardNodePending(row) {
 			row.State = "starting"
 			row.Error = ""
 		}
@@ -355,6 +357,9 @@ func (d *Dashboard) commitRegistry(row registeredNodeRecord, r *http.Request, ac
 
 func (d *Dashboard) publicNode(row registeredNodeRecord, role string) RegisteredNode {
 	v := row.RegisteredNode
+	if row.ForceRemoving {
+		v.State = "removing"
+	}
 	if row.build != nil {
 		v.Version = row.build.Version
 		v.SourceCommit = installedRevision(row.build)

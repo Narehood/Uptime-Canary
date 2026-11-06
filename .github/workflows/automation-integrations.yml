@@ -100,7 +100,7 @@ jobs:
       - name: Real automation forms on Linux Chrome
         run: |
           set +e
-          python3 scripts/bounded_validation.py --timeout 600 -- node scripts/dashboard-contract-review.mjs --automation-only
+          python3 scripts/bounded_validation.py --timeout 600 -- node scripts/dashboard-contract-review.mjs --automation-only --dashboard-control-plane --force-node-removal
           validation_status=$?
           cat .canary/work/current/latest.log
           exit "$validation_status"

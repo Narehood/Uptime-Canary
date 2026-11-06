@@ -391,6 +391,10 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 		errorReply(w, fail(404, "Fleet monitor not found"))
 		return
 	}
+	if id != "" && r.Method != "GET" && d.fleetRemovalLocked(row) {
+		errorReply(w, fail(409, "This monitor is being updated by a node removal"))
+		return
+	}
 	if id != "" && d.fleetBusy[id] {
 		errorReply(w, fail(409, "A deployment is already running; reload and retry"))
 		return
@@ -564,6 +568,10 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 		return
 	}
 	for _, registration := range in.RegistrationIDs {
+		if d.registry[registration].ForceRemoving {
+			errorReply(w, fail(409, "A selected node is being removed"))
+			return
+		}
 		if _, ok := d.registry[registration]; !ok {
 			errorReply(w, fail(400, "A selected node is no longer registered"))
 			return
@@ -819,6 +827,15 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 		if err := d.verifyNodeGroup(old); err != nil {
 			errorReply(w, err)
 			return
+		}
+	}
+	if r.Method != "GET" {
+		members := append(slices.Clone(g.RegistrationIDs), all[id].RegistrationIDs...)
+		for _, member := range members {
+			if d.registry[member].ForceRemoving {
+				errorReply(w, fail(409, "This group has a node being removed"))
+				return
+			}
 		}
 	}
 	if id != "" && r.Method == "DELETE" {

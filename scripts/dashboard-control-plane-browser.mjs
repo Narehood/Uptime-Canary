@@ -11,6 +11,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import { dirname, join, resolve } from 'node:path';
 import { pinnedFixtureFetch } from './tls-fixture.mjs';
 import { reviewFleet } from './fleet-browser.mjs';
+import { reviewForceNodeRemoval } from './force-node-removal-browser.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -289,7 +290,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   };
 }
 
-export async function reviewDashboardControlPlane({ fixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet = false }) {
+export async function reviewDashboardControlPlane({ fixture, A, B, page, step, until, fill, click, text, ready, report, secrets, onlyFleet = false, onlyRemoval = false }) {
   const q = JSON.stringify;
   const start = report.requests.length;
   const clickFirst = async label => {
@@ -352,6 +353,11 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     assert.ok(!JSON.stringify(registrations).includes(A.token) && !JSON.stringify(registrations).includes(B.token));
     return { readOnlyVerification: true, cancellationLeavesNoAccounts: true, registeredNodes: 2 };
   });
+  if (onlyRemoval) {
+    await reviewForceNodeRemoval({ fixture, A, B, page, step, until, fill, click, ready, owner, registrations });
+    await page.send('Network.setBlockedURLs', { urls: [] });
+    return;
+  }
   if (onlyFleet) {
     await reviewFleet({ fixture, A, B, page, step, until, fill, click, text, ready, owner });
     await page.send('Network.setBlockedURLs', { urls: [] });

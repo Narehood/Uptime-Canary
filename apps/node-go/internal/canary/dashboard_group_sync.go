@@ -170,6 +170,11 @@ func (d *Dashboard) syncNodeGroup(ctx context.Context, id string, job dashboardG
 	if e != nil || !ok || current.ID != id || current.Revision != group.Revision || d.verifyNodeGroup(current) != nil {
 		return
 	}
+	for _, member := range group.RegistrationIDs {
+		if d.registry[member].ForceRemoving {
+			return
+		}
+	}
 	if d.groupWaitsForLegacyCreate(id) {
 		d.finishGroupSyncLocked(group, job, "pending", "Waiting to confirm an older node's saved monitor creation before collecting more monitors")
 		return
@@ -391,7 +396,7 @@ func (d *Dashboard) refreshGroupPlacements(ctx context.Context) {
 	d.mu.Lock()
 	rows := []dashboardFleetRecord{}
 	for _, row := range d.fleet {
-		if row.State == "applied" && !d.fleetBusy[row.ID] && row.RetryAt <= time.Now().UnixMilli() {
+		if row.State == "applied" && !d.fleetBusy[row.ID] && !d.fleetRemovalLocked(row) && row.RetryAt <= time.Now().UnixMilli() {
 			rows = append(rows, copyFleet(row))
 		}
 	}

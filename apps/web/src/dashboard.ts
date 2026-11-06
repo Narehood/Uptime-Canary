@@ -59,7 +59,7 @@ export function nodeStateInfo(node: RegisteredNode): NodeStateInfo {
     case 'removing':
       return {
         tone: 'pending', label: 'Removal unfinished', out: true, attention: true, readable: false,
-        text: 'The dashboard no longer reads it and keeps asking the node to revoke this dashboard’s access, but the node hasn’t confirmed that yet.',
+        text: 'The dashboard no longer serves its monitoring data. The server finishes any queued group and monitor cleanup, then revokes this dashboard’s access. Removal stays unfinished until every step is confirmed.',
       };
     case 'rotating':
       // An attempt that failed leaves its reason in `error`; only then does an administrator need to look.
@@ -99,7 +99,7 @@ function outboundStateInfo(node: RegisteredNode): NodeStateInfo | null {
     case 'removing':
       return {
         tone: 'pending', label: 'Removal unfinished', out: true, attention: true, readable: false,
-        text: 'The dashboard no longer reads it. It accepts the node’s connection only so the node can confirm that this dashboard’s access there was revoked, which happens when the node connects again.',
+        text: 'The dashboard no longer serves its monitoring data. Its connection stays available for queued group and monitor cleanup, followed by access revocation. Unfinished work resumes when the node connects again.',
       };
     default:
       return null;

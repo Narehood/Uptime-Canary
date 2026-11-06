@@ -36,7 +36,7 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 		errorReply(w, fail(404, "Registered node not found"))
 		return
 	}
-	if d.busy[id] || dashboardOperationPending(before.State) {
+	if d.busy[id] || dashboardNodePending(before) {
 		d.mu.Unlock()
 		errorReply(w, fail(409, "Finish the pending node operation first"))
 		return
@@ -95,7 +95,7 @@ func (d *Dashboard) editRegisteredNode(w http.ResponseWriter, r *http.Request, a
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	current, exists := d.registry[id]
-	if !exists || current.URL != before.URL || current.Credentials != before.Credentials || current.TLSFingerprint != before.TLSFingerprint || current.Label != before.Label || d.busy[id] || dashboardOperationPending(current.State) {
+	if !exists || current.URL != before.URL || current.Credentials != before.Credentials || current.TLSFingerprint != before.TLSFingerprint || current.Label != before.Label || d.busy[id] || dashboardNodePending(current) {
 		errorReply(w, fail(409, "Registered node changed; refresh before editing"))
 		return
 	}
@@ -144,7 +144,7 @@ func (d *Dashboard) rotateRegisteredNode(w http.ResponseWriter, r *http.Request,
 		errorReply(w, fail(404, "Registered node not found"))
 		return
 	}
-	if before.Unproved || d.busy[id] || dashboardOperationPending(before.State) {
+	if before.Unproved || d.busy[id] || dashboardNodePending(before) {
 		d.mu.Unlock()
 		errorReply(w, fail(409, "Finish the pending node operation first"))
 		return
@@ -178,7 +178,7 @@ func (d *Dashboard) rotateRegisteredNode(w http.ResponseWriter, r *http.Request,
 	}
 	d.mu.Lock()
 	current, exists := d.registry[id]
-	if !exists || current.URL != before.URL || current.Credentials != before.Credentials || d.busy[id] || dashboardOperationPending(current.State) {
+	if !exists || current.URL != before.URL || current.Credentials != before.Credentials || d.busy[id] || dashboardNodePending(current) {
 		d.mu.Unlock()
 		errorReply(w, fail(409, "Registered node changed; refresh before rotating"))
 		return
@@ -279,6 +279,10 @@ func (d *Dashboard) retryRegisteredNode(w http.ResponseWriter, r *http.Request, 
 		errorReply(w, err)
 		return
 	}
+	if err := d.renewNodeRemoval(r, actor, id); err != nil {
+		errorReply(w, err)
+		return
+	}
 	row, err := d.finishEnrollment(r.Context(), id)
 	if err != nil {
 		if input.Token == "" {
@@ -295,7 +299,7 @@ func (d *Dashboard) retryRegisteredNode(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		status := 200
-		if dashboardOperationPending(row.State) {
+		if dashboardNodePending(row) {
 			status = 202
 		}
 		reply(w, status, d.publicNode(row, actor.Role))

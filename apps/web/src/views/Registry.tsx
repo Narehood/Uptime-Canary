@@ -93,7 +93,7 @@ export function RegistryView({ home = false }: { home?: boolean }) {
       )}
       {!home && selection && !connection.awaiting ? <PeersCard /> : null}
       {adding ? <AddNodeDialog onClose={() => setAdding(false)} /> : null}
-      {removing ? <RemoveNodeDialog node={removing} onClose={() => setRemoving(null)} /> : null}
+      {removing ? <RemoveNodeDialog key={removing.id} node={removing} onClose={() => setRemoving(null)} /> : null}
       {editing ? <EditNodeDialog key={editing.id} node={editing} onClose={() => setEditing(null)} /> : null}
       {rotation ? <RotateNodeDialog key={rotation.id} node={rotation} onClose={() => setRotation(null)} /> : null}
       {recovering ? <RecoverAccessDialog key={recovering.id} node={recovering} onClose={() => setRecovering(null)} /> : null}
@@ -703,47 +703,119 @@ export function DirectAddForm({ onClose, onBusy, onStage, credential, expectedId
   return body;
 }
 
-export function RemoveNodeDialog({ node, onClose }: { node: RegisteredNode; onClose: () => void }) {
-  const { api, registry, selection, select, stillCurrent } = useCanary();
+/**
+ * Why the cleanup can't reach this node now, and what an administrator can still repair first: Edit and Rotate access
+ * are off once removal starts. Null while the node answers.
+ */
+function removalProblem(node: RegisteredNode): ReactNode {
+  const outbound = node.connection === 'outbound';
+  const edit = (why: string): string => outbound ? '' : ` If ${why}, cancel and use Edit first; you can’t once removal starts.`;
+  if (node.state === 'answering') return null;
+  if (pendingOperation(node.state)) return 'Another change to this node isn’t finished, so the cleanup waits for it.';
+  if (node.state === 'credential-refused') return 'The node refuses this dashboard’s credential, so the cleanup can’t finish there. To repair that, cancel and use Rotate access first; you can’t once removal starts.';
+  if (node.state === 'different-node') {
+    return <>{outbound ? 'A different node answered over this connection' : 'This address now answers as a different node'}, so cleanup cannot be confirmed there. Restore the original node or its address, and revoke this dashboard’s access on <span className="mono">{node.nodeId}</span> wherever it runs now.{edit('it moved')}</>;
+  }
+  return outbound
+    ? 'The node isn’t connected right now, so the cleanup waits until it connects again.'
+    : `The node isn’t accepting the dashboard’s requests right now, so the cleanup waits for it.${edit(node.tlsFingerprint ? 'it moved or its certificate was replaced' : 'it moved')}`;
+}
+
+/** A refusal changed nothing. Anything else may have lost the reply to an accepted request, so the list settles it. */
+function removalFailure(error: unknown): Pick<ChangeFailure, 'title' | 'text'> {
+  const text = describeFailure(error, { preferDetail: true });
+  return error instanceof ApiFailure && (error.status < 400 || error.status >= 500)
+    ? { title: 'The result isn’t known yet', text: `${period(text)} The dashboard’s server may have accepted it. The node list now shows what it has; check it before trying again.` }
+    : { title: 'Not removed', text };
+}
+
+/**
+ * Force removal, with nothing to detach first. The dashboard's server saves the job and answers at once; the job then
+ * takes the node out of its groups, retires or reduces its monitors, hands management to a surviving HA peer and revokes
+ * this dashboard's access last. That answer confirms only the queue, so nothing here promises a finished step, and the
+ * entry stays as "Removal unfinished" until the server confirms them all. What's sent is the typed text: it has to match
+ * the name the list shows now, and the server makes the final comparison. Only the administrator repeats a failed attempt.
+ */
+export function RemoveNodeDialog({ node: opened, onClose }: { node: RegisteredNode; onClose: () => void }) {
+  const { api, registry, fleet, selection, select, stillCurrent } = useCanary();
+  const listed = registry.map.get(opened.id);
+  const node = listed ?? opened;
+  const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // An outbound node's connection stops carrying anything but that revocation as soon as the entry leaves the list.
-  const note = node.connection === 'outbound'
-    ? `${node.state === 'answering'
-      ? 'The dashboard stops using the node’s connection for anything else at once, and asks the node over it to revoke the access this dashboard set up there.'
-      : 'The node isn’t connected right now. The dashboard stops using its connection at once, except so the node can confirm that this dashboard’s access there was revoked; until it connects again, the entry stays as “Removal unfinished”.'} A change sent to the node just before may still finish there.`
-    : node.state === 'answering'
-    ? 'The dashboard’s server also asks the node to revoke the access this dashboard set up there.'
-    : node.state === 'different-node'
-      ? <>This address now answers as a different node, so the dashboard won’t send it anything. Revoke this dashboard’s access on <span className="mono">{node.nodeId}</span> wherever it runs now.</>
-      : 'The node isn’t accepting the dashboard’s requests right now, so its access may not be revoked yet. The entry then stays as “Removal unfinished” until the dashboard can confirm it.';
-  const remove = async (): Promise<void> => {
-    if (busy) return;
-    setBusy(true); setError(null);
+  const [failure, setFailure] = useState<Pick<ChangeFailure, 'title' | 'text'> | null>(null);
+  const [summaryRef, failed] = useSummaryFocus();
+  const fieldRef = useRef<HTMLDivElement>(null);
+  // Modal's showModal() runs after React's autoFocus and focuses the dialog's first control, its Close button, so the
+  // field takes focus here, once the dialog is open. The consequences above it stay in view.
+  useEffect(() => { fieldRef.current?.querySelector('input')?.focus({ preventScroll: true }); }, []);
+
+  // The list keeps refreshing while this is open: another administrator may rename the entry, or start or finish its removal.
+  const gone = registry.list !== null && !listed;
+  const started = node.state === 'removing';
+  const settled = gone || started;
+  const confirmed = !settled && typed === node.label;
+  const outbound = node.connection === 'outbound';
+  const problem = removalProblem(node);
+  const asks = outbound
+    ? 'The connection stays available only for this cleanup and for revoking the access this dashboard set up there.'
+    : 'The dashboard’s server also asks the node to revoke the access this dashboard set up there.';
+  const timing = `Cleanup runs in the background on the dashboard’s server, retries on its own, and survives closing this page or a restart. ${problem ? 'Revoking this dashboard’s access' : `${asks} That`} comes last, and the entry stays as “Removal unfinished” until every step is confirmed.${outbound ? ' A change sent to the node just before may still finish there.' : ''}`;
+
+  const remove = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy || !confirmed) return;
+    setBusy(true); setFailure(null);
     try {
-      const result = await api.removeNode(node.id);
+      const result = await api.forceRemoveNode(opened.id, typed);
       if (!stillCurrent()) return;
       notify(result.removed
         ? `Removed ${node.label}. The node confirmed this dashboard’s access was revoked.`
-        : `${node.label} is no longer read, but the node hasn’t confirmed that this dashboard’s access was revoked. It shows as “Removal unfinished”; retry when the node answers.`);
+        : `Removal of ${node.label} is queued. The dashboard’s server cleans up its groups and monitors in the background, then asks the node to revoke this dashboard’s access. Its card shows “Removal unfinished” and the progress until every step is confirmed.`);
       onClose();
-      if (selection?.id === node.id) select(null);
+      fleet?.reload();
+      if (selection?.id === opened.id) select(null);
       else registry.reload();
-    } catch (failure) {
+    } catch (error) {
       if (!stillCurrent()) return;
-      setError(describeFailure(failure, { preferDetail: true }));
+      // Reads the list only, so a rename or an acceptance whose reply was lost shows here.
+      registry.reload();
+      setFailure(removalFailure(error));
+      failed();
       setBusy(false);
     }
   };
+
   return (
     <Modal title={<>Remove “{node.label}”?</>} onClose={onClose} busy={busy}>
-      <p>This dashboard stops reading <span className="mono">{node.nodeId}</span> for every account. The node keeps running, checking and alerting, with its own accounts, data and peers.</p>
-      <p className="modal-note">{note}</p>
-      {error ? <div className="errsum" role="alert"><Glyph tone="down" /><div><b>Not removed</b><p>{error}</p></div></div> : null}
-      <div className="row-wrap modal-acts">
-        <button type="button" className="btn danger-solid" onClick={() => { void remove(); }} disabled={busy}><Icon name="trash" />{busy ? 'Removing…' : 'Remove node'}</button>
-        <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-      </div>
+      <form className="connect-form" onSubmit={event => { void remove(event); }} noValidate aria-busy={busy}>
+        {gone ? (
+          <Banner tone="info" title="This node is no longer on this dashboard">An administrator may have removed it, or its removal finished. There’s nothing left to confirm.</Banner>
+        ) : started ? (
+          <Banner tone="info" title="This node’s removal already started">Its card shows the progress. There’s nothing left to confirm.</Banner>
+        ) : (
+          <>
+            <p>This dashboard stops reading <span className="mono">{node.nodeId}</span> for every account and takes it out of its node groups and monitor placements, so there’s nothing to detach first.</p>
+            <p className="modal-note"><b>Monitors that run only on this node are retired and stop running.</b> Monitors that also run on other nodes keep running there, and node groups left empty are removed. Once queued, this can’t be cancelled.</p>
+            {problem ? <p className="small fwarn"><Glyph tone="warn" /><span>{problem}</span></p> : null}
+            <p className="small">The node keeps running, with its own checks, accounts, data and peers: no service is stopped and no database deleted. Monitors that stay keep the channels, tags and groups they last copied from it, and stop following it.</p>
+            <p className="small">{timing}</p>
+            {node.label !== opened.label && typed !== node.label ? <Banner tone="info" title="This node was renamed while this was open">It’s now “{node.label}”, so type that name to confirm.</Banner> : null}
+            {failure ? <ErrorSummary ref={summaryRef} title={failure.title} errors={[]}><p>{failure.text}</p></ErrorSummary> : null}
+            {/* Repeated spaces count in the name, so they have to show, and a long name has to wrap. */}
+            <div ref={fieldRef} className="wrap" style={{ whiteSpace: 'pre-wrap' }}>
+              <TextField label={`Type “${node.label}” to confirm`} value={typed} onChange={setTyped} disabled={busy}
+                hint="Its name on this dashboard, without the quotes. Capitals and spaces must match." />
+            </div>
+          </>
+        )}
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>{settled ? 'Close' : 'Cancel'}</button>
+            {settled ? null : <button type="submit" className="btn danger-solid" disabled={busy || !confirmed}><Icon name="trash" />{busy ? 'Queuing removal…' : 'Remove node'}</button>}
+          </span>
+        </div>
+      </form>
     </Modal>
   );
 }

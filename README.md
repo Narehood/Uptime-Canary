@@ -118,6 +118,11 @@ registry. A managed monitor has one row with per-node results. Independent
 nodes receive separate copies; configured HA peers keep their shared
 configuration and alert coordination. Registration does not create HA peering.
 
+Administrators can remove a registered node by typing its exact dashboard name.
+[Background cleanup](docs/node-removal.md) detaches its node-group memberships,
+keeps shared monitors on surviving runners, retires zero-runner monitors and
+revokes access last. Unconfirmed or offline cleanup remains visible and retries.
+
 ![Dashboard overview in the dark theme from a local two-node test: the headline reads that Payments API and Redis cache are down everywhere and Release gate is pending from 2 of 2 locations. Tiles count 2 down, 0 unknown, 4 of 8 up (1 paused, 1 pending), 1 of 1 peer in view, 1 notification, 1 of 1 maintenance window holding alerts for 1 monitor, and 0 of 4 groups holding alerts. A matrix shows each monitor's result from fixture-a and fixture-b; Payments API carries a "maintenance: Patch window" tag.](docs/assets/dashboard-overview.png)
 
 <table>

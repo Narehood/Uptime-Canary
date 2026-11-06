@@ -1027,10 +1027,10 @@ export class CanaryApi {
     return value === undefined ? null : normalizeRegisteredNode(value);
   }
   /** 204: removed and the node confirmed revocation. 202: no longer read, revocation pending (shown as `removing`). */
-  async removeNode(id: string, signal?: AbortSignal): Promise<NodeRemoval> {
+  async removeNode(id: string, signal?: AbortSignal, confirmation?: string): Promise<NodeRemoval> {
     let value: unknown;
     try {
-      value = await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}`, 'DELETE', undefined, signal, NODE_CHANGE_TIMEOUT_MS);
+      value = await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}`, 'DELETE', confirmation === undefined ? undefined : { force: true, confirmation }, signal, NODE_CHANGE_TIMEOUT_MS);
     } catch (error) {
       // An accepted removal without a readable entry is still accepted; the list shows its state.
       if (error instanceof ApiFailure && error.status === 202) return { removed: false, node: null };
@@ -1038,6 +1038,11 @@ export class CanaryApi {
     }
     if (value === undefined) return { removed: true };
     try { return { removed: false, node: normalizeRegisteredNode(value) }; } catch { return { removed: false, node: null }; }
+  }
+
+  /** Queue durable assignment cleanup and revocation, confirmed against the current dashboard label on the server. */
+  forceRemoveNode(id: string, confirmation: string, signal?: AbortSignal): Promise<NodeRemoval> {
+    return this.removeNode(id, signal, confirmation);
   }
 
   // ----- node onboarding (administrators): the Add node wizard's settings and the invitations of nodes that connect to
