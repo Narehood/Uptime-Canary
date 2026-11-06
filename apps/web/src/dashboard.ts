@@ -419,15 +419,17 @@ export function shownNodeId(node: RegisteredNode): string | null {
 export interface RegistrySummary { total: number; answering: number; notAnswering: number; attention: number; starting: number; unfinished: number }
 
 export function registrySummary(nodes: RegisteredNode[]): RegistrySummary {
-  const count = (states: RegisteredNode['state'][]): number => nodes.filter(node => states.includes(node.state)).length;
-  return {
-    total: nodes.length,
-    answering: count(['answering']),
-    notAnswering: count(['not-answering']),
-    attention: nodes.filter(node => nodeStateInfo(node).attention).length,
-    starting: count(['starting']),
-    unfinished: count(['enrolling', 'removing', 'rotating']),
-  };
+  const summary: RegistrySummary = { total: nodes.length, answering: 0, notAnswering: 0, attention: 0, starting: 0, unfinished: 0 };
+  for (const node of nodes) {
+    switch (node.state) {
+      case 'answering': summary.answering++; break;
+      case 'not-answering': summary.notAnswering++; break;
+      case 'starting': summary.starting++; break;
+      case 'enrolling': case 'removing': case 'rotating': summary.unfinished++; break;
+    }
+    if (nodeStateInfo(node).attention) summary.attention++;
+  }
+  return summary;
 }
 
 /** The local node first, then by label: the order every list of registered nodes uses. */
