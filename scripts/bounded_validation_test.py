@@ -86,6 +86,68 @@ class StorageGuards(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIsNotNone(guard.breach({**normal, field: excessive}, baseline))
 
+    def hosted_scan_environment(self):
+        return {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted',
+                'GITHUB_WORKFLOW': 'Container images', 'GITHUB_WORKSPACE': str(guard.ROOT)}
+
+    def image_scan_command(self, source='docker'):
+        return ['python3', '-B', 'scripts/image-security-check.py', '--image',
+                'ghcr.io/fixture/image:sha-fixture', '--source', source]
+
+    def test_hosted_image_scan_allows_only_the_approved_bounded_range(self):
+        with patch.object(sys, 'platform', 'linux'), patch.dict(os.environ, self.hosted_scan_environment()):
+            for source in ('docker', 'remote'):
+                for limit in (1, 512, 1024, 2560):
+                    self.assertEqual(guard.scratch_budget_mib(limit, self.image_scan_command(source), guard.ROOT), limit)
+            for limit in (0, -1, 2561):
+                with self.assertRaises(ValueError):
+                    guard.scratch_budget_mib(limit, self.image_scan_command(), guard.ROOT)
+
+    def test_hosted_exception_cannot_be_used_on_a_workstation_or_self_hosted_runner(self):
+        environment = self.hosted_scan_environment()
+        for field, value in (('GITHUB_ACTIONS', ''), ('RUNNER_ENVIRONMENT', 'self-hosted'),
+                             ('GITHUB_WORKFLOW', 'Other workflow'), ('GITHUB_WORKSPACE', str(guard.ROOT.parent))):
+            with self.subTest(field=field), patch.object(sys, 'platform', 'linux'), \
+                    patch.dict(os.environ, {**environment, field: value}):
+                with self.assertRaises(ValueError):
+                    guard.scratch_budget_mib(2560, self.image_scan_command(), guard.ROOT)
+        with patch.object(sys, 'platform', 'win32'), patch.dict(os.environ, environment):
+            with self.assertRaises(ValueError):
+                guard.scratch_budget_mib(2560, self.image_scan_command(), guard.ROOT)
+
+    def test_hosted_exception_does_not_expand_other_commands_or_change_the_default(self):
+        scan = self.image_scan_command()
+        with patch.object(sys, 'platform', 'linux'), patch.dict(os.environ, self.hosted_scan_environment()):
+            for command in ([], ['python3', 'other.py'], [*scan, 'extra'],
+                            [*scan[:2], 'scripts/image_security_check_test.py', *scan[3:]],
+                            [*scan[:-1], 'unknown']):
+                self.assertEqual(guard.scratch_budget_mib(512, command, guard.ROOT), 512)
+                with self.assertRaises(ValueError):
+                    guard.scratch_budget_mib(513, command, guard.ROOT)
+            with self.assertRaises(ValueError):
+                guard.scratch_budget_mib(2560, scan, guard.ROOT / 'scripts')
+        self.assertEqual(guard.SCRATCH_LIMIT, 512 * guard.MIB)
+
+    def test_hosted_exception_keeps_the_project_ceiling_and_cleanup_budget_checks(self):
+        baseline = {'moduleBytes': 0}
+        normal = {'projectBytes': 2560 * guard.MIB, 'scratchBytes': 2500 * guard.MIB,
+                  'moduleBytes': 0, 'externalBuildCacheBytes': 0}
+        with patch.object(guard, 'SCRATCH_LIMIT', 2560 * guard.MIB):
+            self.assertIsNone(guard.breach(normal, baseline))
+            self.assertIn('3 GiB', guard.breach({**normal, 'projectBytes': 3072 * guard.MIB + 1}, baseline))
+            self.assertIn('2560 MiB', guard.breach({**normal, 'scratchBytes': 2560 * guard.MIB + 1}, baseline))
+        self.assertIn('512 MiB', guard.breach(normal, baseline))
+
+    def test_workstation_cli_rejects_the_exception_before_any_tool_or_artifact(self):
+        command = ['bounded_validation.py', '--scratch-limit-mib', '2560', '--', *self.image_scan_command()]
+        with patch.object(sys, 'argv', command), patch.object(sys, 'platform', 'win32'), \
+                patch.object(guard.subprocess, 'check_output') as lookup, \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as result:
+                guard.main()
+        self.assertEqual(result.exception.code, 2)
+        lookup.assert_not_called()
+
     def test_disposable_outputs_share_the_scratch_budget(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

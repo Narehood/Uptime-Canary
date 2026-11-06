@@ -79,6 +79,17 @@ raw report and temporary files use bounded scratch; one small summary survives
 as the job's security artifact. A hardened, network-isolated startup/health
 check also exercises the actual GameDig runtime image.
 
+All three images built at `9f07749`, but their first hosted scans were stopped
+while expanding Trivy's database: observed scratch peaks exceeded the 512 MiB
+cap, before vulnerability results were produced. Automatic cleanup returned
+scratch to zero. The user subsequently authorized up to **2.5 GiB** solely for
+these disposable GitHub-hosted Linux image scans. The explicit runner option
+checks the workflow, hosted-runner metadata, workspace and direct scanner
+command; default and workstation limits remain 512 MiB. The 3 GiB project
+ceiling and cleanup policy remain unchanged. No vulnerability gate is skipped.
+All 20 storage controls and seven image-scan controls pass locally after this
+change; actual image scans still require fresh matching-head Linux execution.
+
 Release validation now runs live npm audits for all three lockfile roots,
 Go source-symbol vulnerability analysis and advisory matching for embedded
 and locally replaced code. npm/embedded findings and scan failures block the

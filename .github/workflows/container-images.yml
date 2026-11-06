@@ -103,6 +103,9 @@ jobs:
           version: v0.76.2
           cache: false
           path: ${{ github.workspace }}/.canary/tools/security
+      - name: Verify hosted storage exception controls
+        if: matrix.component == 'node'
+        run: python3 scripts/bounded_validation.py --timeout 60 -- python3 -B scripts/bounded_validation_test.py
       - name: Verify image scan admission controls
         run: python3 scripts/bounded_validation.py --timeout 60 -- python3 -B scripts/image_security_check_test.py
       - name: Scan the built image and gate high or critical CVEs
@@ -111,7 +114,7 @@ jobs:
           SCAN_SOURCE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'remote' || 'docker' }}
         run: |
           set +e
-          python3 scripts/bounded_validation.py --timeout 240 -- python3 -B scripts/image-security-check.py --image "$SCAN_IMAGE" --source "$SCAN_SOURCE"
+          python3 scripts/bounded_validation.py --scratch-limit-mib 2560 --timeout 240 -- python3 -B scripts/image-security-check.py --image "$SCAN_IMAGE" --source "$SCAN_SOURCE"
           validation_status=$?
           cat .canary/work/current/latest.log
           exit "$validation_status"
