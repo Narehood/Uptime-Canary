@@ -308,9 +308,29 @@ func (d *Dashboard) prepareNodeCleanup(ctx context.Context, row registeredNodeRe
 		if !affected || fleet.State == "removed" {
 			continue
 		}
-		if d.fleetBusy[id] || fleet.State != "applied" || !fleetWritesConfirmed(fleet, plan) {
+		if d.fleetBusy[id] {
 			d.mu.Unlock()
-			return fail(409, "Waiting for an existing monitor operation to finish before removing its node")
+			return fail(409, "Waiting for the running monitor operation to finish before removing its node")
+		}
+		// A failed preflight or an operation whose writes are all acknowledged
+		// need not become applied before removal can replace its desired targets.
+		// Unknown commands, however, retain their exact payload and sequence.
+		if !fleetWritesConfirmed(fleet, plan) {
+			if fleet.State == "blocked" || fleet.State == "unauthorized" || !d.fleetAuthorized(fleet) {
+				fleet = copyFleet(fleet)
+				fleet.ActorID, fleet.ActorRole, fleet.ActorVersion = secret.Removal.ActorID, "admin", secret.Removal.ActorVersion
+				fleet.Revision, fleet.State, fleet.Reason, fleet.RetryAt = newID(), "pending", "Resolving the saved monitor command before node cleanup", 0
+				fleet.Private, err = d.sealFleet(fleet, plan)
+				if err == nil {
+					err = d.commitNodeCleanup(row, secret, map[string]dashboardFleetRecord{id: fleet}, nil, nil)
+				}
+				if err != nil {
+					d.mu.Unlock()
+					return err
+				}
+			}
+			d.mu.Unlock()
+			return fail(409, "Waiting for the saved command for monitor "+plan.Monitor.Name+" to be confirmed before removing its node")
 		}
 		rows[id] = copyFleet(fleet)
 	}
@@ -347,24 +367,36 @@ func (d *Dashboard) prepareNodeCleanup(ctx context.Context, row registeredNodeRe
 		if err = freezeRemovalReferences(fleet, &plan, row.ID, views); err != nil {
 			return err
 		}
+		// Merely selecting a node in an unstarted deployment creates no remote
+		// assignment. Do not make its removal wait on work only for other nodes.
+		needsConfirmation := false
+		for _, p := range fleet.Placements {
+			if p.State != "removed" && (p.RegistrationID == row.ID || slices.Contains(p.RegistrationIDs, row.ID) || slices.Contains(p.RetiringRegistrationIDs, row.ID)) {
+				needsConfirmation = true
+			}
+		}
 		fleet.RegistrationIDs = slices.DeleteFunc(fleet.RegistrationIDs, func(id string) bool { return id == row.ID })
 		fleet.PinnedRegistrationIDs = slices.DeleteFunc(fleet.PinnedRegistrationIDs, func(id string) bool { return id == row.ID })
 		fleet.GroupIDs = slices.DeleteFunc(fleet.GroupIDs, func(id string) bool { return slices.Contains(deletedGroups, id) })
-		fleet.SourceCompleted = true
-		if fleet.Source != nil && fleet.Source.RegistrationID == row.ID {
-			fleet.Source = nil
+		if fleet.Source == nil || fleet.Source.RegistrationID == row.ID {
+			fleet.SourceCompleted, fleet.Source = true, nil
 		}
 		delete(plan.References, row.ID)
-		plan.Deleted = len(fleet.RegistrationIDs) == 0
+		plan.Deleted = plan.Deleted || len(fleet.RegistrationIDs) == 0
 		plan.Prepared, plan.Commands, plan.ObservedRevisions = false, nil, nil
 		fleet.ActorID, fleet.ActorRole, fleet.ActorVersion = secret.Removal.ActorID, "admin", secret.Removal.ActorVersion
 		fleet.Revision, fleet.UpdatedAt, fleet.State, fleet.Reason, fleet.RetryAt = newID(), time.Now().UnixMilli(), "pending", "", 0
+		if plan.Deleted && fleetCanCancel(fleet, plan) {
+			fleet.State, plan.Prepared = "removed", true
+		}
 		fleet.Private, err = d.sealFleet(fleet, plan)
 		if err != nil {
 			return err
 		}
 		rows[id] = fleet
-		secret.Removal.Deployments = append(secret.Removal.Deployments, id)
+		if needsConfirmation {
+			secret.Removal.Deployments = append(secret.Removal.Deployments, id)
+		}
 	}
 	secret.Removal.Phase = "draining"
 	row.Error = "Waiting for monitor assignments to be retired or confirmed on their remaining nodes"
