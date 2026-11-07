@@ -350,7 +350,7 @@ export function NewOutboundDeploy({ capabilities, loading = false, platform, onP
   const unpaired = !capabilities?.outboundEnabled || !capabilities.connectionUrl;
   const fields = [labelProblem(name), nodeIdProblem(nodeId, taken), unpaired ? null : addressError].filter(Boolean);
   const reason = [...fields, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
-  const notConnected = capabilities && unpaired ? (
+  const notConnected = capabilities && unpaired && pair && !reason && !busy ? (
     <Banner tone="info" role="note" title="You can deploy this node now, but it won’t connect to this dashboard yet">
       These settings start it on its own, with no inbound port, and it won’t appear here yet. To connect it later, set up this dashboard’s listener below, then add it with “A node that’s already running” and “The node reaches this dashboard”: it keeps its identity and credentials. Its tokens live only in this dialog, so save the private settings before you close it. Keep those settings and the node’s data and identity storage.
     </Banner>

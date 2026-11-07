@@ -2091,7 +2091,7 @@ await check('unpaired new-node exports need no dashboard listener, address or in
     const hidden = preview.map(block => block.text).join('\n');
     assert.ok(all.includes(ADMIN) && all.includes(CLUSTER), `${platform}: real bootstrap credentials`);
     for (const value of PRIVATE) assert.ok(!hidden.includes(value), `${platform}: masked preview`);
-    assert.doesNotMatch(all, /CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)=|INVITATION_TOKEN|Then choose Next/u, `${platform}: no fake connection or direct-verification step`);
+    assert.doesNotMatch(all, /CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)[=:]|INVITATION_TOKEN|Then choose Next/u, `${platform}: no fake connection or direct-verification step`);
     assert.ok(!real.some(block => block.variables?.some(variable => variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN')), 'Portainer has no placeholder enrollment variable');
     assert.throws(() => onboarding.setupGuide({ ...setup, secrets: null }, true), /already running/u);
     assert.throws(() => onboarding.setupGuide({ ...setup, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN } }, true), /Choose how/u);
@@ -2116,6 +2116,7 @@ await check('the unpaired wizard enables exports only for valid local node field
     for (const token of PRIVATE) assert.ok(!valid.includes(token), 'private values stay masked');
     for (const change of [{ name: '' }, { nodeId: '' }, { secrets: null }, { secrets: { ...SECRETS, nodeId: 'other' } }, { capabilities: undefined }]) {
       assert.ok(actions(render(change)).every(button => button.has('disabled')), 'missing local prerequisites still disable exports');
+      assert.doesNotMatch(text(render(change)), /You can deploy this node now/u, 'a disabled export never claims deployment is ready');
     }
   }
 });
