@@ -67,7 +67,7 @@ func TestForceNodeRemovalPreservesUnstartedSourceSettings(t *testing.T) {
 			}))
 			var rejectB atomic.Bool
 			sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if rejectB.Load() && strings.HasSuffix(r.URL.Path, "/validate") {
+				if rejectB.Load() && (strings.HasSuffix(r.URL.Path, "/validate") || legacy && r.Method == "POST" && r.URL.Path == "/api/notification-channels") {
 					w.Header().Set("X-Canary-Node-Id", b.ID)
 					errorReply(w, fail(409, "survivor preflight temporarily blocked"))
 					return
@@ -381,8 +381,8 @@ func TestForceNodeRemovalKeepsSettingsForUnplacedSharedExpansion(t *testing.T) {
 func TestForceNodeRemovalFinalizesLegacyHAReferencesForEveryMember(t *testing.T) {
 	d, owner, _ := dashboardRegistryFixture(t)
 	a := dashboardRemoteFixture(t, "node-a")
-	b, c := causalCapacityNode(t, "b", ":memory:"), causalCapacityNode(t, "c", ":memory:")
-	b.peerSeen["c"], c.peerSeen["b"] = 1, 1
+	b, c := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	b.peerSeen[c.ID], c.peerSeen[b.ID] = 1, 1
 	replicate := func() {
 		for _, pair := range [][2]*Node{{b, c}, {c, b}} {
 			for _, page := range causalCapacityPages(t, pair[0]) {
