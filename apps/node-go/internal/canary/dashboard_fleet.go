@@ -72,6 +72,7 @@ type dashboardFleetPlan struct {
 	SyncNotificationsSet             bool                               `json:"syncNotificationsSet,omitempty"`
 	NotificationSourceRegistrationID string                             `json:"notificationSourceRegistrationId,omitempty"`
 	Resources                        []fleetResourceInput               `json:"resources,omitempty"`
+	RemovalResourceTargets           []string                           `json:"removalResourceTargets,omitempty"`
 	ResourceIDs                      map[string]string                  `json:"resourceIds,omitempty"`
 	NativeResourceIDs                map[string]map[string]string       `json:"nativeResourceIds,omitempty"`
 	ObservedRevisions                map[string]string                  `json:"observedRevisions,omitempty"`
@@ -718,6 +719,11 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	plan.LegacyMonitors = previousPlan.LegacyMonitors
 	plan.LegacyMonitorAttempts = previousPlan.LegacyMonitorAttempts
 	plan.LegacyRegistrations = previousPlan.LegacyRegistrations
+	if !plan.SyncNotifications && !previousPlan.SyncNotifications && len(previousPlan.Resources) > 0 {
+		// Frozen removal settings must survive edits before their first apply.
+		plan.Resources, plan.LegacyResources = previousPlan.Resources, previousPlan.LegacyResources
+		plan.RemovalResourceTargets = slices.Clone(previousPlan.RemovalResourceTargets)
+	}
 	if plan.SyncNotifications && previousPlan.SyncNotifications && plan.NotificationSourceRegistrationID == previousPlan.NotificationSourceRegistrationID {
 		plan.NativeResourceIDs = previousPlan.NativeResourceIDs
 		plan.LegacyResources = previousPlan.LegacyResources
@@ -993,7 +999,7 @@ func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]by
 		if err != nil {
 			return nil, err
 		}
-		for _, resource := range plan.Resources {
+		for _, resource := range fleetResourcesForPlacement(plan, p) {
 			used := resource.Kind == resourceChannel && slices.Contains(input.NotificationIDs, resource.ID)
 			for _, tag := range input.Tags {
 				used = used || resource.Kind == resourceTag && tag.TagID == resource.ID
@@ -1221,6 +1227,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		}
 		placements = append(placements, p)
 	}
+	alignRemovalPlacementReferences(plan, placements)
 	commands := map[string]fleetPlacementCommand{}
 	for i := range placements {
 		p := &placements[i]
@@ -1578,6 +1585,9 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			return
 		}
 	}
+	// Non-following settings snapshots are needed only until all placements
+	// confirm them. Do not replay frozen channel/tag data on later group edits.
+	finishFrozenFleetSettings(row, &plan)
 	row.State = "applied"
 	if plan.Deleted {
 		row.State = "removed"

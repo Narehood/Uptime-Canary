@@ -262,6 +262,72 @@ func freezeRemovalReferences(row dashboardFleetRecord, plan *dashboardFleetPlan,
 	return nil
 }
 
+// A command marked Unsent has not crossed the durable pre-send boundary.
+// Only a wholly unstarted last-runner definition can be cancelled this way.
+func removalCanCancelUnsent(row dashboardFleetRecord, plan dashboardFleetPlan, id string) bool {
+	if len(row.RegistrationIDs) != 1 || row.RegistrationIDs[0] != id {
+		return false
+	}
+	for _, p := range row.Placements {
+		if p.Sequence != 0 || !plan.Unsent[p.ID] {
+			return false
+		}
+	}
+	return true
+}
+
+// Capture settings for unstarted survivor placements before losing their source.
+// The snapshot is committed with cleanup, then ordinary placement workers copy
+// it to the remaining nodes. No remote writes happen before that journal commit.
+func (d *Dashboard) snapshotUnstartedRemovalSettings(ctx context.Context, rows map[string]dashboardFleetRecord, id string) (map[string]dashboardFleetPlan, error) {
+	frozen := map[string]dashboardFleetPlan{}
+	for key, row := range rows {
+		plan, err := d.openFleet(row)
+		if err != nil {
+			return nil, err
+		}
+		if !plan.SyncNotifications || plan.Deleted || plan.NotificationSourceRegistrationID != id && plan.NativeResourceIDs[id] == nil {
+			continue
+		}
+		unplaced := slices.Clone(row.RegistrationIDs)
+		unplaced = slices.DeleteFunc(unplaced, func(member string) bool {
+			if member == id {
+				return true
+			}
+			for _, p := range row.Placements {
+				if p.State != "removed" && slices.Contains(p.RegistrationIDs, member) {
+					return true
+				}
+			}
+			return false
+		})
+		if len(unplaced) == 0 {
+			continue
+		}
+		// Removal is authorized by an administrator, regardless of which role
+		// originally queued the unstarted deployment.
+		reader := row
+		reader.ActorRole = "admin"
+		if err = d.prepareFleetSettings(ctx, reader, &plan); err != nil {
+			return nil, err
+		}
+		if plan.References == nil {
+			plan.References = map[string]fleetTargetReferences{}
+		}
+		for _, member := range unplaced {
+			input, err := fleetReferencedInput(plan, dashboardFleetPlacement{RegistrationID: member, RegistrationIDs: []string{member}})
+			if err != nil {
+				return nil, err
+			}
+			channels, tags, group := slices.Clone(input.NotificationIDs), slices.Clone(input.Tags), input.GroupID
+			plan.References[member] = fleetTargetReferences{NotificationIDs: &channels, Tags: &tags, GroupID: &group}
+		}
+		plan.RemovalResourceTargets = slices.Clone(unplaced)
+		frozen[key] = plan
+	}
+	return frozen, nil
+}
+
 func (d *Dashboard) prepareNodeCleanup(ctx context.Context, row registeredNodeRecord, secret dashboardNodeSecrets) error {
 	d.mu.Lock()
 	rows := map[string]dashboardFleetRecord{}
@@ -308,13 +374,37 @@ func (d *Dashboard) prepareNodeCleanup(ctx context.Context, row registeredNodeRe
 		if !affected || fleet.State == "removed" {
 			continue
 		}
-		if d.fleetBusy[id] || fleet.State != "applied" || !fleetWritesConfirmed(fleet, plan) {
+		if d.fleetBusy[id] {
 			d.mu.Unlock()
-			return fail(409, "Waiting for an existing monitor operation to finish before removing its node")
+			return fail(409, "Waiting for the running monitor operation to finish before removing its node")
+		}
+		// A failed preflight or an operation whose writes are all acknowledged
+		// need not become applied before removal can replace its desired targets.
+		// Unknown commands, however, retain their exact payload and sequence.
+		if !fleetWritesConfirmed(fleet, plan) && !removalCanCancelUnsent(fleet, plan, row.ID) {
+			if fleet.State == "blocked" || fleet.State == "unauthorized" || fleet.ActorID != secret.Removal.ActorID || fleet.ActorRole != "admin" || fleet.ActorVersion != secret.Removal.ActorVersion || !d.fleetAuthorized(fleet) {
+				fleet = copyFleet(fleet)
+				fleet.ActorID, fleet.ActorRole, fleet.ActorVersion = secret.Removal.ActorID, "admin", secret.Removal.ActorVersion
+				fleet.Revision, fleet.State, fleet.Reason, fleet.RetryAt = newID(), "pending", "Resolving the saved monitor command before node cleanup", 0
+				fleet.Private, err = d.sealFleet(fleet, plan)
+				if err == nil {
+					err = d.commitNodeCleanup(row, secret, map[string]dashboardFleetRecord{id: fleet}, nil, nil)
+				}
+				if err != nil {
+					d.mu.Unlock()
+					return err
+				}
+			}
+			d.mu.Unlock()
+			return fail(409, "Waiting for the saved command for monitor "+plan.Monitor.Name+" to be confirmed before removing its node")
 		}
 		rows[id] = copyFleet(fleet)
 	}
 	d.mu.Unlock()
+	frozen, err := d.snapshotUnstartedRemovalSettings(ctx, rows, row.ID)
+	if err != nil {
+		return err
+	}
 	views, err := d.removalViews(ctx, rows, row.ID)
 	if err != nil {
 		return err
@@ -337,34 +427,54 @@ func (d *Dashboard) prepareNodeCleanup(ctx context.Context, row registeredNodeRe
 		}
 	}
 	for id, fleet := range rows {
-		if d.fleetBusy[id] || d.fleet[id].Revision != fleet.Revision {
+		if d.fleetBusy[id] || !equalJSON(d.fleet[id], fleet) {
 			return fail(409, "Monitor settings changed; cleanup will retry")
 		}
 		plan, err := d.openFleet(fleet)
 		if err != nil {
 			return err
 		}
+		if snapshot, ok := frozen[id]; ok {
+			plan = snapshot
+		}
+		resources := plan.Resources
 		if err = freezeRemovalReferences(fleet, &plan, row.ID, views); err != nil {
 			return err
+		}
+		if _, ok := frozen[id]; ok {
+			plan.Resources = resources
+		}
+		// Merely selecting a node in an unstarted deployment creates no remote
+		// assignment. Do not make its removal wait on work only for other nodes.
+		needsConfirmation := false
+		for _, p := range fleet.Placements {
+			if p.State != "removed" && (p.RegistrationID == row.ID || slices.Contains(p.RegistrationIDs, row.ID) || slices.Contains(p.RetiringRegistrationIDs, row.ID)) {
+				needsConfirmation = true
+			}
 		}
 		fleet.RegistrationIDs = slices.DeleteFunc(fleet.RegistrationIDs, func(id string) bool { return id == row.ID })
 		fleet.PinnedRegistrationIDs = slices.DeleteFunc(fleet.PinnedRegistrationIDs, func(id string) bool { return id == row.ID })
 		fleet.GroupIDs = slices.DeleteFunc(fleet.GroupIDs, func(id string) bool { return slices.Contains(deletedGroups, id) })
-		fleet.SourceCompleted = true
-		if fleet.Source != nil && fleet.Source.RegistrationID == row.ID {
-			fleet.Source = nil
+		if fleet.Source == nil || fleet.Source.RegistrationID == row.ID {
+			fleet.SourceCompleted, fleet.Source = true, nil
 		}
 		delete(plan.References, row.ID)
-		plan.Deleted = len(fleet.RegistrationIDs) == 0
+		plan.Deleted = plan.Deleted || len(fleet.RegistrationIDs) == 0
 		plan.Prepared, plan.Commands, plan.ObservedRevisions = false, nil, nil
 		fleet.ActorID, fleet.ActorRole, fleet.ActorVersion = secret.Removal.ActorID, "admin", secret.Removal.ActorVersion
 		fleet.Revision, fleet.UpdatedAt, fleet.State, fleet.Reason, fleet.RetryAt = newID(), time.Now().UnixMilli(), "pending", "", 0
+		if plan.Deleted && fleetCanCancel(fleet, plan) {
+			fleet.State, plan.Prepared = "removed", true
+			fleet.Placements, needsConfirmation = []dashboardFleetPlacement{}, false
+		}
 		fleet.Private, err = d.sealFleet(fleet, plan)
 		if err != nil {
 			return err
 		}
 		rows[id] = fleet
-		secret.Removal.Deployments = append(secret.Removal.Deployments, id)
+		if needsConfirmation {
+			secret.Removal.Deployments = append(secret.Removal.Deployments, id)
+		}
 	}
 	secret.Removal.Phase = "draining"
 	row.Error = "Waiting for monitor assignments to be retired or confirmed on their remaining nodes"

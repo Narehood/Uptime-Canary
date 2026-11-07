@@ -29,6 +29,29 @@ connections outside these managed placements are not erased.
 
 ## Unfinished removal
 
+A blocked or not-yet-started monitor operation does not have to become applied
+before removal can clean up its intended assignments. An unstarted definition
+with no remaining runners is cancelled without creating a monitor. A shared
+unstarted definition keeps its other desired nodes; their unrelated preflight
+errors do not keep the removed registration around. Existing physical monitors
+still require retirement or survivor confirmation.
+
+A prepared last-runner definition can also be cancelled if its durable journal
+proves every command is still unsent and no monitor was previously assigned.
+Unstarted shared definitions retain a frozen channel/tag snapshot when their
+source is removed. New target placements install it once, including on legacy
+nodes; existing survivors retain their confirmed settings. Edits before that
+first apply keep the snapshot. Once installed, ordinary local references remain
+and the frozen payloads are discarded.
+
+If a saved monitor command may already have run, cleanup keeps its exact payload
+and sequence. The administrator authorizing removal also authorizes resolving
+that saved command before cleanup proceeds, including waking a blocked worker,
+replacing a refused editor credential, or renewing authorization after an account
+changes. This does not invent a successful acknowledgement or bypass node-side
+version/revision checks. Already-queued
+removals use this recovery automatically after the dashboard is updated.
+
 An offline runner or unconfirmed management command keeps the entry visible as
 **Removal unfinished**, with a progress/error message. Automatic retries retain
 the exact saved commands. This flow does not blindly forget a permanently

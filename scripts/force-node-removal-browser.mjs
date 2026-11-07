@@ -9,6 +9,7 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
   const api = (path, method = 'GET', body, registration) => fixture.api(path, method, body, owner, registration);
   const shared = 'cd190001fe274968a5fe000000000001';
   const solo = 'cd190001fe274968a5fe000000000002';
+  const stalled = 'cd190001fe274968a5fe000000000003';
   let physical;
   const longName = 'R'.repeat(128), renamed = 'Retire private runner';
   const deletes = () => fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${node.id}`).length;
@@ -25,13 +26,23 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
       });
       assert.equal(created.status, 202);
     }
+    // Real server preflight rejects a missing node-local channel before sending
+    // any placement command. Previously node removal waited on this forever.
+    const rejected = await api('/api/dashboard/fleet/monitors', 'POST', {
+      requestId: stalled, registrationIds: [node.id], monitor: {
+        name: 'Never-started blocked monitor', type: 'manual', target: 'manual', enabled: false,
+        intervalMs: 60000, timeoutMs: 1000, nodeIds: [A.id], notificationIds: ['missing-removal-fixture-channel'],
+      },
+    });
+    assert.equal(rejected.status, 202);
     const rows = await until(async () => {
       const result = await api('/api/dashboard/fleet/monitors');
       return result.value?.filter(row => [shared, solo].includes(row.id)).length === 2 &&
-        result.value.filter(row => [shared, solo].includes(row.id)).every(row => row.state === 'applied') && result.value;
+        result.value.filter(row => [shared, solo].includes(row.id)).every(row => row.state === 'applied') &&
+        result.value.some(row => row.id === stalled && row.state === 'blocked' && row.placements.length === 0) && result.value;
     }, 'disabled removal fixtures applied', 45000);
     physical = rows.find(row => row.id === shared).placements.find(p => p.registrationIds.includes(survivor.id)).monitorId;
-    return { managedAssignments: 2, sharedMonitorIDRetained: true, externalSends: 0 };
+    return { managedAssignments: 2, unstartedBlockedOperation: 1, sharedMonitorIDRetained: true, externalSends: 0 };
   });
 
   await step('Node removal: exact name, real focus and narrow long-name layout gate a destructive request', async () => {
@@ -72,11 +83,13 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
 
   await step('Node removal: cleanup retains the shared physical monitor and retires the last-runner monitor', async () => {
     await until(async () => !(await api('/api/dashboard/nodes')).value.some(row => row.id === node.id), 'background cleanup and revocation finish', 90000);
+    await until(() => page.eval(`!document.getElementById(${q('r-' + node.id)})`), 'completed removal disappears from the Nodes page', 30000);
     const rows = (await api('/api/dashboard/fleet/monitors')).value;
     const kept = rows.find(row => row.id === shared), retired = rows.find(row => row.id === solo);
     assert.equal(kept.state, 'applied');
     assert.deepEqual(kept.registrationIds, [survivor.id]);
     assert.equal(retired.state, 'removed');
+    assert.equal(rows.find(row => row.id === stalled).state, 'removed', 'blocked never-started operation cannot deadlock node removal');
     const monitors = await api('/api/monitors', 'GET', undefined, survivor.id);
     assert.equal(monitors.status, 200);
     assert.ok(monitors.value.some(row => row.monitor.id === physical && row.monitor.nodeIds.includes(B.id)));
@@ -84,6 +97,6 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
     const accounts = await (await fetch(A.url + '/api/accounts', { headers: { Authorization: `Bearer ${A.token}` } })).json();
     assert.equal(accounts.filter(account => account.id?.startsWith('dashboard-')).length, 0, 'revocation removed this dashboard delegation');
     await page.send('Emulation.clearDeviceMetricsOverride');
-    return { sharedMonitorKept: true, lastRunnerRetired: true, oldManagementAnchorGone: true, revocationConfirmed: true };
+    return { sharedMonitorKept: true, lastRunnerRetired: true, oldManagementAnchorGone: true, revocationConfirmed: true, blockedOperationCleared: true };
   });
 }
