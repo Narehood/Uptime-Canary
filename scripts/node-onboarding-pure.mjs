@@ -2079,6 +2079,48 @@ await check('TLS r2 tls-info and tls-init: container steps say how to print the 
   }
 });
 
+// Accepted 2026-11-07 export behavior: deploying a new node is independent of configuring
+// this dashboard's incoming connection endpoint. Pairing remains a separate operation.
+await check('unpaired new-node exports need no dashboard listener, address or invitation', () => {
+  const nodeId = 'home-dns01';
+  for (const { value: platform } of onboarding.PLATFORMS) {
+    const setup = { nodeId, name: 'DNS01', imageTag: CAPS.imageTag, secrets: { ...SECRETS, nodeId }, unpaired: true, platform };
+    const real = onboarding.setupGuide(setup, true);
+    const preview = onboarding.setupGuide(setup, false);
+    const all = real.map(block => block.text).join('\n');
+    const hidden = preview.map(block => block.text).join('\n');
+    assert.ok(all.includes(ADMIN) && all.includes(CLUSTER), `${platform}: real bootstrap credentials`);
+    for (const value of PRIVATE) assert.ok(!hidden.includes(value), `${platform}: masked preview`);
+    assert.doesNotMatch(all, /CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)[=:]|INVITATION_TOKEN|Then choose Next/u, `${platform}: no fake connection or direct-verification step`);
+    assert.ok(!real.some(block => block.variables?.some(variable => variable.name === 'CANARY_DASHBOARD_ENROLL_TOKEN')), 'Portainer has no placeholder enrollment variable');
+    assert.throws(() => onboarding.setupGuide({ ...setup, secrets: null }, true), /already running/u);
+    assert.throws(() => onboarding.setupGuide({ ...setup, outbound: { connectionUrl: CONNECT, token: INVITE_TOKEN } }, true), /Choose how/u);
+    assert.throws(() => onboarding.setupGuide({ ...setup, secrets: { ...SECRETS, nodeId: 'other-node' } }, true), /already used/u);
+    if (platform === 'docker') assert.doesNotMatch(all, /(?:^|\n)\s*-p /u, 'bootstrap does not open an inbound host port');
+    if (platform === 'compose' || platform === 'portainer') assert.doesNotMatch(real.find(block => block.key === 'yaml').text, /\n\s+ports:/u);
+  }
+
+});
+
+await check('the unpaired wizard enables exports only for valid local node fields', () => {
+  const offline = { ...CAPS, outboundEnabled: false, connectionUrl: undefined };
+  for (const { value: platform } of onboarding.PLATFORMS) {
+    const props = { capabilities: offline, platform, onPlatform: noop, nodeId: 'home-dns01', name: 'DNS01', secrets: SECRETS,
+      onUse: noop, taken: { nodes: [], invitations: [] }, addressError: 'Unused address is invalid' };
+    const render = change => within('admin', [], React.createElement(wizard.NewOutboundDeploy, { ...props, ...change }));
+    const actions = markup => tags(markup, 'button').map(attributes).filter(button => /^(?:Show private values in|Copy|Download) /u.test(button.get('aria-label') ?? ''));
+    const valid = render({});
+    assert.ok(actions(valid).length >= 3 && actions(valid).every(button => !button.has('disabled')), `${platform}: unrelated dashboard input cannot block exports`);
+    assert.match(text(valid), /You can deploy this node now/u);
+    assert.doesNotMatch(text(valid), /Complete the fields above first/u);
+    for (const token of PRIVATE) assert.ok(!valid.includes(token), 'private values stay masked');
+    for (const change of [{ name: '' }, { nodeId: '' }, { secrets: null }, { secrets: { ...SECRETS, nodeId: 'other' } }, { capabilities: undefined }]) {
+      assert.ok(actions(render(change)).every(button => button.has('disabled')), 'missing local prerequisites still disable exports');
+      assert.doesNotMatch(text(render(change)), /You can deploy this node now/u, 'a disabled export never claims deployment is ready');
+    }
+  }
+});
+
 await check('nothing private reached the console or browser storage', () => {
   for (const value of PRIVATE) assert.ok(!logged.some(line => line.includes(value)), 'a private value was logged');
   assert.deepEqual(storageWrites, []);

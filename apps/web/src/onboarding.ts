@@ -245,6 +245,8 @@ export interface NodeSetup {
   secrets: NodeSecrets | null;
   /** This dashboard's server reaches the node here. */
   direct?: DirectTarget;
+  /** Deploy a new node before the dashboard accepts connections; no published inbound port or enrollment settings. */
+  unpaired?: boolean;
   /**
    * The node reaches this dashboard: its node-connection address and the one-time invitation token, and the fingerprint of
    * the certificate that address serves when the dashboard's own listener terminates TLS (CANARY_DASHBOARD_TLS_FINGERPRINT).
@@ -298,7 +300,7 @@ const TMPFS = '/tmp:rw,exec,nosuid,nodev,size=64m';
 export function setupGuide(setup: NodeSetup, reveal: boolean): GuideBlock[] {
   if (!NODE_ID_PATTERN.test(setup.nodeId) || setup.nodeId.length > 128) throw new Error('Enter a valid node ID first.');
   if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u.test(setup.imageTag)) throw new Error('This dashboard reported an image tag this page can’t use.');
-  if ([setup.direct, setup.outbound].filter(Boolean).length !== 1) throw new Error('Choose how the node and this dashboard connect.');
+  if ([setup.direct, setup.outbound, setup.unpaired].filter(Boolean).length !== 1) throw new Error('Choose how the node and this dashboard connect.');
   if (!setup.secrets && !setup.outbound) throw new Error('A node that’s already running is added with its own address and credential.');
   if (setup.secrets && !secretsFor(setup.secrets, setup.nodeId)) throw new Error('These tokens were already used for another node ID, so they aren’t written for this one.');
   const hide = (value: string): string => reveal ? value : MASK;
@@ -309,9 +311,17 @@ export function setupGuide(setup: NodeSetup, reveal: boolean): GuideBlock[] {
   if (out) literal(out.token);
   // api.ts reads it as 64 lowercase hexadecimal characters; anything else never reaches a node's settings.
   if (out?.tlsFingerprint && !PIN.test(out.tlsFingerprint)) throw new Error('This dashboard reported a certificate fingerprint this page can’t use.');
-  const blocks = setup.secrets
+  let blocks = setup.secrets
     ? newNodeBlocks(setup, { name, res, image, hide })
     : existingNodeBlocks(setup, { res, image, hide });
+  if (setup.unpaired) {
+    // The normal started note offers direct verification, which cannot work yet.
+    blocks = blocks.filter(block => block.key !== 'started');
+    blocks.push({
+      key: 'unpaired', kind: 'note', secret: false, title: 'Node deployed separately',
+      text: "This starts the node without connecting it to this dashboard or publishing an inbound port. Save its administrator and cluster settings and keep its data and identity storage. After configuring the dashboard for incoming node connections, choose an already-running node in Add node and let the node reach this dashboard. Add only the connection settings to this same deployment; keep its ID, credentials, stack or service name and storage unchanged.",
+    });
+  }
   if (out) {
     // The node saves the address and the pin with its connection credential and refuses to start if either changes
     // (node_connector.go prepareConnector), so both stay in its settings.

@@ -113,5 +113,6 @@ jobs:
             .canary/work/current/latest.log
             .canary/work/current/latest.json
             .canary/dashboard-contract-current.json
+            .canary/node-export-current.png
           include-hidden-files: true
           retention-days: 7
