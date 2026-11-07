@@ -196,7 +196,8 @@ func TestForceNodeRemovalResumesExactSavedCommandUnderCurrentAuthority(t *testin
 			pumpNodeRemoval(t, d, reg.ID, nil)
 			node.mu.Lock()
 			defer node.mu.Unlock()
-			if len(node.heads) != 1 || !node.current(row.Placements[0].MonitorID).Deleted || len(node.accounts) != 1 {
+			versions := node.heads[row.Placements[0].MonitorID]
+			if len(node.heads) != 1 || len(versions) != 1 || !versions[0].Monitor.Deleted || len(node.accounts) != 1 {
 				t.Fatal("cleanup duplicated a monitor or failed retirement/revocation")
 			}
 		})
