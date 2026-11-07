@@ -39,7 +39,7 @@ func legacyFleetPreflightBytes(plan dashboardFleetPlan, p dashboardFleetPlacemen
 	if err := json.Unmarshal(command.Monitor, &input); err != nil {
 		return nil, err
 	}
-	for _, resource := range plan.Resources {
+	for _, resource := range fleetResourcesForPlacement(plan, p) {
 		ids := []string{resource.ID, plan.LegacyResources[legacyFleetResourceKey(p.RegistrationID, resource)].ID}
 		if resource.Kind == resourceChannel {
 			input.NotificationIDs = slices.DeleteFunc(input.NotificationIDs, func(id string) bool { return slices.Contains(ids, id) })
@@ -131,7 +131,7 @@ func (d *Dashboard) prepareLegacyFleetResources(ctx context.Context, row dashboa
 		if err != nil {
 			return err
 		}
-		for _, resource := range plan.Resources {
+		for _, resource := range fleetResourcesForPlacement(*plan, p) {
 			used := resource.Kind == resourceChannel && slices.Contains(input.NotificationIDs, resource.ID)
 			for _, tag := range input.Tags {
 				used = used || resource.Kind == resourceTag && tag.TagID == resource.ID

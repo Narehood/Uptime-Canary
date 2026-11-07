@@ -234,3 +234,80 @@ func (d *Dashboard) readCanonicalFleetResource(ctx context.Context, row dashboar
 	}
 	return json.Marshal(tag.TagInput)
 }
+
+// A one-time removal snapshot stops following its old source after every
+// placement confirms. Legacy copies have server-assigned IDs, so keep those
+// actual IDs in references before dropping the temporary resource payloads.
+func finishFrozenFleetSettings(row dashboardFleetRecord, plan *dashboardFleetPlan) {
+	if plan.SyncNotifications || len(plan.Resources) == 0 {
+		return
+	}
+	for _, placement := range row.Placements {
+		if placement.State == "removed" || !plan.LegacyRegistrations[placement.RegistrationID] {
+			continue
+		}
+		for _, member := range placement.RegistrationIDs {
+			ref := plan.References[member]
+			local := func(kind, id string) string {
+				if value := plan.LegacyResources[legacyFleetResourceKey(placement.RegistrationID, fleetResourceInput{Kind: kind, ID: id})].ID; value != "" {
+					return value
+				}
+				return id
+			}
+			if ref.NotificationIDs != nil {
+				ids := slices.Clone(*ref.NotificationIDs)
+				for i, id := range ids {
+					ids[i] = local(resourceChannel, id)
+				}
+				ref.NotificationIDs = &ids
+			}
+			if ref.Tags != nil {
+				tags := slices.Clone(*ref.Tags)
+				for i := range tags {
+					tags[i].TagID = local(resourceTag, tags[i].TagID)
+				}
+				ref.Tags = &tags
+			}
+			plan.References[member] = ref
+		}
+	}
+	plan.Resources, plan.ResourceIDs, plan.NativeResourceIDs, plan.RemovalResourceTargets = nil, nil, nil, nil
+}
+
+// A removal snapshot installs only where every surviving member is new. An
+// existing survivor retains its confirmed settings; new HA members reuse them.
+func fleetResourcesForPlacement(plan dashboardFleetPlan, p dashboardFleetPlacement) []fleetResourceInput {
+	if len(plan.RemovalResourceTargets) > 0 {
+		for _, member := range p.RegistrationIDs {
+			if !slices.Contains(plan.RemovalResourceTargets, member) {
+				return nil
+			}
+		}
+	}
+	return plan.Resources
+}
+
+func alignRemovalPlacementReferences(plan *dashboardFleetPlan, placements []dashboardFleetPlacement) {
+	if len(plan.RemovalResourceTargets) == 0 {
+		return
+	}
+	for _, p := range placements {
+		var retained *fleetTargetReferences
+		for _, member := range p.RegistrationIDs {
+			if !slices.Contains(plan.RemovalResourceTargets, member) {
+				if ref, ok := plan.References[member]; ok {
+					retained = &ref
+					break
+				}
+			}
+		}
+		if retained == nil {
+			continue
+		}
+		for _, member := range p.RegistrationIDs {
+			if slices.Contains(plan.RemovalResourceTargets, member) {
+				plan.References[member] = *retained
+			}
+		}
+	}
+}
