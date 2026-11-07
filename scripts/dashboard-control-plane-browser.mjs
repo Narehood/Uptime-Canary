@@ -12,6 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pinnedFixtureFetch } from './tls-fixture.mjs';
 import { reviewFleet } from './fleet-browser.mjs';
 import { reviewForceNodeRemoval } from './force-node-removal-browser.mjs';
+import { reviewNodeBootstrap } from './node-bootstrap-browser.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -354,6 +355,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
     return { readOnlyVerification: true, cancellationLeavesNoAccounts: true, registeredNodes: 2 };
   });
   if (onlyRemoval) {
+    await reviewNodeBootstrap({ fixture, page, step, until, fill, click, ready, owner, secrets });
     await reviewForceNodeRemoval({ fixture, A, B, page, step, until, fill, click, ready, owner, registrations });
     await page.send('Network.setBlockedURLs', { urls: [] });
     return;
@@ -937,6 +939,44 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
           assert.deepEqual(await page.eval('({copies:window.__copies.length,downloads:window.__saved.length})'), { copies: 0, downloads: 0 }, 'disabled setup actions neither copy nor download');
         }
       }
+      // Regression: valid visible node fields export without filling direct-node fields,
+      // the dashboard address, or any dashboard deployment settings below this section.
+      await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
+      await fill('Node ID', preparationId, 'dialog[open]');
+      const unpairedCredentials = [];
+      for (const method of ['Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
+        await click(method, 'dialog[open]');
+        await captureOutputs();
+        const actions = await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].map(button=>({disabled:button.disabled,label:button.getAttribute("aria-label")}))');
+        assert.ok(actions.length >= 3 && actions.every(action => !action.disabled), `${method}: node exports have no unrelated prerequisites`);
+        const contents = await copyOf(preparationFile);
+        assert.doesNotMatch(contents, /INVITATION_TOKEN|CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)=|\u2022{4}/u, 'complete real credentials without fake enrollment settings');
+        const own = envOf(contents);
+        const clean = value => value.replace(/^"|"$/gu, '');
+        const pair = [clean(own.CANARY_ADMIN_TOKEN), clean(own.CANARY_CLUSTER_TOKEN)];
+        for (const token of pair) { assert.ok(token.length >= 24); secrets.add(token); }
+        if (!unpairedCredentials.length) unpairedCredentials.push(...pair);
+        else assert.deepEqual(pair, unpairedCredentials, 'changing platforms retains the same bootstrap credentials');
+        await clickLabelled(`Download ${preparationFile}`);
+        const saved = await until(() => page.eval('window.__saved.length ? window.__saved.at(-1).blob.text() : null'), 'bootstrap environment downloaded');
+        assert.equal(saved, contents, `${method}: downloaded and copied environments match`);
+        assert.ok(!(await page.eval('document.querySelector("dialog[open] .guide").innerText')).includes(pair[0]), 'preview masks the real administrator token');
+        await clickLabelled(`Show private values in ${preparationFile}`);
+        assert.ok((await page.eval('document.querySelector("dialog[open] .guide").innerText')).includes(pair[0]), 'Show reveals the real administrator token');
+        await clickLabelled(`Hide private values in ${preparationFile}`);
+        assert.ok(!(await page.eval('document.querySelector("dialog[open] .guide").innerText')).includes(pair[0]), 'Hide masks the real token again');
+        if (method === 'Docker Compose' || method === 'Portainer stack') {
+          const yamlFile = (await downloads()).find(name => /\.ya?ml$/u.test(name));
+          assert.ok(yamlFile, 'stack/compose YAML is downloadable');
+          const yaml = await copyOf(yamlFile);
+          assert.ok(yaml.includes(preparationId) && !yaml.includes('INVITATION_TOKEN'));
+          const before = await page.eval('window.__saved.length');
+          await clickLabelled(`Download ${yamlFile}`);
+          await until(() => page.eval(`window.__saved.length > ${before}`), 'YAML downloaded');
+          assert.equal(await page.eval('window.__saved.at(-1).blob.text()'), yaml, 'downloaded and copied YAML match');
+        }
+      }
+      assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations'), 'bootstrap exports create no invitation');
       await text('Set up this dashboard for incoming node connections');
       await pick('This dashboard reaches the node');
       await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
@@ -950,7 +990,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
       const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
       assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
-      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'a missing dashboard listener keeps actions disabled even with valid node details');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>!button.disabled)'), 'valid node details enable bootstrap exports without a dashboard listener');
       await fill('Name on this dashboard', '', 'dialog[open]');
       assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'clearing a required field disables the visible actions again');
       await fill('Name on this dashboard', expectedDraft.name, 'dialog[open]');

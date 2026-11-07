@@ -19,6 +19,23 @@ the dashboard. Registering a node does not peer it, change its cluster token, or
 create a VPN route. A missing connection means the dashboard cannot read or
 manage that node; it is not evidence that the node stopped monitoring.
 
+## Export a new node before connecting it
+
+With **Deploy a new node**, valid name and Node ID fields are enough to export
+its stack/Compose YAML and private environment settings even when this dashboard
+has no incoming-node endpoint configured. No address from another section is
+required. The exports contain real administrator and cluster tokens, with no
+placeholder invitation. Save them before closing the dialog. They start the node
+without publishing an inbound port; the node will not appear on this dashboard yet.
+
+To connect that deployment later, configure the dashboard endpoint below, then
+choose **A node that's already running** and **The node reaches this dashboard**.
+Add the connection settings to the same deployment, retaining its Node ID,
+credentials, stack/service name, data and identity storage. Do not redeploy it as
+a new node with newly generated credentials.
+
+The remainder of this guide describes enrollment once the endpoint is configured.
+
 ## Prepare the dashboard's connection endpoint
 
 **Nodes → Add node → The node reaches this dashboard** is available before the
@@ -29,7 +46,7 @@ once the endpoint is enabled, the invitation form appears in the same menu.
 With **Deploy a new node → The node reaches this dashboard**, the Docker run,
 Docker Compose, Portainer stack and Linux VM tabs are visible from the start,
 including before the endpoint is configured or an invitation exists. Enter a
-name, a unique Node ID and the dashboard address this node can reach. The address
+name and a unique Node ID to export an unpaired node first. For enrollment after the endpoint is configured, also enter the dashboard address this node can reach. The address
 defaults to the configured HTTPS listener. An IP or hostname keeps its configured
 port; a complete HTTPS URL can specify a different port, for example behind NAT.
 The address must still route to this dashboard and use its configured TLS trust.
@@ -52,7 +69,7 @@ second configuration edit or an inbound node port. Compare the fingerprint from
 its log and confirm it in this dashboard after it connects.
 
 **Show**, **Copy** and **Download** remain visible but disabled while required
-fields or dashboard prerequisites are missing; Portainer’s individual copy controls do too. A warning
+local node fields are missing. A not-yet-connected export does not need dashboard setup. For enrollment, dashboard prerequisites still apply; Portainer’s individual copy controls do too. A warning
 explains the prerequisites. Switching between new-node connection directions
 preserves its name, Node ID, deployment method and credentials. The invitation
 retains the selected node-reachable address even when it differs from the default.

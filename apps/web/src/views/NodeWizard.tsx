@@ -85,8 +85,11 @@ export function AddNodeChooser({ plan, onPlan, onboarding }: { plan: AddPlan; on
   );
 }
 
-/** Configuration help stays available before the dashboard has a connection listener. Uses the existing guide controls. */
-export function OutboundDashboardSetup({ onboarding, onClose }: { onboarding: Resource<NodeOnboardingCapabilities>; onClose: () => void }) {
+/**
+ * Configuration help stays available before the dashboard has a connection listener. Uses the existing guide controls.
+ * `separate`: it sits below a new node's own steps, which don't depend on it, so it doesn't call itself their first step.
+ */
+export function OutboundDashboardSetup({ onboarding, onClose, separate = false }: { onboarding: Resource<NodeOnboardingCapabilities>; onClose: () => void; separate?: boolean }) {
   const settings: GuideBlock = {
     key: 'dashboard-connection', kind: 'command', secret: false, title: 'Configure the existing dashboard service',
     text: `environment:
@@ -107,11 +110,13 @@ ports:
         {outboundReason(onboarding)} You can configure it now, then check again without closing this menu.
         {onboarding.error ? <p role="alert">{describeFailure(onboarding.error)}</p> : null}
       </Banner>
-      <p className="sec">First update the stack running this dashboard. In Portainer, edit its existing dashboard service: <code>web</code> in the supplied templates, using the <code>ghcr.io/narehood/uptime-canary-web</code> image. The remote node is configured after this step.</p>
+      <p className="sec">{separate ? 'This is separate from the node’s steps above. To connect nodes to this dashboard, update' : 'First update'} the stack running this dashboard. In Portainer, edit its existing dashboard service: <code>web</code> in the supplied templates, using the <code>ghcr.io/narehood/uptime-canary-web</code> image.{separate ? '' : ' The remote node is configured after this step.'}</p>
       <p className="modal-note">Replace NODE_REACHABLE_HOST with the hostname or IP your nodes use to reach this dashboard, and DASHBOARD_BIND_IP with an IP actually assigned to its Docker host. These may differ behind NAT or a VPN; forward TCP port 18348 to the published host port where needed. Merge these entries into the service’s existing environment and ports; keep its other settings, browser port, data and identity volumes.</p>
       <ol className="gsteps"><GuideStep n={1} block={settings} real={settings} onHandled={() => {}} /></ol>
       <p className="modal-note">Update the stack to recreate the dashboard container, then select Check dashboard setup. This uses built-in HTTPS on port 18348, separate from the browser dashboard and its sign-in proxy. The nodes must be able to reach that port without interactive sign-in.</p>
-      <p className="modal-note">Once the dashboard reports its connection address, this menu lets you create an invitation and shows the Docker, Compose, Portainer or Linux VM steps for the node. No invitation is created until the dashboard is ready.</p>
+      <p className="modal-note">{separate
+        ? 'Once the dashboard reports its connection address, this menu can connect nodes. For a node you’ve already deployed from the steps above, choose “A node that’s already running”, so it keeps its identity and credentials. A node you haven’t deployed yet gets one complete first-start setup here instead.'
+        : 'Once the dashboard reports its connection address, this menu lets you create an invitation and shows the Docker, Compose, Portainer or Linux VM steps for the node.'} No invitation is created until the dashboard is ready.</p>
       <div className="modal-foot"><span /><button type="button" className="btn" onClick={onClose}>Cancel</button></div>
     </>
   );
@@ -254,8 +259,10 @@ function GuideStep({ n, block, real, onHandled, disabled = false, prepare, onRev
  * The platform tabs and their steps. The preview is built with every private value masked; Copy and Download use the
  * real text. Changing tabs hides everything again.
  */
-export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledReason, prepare, onRevealPrepared, initiallyRevealed, onExportResult }: {
+export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledReason, fieldsValid = false, prepare, onRevealPrepared, initiallyRevealed, onExportResult }: {
   setup: PreparedSetup; platform: Platform; onPlatform: (platform: Platform) => void; onHandled: () => void; disabledReason?: string;
+  /** The form's fields are all fine, so `disabledReason` alone says what's holding setup back. */
+  fieldsValid?: boolean;
   prepare?: PrepareSetup; onRevealPrepared?: (key: string | null) => void; initiallyRevealed?: string | null;
   onExportResult?: (result: ExportResult) => void;
 }) {
@@ -281,7 +288,7 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledRea
   };
   return (
     <div className="guide" aria-describedby={disabledReason || prepare ? `${id}-warning` : undefined}>
-      {disabledReason ? <p className="small fwarn" role="alert" id={`${id}-warning`}><Glyph tone="warn" />Complete the fields above first. {disabledReason} Show, Copy and Download are disabled until setup is ready. Preview only: do not deploy these settings.</p>
+      {disabledReason ? <p className="small fwarn" role="alert" id={`${id}-warning`}><Glyph tone="warn" />{fieldsValid ? null : 'Complete the fields above first. '}{disabledReason} Show, Copy and Download are disabled until setup is ready. Preview only: do not deploy these settings.</p>
         : prepare ? <p className="small fwarn" role="note" id={`${id}-warning`}>Preview only: do not deploy these settings. Copy, Download or Show generates the complete private settings.</p> : null}
       <div className="gtabs" role="tablist" aria-label="Where the node runs">
         {PLATFORMS.map((entry, index) => (
@@ -309,8 +316,8 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledRea
 }
 
 /** Keep every setup action visible but disabled until this new node's required fields are valid. */
-export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, nodeId = '', name = '', prepare, onHandled = () => {}, onRevealPrepared, onExportResult, connectionUrl }: {
-  capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; reason: string; direct?: boolean; nodeId?: string; name?: string;
+export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, unpaired = false, fieldsValid = false, nodeId = '', name = '', prepare, onHandled = () => {}, onRevealPrepared, onExportResult, connectionUrl }: {
+  capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; reason: string; direct?: boolean; unpaired?: boolean; fieldsValid?: boolean; nodeId?: string; name?: string;
   prepare?: PrepareSetup; onHandled?: () => void; onRevealPrepared?: (key: string | null) => void;
   onExportResult?: (result: ExportResult) => void;
   connectionUrl?: string;
@@ -320,14 +327,19 @@ export function NodeDeploymentPreview({ capabilities, loading = false, platform,
       {capabilities ? <ImageLine capabilities={capabilities} /> : loading ? <p className="small muted" role="status">Reading this dashboard’s image tag…</p> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
-        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { outbound: { connectionUrl: connectionUrl ?? capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
-        platform={platform} onPlatform={onPlatform} onHandled={onHandled} disabledReason={reason || undefined} prepare={prepare} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} />
+        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : unpaired ? { unpaired: true } : { outbound: { connectionUrl: connectionUrl ?? capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
+        platform={platform} onPlatform={onPlatform} onHandled={onHandled} disabledReason={reason || undefined} fieldsValid={fieldsValid} prepare={prepare} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} />
     </>
   );
 }
 
-/** A new outbound node exports nothing until its one-time invitation can be included in the first deployment. */
-export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, taken, addressError, prepare, onHandled, onRevealPrepared, busy = false, onExportResult, connectionUrl }: {
+/**
+ * A new node that will reach this dashboard. Once the dashboard takes node connections, this exports nothing until the
+ * node's one-time invitation can be included in its first deployment. Until then it exports a node that isn't connected
+ * yet: only the name, the node ID, that ID's own tokens and the image tag decide, never the dashboard address or invitation
+ * readiness. Show, Copy and Download then send nothing anywhere, and the node connects later as an already-running node.
+ */
+export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse, addressError, prepare, onHandled, onRevealPrepared, busy = false, onExportResult, connectionUrl }: {
   capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
   secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void; addressError?: string;
   prepare?: PrepareSetup; onHandled?: () => void; onRevealPrepared?: (key: string | null) => void; busy?: boolean;
@@ -335,11 +347,29 @@ export function NewOutboundDeploy({ capabilities, loading = false, platform, onP
   connectionUrl?: string;
 }) {
   const pair = secretsFor(secrets, nodeId);
-  const reason = [labelProblem(name), nodeIdProblem(nodeId, taken), addressError, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null,
-    capabilities && !capabilities.outboundEnabled ? 'Configure the dashboard’s node-connection listener below, then choose Check dashboard setup.' : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
-  return <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform}
-    reason={reason || (busy ? 'Generating the complete setup…' : !prepare ? 'Choose Generate setup below to include the one-time invitation in a complete first-start deployment.' : '')} nodeId={nodeId} name={name}
-    prepare={prepare} onHandled={onHandled} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} connectionUrl={connectionUrl} />;
+  const unpaired = !capabilities?.outboundEnabled || !capabilities.connectionUrl;
+  const fields = [labelProblem(name), nodeIdProblem(nodeId, taken), unpaired ? null : addressError].filter(Boolean);
+  const reason = [...fields, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
+  const notConnected = capabilities && unpaired ? (
+    <Banner tone="info" role="note" title="You can deploy this node now, but it won’t connect to this dashboard yet">
+      These settings start it on its own, with no inbound port, and it won’t appear here yet. To connect it later, set up this dashboard’s listener below, then add it with “A node that’s already running” and “The node reaches this dashboard”: it keeps its identity and credentials. Its tokens live only in this dialog, so save the private settings before you close it. Keep those settings and the node’s data and identity storage.
+    </Banner>
+  ) : null;
+  // No `prepare` here: nothing is requested, so Show, Copy and Download are the export, and the first one binds the pair.
+  if (capabilities && unpaired && pair && !reason && !busy) {
+    return <>
+      {notConnected}
+      <ImageLine capabilities={capabilities} />
+      <TokensNote nodeId={nodeId} earlier={earlier} />
+      <SetupGuide setup={{ nodeId, name, imageTag: capabilities.imageTag, secrets: pair, unpaired: true }} platform={platform} onPlatform={onPlatform} onHandled={() => onUse(nodeId)} />
+    </>;
+  }
+  return <>
+    {notConnected}
+    <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform} unpaired={unpaired} fieldsValid={!fields.length}
+      reason={reason || (busy ? 'Generating the complete setup…' : !prepare ? 'Choose Generate setup below to include the one-time invitation in a complete first-start deployment.' : '')} nodeId={nodeId} name={name}
+      prepare={unpaired ? undefined : prepare} onHandled={onHandled} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} connectionUrl={connectionUrl} />
+  </>;
 }
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
@@ -433,7 +463,7 @@ export function NewNodeDeploy({ draft, onDraft, secrets, earlier, onboarding, ta
           {draft.platform === 'vm' && capabilities.nativeDownloadAvailable ? <p className="small muted">This dashboard reports native downloads, but gives this page no address for them, so the steps above build the node instead.</p> : null}
         </>
       ) : <NodeDeploymentPreview direct capabilities={capabilities} loading={onboarding.loading} platform={draft.platform} onPlatform={platform => set({ platform })} nodeId={draft.nodeId} name={draft.label}
-        reason={[...Object.values(errors), !capabilities ? (onboarding.loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ')} />}
+        fieldsValid={!Object.values(errors).some(Boolean)} reason={[...Object.values(errors), !capabilities ? (onboarding.loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ')} />}
       <div className="modal-foot">
         <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
         <span className="row-wrap">
@@ -710,9 +740,10 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
       hint={fresh ? 'Every account on this dashboard sees it. It also becomes the node’s own name.' : 'Every account on this dashboard sees it. The node keeps its own name.'} />
     <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
       hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
-    <TextField label="Dashboard IP or HTTPS address" mono value={addressInput} onChange={setConnectionAddress} error={live(addressInput, errors.connectionUrl)} maxLength={2048} disabled={busy !== null}
-      placeholder="https://192.168.10.10:18348" hint={`The address this node can reach. An IP or hostname keeps the configured connection port; a full HTTPS address can specify another port. It must route to this dashboard’s node-connection listener. A different address requires this dashboard’s certificate fingerprint from native TLS. Configured address: ${capabilities?.connectionUrl ?? 'not configured yet'}.`} />
   </>;
+  // Only an invitation uses this address, so a node that isn't connected yet isn't asked for it.
+  const addressField = <TextField label="Dashboard IP or HTTPS address" mono value={addressInput} onChange={setConnectionAddress} error={live(addressInput, errors.connectionUrl)} maxLength={2048} disabled={busy !== null}
+    placeholder="https://192.168.10.10:18348" hint={`The address this node can reach. An IP or hostname keeps the configured connection port; a full HTTPS address can specify another port. It must route to this dashboard’s node-connection listener. A different address requires this dashboard’s certificate fingerprint from native TLS. Configured address: ${capabilities?.connectionUrl ?? 'not configured yet'}.`} />;
   const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} loading={onboarding.loading} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
     secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} addressError={errors.connectionUrl} prepare={prepare} busy={busy !== null}
     onHandled={() => setHandled(true)} onRevealPrepared={setInitiallyRevealed} onExportResult={setExportResult} connectionUrl={connectionUrl ?? undefined} /> : null;
@@ -720,7 +751,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
   if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
     return <>
       {fresh && !invitation ? <form className="connect-form" onSubmit={event => event.preventDefault()} noValidate>{identityFields}{deployment}</form> : null}
-      <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} />
+      <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} separate={fresh && !invitation} />
     </>;
   }
 
@@ -755,6 +786,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
         <ConnectionTrust pin={capabilities.connectionTlsFingerprint} />
         {failure ? failureBox : <ErrorSummary ref={summaryRef} title="Check these fields" errors={show ? Object.values(errors).filter(Boolean) as string[] : []} />}
         {identityFields}
+        {addressField}
         {exportFeedback}
         {deployment}
         {fresh ? <p className="modal-note">Copy, Download or Show generates the complete setup when you first use it. Then paste its commands or stack YAML and environment settings and start the node. If it is already deployed, choose “A node that’s already running” to preserve its credentials and identity.</p> : null}
