@@ -305,6 +305,24 @@ await check('local detachment sends an explicit exact-name request without expos
   assert.deepEqual(JSON.parse(sent[0].init.body), { force: true, forget: true, confirmation: ENTRY.label });
 });
 
+await check('detached access cleanup is discoverable without selecting a node or retaining private journal fields', async () => {
+  on();
+  const client = new api.CanaryApi(PAGE, TOKEN).withRegisteredNode(REG);
+  const row = { id: REG, label: ENTRY.label, nodeId: ENTRY.nodeId, authorizationRequired: true };
+  const sent = await record(async () => {
+    answer = () => json(200, [{ ...row, credentials: 'must-not-be-retained', url: 'https://private.invalid' }]);
+    assert.deepEqual(await client.nodeRevocations(), [row]);
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(pathOf(sent[0]), '/api/dashboard/node-revocations');
+  assert.equal(header(sent[0], HEADER), null);
+  assert.equal(sent[0].init.method, 'GET');
+  for (const bad of [null, {}, [{}], [row, row], [{ ...row, authorizationRequired: 'yes' }], [{ ...row, id: '../bad' }]]) {
+    answer = () => json(200, bad);
+    assert.ok((await rejection(client.nodeRevocations())) instanceof api.ApiFailure, 'unreadable cleanup must not appear completed');
+  }
+});
+
 await check('force removal sends the exact typed name only to the dashboard and keeps accepted work pending', async () => {
   on();
   storageWrites.length = 0;

@@ -45,6 +45,17 @@ journal, and retries access revocation separately. It never replays abandoned
 monitor writes against the forgotten node. Pending writes on surviving nodes
 retain their original payload before runner assignments are updated.
 
+After local removal, administrators can find the node under **Pending access
+revocations** on the Nodes page. It is separate from active nodes and remains
+listed until delegated access is confirmed revoked. If the original authorizing
+account changes, choose **Authorize revocation** and type the saved dashboard name
+exactly to renew authority with the current administrator. This only resumes
+access cleanup; it does not restore the registration or resend monitor commands.
+Renewals continue to work when the bounded queue is full. This renews dashboard
+account authority, not an expired or replaced credential on the remote node. If
+the node refuses all saved credentials, revoke this dashboard's delegated
+accounts directly on that node; local removal still completes independently.
+
 The regular **Retry removal** action below continues to require confirmed remote
 cleanup. **Remove now** is the explicit alternative when that cannot finish.
 

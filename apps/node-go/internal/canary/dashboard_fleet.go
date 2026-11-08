@@ -217,11 +217,11 @@ func copyFleet(row dashboardFleetRecord) dashboardFleetRecord {
 }
 
 func fleetCanCancel(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
-	if plan.Prepared {
+	if plan.Prepared || plan.RetargetAfterReplay {
 		return false
 	}
 	for _, p := range row.Placements {
-		if p.Sequence > 0 {
+		if p.Sequence > 0 || plan.ForgetHandoffs[p.ID] {
 			return false
 		}
 	}
@@ -231,6 +231,10 @@ func fleetCanCancel(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
 // A prepared command with no durable acknowledgement can already have run.
 // Changes and retirement must first resolve that exact saved command.
 func fleetWritesConfirmed(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
+	// Acknowledged survivor writes still owe their deferred handoff/retarget.
+	if plan.RetargetAfterReplay {
+		return false
+	}
 	if !plan.Prepared {
 		return true
 	}
@@ -1084,7 +1088,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		ids = append(ids, row.Source.RegistrationID)
 	}
 	for _, p := range row.Placements {
-		if p.State != "removed" && (!plan.Deleted || p.Sequence > 0) {
+		if p.State != "removed" && (!plan.Deleted || p.Sequence > 0 || plan.ForgetHandoffs[p.ID]) {
 			ids = append(ids, p.RegistrationID)
 		}
 	}
@@ -1184,7 +1188,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	// Keep existing anchors and physical IDs. A network partition must not move
 	// a management authority to another peer or manufacture a conflicting root.
 	for _, p := range row.Placements {
-		if p.State == "removed" || plan.Deleted && p.Sequence == 0 {
+		if p.State == "removed" || plan.Deleted && p.Sequence == 0 && !plan.ForgetHandoffs[p.ID] {
 			continue
 		}
 		p = copyFleet(dashboardFleetRecord{Placements: []dashboardFleetPlacement{p}}).Placements[0]
@@ -1208,7 +1212,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		for _, id := range members {
 			p.NodeIDs = append(p.NodeIDs, views[id].Node.ID)
 		}
-		if p.Sequence > 0 || len(members) > 0 {
+		if p.Sequence > 0 || len(members) > 0 || plan.ForgetHandoffs[p.ID] {
 			placements = append(placements, p)
 		}
 	}
@@ -1531,6 +1535,7 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 					// be edited safely. An uncertain POST remains prepared forever
 					// until read-back confirms it; it is never issued again.
 					if plan.Unsent[p.ID] && fleetCanReconcile(row, plan, map[string]string{}) {
+						resumeForgetRetarget(&row, &plan)
 						plan.Prepared, plan.Commands = false, nil
 					}
 				}

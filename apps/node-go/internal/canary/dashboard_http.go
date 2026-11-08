@@ -171,6 +171,10 @@ func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, acto
 		errorReply(w, fail(403, "Insufficient permissions"))
 		return
 	}
+	if p == "/api/dashboard/node-revocations" && r.Method == "GET" {
+		d.listNodeRevocations(w)
+		return
+	}
 	if p == "/api/dashboard/verify" && r.Method == "POST" {
 		d.verifyNode(w, r, actor)
 		return

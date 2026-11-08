@@ -34,7 +34,8 @@ func (d *Dashboard) queueNodeForget(r *http.Request, actor AccountView, row regi
 	if a.ID != actor.ID || a.Role != "admin" || r.Context().Err() != nil {
 		return fail(403, "Dashboard administrator permission is required")
 	}
-	if existing, exists := d.forgottenNodes[row.ID]; exists {
+	existing, exists := d.forgottenNodes[row.ID]
+	if exists {
 		secret, err = d.openSecrets(existing)
 		if err != nil {
 			return err
@@ -44,7 +45,7 @@ func (d *Dashboard) queueNodeForget(r *http.Request, actor AccountView, row regi
 	} else {
 		secret.Removal = &dashboardNodeRemoval{ActorID: a.ID, ActorVersion: a.AuthVersion, Phase: "forget-queued"}
 	}
-	if len(d.forgottenNodes) >= 1024 {
+	if !exists && len(d.forgottenNodes) >= 1024 {
 		return fail(409, "Pending node access revocations have reached capacity")
 	}
 	row.Credentials, err = d.sealSecrets(row, secret)
@@ -55,6 +56,35 @@ func (d *Dashboard) queueNodeForget(r *http.Request, actor AccountView, row regi
 		d.forgottenNodes[row.ID] = row
 	}
 	return err
+}
+
+// Detached registrations stay discoverable to administrators until revocation
+// is confirmed. Return only public identity and whether authority needs renewal.
+type pendingNodeRevocation struct {
+	ID                    string `json:"id"`
+	Label                 string `json:"label"`
+	NodeID                string `json:"nodeId"`
+	AuthorizationRequired bool   `json:"authorizationRequired"`
+}
+
+func (d *Dashboard) listNodeRevocations(w http.ResponseWriter) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := []pendingNodeRevocation{}
+	for id, row := range d.forgottenNodes {
+		secret, err := d.openSecrets(row)
+		if err != nil {
+			errorReply(w, fail(503, "Pending node access revocations cannot be read"))
+			return
+		}
+		if secret.Removal.Phase != "forget-revoke" {
+			continue
+		}
+		out = append(out, pendingNodeRevocation{ID: id, Label: row.Label, NodeID: row.NodeID,
+			AuthorizationRequired: !d.fleetAuthorized(dashboardFleetRecord{ActorID: secret.Removal.ActorID, ActorRole: "admin", ActorVersion: secret.Removal.ActorVersion})})
+	}
+	slices.SortFunc(out, func(a, b pendingNodeRevocation) int { return strings.Compare(a.ID, b.ID) })
+	reply(w, 200, out)
 }
 
 func (d *Dashboard) loadForgottenNodes() error {
@@ -88,10 +118,13 @@ func (d *Dashboard) detachForgottenNode(row registeredNodeRecord, secret dashboa
 	if err != nil {
 		return err
 	}
-	deletedGroups := []string{}
+	deletedGroups, changedGroups := []string{}, []string{}
 	for id, group := range groups {
-		if len(group.RegistrationIDs) == 1 && group.RegistrationIDs[0] == row.ID {
-			deletedGroups = append(deletedGroups, id)
+		if slices.Contains(group.RegistrationIDs, row.ID) {
+			changedGroups = append(changedGroups, id)
+			if len(group.RegistrationIDs) == 1 {
+				deletedGroups = append(deletedGroups, id)
+			}
 		}
 	}
 	updates := map[string]dashboardFleetRecord{}
@@ -102,7 +135,7 @@ func (d *Dashboard) detachForgottenNode(row registeredNodeRecord, secret dashboa
 		}
 		affected := removalAffects(before, plan, row.ID)
 		for _, group := range before.GroupIDs {
-			affected = affected || slices.Contains(deletedGroups, group)
+			affected = affected || slices.Contains(changedGroups, group)
 		}
 		if !affected {
 			continue
@@ -113,15 +146,20 @@ func (d *Dashboard) detachForgottenNode(row registeredNodeRecord, secret dashboa
 		secret.Removal.AbandonedFleets = append(secret.Removal.AbandonedFleets, copyFleet(before))
 		fleet := copyFleet(before)
 		placements, deferred := []dashboardFleetPlacement{}, []dashboardFleetPlacement{}
-		plan.ForgetResourceTargets = slices.Clone(plan.RemovalResourceTargets)
+		resourceTargets := slices.Clone(plan.RemovalResourceTargets)
+		if plan.RetargetAfterReplay {
+			resourceTargets = slices.Clone(plan.ForgetResourceTargets)
+		}
 		for _, p := range plan.AfterForget {
 			p.RegistrationIDs = slices.DeleteFunc(slices.Clone(p.RegistrationIDs), func(id string) bool { return id == row.ID })
 			p.NodeIDs = slices.DeleteFunc(slices.Clone(p.NodeIDs), func(id string) bool { return id == row.NodeID })
-			if len(p.RegistrationIDs) == 0 {
+			p.RetiringRegistrationIDs = slices.DeleteFunc(slices.Clone(p.RetiringRegistrationIDs), func(id string) bool { return id == row.ID })
+			survivors := unique(append(slices.Clone(p.RegistrationIDs), p.RetiringRegistrationIDs...))
+			if len(survivors) == 0 {
 				continue
 			}
 			if p.RegistrationID == row.ID {
-				p.RegistrationID = p.RegistrationIDs[0]
+				p.RegistrationID = survivors[0]
 			}
 			deferred = append(deferred, p)
 		}
@@ -163,8 +201,9 @@ func (d *Dashboard) detachForgottenNode(row registeredNodeRecord, secret dashboa
 			p.RetiringRegistrationIDs = slices.DeleteFunc(p.RetiringRegistrationIDs, func(id string) bool { return id == row.ID })
 			if p.RegistrationID == row.ID {
 				delete(plan.Commands, p.ID)
-				if len(p.RegistrationIDs) > 0 {
-					p.ID, p.RegistrationID, p.Sequence, p.State = strings.ReplaceAll(newID(), "-", ""), p.RegistrationIDs[0], 0, "pending"
+				survivors := unique(append(slices.Clone(p.RegistrationIDs), p.RetiringRegistrationIDs...))
+				if len(survivors) > 0 {
+					p.ID, p.RegistrationID, p.Sequence, p.State = strings.ReplaceAll(newID(), "-", ""), survivors[0], 0, "pending"
 					if plan.ForgetHandoffs == nil {
 						plan.ForgetHandoffs = map[string]bool{}
 					}
@@ -199,11 +238,7 @@ func (d *Dashboard) detachForgottenNode(row registeredNodeRecord, secret dashboa
 			if len(unplaced) == 0 {
 				unplaced = []string{""}
 			}
-			if replay {
-				plan.ForgetResourceTargets = unplaced
-			} else {
-				plan.RemovalResourceTargets = unplaced
-			}
+			resourceTargets = unplaced
 		}
 		delete(plan.References, row.ID)
 		fleet.RegistrationIDs = slices.DeleteFunc(fleet.RegistrationIDs, func(id string) bool { return id == row.ID })
@@ -216,6 +251,9 @@ func (d *Dashboard) detachForgottenNode(row registeredNodeRecord, secret dashboa
 		plan.RetargetAfterReplay, plan.AfterForget = replay, deferred
 		if replay {
 			plan.Commands = commands
+			plan.ForgetResourceTargets = resourceTargets
+		} else {
+			plan.RemovalResourceTargets, plan.ForgetResourceTargets = resourceTargets, nil
 		}
 		fleet.Placements = placements
 		if !replay {
@@ -340,6 +378,7 @@ func (d *Dashboard) finishForgottenNode(ctx context.Context, id string) error {
 	n.mu.Unlock()
 	if err == nil {
 		delete(d.forgottenNodes, id)
+		delete(d.nodeCallSlots, id)
 		d.connections.Disconnect(id)
 	}
 	return err

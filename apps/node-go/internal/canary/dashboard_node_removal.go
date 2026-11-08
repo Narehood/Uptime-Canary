@@ -31,9 +31,11 @@ func removalAffects(row dashboardFleetRecord, plan dashboardFleetPlan, id string
 		row.Source != nil && row.Source.RegistrationID == id || plan.NotificationSourceRegistrationID == id || plan.NativeResourceIDs[id] != nil {
 		return true
 	}
-	for _, p := range row.Placements {
-		if p.State != "removed" && (p.RegistrationID == id || slices.Contains(p.RegistrationIDs, id) || slices.Contains(p.RetiringRegistrationIDs, id)) {
-			return true
+	for _, placements := range [][]dashboardFleetPlacement{row.Placements, plan.AfterForget} {
+		for _, p := range placements {
+			if p.State != "removed" && (p.RegistrationID == id || slices.Contains(p.RegistrationIDs, id) || slices.Contains(p.RetiringRegistrationIDs, id)) {
+				return true
+			}
 		}
 	}
 	return false

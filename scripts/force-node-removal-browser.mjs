@@ -1,6 +1,7 @@
 // Real React controls and real Go cleanup, using only the harness's private
 // dashboard, disabled monitors and loopback nodes. No provider sends.
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 
 export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until, fill, click, ready, owner, registrations }) {
   const q = JSON.stringify;
@@ -138,8 +139,31 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
       const rows = (await api('/api/dashboard/fleet/monitors')).value;
       assert.equal(rows.find(row => row.id === soloId).state, 'removed');
       assert.deepEqual(rows.find(row => row.id === sharedId).registrationIds, [survivor.id]);
-      assert.ok(rows.find(row => row.id === sharedId).placements.some(p => p.monitorId === original));
-      return { alreadyPending: true, stoppedNode: true, exactNameRequired: true, localEntryRemoved: true, survivorPhysicalMonitorKept: true, lastRunnerRetiredLocally: true };
-    } finally { if (remote.running()) await remote.stop(); }
+      assert.ok(rows.find(row => row.id === sharedId).placements.some(p => p.state === 'applied' && p.registrationIds.includes(survivor.id) && p.monitorId === original));
+      // Local removal must not hide the remaining authority-renewal action.
+      const revocations = await api('/api/dashboard/node-revocations');
+      assert.equal(revocations.status, 200);
+      assert.ok(revocations.value.some(row => row.id === entry.id && row.label === entry.label));
+      await until(() => page.eval(`!!document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)})`), 'detached access cleanup visible', 30000);
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
+      await page.eval(`document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)}).scrollIntoView({block:'center'})`);
+      const cleanupWidth = await page.eval('({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth})');
+      assert.ok(cleanupWidth.scroll <= cleanupWidth.width + 1, 'detached cleanup actions must fit on a narrow screen');
+      writeFileSync(new URL('../.canary/node-revocation-current.png', import.meta.url), Buffer.from((await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+      await click(`Authorize revocation for ${entry.label}`);
+      await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'revocation authority dialog opens');
+      assert.match(await page.eval('document.querySelector("dialog[open]").innerText'), /already removed/iu);
+      assert.ok(await page.eval('document.activeElement===document.querySelector("dialog[open] input")'), 'renewal name field owns focus');
+      const beforeRenewal = fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${entry.id}`).length;
+      await fill(`Type “${entry.label}” to confirm`, 'wrong name', 'dialog[open]');
+      await page.eval('document.querySelector("dialog[open] form").requestSubmit()');
+      assert.equal(fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${entry.id}`).length, beforeRenewal);
+      await fill(`Type “${entry.label}” to confirm`, entry.label, 'dialog[open]');
+      await click('Authorize revocation', 'dialog[open]');
+      await until(() => page.eval('!document.querySelector("dialog[open]")'), 'revocation authority renewed');
+      assert.equal(fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${entry.id}`).length, beforeRenewal + 1);
+      assert.ok(!(await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id), 'renewal cannot reattach the node');
+      return { alreadyPending: true, stoppedNode: true, exactNameRequired: true, localEntryRemoved: true, survivorPhysicalMonitorKept: true, lastRunnerRetiredLocally: true, postDetachRenewalDiscoverable: true, renewalRequests: 1 };
+    } finally { await page.send('Emulation.clearDeviceMetricsOverride'); if (remote.running()) await remote.stop(); }
   });
 }

@@ -226,6 +226,14 @@ const NODE_STATES: readonly RegisteredNode['state'][] = ['starting', 'answering'
 const cleanText = (text: string, limit: number): string => text.replace(/[\x00-\x1f\x7f]+/gu, ' ').trim().slice(0, limit);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
+/** Detached node, separate from the active registry. Contains no address or credentials. */
+export interface NodeRevocation {
+  id: string;
+  label: string;
+  nodeId: string;
+  authorizationRequired: boolean;
+}
+
 /** One registry entry. Unknown fields are dropped; the dashboard never sends node credentials, and none are kept. */
 export function normalizeRegisteredNode(value: unknown): RegisteredNode {
   if (!isRecord(value) || typeof value.id !== 'string' || !REGISTRATION_ID.test(value.id) || typeof value.label !== 'string'
@@ -1043,6 +1051,21 @@ export class CanaryApi {
   /** Queue durable assignment cleanup and revocation, confirmed against the current dashboard label on the server. */
   forceRemoveNode(id: string, confirmation: string, signal?: AbortSignal): Promise<NodeRemoval> {
     return this.removeNode(id, signal, confirmation);
+  }
+
+  /** Administrator-only access cleanup remaining after local removal. Never selects a monitoring node. */
+  async nodeRevocations(signal?: AbortSignal): Promise<NodeRevocation[]> {
+    const value = await this.own<unknown>('/api/dashboard/node-revocations', 'GET', undefined, signal);
+    const unreadable = (): never => { throw new ApiFailure(200, 'This dashboard sent a pending access-revocation list this page could not read.'); };
+    if (!Array.isArray(value) || value.length > 1024) return unreadable();
+    const ids = new Set<string>();
+    return value.map(row => {
+      if (!isRecord(row) || typeof row.id !== 'string' || !REGISTRATION_ID.test(row.id) || ids.has(row.id)
+          || typeof row.label !== 'string' || !row.label || row.label.length > 128 || typeof row.nodeId !== 'string'
+          || typeof row.authorizationRequired !== 'boolean') return unreadable();
+      ids.add(row.id);
+      return { id: row.id, label: row.label, nodeId: cleanText(row.nodeId, 128), authorizationRequired: row.authorizationRequired };
+    });
   }
 
   /** Detach a pending node locally; remote revocation remains best effort. */
