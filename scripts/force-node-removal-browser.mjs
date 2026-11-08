@@ -121,9 +121,9 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
       await page.eval('location.hash="#/nodes"'); await ready();
       // This fixture enrolled through its direct API, outside the browser's
       // mutation callbacks. Refresh the catalogue through a real visible control.
-      await click('Check now', `document.getElementById(${q('r-' + survivor.id)}).closest('article')`);
+      await click('Check now', `article[aria-labelledby=${q('r-' + survivor.id)}]`);
       await until(() => page.eval(`!!document.getElementById(${q('r-' + entry.id)})`), 'offline card loaded');
-      const card = `document.getElementById(${q('r-' + entry.id)}).closest('article')`;
+      const card = `article[aria-labelledby=${q('r-' + entry.id)}]`;
       await click('Remove now', card);
       await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'pending-node confirmation opens');
       assert.match(await page.eval('document.querySelector("dialog[open]").innerText'), /unreachable node may keep running its own checks/iu);
