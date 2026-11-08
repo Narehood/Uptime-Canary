@@ -141,7 +141,7 @@ export function nodeActions(node: RegisteredNode, admin: boolean): NodeActions {
     // An outbound node has no address here: it connects to the dashboard, so there's nothing to move.
     move: manage && !node.local && node.connection !== 'outbound' && node.url !== undefined,
     rotate: manage && node.state !== 'different-node',
-    remove: admin && !node.local && node.state !== 'removing',
+    remove: admin && !node.local,
   };
 }
 

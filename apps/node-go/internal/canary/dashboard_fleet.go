@@ -79,6 +79,11 @@ type dashboardFleetPlan struct {
 	References                       map[string]fleetTargetReferences   `json:"references,omitempty"`
 	Monitor                          MonitorInput                       `json:"monitor"`
 	Prepared                         bool                               `json:"prepared"`
+	ForgottenNodeIDs                 []string                           `json:"forgottenNodeIds,omitempty"`
+	ForgetHandoffs                   map[string]bool                    `json:"forgetHandoffs,omitempty"`
+	RetargetAfterReplay              bool                               `json:"retargetAfterReplay,omitempty"`
+	AfterForget                      []dashboardFleetPlacement          `json:"afterForget,omitempty"`
+	ForgetResourceTargets            []string                           `json:"forgetResourceTargets,omitempty"`
 	Deleted                          bool                               `json:"deleted"`
 	Rejected                         map[string]bool                    `json:"rejected,omitempty"`
 	Unsent                           map[string]bool                    `json:"unsent,omitempty"`
@@ -212,11 +217,11 @@ func copyFleet(row dashboardFleetRecord) dashboardFleetRecord {
 }
 
 func fleetCanCancel(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
-	if plan.Prepared {
+	if plan.Prepared || plan.RetargetAfterReplay {
 		return false
 	}
 	for _, p := range row.Placements {
-		if p.Sequence > 0 {
+		if p.Sequence > 0 || plan.ForgetHandoffs[p.ID] {
 			return false
 		}
 	}
@@ -226,6 +231,10 @@ func fleetCanCancel(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
 // A prepared command with no durable acknowledgement can already have run.
 // Changes and retirement must first resolve that exact saved command.
 func fleetWritesConfirmed(row dashboardFleetRecord, plan dashboardFleetPlan) bool {
+	// Acknowledged survivor writes still owe their deferred handoff/retarget.
+	if plan.RetargetAfterReplay {
+		return false
+	}
 	if !plan.Prepared {
 		return true
 	}
@@ -434,7 +443,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 			for placement, revision := range in.ObservedRevisions {
 				found := false
 				for _, p := range row.Placements {
-					if p.ID == placement && p.State != "removed" && (p.Sequence > 0 || row.Source != nil && p.MonitorID == row.Source.MonitorID && p.RegistrationID == row.Source.RegistrationID) {
+					if p.ID == placement && p.State != "removed" && (p.Sequence > 0 || plan.ForgetHandoffs[p.ID] || row.Source != nil && p.MonitorID == row.Source.MonitorID && p.RegistrationID == row.Source.RegistrationID) {
 						found = true
 					}
 				}
@@ -444,6 +453,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 				}
 			}
 			plan.ObservedRevisions = in.ObservedRevisions
+			resumeForgetRetarget(&row, &plan)
 			plan.Prepared, plan.Commands = false, nil
 		}
 		if r.Method == "DELETE" {
@@ -719,6 +729,8 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	plan.LegacyMonitors = previousPlan.LegacyMonitors
 	plan.LegacyMonitorAttempts = previousPlan.LegacyMonitorAttempts
 	plan.LegacyRegistrations = previousPlan.LegacyRegistrations
+	plan.ForgottenNodeIDs = slices.Clone(previousPlan.ForgottenNodeIDs)
+	plan.ForgetHandoffs = previousPlan.ForgetHandoffs
 	if !plan.SyncNotifications && !previousPlan.SyncNotifications && len(previousPlan.Resources) > 0 {
 		// Frozen removal settings must survive edits before their first apply.
 		plan.Resources, plan.LegacyResources = previousPlan.Resources, previousPlan.LegacyResources
@@ -994,6 +1006,9 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 
 func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]byte, error) {
 	command := plan.Commands[p.ID]
+	if plan.RetargetAfterReplay || plan.ForgetHandoffs[p.ID] && command.Adopt && len(command.Monitor) > 0 {
+		return json.Marshal(command) // Replay the saved survivor write or the handoff's frozen adoption.
+	}
 	if !command.Deleted {
 		input, err := fleetReferencedInput(plan, p)
 		if err != nil {
@@ -1073,7 +1088,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		ids = append(ids, row.Source.RegistrationID)
 	}
 	for _, p := range row.Placements {
-		if p.State != "removed" && (!plan.Deleted || p.Sequence > 0) {
+		if p.State != "removed" && (!plan.Deleted || p.Sequence > 0 || plan.ForgetHandoffs[p.ID]) {
 			ids = append(ids, p.RegistrationID)
 		}
 	}
@@ -1173,7 +1188,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	// Keep existing anchors and physical IDs. A network partition must not move
 	// a management authority to another peer or manufacture a conflicting root.
 	for _, p := range row.Placements {
-		if p.State == "removed" || plan.Deleted && p.Sequence == 0 {
+		if p.State == "removed" || plan.Deleted && p.Sequence == 0 && !plan.ForgetHandoffs[p.ID] {
 			continue
 		}
 		p = copyFleet(dashboardFleetRecord{Placements: []dashboardFleetPlacement{p}}).Placements[0]
@@ -1197,7 +1212,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		for _, id := range members {
 			p.NodeIDs = append(p.NodeIDs, views[id].Node.ID)
 		}
-		if p.Sequence > 0 || len(members) > 0 {
+		if p.Sequence > 0 || len(members) > 0 || plan.ForgetHandoffs[p.ID] {
 			placements = append(placements, p)
 		}
 	}
@@ -1263,7 +1278,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			// wider than the last dashboard plan. Track every former runner; an
 			// unregistered runner cannot honestly be confirmed stopped here.
 			for _, nodeID := range current.Monitor.NodeIDs {
-				if slices.Contains(p.NodeIDs, nodeID) {
+				if slices.Contains(p.NodeIDs, nodeID) || slices.Contains(plan.ForgottenNodeIDs, nodeID) {
 					continue
 				}
 				d.mu.Lock()
@@ -1285,16 +1300,43 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		if p.Sequence == 0 && p.MonitorID != "fleet-"+p.ID {
 			command.Adopt = true
 			command.MonitorID = p.MonitorID
+			if command.Deleted && plan.ForgetHandoffs[p.ID] {
+				// Existing nodes require adoption before retirement. Preserve the
+				// live copy's settings but disable execution on the surviving anchor;
+				// the next saved sequence deletes this same physical monitor.
+				if current == nil {
+					revision, err := d.confirmForgottenTombstones(ctx, *row, *p)
+					if err != nil {
+						return err
+					}
+					p.State, p.Revision, p.RetiringRegistrationIDs = "removed", revision, nil
+					continue // Read-back proves deletion; no placement receipt is invented.
+				}
+				if current.ConfigConflict {
+					return fail(409, "Review the surviving monitor before completing its removal")
+				}
+				input := current.Monitor.MonitorInput
+				input.Enabled = false // Retirement adoption must never start checks or alerts.
+				p.RegistrationIDs, p.NodeIDs = []string{p.RegistrationID}, []string{views[p.RegistrationID].Node.ID}
+				input.NodeIDs = slices.Clone(p.NodeIDs)
+				command.Deleted = false
+				body, err := json.Marshal(input)
+				if err != nil {
+					return err
+				}
+				command.Monitor = body
+			}
 		}
 		commands[p.ID] = command
 		p.State = "pending"
 	}
 	candidatePlan := *plan
 	candidatePlan.Commands = commands
+	activePlacements := slices.DeleteFunc(slices.Clone(placements), func(p dashboardFleetPlacement) bool { return p.State == "removed" })
 	// Validate every anchor before any monitor writes. Older nodes validate copied
 	// references again after staging settings through their original resource APIs.
 	// Missing explicit node-local channels/tags/groups are never dropped.
-	for _, p := range placements {
+	for _, p := range activePlacements {
 		if !d.fleetAuthorized(*row) {
 			return fail(403, "Deployment authorization changed")
 		}
@@ -1369,10 +1411,10 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			return fail(response.StatusCode, "A node refused the deployment preflight; check its version, revision and local channel, tag or group references")
 		}
 	}
-	if err := d.prepareLegacyFleetResources(ctx, *row, plan, placements); err != nil {
+	if err := d.prepareLegacyFleetResources(ctx, *row, plan, activePlacements); err != nil {
 		return err
 	}
-	for _, p := range placements {
+	for _, p := range activePlacements {
 		if !plan.LegacyRegistrations[p.RegistrationID] {
 			continue
 		}
@@ -1520,6 +1562,7 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 					// be edited safely. An uncertain POST remains prepared forever
 					// until read-back confirms it; it is never issued again.
 					if plan.Unsent[p.ID] && fleetCanReconcile(row, plan, map[string]string{}) {
+						resumeForgetRetarget(&row, &plan)
 						plan.Prepared, plan.Commands = false, nil
 					}
 				}
@@ -1585,6 +1628,24 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			return
 		}
 	}
+	if plan.RetargetAfterReplay {
+		resumeForgetRetarget(&row, &plan)
+		row.State, row.RetryAt, row.Reason = "pending", 0, "Updating remaining runners after local node removal"
+		save()
+		return
+	}
+	for _, p := range row.Placements {
+		command := plan.Commands[p.ID]
+		if plan.ForgetHandoffs[p.ID] && command.Adopt && !command.Deleted &&
+			(plan.Deleted || !slices.Contains(row.RegistrationIDs, p.RegistrationID)) {
+			plan.Prepared, plan.Commands, plan.ObservedRevisions = false, nil, nil
+			row.State, row.RetryAt, row.Reason = "pending", 0, "Retiring the surviving monitor after its confirmed handoff"
+			save()
+			return
+		}
+	}
+	plan.ForgottenNodeIDs = nil
+	plan.ForgetHandoffs = nil
 	// Non-following settings snapshots are needed only until all placements
 	// confirm them. Do not replay frozen channel/tag data on later group edits.
 	finishFrozenFleetSettings(row, &plan)

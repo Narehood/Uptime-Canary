@@ -1,6 +1,7 @@
 // Real React controls and real Go cleanup, using only the harness's private
 // dashboard, disabled monitors and loopback nodes. No provider sends.
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 
 export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until, fill, click, ready, owner, registrations }) {
   const q = JSON.stringify;
@@ -98,5 +99,72 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
     assert.equal(accounts.filter(account => account.id?.startsWith('dashboard-')).length, 0, 'revocation removed this dashboard delegation');
     await page.send('Emulation.clearDeviceMetricsOverride');
     return { sharedMonitorKept: true, lastRunnerRetired: true, oldManagementAnchorGone: true, revocationConfirmed: true, blockedOperationCleared: true };
+  });
+
+  await step('Node removal: Remove now clears an already-pending offline node and retains its shared monitor', async () => {
+    const id = 'review-offline-removal';
+    const remote = await fixture.startNode(id, { CANARY_NODE_ID: id, CANARY_NODE_NAME: 'Offline removal fixture', CANARY_ADMIN_TOKEN: A.token, CANARY_CLUSTER_TOKEN: 'private-offline-removal-cluster-token-2026' }, await fixture.freePort());
+    try {
+      const verified = await api('/api/dashboard/verify', 'POST', { label: 'Offline removal fixture', url: remote.url, token: A.token });
+      assert.equal(verified.status, 200);
+      const enrolled = await api('/api/dashboard/nodes', 'POST', { ticket: verified.value.ticket });
+      assert.equal(enrolled.status, 201);
+      const entry = enrolled.value;
+      const sharedId = 'cd190001fe274968a5fe000000000004', soloId = 'cd190001fe274968a5fe000000000005';
+      for (const [requestId, runners] of [[sharedId, [entry.id, survivor.id]], [soloId, [entry.id]]]) {
+        assert.equal((await api('/api/dashboard/fleet/monitors', 'POST', { requestId, registrationIds: runners, monitor: { name: requestId === sharedId ? 'Offline shared fixture' : 'Offline solo fixture', type: 'manual', target: 'manual', enabled: false, intervalMs: 60000, timeoutMs: 1000, nodeIds: [id], notificationIds: [] } })).status, 202);
+      }
+      await until(async () => (await api('/api/dashboard/fleet/monitors')).value.filter(row => [sharedId, soloId].includes(row.id)).every(row => row.state === 'applied'), 'offline fixtures applied', 60000);
+      const original = (await api('/api/dashboard/fleet/monitors')).value.find(row => row.id === sharedId).placements.find(p => p.registrationId === survivor.id).monitorId;
+      await remote.stop();
+      assert.equal((await api(`/api/dashboard/nodes/${entry.id}`, 'DELETE', { force: true, confirmation: entry.label })).status, 202);
+      await until(async () => (await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id && row.state === 'removing'), 'existing removal is pending');
+      await page.eval('location.hash="#/nodes"'); await ready();
+      // This fixture enrolled through its direct API, outside the browser's
+      // mutation callbacks. Refresh the catalogue through a real visible control.
+      await click('Check now', `article[aria-labelledby=${q('r-' + survivor.id)}]`);
+      await until(() => page.eval(`!!document.getElementById(${q('r-' + entry.id)})`), 'offline card loaded');
+      const card = `article[aria-labelledby=${q('r-' + entry.id)}]`;
+      await click('Remove now', card);
+      await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'pending-node confirmation opens');
+      assert.match(await page.eval('document.querySelector("dialog[open]").innerText'), /unreachable node may keep running its own checks/iu);
+      await fill(`Type “${entry.label}” to confirm`, 'wrong name', 'dialog[open]');
+      assert.ok(await page.eval('document.querySelector("dialog[open] button[type=submit]").disabled'));
+      await fill(`Type “${entry.label}” to confirm`, entry.label, 'dialog[open]');
+      await click('Remove now', 'dialog[open]');
+      await until(() => page.eval('!document.querySelector("dialog[open]")'), 'local removal accepted');
+      await until(async () => !(await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id), 'offline registry entry removed locally', 45000);
+      await until(() => page.eval(`!document.getElementById(${q('r-' + entry.id)})`), 'offline card disappears', 30000);
+      await until(async () => (await api('/api/dashboard/fleet/monitors')).value.find(row => row.id === sharedId)?.state === 'applied', 'offline shared monitor retained', 45000);
+      const rows = (await api('/api/dashboard/fleet/monitors')).value;
+      assert.equal(rows.find(row => row.id === soloId).state, 'removed');
+      assert.deepEqual(rows.find(row => row.id === sharedId).registrationIds, [survivor.id]);
+      assert.ok(rows.find(row => row.id === sharedId).placements.some(p => p.state === 'applied' && p.registrationIds.includes(survivor.id) && p.monitorId === original));
+      // Local removal must not hide the remaining authority-renewal action.
+      const revocations = await api('/api/dashboard/node-revocations');
+      assert.equal(revocations.status, 200);
+      assert.ok(revocations.value.some(row => row.id === entry.id && row.label === entry.label));
+      await until(() => page.eval(`!!document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)})`), 'detached access cleanup visible', 30000);
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
+      await page.eval(`document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)}).scrollIntoView({block:'center'})`);
+      const cleanupWidth = await page.eval(`(() => {const row=document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)});return {width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,row:row.clientWidth,text:row.querySelector('.grow').clientWidth};})()`);
+      writeFileSync(new URL('../.canary/node-revocation-current.png', import.meta.url), Buffer.from((await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+      assert.ok(cleanupWidth.scroll <= cleanupWidth.width + 1, 'detached cleanup actions must fit on a narrow screen');
+      assert.ok(cleanupWidth.text >= cleanupWidth.row * 0.55, 'detached cleanup must keep its explanation readable beside the action');
+      await click(`Authorize revocation for ${entry.label}`);
+      await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'revocation authority dialog opens');
+      assert.match(await page.eval('document.querySelector("dialog[open]").innerText'), /already removed/iu);
+      assert.ok(await page.eval('document.activeElement===document.querySelector("dialog[open] input")'), 'renewal name field owns focus');
+      const beforeRenewal = fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${entry.id}`).length;
+      await fill(`Type “${entry.label}” to confirm`, 'wrong name', 'dialog[open]');
+      await page.eval('document.querySelector("dialog[open] form").requestSubmit()');
+      assert.equal(fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${entry.id}`).length, beforeRenewal);
+      await fill(`Type “${entry.label}” to confirm`, entry.label, 'dialog[open]');
+      await click('Authorize revocation', 'dialog[open]');
+      await until(() => page.eval('!document.querySelector("dialog[open]")'), 'revocation authority renewed');
+      assert.equal(fixture.stats().paths.filter(row => row.method === 'DELETE' && row.path === `/api/dashboard/nodes/${entry.id}`).length, beforeRenewal + 1);
+      assert.ok(!(await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id), 'renewal cannot reattach the node');
+      return { alreadyPending: true, stoppedNode: true, exactNameRequired: true, localEntryRemoved: true, survivorPhysicalMonitorKept: true, lastRunnerRetiredLocally: true, postDetachRenewalDiscoverable: true, renewalRequests: 1 };
+    } finally { await page.send('Emulation.clearDeviceMetricsOverride'); if (remote.running()) await remote.stop(); }
   });
 }

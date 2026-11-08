@@ -12,10 +12,11 @@ import (
 // Kept inside the encrypted role bundle. Acceptance is durable before any
 // cleanup; neither a closed browser nor a dashboard restart cancels the work.
 type dashboardNodeRemoval struct {
-	ActorID      string   `json:"actorId"`
-	ActorVersion uint64   `json:"actorVersion"`
-	Phase        string   `json:"phase"`
-	Deployments  []string `json:"deployments,omitempty"`
+	ActorID         string                 `json:"actorId"`
+	ActorVersion    uint64                 `json:"actorVersion"`
+	Phase           string                 `json:"phase"`
+	Deployments     []string               `json:"deployments,omitempty"`
+	AbandonedFleets []dashboardFleetRecord `json:"abandonedFleets,omitempty"`
 }
 
 func dashboardNodePending(row registeredNodeRecord) bool {
@@ -30,9 +31,11 @@ func removalAffects(row dashboardFleetRecord, plan dashboardFleetPlan, id string
 		row.Source != nil && row.Source.RegistrationID == id || plan.NotificationSourceRegistrationID == id || plan.NativeResourceIDs[id] != nil {
 		return true
 	}
-	for _, p := range row.Placements {
-		if p.State != "removed" && (p.RegistrationID == id || slices.Contains(p.RegistrationIDs, id) || slices.Contains(p.RetiringRegistrationIDs, id)) {
-			return true
+	for _, placements := range [][]dashboardFleetPlacement{row.Placements, plan.AfterForget} {
+		for _, p := range placements {
+			if p.State != "removed" && (p.RegistrationID == id || slices.Contains(p.RegistrationIDs, id) || slices.Contains(p.RetiringRegistrationIDs, id)) {
+				return true
+			}
 		}
 	}
 	return false
@@ -265,6 +268,9 @@ func freezeRemovalReferences(row dashboardFleetRecord, plan *dashboardFleetPlan,
 // A command marked Unsent has not crossed the durable pre-send boundary.
 // Only a wholly unstarted last-runner definition can be cancelled this way.
 func removalCanCancelUnsent(row dashboardFleetRecord, plan dashboardFleetPlan, id string) bool {
+	if len(plan.AfterForget) > 0 || len(plan.ForgetHandoffs) > 0 {
+		return false // A sequence-zero handoff can still name a live physical monitor.
+	}
 	if len(row.RegistrationIDs) != 1 || row.RegistrationIDs[0] != id {
 		return false
 	}

@@ -63,8 +63,7 @@ func (d *Dashboard) outboundNodeCall(ctx context.Context, row registeredNodeReco
 		return nil, nil, fail(400, "Request is not supported by the node connection")
 	}
 	d.mu.Lock()
-	current, exists := d.registry[row.ID]
-	allowed := outboundCallAllowed(current, row, exists, method, target)
+	allowed := d.outboundCallAllowedLocked(row, method, target)
 	var slots chan struct{}
 	if allowed {
 		if d.nodeCallSlots == nil {
@@ -90,8 +89,7 @@ func (d *Dashboard) outboundNodeCall(ctx context.Context, row registeredNodeReco
 		return nil, nil, fail(504, "The node connection timed out while waiting for capacity")
 	}
 	d.mu.Lock()
-	current, exists = d.registry[row.ID]
-	allowed = outboundCallAllowed(current, row, exists, method, target)
+	allowed = d.outboundCallAllowedLocked(row, method, target)
 	d.mu.Unlock()
 	if !allowed {
 		return nil, nil, fail(409, "The node registration is unavailable or an operation is pending")
@@ -120,6 +118,24 @@ func (d *Dashboard) outboundNodeCall(ctx context.Context, row registeredNodeReco
 	response.Header.Set("Content-Type", result.ContentType)
 	response.Header.Set("X-Canary-Node-Id", result.NodeID)
 	return response, result.Body, nil
+}
+
+// Caller holds d.mu. A detached registration admits only its exact revocation
+// endpoint, through the authenticated journal and its current administrator.
+func (d *Dashboard) outboundCallAllowedLocked(row registeredNodeRecord, method, target string) bool {
+	if current, exists := d.registry[row.ID]; exists {
+		return outboundCallAllowed(current, row, true, method, target)
+	}
+	current, exists := d.forgottenNodes[row.ID]
+	if !exists || method != "DELETE" || target != "/api/dashboard-enrollments/"+row.ID {
+		return false
+	}
+	secret, err := d.openSecrets(current)
+	if err != nil || secret.Removal == nil || secret.Removal.Phase != "forget-revoke" || !d.fleetAuthorized(dashboardFleetRecord{ActorID: secret.Removal.ActorID, ActorRole: "admin", ActorVersion: secret.Removal.ActorVersion}) {
+		return false
+	}
+	current.State = "removing"
+	return outboundCallAllowed(current, row, true, method, target)
 }
 
 func outboundCallAllowed(current, row registeredNodeRecord, exists bool, method, target string) bool {

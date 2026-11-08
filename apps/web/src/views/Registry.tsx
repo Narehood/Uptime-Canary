@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { NodeVerification, RegisteredNode } from '@uptime-canary/shared';
-import { ApiFailure, describeFailure, isAbort, tlsFingerprintValue, type RegisteredNodeEdit } from '../api';
+import { ApiFailure, describeFailure, isAbort, tlsFingerprintValue, type NodeRevocation, type RegisteredNodeEdit } from '../api';
 import { useCanary } from '../context';
 import {
   canRecoverAccess, certificateRefused, credentialProblem, editChanges, editFailure, httpsAddress, labelProblem, nodeActions, nodeAddressProblem, nodeStateInfo,
@@ -9,7 +9,7 @@ import {
 } from '../dashboard';
 import { ago, elapsed, plural } from '../format';
 import { pageOrigin } from '../gateway';
-import { useNow, useSummaryFocus } from '../hooks';
+import { useNow, useResource, useSummaryFocus, type Resource } from '../hooks';
 import { notify } from '../notices';
 import { href, navigate } from '../router';
 import { session } from '../session';
@@ -91,6 +91,7 @@ export function RegistryView({ home = false }: { home?: boolean }) {
           </p>
         </>
       )}
+      {!home && admin ? <PendingRevocationsCard /> : null}
       {!home && selection && !connection.awaiting ? <PeersCard /> : null}
       {adding ? <AddNodeDialog onClose={() => setAdding(false)} /> : null}
       {removing ? <RemoveNodeDialog key={removing.id} node={removing} onClose={() => setRemoving(null)} /> : null}
@@ -223,7 +224,7 @@ function NodeCard({ node, onRemove, onEdit, onRotate, onRecover }: {
         {recover ? <button type="button" className="btn sm" onClick={() => onRecover(node)} disabled={busy !== null} aria-label={`Recover access to ${node.label}`}><Icon name="key" />Recover access</button> : null}
         {actions.edit ? <button type="button" className="btn sm" onClick={() => onEdit(node)} disabled={busy !== null} aria-label={`Edit ${node.label}`}><Icon name="edit" />Edit</button> : null}
         {actions.rotate ? <button type="button" className="btn sm" onClick={() => onRotate(node)} disabled={busy !== null} aria-label={`Rotate access for ${node.label}`}><Icon name="key" />Rotate access</button> : null}
-        {actions.remove ? <button type="button" className="btn sm danger" onClick={() => onRemove(node)} disabled={busy !== null}><Icon name="trash" />Remove</button> : null}
+        {actions.remove ? <button type="button" className="btn sm danger" onClick={() => onRemove(node)} disabled={busy !== null}><Icon name="trash" />{node.state === 'removing' ? 'Remove now' : 'Remove'}</button> : null}
       </div>
       {node.local ? <p className="small muted">Set by this deployment’s configuration, so it can’t be removed here, and its address changes only there.</p> : null}
       {admin && node.state === 'credential-refused' ? <p className="small muted">To give it new credentials, use Rotate access with a current administrator credential from the node.</p> : null}
@@ -751,8 +752,9 @@ export function RemoveNodeDialog({ node: opened, onClose }: { node: RegisteredNo
 
   // The list keeps refreshing while this is open: another administrator may rename the entry, or start or finish its removal.
   const gone = registry.list !== null && !listed;
+  const forget = opened.state === 'removing';
   const started = node.state === 'removing';
-  const settled = gone || started;
+  const settled = gone || (started && !forget);
   const confirmed = !settled && typed === node.label;
   const outbound = node.connection === 'outbound';
   const problem = removalProblem(node);
@@ -766,6 +768,15 @@ export function RemoveNodeDialog({ node: opened, onClose }: { node: RegisteredNo
     if (busy || !confirmed) return;
     setBusy(true); setFailure(null);
     try {
+      if (forget) {
+        await api.forgetNode(opened.id, typed);
+        if (!stillCurrent()) return;
+        notify(`Removal of ${node.label} from this dashboard is queued locally. An unreachable node may keep its own checks running; access revocation retries separately.`);
+        onClose(); fleet?.reload();
+        if (selection?.id === opened.id) select(null);
+        else registry.reload();
+        return;
+      }
       const result = await api.forceRemoveNode(opened.id, typed);
       if (!stillCurrent()) return;
       notify(result.removed
@@ -790,15 +801,21 @@ export function RemoveNodeDialog({ node: opened, onClose }: { node: RegisteredNo
       <form className="connect-form" onSubmit={event => { void remove(event); }} noValidate aria-busy={busy}>
         {gone ? (
           <Banner tone="info" title="This node is no longer on this dashboard">An administrator may have removed it, or its removal finished. There’s nothing left to confirm.</Banner>
-        ) : started ? (
+        ) : started && !forget ? (
           <Banner tone="info" title="This node’s removal already started">Its card shows the progress. There’s nothing left to confirm.</Banner>
         ) : (
           <>
+            {forget ? <>
+              <p>Remove this pending node from the dashboard without waiting for it to answer. Its node-group memberships and dashboard monitor assignments are removed locally in the background.</p>
+              <p className="modal-note"><b>An unreachable node may keep running its own checks and sending alerts.</b> This action cannot confirm they stopped. Shared monitors stay on their remaining nodes; definitions with no nodes left are retired on this dashboard.</p>
+              <p className="small">The dashboard retains an encrypted access-revocation record and retries separately when possible. This also works for removals started before this update. Keep the dashboard running until its local cleanup finishes.</p>
+            </> : <>
             <p>This dashboard stops reading <span className="mono">{node.nodeId}</span> for every account and takes it out of its node groups and monitor placements, so there’s nothing to detach first.</p>
             <p className="modal-note"><b>Monitors that run only on this node are retired and stop running.</b> Monitors that also run on other nodes keep running there, and node groups left empty are removed. Once queued, this can’t be cancelled.</p>
             {problem ? <p className="small fwarn"><Glyph tone="warn" /><span>{problem}</span></p> : null}
             <p className="small">The node keeps running, with its own checks, accounts, data and peers: no service is stopped and no database deleted. Monitors that stay keep the channels, tags and groups they last copied from it, and stop following it.</p>
             <p className="small">{timing}</p>
+            </>}
             {node.label !== opened.label && typed !== node.label ? <Banner tone="info" title="This node was renamed while this was open">It’s now “{node.label}”, so type that name to confirm.</Banner> : null}
             {failure ? <ErrorSummary ref={summaryRef} title={failure.title} errors={[]}><p>{failure.text}</p></ErrorSummary> : null}
             {/* Repeated spaces count in the name, so they have to show, and a long name has to wrap. */}
@@ -812,7 +829,140 @@ export function RemoveNodeDialog({ node: opened, onClose }: { node: RegisteredNo
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
             <button type="button" className="btn" onClick={onClose} disabled={busy}>{settled ? 'Close' : 'Cancel'}</button>
-            {settled ? null : <button type="submit" className="btn danger-solid" disabled={busy || !confirmed}><Icon name="trash" />{busy ? 'Queuing removal…' : 'Remove node'}</button>}
+            {settled ? null : <button type="submit" className="btn danger-solid" disabled={busy || !confirmed}><Icon name="trash" />{busy ? 'Queuing removal…' : forget ? 'Remove now' : 'Remove node'}</button>}
+          </span>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ----- Pending access revocations: what's left to do on nodes already removed from this dashboard (administrators only)
+
+/**
+ * Nodes whose local removal is done and whose access revocation isn't confirmed yet. They aren't registry entries, can't
+ * be selected, and carry no address or credential. A list that can't be read says so, because silence here means none
+ * are waiting. Renders nothing while loading or when the server reports none.
+ */
+function PendingRevocationsCard() {
+  const { api, connection } = useCanary();
+  const revocations = useResource(`${connection.identity}|node-revocations`, signal => api.nodeRevocations(signal), 10_000);
+  const now = useNow(5000);
+  const [authorizing, setAuthorizing] = useState<NodeRevocation | null>(null);
+  const rows = revocations.data ?? [];
+  const checked = revocations.loadedAt === undefined ? null : ago(revocations.loadedAt, now);
+  return (
+    <>
+      {rows.length || revocations.error ? (
+        <Card title="Pending access revocations" hint="Nodes already removed from this dashboard, where the access it set up isn’t confirmed revoked yet. Only administrators see them.">
+          {revocations.error ? (
+            <Banner tone="warn" title={rows.length ? 'This list couldn’t be refreshed' : 'Pending access revocations couldn’t be checked'}
+              actions={<button type="button" className="btn sm" onClick={revocations.reload}><Icon name="refresh" />Try again</button>}>
+              {describeFailure(revocations.error)} {rows.length ? `Showing what the dashboard’s server last sent${checked ? `, ${checked}` : ''}.` : 'Access cleanup may still be waiting; this doesn’t mean it finished.'}
+            </Banner>
+          ) : null}
+          {rows.length ? (
+            <div className="peer-pick revocation-list">
+              <ul>
+                {rows.map(row => {
+                  const status = row.authorizationRequired ? 'Administrator authorization required' : 'Retrying when the node is available';
+                  return (
+                    <li key={row.id} data-revocation-id={row.id}>
+                      <Glyph tone={row.authorizationRequired ? 'serious' : 'pending'} label={status} />
+                      <span className="grow wrap">
+                        <b>{row.label}</b> <span className="mono muted">{row.nodeId}</span>
+                        <span className="sub">{status}. {row.authorizationRequired ? 'The account that authorized this removal changed, so the cleanup waits for a current administrator.' : 'The dashboard’s server keeps trying on its own.'}</span>
+                      </span>
+                      <button type="button" className={`btn sm${row.authorizationRequired ? ' primary' : ''}`} onClick={() => setAuthorizing(row)} aria-label={`Authorize revocation for ${row.label}`}><Icon name="key" />Authorize revocation</button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+          {rows.length && !revocations.error && checked ? <p className="foot-note">Checked {checked}. A node stays here until it confirms the revocation.</p> : null}
+        </Card>
+      ) : null}
+      {/* Outside the card: a refresh that empties the list leaves an open dialog to say there's nothing left to authorize. */}
+      {authorizing ? <AuthorizeRevocationDialog key={authorizing.id} revocation={authorizing} revocations={revocations} onClose={() => setAuthorizing(null)} /> : null}
+    </>
+  );
+}
+
+/** A refusal changed nothing. Anything else may have lost the reply to an accepted request. */
+function authorizationFailure(error: unknown): Pick<ChangeFailure, 'title' | 'text'> {
+  const text = describeFailure(error, { preferDetail: true });
+  return error instanceof ApiFailure && error.status >= 400 && error.status < 500 && error.status !== 408
+    ? { title: 'Authorization wasn’t accepted', text }
+    : { title: 'The result isn’t known yet', text: `${period(text)} The dashboard’s server may have accepted it. Trying again only renews the same authorization.` };
+}
+
+/**
+ * Renews the saved authorization for one already-removed node's access cleanup, under the current administrator. What's
+ * sent is the typed name, which the server compares with the saved one. The answer confirms only that the renewal was
+ * saved: the revocation still depends on the node, and only the administrator repeats a failed attempt.
+ */
+function AuthorizeRevocationDialog({ revocation: opened, revocations, onClose }: { revocation: NodeRevocation; revocations: Resource<NodeRevocation[]>; onClose: () => void }) {
+  const { api, stillCurrent } = useCanary();
+  const listed = revocations.data?.find(row => row.id === opened.id);
+  const row = listed ?? opened;
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Pick<ChangeFailure, 'title' | 'text'> | null>(null);
+  const [summaryRef, failed] = useSummaryFocus();
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // A successful read that no longer has it: another administrator's renewal or the revocation may have settled it.
+  const gone = revocations.data !== undefined && !listed;
+  const confirmed = !gone && typed === row.label;
+  // Modal's showModal() focuses its Close button after React's autoFocus, so the field takes focus once the dialog is open.
+  useEffect(() => { fieldRef.current?.querySelector('input')?.focus({ preventScroll: true }); }, []);
+  // The field goes away once there's nothing to confirm, so focus moves to the one control left.
+  useEffect(() => { if (gone && !busy) closeRef.current?.focus({ preventScroll: true }); }, [gone, busy]);
+
+  const authorize = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (busy || !confirmed) return;
+    setBusy(true); setFailure(null);
+    try {
+      await api.forgetNode(opened.id, typed);
+      if (!stillCurrent()) return;
+      notify(`Authorization for ${row.label} is queued. Access cleanup retries separately; this doesn’t confirm its access was revoked or that the node stopped.`);
+      revocations.reload();
+      onClose();
+    } catch (error) {
+      if (!stillCurrent()) return;
+      // Reads the list only, so a cleanup that settled meanwhile shows here.
+      revocations.reload();
+      setFailure(authorizationFailure(error));
+      failed();
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={<>Authorize revocation for “{row.label}”?</>} onClose={onClose} busy={busy}>
+      <form className="connect-form" onSubmit={event => { void authorize(event); }} noValidate aria-busy={busy}>
+        {gone ? (
+          <Banner tone="info" title="This access cleanup is no longer waiting">The dashboard’s server no longer lists it, so there’s nothing left to authorize.</Banner>
+        ) : (
+          <>
+            <p className="wrap">This node is already removed from this dashboard. Authorizing lets the dashboard’s server keep trying to revoke the access it set up on <span className="mono">{row.nodeId}</span>, under your account.</p>
+            <p className="modal-note"><b>Only the access cleanup retries.</b> This doesn’t restore the registration or send monitor changes to the node, and it can’t confirm the node stopped running its own checks.</p>
+            <p className="small">{row.authorizationRequired ? 'The cleanup is waiting for a current administrator.' : 'The cleanup isn’t waiting for an administrator right now, so this only renews its saved authorization.'} The revocation still needs the node to answer, so it may stay listed until then.</p>
+            {failure ? <ErrorSummary ref={summaryRef} title={failure.title} errors={[]}><p>{failure.text}</p></ErrorSummary> : null}
+            {/* Repeated spaces count in the name, so they have to show, and a long name has to wrap. */}
+            <div ref={fieldRef} className="wrap" style={{ whiteSpace: 'pre-wrap' }}>
+              <TextField label={`Type “${row.label}” to confirm`} value={typed} onChange={setTyped} disabled={busy}
+                hint="Its name on this dashboard, without the quotes. Capitals and spaces must match." />
+            </div>
+          </>
+        )}
+        <div className="modal-foot">
+          <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
+          <span className="row-wrap">
+            <button ref={closeRef} type="button" className="btn" onClick={onClose} disabled={busy}>{gone ? 'Close' : 'Cancel'}</button>
+            {gone ? null : <button type="submit" className="btn primary" disabled={busy || !confirmed}><Icon name="key" />{busy ? 'Authorizing…' : 'Authorize revocation'}</button>}
           </span>
         </div>
       </form>
