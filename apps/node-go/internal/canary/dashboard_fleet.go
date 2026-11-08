@@ -1302,12 +1302,21 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			command.MonitorID = p.MonitorID
 			if command.Deleted && plan.ForgetHandoffs[p.ID] {
 				// Existing nodes require adoption before retirement. Preserve the
-				// live copy's settings, first assigning only this surviving anchor;
+				// live copy's settings but disable execution on the surviving anchor;
 				// the next saved sequence deletes this same physical monitor.
-				if current == nil || current.ConfigConflict {
+				if current == nil {
+					revision, err := d.confirmForgottenTombstones(ctx, *row, *p)
+					if err != nil {
+						return err
+					}
+					p.State, p.Revision, p.RetiringRegistrationIDs = "removed", revision, nil
+					continue // Read-back proves deletion; no placement receipt is invented.
+				}
+				if current.ConfigConflict {
 					return fail(409, "Review the surviving monitor before completing its removal")
 				}
 				input := current.Monitor.MonitorInput
+				input.Enabled = false // Retirement adoption must never start checks or alerts.
 				p.RegistrationIDs, p.NodeIDs = []string{p.RegistrationID}, []string{views[p.RegistrationID].Node.ID}
 				input.NodeIDs = slices.Clone(p.NodeIDs)
 				command.Deleted = false
@@ -1323,10 +1332,11 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 	}
 	candidatePlan := *plan
 	candidatePlan.Commands = commands
+	activePlacements := slices.DeleteFunc(slices.Clone(placements), func(p dashboardFleetPlacement) bool { return p.State == "removed" })
 	// Validate every anchor before any monitor writes. Older nodes validate copied
 	// references again after staging settings through their original resource APIs.
 	// Missing explicit node-local channels/tags/groups are never dropped.
-	for _, p := range placements {
+	for _, p := range activePlacements {
 		if !d.fleetAuthorized(*row) {
 			return fail(403, "Deployment authorization changed")
 		}
@@ -1401,10 +1411,10 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			return fail(response.StatusCode, "A node refused the deployment preflight; check its version, revision and local channel, tag or group references")
 		}
 	}
-	if err := d.prepareLegacyFleetResources(ctx, *row, plan, placements); err != nil {
+	if err := d.prepareLegacyFleetResources(ctx, *row, plan, activePlacements); err != nil {
 		return err
 	}
-	for _, p := range placements {
+	for _, p := range activePlacements {
 		if !plan.LegacyRegistrations[p.RegistrationID] {
 			continue
 		}

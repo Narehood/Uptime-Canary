@@ -172,7 +172,7 @@ func (d *Dashboard) registryRequest(w http.ResponseWriter, r *http.Request, acto
 		return
 	}
 	if p == "/api/dashboard/node-revocations" && r.Method == "GET" {
-		d.listNodeRevocations(w)
+		d.listNodeRevocations(w, r, actor)
 		return
 	}
 	if p == "/api/dashboard/verify" && r.Method == "POST" {

@@ -268,6 +268,9 @@ func freezeRemovalReferences(row dashboardFleetRecord, plan *dashboardFleetPlan,
 // A command marked Unsent has not crossed the durable pre-send boundary.
 // Only a wholly unstarted last-runner definition can be cancelled this way.
 func removalCanCancelUnsent(row dashboardFleetRecord, plan dashboardFleetPlan, id string) bool {
+	if len(plan.AfterForget) > 0 || len(plan.ForgetHandoffs) > 0 {
+		return false // A sequence-zero handoff can still name a live physical monitor.
+	}
 	if len(row.RegistrationIDs) != 1 || row.RegistrationIDs[0] != id {
 		return false
 	}

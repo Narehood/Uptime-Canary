@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -67,13 +68,18 @@ type pendingNodeRevocation struct {
 	AuthorizationRequired bool   `json:"authorizationRequired"`
 }
 
-func (d *Dashboard) listNodeRevocations(w http.ResponseWriter) {
+func (d *Dashboard) listNodeRevocations(w http.ResponseWriter, r *http.Request, actor AccountView) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	if err := d.currentActor(r, actor, true); err != nil {
+		d.mu.Unlock()
+		errorReply(w, err)
+		return
+	}
 	out := []pendingNodeRevocation{}
 	for id, row := range d.forgottenNodes {
 		secret, err := d.openSecrets(row)
 		if err != nil {
+			d.mu.Unlock()
 			errorReply(w, fail(503, "Pending node access revocations cannot be read"))
 			return
 		}
@@ -83,6 +89,7 @@ func (d *Dashboard) listNodeRevocations(w http.ResponseWriter) {
 		out = append(out, pendingNodeRevocation{ID: id, Label: row.Label, NodeID: row.NodeID,
 			AuthorizationRequired: !d.fleetAuthorized(dashboardFleetRecord{ActorID: secret.Removal.ActorID, ActorRole: "admin", ActorVersion: secret.Removal.ActorVersion})})
 	}
+	d.mu.Unlock()
 	slices.SortFunc(out, func(a, b pendingNodeRevocation) int { return strings.Compare(a.ID, b.ID) })
 	reply(w, 200, out)
 }
@@ -425,4 +432,38 @@ func (d *Dashboard) runForgottenNodes(ctx context.Context) {
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+// A peer may already have replicated a deletion whose anchor lost its reply.
+// Require a single identical tombstone from every remaining/retiring peer;
+// absence from the live overview alone is not evidence of deletion.
+func (d *Dashboard) confirmForgottenTombstones(ctx context.Context, row dashboardFleetRecord, p dashboardFleetPlacement) (string, error) {
+	revision := ""
+	ids := unique(append(append([]string{p.RegistrationID}, p.RegistrationIDs...), p.RetiringRegistrationIDs...))
+	for _, id := range ids {
+		if !d.fleetAuthorized(row) {
+			return "", fail(403, "Deployment authorization changed")
+		}
+		_, target, err := d.fleetRead(ctx, id, row.ActorRole)
+		if err != nil {
+			return "", err
+		}
+		secret, err := d.openSecrets(target)
+		if err != nil {
+			return "", err
+		}
+		response, body, err := d.nodeRequest(ctx, target, secret.token(row.ActorRole), "GET", "/api/monitors/"+url.PathEscape(p.MonitorID)+"/conflicts", nil)
+		if err != nil || response.StatusCode != 200 {
+			return "", fail(502, "Waiting for every surviving node to confirm the monitor deletion")
+		}
+		var heads []Monitor
+		if json.Unmarshal(body, &heads) != nil || len(heads) != 1 || heads[0].ID != p.MonitorID || !heads[0].Deleted || identifier(heads[0].Revision, "revision") != nil {
+			return "", fail(409, "Review the surviving monitor's deletion before completing its handoff")
+		}
+		if revision != "" && revision != heads[0].Revision {
+			return "", fail(409, "Surviving nodes have not confirmed the same monitor deletion")
+		}
+		revision = heads[0].Revision
+	}
+	return revision, nil
 }

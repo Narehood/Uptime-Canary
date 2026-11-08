@@ -776,7 +776,7 @@ func TestForgetInvalidatesInFlightRefreshForChangedGroups(t *testing.T) {
 }
 
 func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
-	for _, mode := range []string{"delete-before-handoff", "retiring-peer", "lost-adoption-ack"} {
+	for _, mode := range []string{"delete-before-handoff", "retiring-peer", "lost-adoption-ack", "retiring-enabled"} {
 		t.Run(mode, func(t *testing.T) {
 			d, owner, _ := dashboardRegistryFixture(t)
 			a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
@@ -815,6 +815,16 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 				}
 			}
 			fleet := forgetFleetFixture(t, d, owner, []string{ra.ID, rb.ID}, nil)
+			if mode == "retiring-enabled" {
+				plan, _ := d.openFleet(fleet)
+				plan.Monitor.Enabled = true
+				d.mu.Lock()
+				err := d.saveFleet(nil, AccountView{}, fleet, plan)
+				d.mu.Unlock()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			for range 4 {
 				d.finishFleet(context.Background(), fleet.ID)
 				replicate()
@@ -828,7 +838,7 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 			if row.Placements[0].RegistrationID == rb.ID {
 				anchor, survivor, remaining = rb, ra, a
 			}
-			if mode == "retiring-peer" {
+			if mode == "retiring-peer" || mode == "retiring-enabled" {
 				w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": row.Revision})
 				if w.Code != 202 {
 					t.Fatal(w.Code, w.Body.String())
@@ -857,7 +867,7 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if mode != "retiring-peer" {
+			if mode != "retiring-peer" && mode != "retiring-enabled" {
 				pending := d.fleet[row.ID]
 				w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": pending.Revision})
 				if w.Code != 202 {
@@ -889,7 +899,7 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 			}
 			adopted := d.fleet[row.ID]
 			m := remaining.current(row.Placements[0].MonitorID)
-			if adopted.State != "pending" || len(adopted.Placements) != 1 || adopted.Placements[0].Sequence != 1 || m == nil || m.Deleted {
+			if adopted.State != "pending" || len(adopted.Placements) != 1 || adopted.Placements[0].Sequence != 1 || m == nil || m.Deleted || m.Enabled {
 				t.Fatal("handoff did not confirm before retirement", adopted.State, adopted.Reason)
 			}
 			for range 4 {
@@ -906,5 +916,214 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 				t.Fatal("survivor registration was removed")
 			}
 		})
+	}
+}
+
+func TestForgetReplicatedDeletionNeedsEveryPeerTombstone(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	a.peerSeen[b.ID], b.peerSeen[a.ID] = 1, 1
+	var offlineA, offlineB, loseAdoption, blockTombstones atomic.Bool
+	var placementWrites atomic.Int32
+	serve := func(n *Node, offline *atomic.Bool) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if offline.Load() {
+				http.Error(w, "offline", 503)
+				return
+			}
+			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") {
+				placementWrites.Add(1)
+			}
+			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && loseAdoption.Swap(false) {
+				recorder := httptest.NewRecorder()
+				n.ServeHTTP(recorder, r)
+				if recorder.Code != 200 && recorder.Code != 201 {
+					t.Error("fixture adoption failed", recorder.Code, recorder.Body.String())
+				}
+				w.Header().Set("X-Canary-Node-Id", n.ID)
+				errorReply(w, fail(503, "fixture lost adoption acknowledgement"))
+				return
+			}
+			if blockTombstones.Load() && strings.HasSuffix(r.URL.Path, "/conflicts") {
+				w.Header().Set("X-Canary-Node-Id", n.ID)
+				reply(w, 200, []Monitor{})
+				return
+			}
+			n.ServeHTTP(w, r)
+		})
+	}
+	sa, sb := httptest.NewServer(serve(a, &offlineA)), httptest.NewServer(serve(b, &offlineB))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	replicate := func() {
+		for _, pair := range [][2]*Node{{a, b}, {b, a}} {
+			for _, page := range causalCapacityPages(t, pair[0]) {
+				if err := pair[1].applySnapshot(page); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	fleet := forgetFleetFixture(t, d, owner, []string{ra.ID, rb.ID}, nil)
+	for range 4 {
+		d.finishFleet(context.Background(), fleet.ID)
+		replicate()
+	}
+	row := d.fleet[fleet.ID]
+	if row.State != "applied" || len(row.Placements) != 1 {
+		t.Fatal("HA fixture not applied", row.Reason)
+	}
+	anchor, survivor := ra, rb
+	remaining := b
+	if row.Placements[0].RegistrationID == rb.ID {
+		anchor, survivor, remaining = rb, ra, a
+	}
+
+	w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": row.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	loseAdoption.Store(true) // The old anchor applies DELETE, but its acknowledgement is lost.
+	d.finishFleet(context.Background(), row.ID)
+	replicate()
+	physical := row.Placements[0].MonitorID
+	if remaining.current(physical) != nil || len(remaining.heads[physical]) != 1 || !remaining.heads[physical][0].Monitor.Deleted {
+		t.Fatal("fixture deletion did not reach survivor")
+	}
+	forceNodeFixture(t, d, owner, anchor)
+	if anchor.ID == ra.ID {
+		offlineA.Store(true)
+	} else {
+		offlineB.Store(true)
+	}
+	forgetNodeFixture(t, d, owner, anchor)
+	if err := d.finishForgottenNode(context.Background(), anchor.ID); err != nil {
+		t.Fatal(err)
+	}
+	// A third retiring peer must independently confirm the same tombstone.
+	c := causalCapacityNode(t, "c", ":memory:")
+	var offlineC atomic.Bool
+	sc := httptest.NewServer(serve(c, &offlineC))
+	defer sc.Close()
+	rc := enrollDashboardNode(t, d, owner, sc.URL)
+	for _, page := range causalCapacityPages(t, remaining) {
+		if err := c.applySnapshot(page); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending := d.fleet[row.ID]
+	plan, _ := d.openFleet(pending)
+	pending.Placements[0].RetiringRegistrationIDs = unique(append(pending.Placements[0].RetiringRegistrationIDs, rc.ID))
+	d.mu.Lock()
+	err := d.saveFleet(nil, AccountView{}, pending, plan)
+	d.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeWrites := placementWrites.Load()
+	offlineC.Store(true)
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State == "removed" {
+		t.Fatal("unreadable retiring peer was treated as deleted")
+	}
+	offlineC.Store(false)
+	blockTombstones.Store(true)
+	d.finishFleet(context.Background(), row.ID)
+	if d.fleet[row.ID].State == "removed" {
+		t.Fatal("missing tombstone was treated as deletion evidence")
+	}
+	blockTombstones.Store(false)
+	pending = d.fleet[row.ID]
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/retry", owner, "", map[string]any{"revision": pending.Revision})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.finishFleet(context.Background(), row.ID)
+	finished := d.fleet[row.ID]
+	if finished.State != "removed" || finished.Placements[0].Sequence != 0 || placementWrites.Load() != beforeWrites || remaining.current(physical) != nil {
+		t.Fatal("replicated deletion was not read back without a write or invented receipt", finished.State, finished.Reason)
+	}
+	if _, ok := d.registry[survivor.ID]; !ok {
+		t.Fatal("survivor was removed")
+	}
+}
+
+type revocationLockWriter struct {
+	*httptest.ResponseRecorder
+	dashboard   *Dashboard
+	writeLocked bool
+}
+
+func (w *revocationLockWriter) Write(body []byte) (int, error) {
+	if w.dashboard.mu.TryLock() {
+		w.dashboard.mu.Unlock()
+	} else {
+		w.writeLocked = true
+	}
+	return w.ResponseRecorder.Write(body)
+}
+
+func TestDetachedRevocationListReauthorizesAndWritesWithoutLock(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "list-node")
+	server := httptest.NewServer(node)
+	defer server.Close()
+	reg := enrollDashboardNode(t, d, owner, server.URL)
+	forceNodeFixture(t, d, owner, reg)
+	forgetNodeFixture(t, d, owner, reg)
+	if err := d.finishForgottenNode(context.Background(), reg.ID); err != nil {
+		t.Fatal(err)
+	}
+	request := func() *http.Request {
+		r := httptest.NewRequest("GET", "/api/dashboard/node-revocations", nil)
+		r.Header.Set("Authorization", "Bearer "+owner)
+		return r
+	}
+	r := request()
+	actor, err := d.accounts.Authenticate(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := func() *revocationLockWriter {
+		return &revocationLockWriter{ResponseRecorder: httptest.NewRecorder(), dashboard: d}
+	}
+	good := writer()
+	d.listNodeRevocations(good, r, actor)
+	if good.Code != 200 || good.writeLocked {
+		t.Fatal("list wrote under dashboard lock", good.Code)
+	}
+	saved := d.forgottenNodes[reg.ID]
+	broken := saved
+	broken.Credentials = "unreadable fixture"
+	d.forgottenNodes[reg.ID] = broken
+	bad := writer()
+	d.listNodeRevocations(bad, request(), actor)
+	if bad.Code != 503 || bad.writeLocked {
+		t.Fatal("error response wrote under dashboard lock", bad.Code)
+	}
+	d.forgottenNodes[reg.ID] = saved
+	revokeFleetFixtureAccount(d, actor.ID)
+	denied := writer()
+	d.listNodeRevocations(denied, request(), actor)
+	if denied.Code < 400 || denied.writeLocked || strings.Contains(denied.Body.String(), reg.ID) {
+		t.Fatal("revoked administrator read detached identities", denied.Code)
+	}
+}
+
+func TestNodeRemovalCannotCancelDeferredPhysicalHandoffs(t *testing.T) {
+	row := dashboardFleetRecord{RegistrationIDs: []string{"departing"}, Placements: []dashboardFleetPlacement{{ID: "unsent", Sequence: 0}}}
+	plan := dashboardFleetPlan{Prepared: true, Unsent: map[string]bool{"unsent": true}}
+	if !removalCanCancelUnsent(row, plan, "departing") {
+		t.Fatal("ordinary never-started work became uncancellable")
+	}
+	plan.AfterForget = []dashboardFleetPlacement{{ID: "handoff", RegistrationID: "departing", MonitorID: "existing-physical-monitor"}}
+	if removalCanCancelUnsent(row, plan, "departing") {
+		t.Fatal("deferred physical monitor was bypassed")
+	}
+	plan.AfterForget = nil
+	plan.ForgetHandoffs = map[string]bool{"unsent": true}
+	if removalCanCancelUnsent(row, plan, "departing") {
+		t.Fatal("sequence-zero physical handoff was cancelled as unstarted")
 	}
 }
