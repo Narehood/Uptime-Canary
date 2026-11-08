@@ -68,6 +68,7 @@ func TestForgetAlreadyPendingOfflineNodeSurvivesRestartAndKeepsSharedMonitor(t *
 	offline.Store(true)
 	_, _ = d.finishEnrollment(context.Background(), ra.ID)
 	d.finishFleet(context.Background(), shared.ID)
+	d.finishFleet(context.Background(), solo.ID)
 	_, err := d.finishEnrollment(context.Background(), ra.ID)
 	if err == nil || !strings.Contains(d.registry[ra.ID].Error, "A selected node cannot be read yet") {
 		t.Fatal("fixture did not reproduce the already-pending failure", d.registry[ra.ID].Error)

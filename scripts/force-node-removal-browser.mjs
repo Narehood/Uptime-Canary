@@ -119,6 +119,9 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
       assert.equal((await api(`/api/dashboard/nodes/${entry.id}`, 'DELETE', { force: true, confirmation: entry.label })).status, 202);
       await until(async () => (await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id && row.state === 'removing'), 'existing removal is pending');
       await page.eval('location.hash="#/nodes"'); await ready();
+      // This fixture enrolled through its direct API, outside the browser's
+      // mutation callbacks. Refresh the catalogue through a real visible control.
+      await click('Check now', `document.getElementById(${q('r-' + survivor.id)}).closest('article')`);
       await until(() => page.eval(`!!document.getElementById(${q('r-' + entry.id)})`), 'offline card loaded');
       const card = `document.getElementById(${q('r-' + entry.id)}).closest('article')`;
       await click('Remove now', card);
