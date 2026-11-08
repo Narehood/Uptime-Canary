@@ -292,6 +292,19 @@ await check('removal and retry: 204 removed, 202 still removing, and a finished 
   assert.equal(api.describeFailure(local, { preferDetail: true }), 'The bundled local node is managed in deployment settings.');
 });
 
+await check('local detachment sends an explicit exact-name request without exposing node credentials', async () => {
+  on();
+  const client = new api.CanaryApi(PAGE, TOKEN).withRegisteredNode(REG);
+  const sent = await record(async () => {
+    answer = () => json(202, { ...ENTRY, state: 'removing' });
+    await client.forgetNode(REG, ENTRY.label);
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(pathOf(sent[0]), `/api/dashboard/nodes/${REG}`);
+  assert.equal(header(sent[0], HEADER), null);
+  assert.deepEqual(JSON.parse(sent[0].init.body), { force: true, forget: true, confirmation: ENTRY.label });
+});
+
 await check('force removal sends the exact typed name only to the dashboard and keeps accepted work pending', async () => {
   on();
   storageWrites.length = 0;

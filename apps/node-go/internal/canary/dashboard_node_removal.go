@@ -12,10 +12,11 @@ import (
 // Kept inside the encrypted role bundle. Acceptance is durable before any
 // cleanup; neither a closed browser nor a dashboard restart cancels the work.
 type dashboardNodeRemoval struct {
-	ActorID      string   `json:"actorId"`
-	ActorVersion uint64   `json:"actorVersion"`
-	Phase        string   `json:"phase"`
-	Deployments  []string `json:"deployments,omitempty"`
+	ActorID         string                 `json:"actorId"`
+	ActorVersion    uint64                 `json:"actorVersion"`
+	Phase           string                 `json:"phase"`
+	Deployments     []string               `json:"deployments,omitempty"`
+	AbandonedFleets []dashboardFleetRecord `json:"abandonedFleets,omitempty"`
 }
 
 func dashboardNodePending(row registeredNodeRecord) bool {

@@ -1045,6 +1045,16 @@ export class CanaryApi {
     return this.removeNode(id, signal, confirmation);
   }
 
+  /** Detach a pending node locally; remote revocation remains best effort. */
+  async forgetNode(id: string, confirmation: string, signal?: AbortSignal): Promise<void> {
+    try {
+      await this.own<unknown>(`/api/dashboard/nodes/${encodeURIComponent(checkRegistration(id))}`, 'DELETE', { force: true, forget: true, confirmation }, signal, NODE_CHANGE_TIMEOUT_MS);
+    } catch (error) {
+      if (error instanceof ApiFailure && error.status === 202) return;
+      throw error;
+    }
+  }
+
   // ----- node onboarding (administrators): the Add node wizard's settings and the invitations of nodes that connect to
   // this dashboard themselves. All of them are the dashboard's own routes. An invitation's token comes back only from
   // `createInvitation`, once; statuses never carry it, and nothing here keeps it.

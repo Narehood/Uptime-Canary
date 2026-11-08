@@ -102,6 +102,7 @@ type Dashboard struct {
 	mu                       sync.Mutex
 	fleetSettingsMu          sync.Mutex
 	registry                 map[string]registeredNodeRecord
+	forgottenNodes           map[string]registeredNodeRecord
 	tickets                  map[string]nodeVerification
 	busy                     map[string]bool
 	box                      cipher.AEAD
@@ -230,6 +231,9 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 			row.Error = ""
 		}
 		d.registry[id] = row
+	}
+	if err = d.loadForgottenNodes(); err != nil {
+		return nil, err
 	}
 	if err = d.loadInvitations(); err != nil {
 		return nil, err

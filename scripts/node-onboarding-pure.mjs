@@ -1065,6 +1065,17 @@ await check('force removal requires typed confirmation and never offers another 
   assert.match(text(dialog(ENTRY, [{ ...ENTRY, label: 'Renamed node' }])), /was renamed while this was open/u);
 });
 
+await check('pending removal offers a new exact-name local detachment without claiming the node stopped', () => {
+  const node = { ...ENTRY, state: 'removing' };
+  const markup = within('admin', [node], React.createElement(registryView.RemoveNodeDialog, { node, onClose: noop }));
+  assert.equal(tags(markup, 'input').length, 1);
+  const submit = tags(markup, 'button').map(attributes).find(button => button.get('type') === 'submit');
+  assert.ok(submit.has('disabled'));
+  assert.match(text(markup), /Remove now/u);
+  assert.match(text(markup), /unreachable node may keep running its own checks/u);
+  assert.match(text(markup), /before this update/u);
+});
+
 await check('sources: no storage, console, page address or navigation in the wizard; routes through own(); copy failure is explicit', () => {
   for (const path of ['src/onboarding.ts', 'src/views/NodeWizard.tsx']) {
     assert.doesNotMatch(read(path), /\bfetch\(|localStorage|sessionStorage|indexedDB|document\.cookie|console\.|navigate\(|href\(|pageOrigin|location\.|window\.open/u, path);

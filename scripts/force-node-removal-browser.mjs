@@ -99,4 +99,44 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
     await page.send('Emulation.clearDeviceMetricsOverride');
     return { sharedMonitorKept: true, lastRunnerRetired: true, oldManagementAnchorGone: true, revocationConfirmed: true, blockedOperationCleared: true };
   });
+
+  await step('Node removal: Remove now clears an already-pending offline node and retains its shared monitor', async () => {
+    const id = 'review-offline-removal';
+    const remote = await fixture.startNode(id, { CANARY_NODE_ID: id, CANARY_NODE_NAME: 'Offline removal fixture', CANARY_ADMIN_TOKEN: A.token, CANARY_CLUSTER_TOKEN: 'private-offline-removal-cluster-token-2026' }, await fixture.freePort());
+    try {
+      const verified = await api('/api/dashboard/verify', 'POST', { label: 'Offline removal fixture', url: remote.url, token: A.token });
+      assert.equal(verified.status, 200);
+      const enrolled = await api('/api/dashboard/nodes', 'POST', { ticket: verified.value.ticket });
+      assert.equal(enrolled.status, 201);
+      const entry = enrolled.value;
+      const sharedId = 'cd190001fe274968a5fe000000000004', soloId = 'cd190001fe274968a5fe000000000005';
+      for (const [requestId, runners] of [[sharedId, [entry.id, survivor.id]], [soloId, [entry.id]]]) {
+        assert.equal((await api('/api/dashboard/fleet/monitors', 'POST', { requestId, registrationIds: runners, monitor: { name: requestId === sharedId ? 'Offline shared fixture' : 'Offline solo fixture', type: 'manual', target: 'manual', enabled: false, intervalMs: 60000, timeoutMs: 1000, nodeIds: [id], notificationIds: [] } })).status, 202);
+      }
+      await until(async () => (await api('/api/dashboard/fleet/monitors')).value.filter(row => [sharedId, soloId].includes(row.id)).every(row => row.state === 'applied'), 'offline fixtures applied', 60000);
+      const original = (await api('/api/dashboard/fleet/monitors')).value.find(row => row.id === sharedId).placements.find(p => p.registrationId === survivor.id).monitorId;
+      await remote.stop();
+      assert.equal((await api(`/api/dashboard/nodes/${entry.id}`, 'DELETE', { force: true, confirmation: entry.label })).status, 202);
+      await until(async () => (await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id && row.state === 'removing'), 'existing removal is pending');
+      await page.eval('location.hash="#/nodes"'); await ready();
+      await until(() => page.eval(`!!document.getElementById(${q('r-' + entry.id)})`), 'offline card loaded');
+      const card = `document.getElementById(${q('r-' + entry.id)}).closest('article')`;
+      await click('Remove now', card);
+      await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'pending-node confirmation opens');
+      assert.match(await page.eval('document.querySelector("dialog[open]").innerText'), /unreachable node may keep running its own checks/iu);
+      await fill(`Type “${entry.label}” to confirm`, 'wrong name', 'dialog[open]');
+      assert.ok(await page.eval('document.querySelector("dialog[open] button[type=submit]").disabled'));
+      await fill(`Type “${entry.label}” to confirm`, entry.label, 'dialog[open]');
+      await click('Remove now', 'dialog[open]');
+      await until(() => page.eval('!document.querySelector("dialog[open]")'), 'local removal accepted');
+      await until(async () => !(await api('/api/dashboard/nodes')).value.some(row => row.id === entry.id), 'offline registry entry removed locally', 45000);
+      await until(() => page.eval(`!document.getElementById(${q('r-' + entry.id)})`), 'offline card disappears', 30000);
+      await until(async () => (await api('/api/dashboard/fleet/monitors')).value.find(row => row.id === sharedId)?.state === 'applied', 'offline shared monitor retained', 45000);
+      const rows = (await api('/api/dashboard/fleet/monitors')).value;
+      assert.equal(rows.find(row => row.id === soloId).state, 'removed');
+      assert.deepEqual(rows.find(row => row.id === sharedId).registrationIds, [survivor.id]);
+      assert.ok(rows.find(row => row.id === sharedId).placements.some(p => p.monitorId === original));
+      return { alreadyPending: true, stoppedNode: true, exactNameRequired: true, localEntryRemoved: true, survivorPhysicalMonitorKept: true, lastRunnerRetiredLocally: true };
+    } finally { if (remote.running()) await remote.stop(); }
+  });
 }

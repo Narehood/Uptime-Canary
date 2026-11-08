@@ -177,7 +177,7 @@ await check('card actions: each role is offered exactly what the dashboard’s s
     const remote = dashboard.nodeActions({ ...ENTRY, state }, true);
     assert.deepEqual(remote, {
       check: !pending, retry: pending ? retries[state] : null, edit: !pending, move: !pending,
-      rotate: !pending && state !== 'different-node', remove: state !== 'removing',
+      rotate: !pending && state !== 'different-node', remove: true,
     }, `admin, ${state}`);
     const local = dashboard.nodeActions({ ...LOCAL, state }, true);
     assert.deepEqual(local, {

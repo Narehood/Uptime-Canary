@@ -171,6 +171,12 @@ func (d *Dashboard) authenticateConnectionLocked(r *http.Request) (string, strin
 	if row, ok := d.registry[id]; ok && row.Connection == "outbound" && matches(row.ConnectionHash, token) {
 		return id, row.NodeID, row.State, nil
 	}
+	if row, ok := d.forgottenNodes[id]; ok && row.Connection == "outbound" && matches(row.ConnectionHash, token) {
+		secret, err := d.openSecrets(row)
+		if err == nil && secret.Removal != nil && secret.Removal.Phase == "forget-revoke" && d.fleetAuthorized(dashboardFleetRecord{ActorID: secret.Removal.ActorID, ActorRole: "admin", ActorVersion: secret.Removal.ActorVersion}) {
+			return id, row.NodeID, "removing", nil
+		}
+	}
 	if v, ok := d.invitations[id]; ok && v.State == "connected" && v.ExpiresAt > time.Now().UnixMilli() && d.invitationCreatorValid(v) && matches(v.ConnectionHash, token) {
 		return id, v.NodeID, "awaiting-confirmation", nil
 	}

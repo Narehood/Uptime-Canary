@@ -1,0 +1,473 @@
+package canary
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+	"uptime-canary/apps/node-go/internal/nodetls"
+)
+
+func forgetNodeFixture(t *testing.T, d *Dashboard, owner string, node RegisteredNode) {
+	t.Helper()
+	w := dashboardHTTP(d, "DELETE", "/api/dashboard/nodes/"+node.ID, owner, "", map[string]any{"force": true, "forget": true, "confirmation": node.Label})
+	if w.Code != 202 {
+		t.Fatal("local removal was not accepted", w.Code, w.Body.String())
+	}
+}
+
+func forgetFleetFixture(t *testing.T, d *Dashboard, owner string, ids []string, _ *fleetSourceReference) dashboardFleetRecord {
+	t.Helper()
+	id := strings.ReplaceAll(newID(), "-", "")
+	in := placementFixtureInput()
+	in.Enabled = false
+	w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", map[string]any{"requestId": id, "registrationIds": ids, "monitor": in})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	return d.fleet[id]
+}
+
+func TestForgetAlreadyPendingOfflineNodeSurvivesRestartAndKeepsSharedMonitor(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	var offline atomic.Bool
+	var calls atomic.Int32
+	sa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if offline.Load() {
+			http.Error(w, "offline fixture", 503)
+			return
+		}
+		a.ServeHTTP(w, r)
+	}))
+	sb := httptest.NewServer(b)
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	group := groupSyncFixture(t, d, owner, []string{ra.ID, rb.ID})
+	shared := forgetFleetFixture(t, d, owner, []string{ra.ID, rb.ID}, nil)
+	solo := forgetFleetFixture(t, d, owner, []string{ra.ID}, nil)
+	d.finishFleet(context.Background(), shared.ID)
+	d.finishFleet(context.Background(), solo.ID)
+	physical := ""
+	for _, p := range d.fleet[shared.ID].Placements {
+		if p.RegistrationID == rb.ID {
+			physical = p.MonitorID
+		}
+	}
+	if physical == "" {
+		t.Fatal("shared fixture has no survivor")
+	}
+	forceNodeFixture(t, d, owner, ra)
+	offline.Store(true)
+	_, _ = d.finishEnrollment(context.Background(), ra.ID)
+	d.finishFleet(context.Background(), shared.ID)
+	_, err := d.finishEnrollment(context.Background(), ra.ID)
+	if err == nil || !strings.Contains(d.registry[ra.ID].Error, "A selected node cannot be read yet") {
+		t.Fatal("fixture did not reproduce the already-pending failure", d.registry[ra.ID].Error)
+	}
+	d.busy[ra.ID], d.fleetBusy[shared.ID] = true, true
+	beforeCalls := calls.Load()
+	forgetNodeFixture(t, d, owner, ra)
+	if calls.Load() != beforeCalls || d.forgottenNodes[ra.ID].ID == "" {
+		t.Fatal("acceptance contacted the offline node or lost its journal")
+	}
+	if err := d.finishForgottenNode(context.Background(), ra.ID); err == nil {
+		t.Fatal("local removal raced a running worker")
+	}
+	delete(d.busy, ra.ID)
+	delete(d.fleetBusy, shared.ID)
+	d.Close()
+	restarted, err := NewDashboard(DashboardOptions{Accounts: d.accounts, Key: dashboardKeyFixture})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	d = restarted
+	if err := d.finishForgottenNode(context.Background(), ra.ID); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != beforeCalls {
+		t.Fatal("local cleanup tried to read the offline node")
+	}
+	if _, ok := d.registry[ra.ID]; ok {
+		t.Fatal("pending node stayed in the registry")
+	}
+	if d.fleet[solo.ID].State != "removed" || !slices.Equal(d.fleet[shared.ID].RegistrationIDs, []string{rb.ID}) {
+		t.Fatal("local monitor references survived removal")
+	}
+	g, ok, err := loadOne[dashboardNodeGroup](d.accounts.node.store, "dashboardNodeGroups", group.ID)
+	if err != nil || !ok || !slices.Equal(g.RegistrationIDs, []string{rb.ID}) {
+		t.Fatal("group membership survived removal", err)
+	}
+	for range 4 {
+		d.finishFleet(context.Background(), shared.ID)
+	}
+	if d.fleet[shared.ID].State != "applied" || b.current(physical) == nil || b.current(physical).Deleted {
+		t.Fatal("shared survivor changed identity or stopped", d.fleet[shared.ID].Reason)
+	}
+	if len(a.accounts) != 4 || len(d.forgottenNodes) != 1 {
+		t.Fatal("unreachable revocation was falsely confirmed")
+	}
+	if err := d.finishForgottenNode(context.Background(), ra.ID); err == nil {
+		t.Fatal("offline revocation reported success")
+	}
+	offline.Store(false)
+	if err := d.finishForgottenNode(context.Background(), ra.ID); err != nil {
+		t.Fatal("background revocation failed after reconnection", err)
+	}
+	if len(a.accounts) != 1 || len(d.forgottenNodes) != 0 {
+		t.Fatal("revocation did not finish")
+	}
+}
+
+func TestForgetNodeRequiresExactNameAndAdministrator(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	s := httptest.NewServer(node)
+	defer s.Close()
+	reg := enrollDashboardNode(t, d, owner, s.URL)
+	forceNodeFixture(t, d, owner, reg)
+	for _, confirmation := range []string{"", reg.Label + " ", "wrong"} {
+		w := dashboardHTTP(d, "DELETE", "/api/dashboard/nodes/"+reg.ID, owner, "", map[string]any{"force": true, "forget": true, "confirmation": confirmation})
+		if w.Code < 400 || len(d.forgottenNodes) != 0 {
+			t.Fatal("invalid name queued local deletion")
+		}
+	}
+	w := dashboardHTTP(d, "DELETE", "/api/dashboard/nodes/"+reg.ID, "", "", map[string]any{"force": true, "forget": true, "confirmation": reg.Label})
+	if w.Code != 401 || len(d.forgottenNodes) != 0 {
+		t.Fatal("anonymous local deletion accepted")
+	}
+	forgetNodeFixture(t, d, owner, reg)
+	first := d.forgottenNodes[reg.ID]
+	forgetNodeFixture(t, d, owner, reg)
+	second, _ := d.openSecrets(d.forgottenNodes[reg.ID])
+	prior, _ := d.openSecrets(first)
+	if !equalJSON(prior, second) || len(d.forgottenNodes) != 1 {
+		t.Fatal("repeat confirmation duplicated the cleanup")
+	}
+}
+
+func TestForgetNodeLocalCleanupRollsBackAtomically(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	node := dashboardRemoteFixture(t, "node-a")
+	s := httptest.NewServer(node)
+	defer s.Close()
+	reg := enrollDashboardNode(t, d, owner, s.URL)
+	g := groupSyncFixture(t, d, owner, []string{reg.ID})
+	fleet := forgetFleetFixture(t, d, owner, []string{reg.ID}, nil)
+	d.finishFleet(context.Background(), fleet.ID)
+	forceNodeFixture(t, d, owner, reg)
+	forgetNodeFixture(t, d, owner, reg)
+	before := copyFleet(d.fleet[fleet.ID])
+	if _, err := d.accounts.node.store.db.Exec(`CREATE TRIGGER forget_failure BEFORE INSERT ON records WHEN NEW.category='dashboardFleet' BEGIN SELECT RAISE(ABORT,'fixture'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.finishForgottenNode(context.Background(), reg.ID); err == nil {
+		t.Fatal("fixture failed to reject transaction")
+	}
+	if _, ok := d.registry[reg.ID]; !ok || !equalJSON(before, d.fleet[fleet.ID]) {
+		t.Fatal("failed transaction published partial removal")
+	}
+	if _, ok, err := loadOne[dashboardNodeGroup](d.accounts.node.store, "dashboardNodeGroups", g.ID); err != nil || !ok {
+		t.Fatal("failed transaction lost the group")
+	}
+}
+
+func TestForgetOfflineHAAnchorKeepsPhysicalMonitorOnPeer(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	a.peerSeen[b.ID], b.peerSeen[a.ID] = 1, 1
+	var offlineA, offlineB atomic.Bool
+	serve := func(n *Node, offline *atomic.Bool) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if offline.Load() {
+				http.Error(w, "offline", 503)
+				return
+			}
+			n.ServeHTTP(w, r)
+		})
+	}
+	sa, sb := httptest.NewServer(serve(a, &offlineA)), httptest.NewServer(serve(b, &offlineB))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	replicate := func() {
+		for _, pair := range [][2]*Node{{a, b}, {b, a}} {
+			for _, page := range causalCapacityPages(t, pair[0]) {
+				if err := pair[1].applySnapshot(page); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	fleet := forgetFleetFixture(t, d, owner, []string{ra.ID, rb.ID}, nil)
+	for range 4 {
+		d.finishFleet(context.Background(), fleet.ID)
+		replicate()
+	}
+	row := d.fleet[fleet.ID]
+	if row.State != "applied" || len(row.Placements) != 1 {
+		t.Fatal("HA fixture not applied", row.Reason)
+	}
+	anchor, survivor := ra, rb
+	remaining := b
+	if row.Placements[0].RegistrationID == rb.ID {
+		anchor, survivor, remaining = rb, ra, a
+	}
+	forceNodeFixture(t, d, owner, anchor)
+	if anchor.ID == ra.ID {
+		offlineA.Store(true)
+	} else {
+		offlineB.Store(true)
+	}
+	_, _ = d.finishEnrollment(context.Background(), anchor.ID)
+	forgetNodeFixture(t, d, owner, anchor)
+	if err := d.finishForgottenNode(context.Background(), anchor.ID); err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
+		d.finishFleet(context.Background(), fleet.ID)
+	}
+	kept := d.fleet[fleet.ID]
+	if kept.State != "applied" || !slices.Equal(kept.RegistrationIDs, []string{survivor.ID}) || len(kept.Placements) != 1 || kept.Placements[0].MonitorID != row.Placements[0].MonitorID {
+		t.Fatal("offline HA handoff lost identity", kept.State, kept.Reason)
+	}
+	m := remaining.current(row.Placements[0].MonitorID)
+	if m == nil || !slices.Equal(m.NodeIDs, []string{remaining.ID}) {
+		t.Fatal("survivor assignment was not updated")
+	}
+	plan, _ := d.openFleet(kept)
+	plan.Monitor.Name = "Editable after offline removal"
+	w := dashboardHTTP(d, "PUT", "/api/dashboard/fleet/monitors/"+kept.ID, owner, "", map[string]any{"revision": kept.Revision, "registrationIds": kept.RegistrationIDs, "monitor": plan.Monitor})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	d.finishFleet(context.Background(), kept.ID)
+	if d.fleet[kept.ID].State != "applied" {
+		t.Fatal(d.fleet[kept.ID].Reason)
+	}
+	encoded, _ := json.Marshal(d.publicNode(d.forgottenNodes[anchor.ID], "viewer"))
+	if strings.Contains(string(encoded), adminToken) {
+		t.Fatal("revocation journal leaked credentials")
+	}
+}
+
+func TestForgetPreservesExactUnknownSurvivorCommandBeforeRetargeting(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := dashboardRemoteFixture(t, "node-a"), dashboardRemoteFixture(t, "node-b")
+	var lose atomic.Bool
+	sa := httptest.NewServer(a)
+	sb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && lose.Swap(false) {
+			recorder := httptest.NewRecorder()
+			b.ServeHTTP(recorder, r)
+			if recorder.Code != 200 && recorder.Code != 201 {
+				t.Error("fixture write failed", recorder.Code, recorder.Body.String())
+			}
+			w.Header().Set("X-Canary-Node-Id", b.ID)
+			errorReply(w, fail(503, "fixture lost successful acknowledgement"))
+			return
+		}
+		b.ServeHTTP(w, r)
+	}))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	channel := groupChannelFixture(t, a)
+	in := placementFixtureInput()
+	in.Enabled = false
+	in.NotificationIDs = []string{channel.ID}
+	id := strings.ReplaceAll(newID(), "-", "")
+	w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors", owner, "", map[string]any{"requestId": id, "registrationIds": []string{ra.ID, rb.ID}, "monitor": in, "syncNotifications": true, "notificationSourceRegistrationId": ra.ID})
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	lose.Store(true)
+	d.finishFleet(context.Background(), id)
+	row := d.fleet[id]
+	plan, _ := d.openFleet(row)
+	var pending dashboardFleetPlacement
+	for _, p := range row.Placements {
+		if p.RegistrationID == rb.ID {
+			pending = p
+		}
+	}
+	before, err := fleetCommandBytes(plan, pending)
+	if err != nil || !plan.Prepared || plan.Unsent[pending.ID] || pending.State != "pending" {
+		t.Fatal("fixture did not leave an unknown survivor command")
+	}
+	forceNodeFixture(t, d, owner, ra)
+	forgetNodeFixture(t, d, owner, ra)
+	if err := d.finishForgottenNode(context.Background(), ra.ID); err != nil {
+		t.Fatal(err)
+	}
+	row = d.fleet[id]
+	plan, _ = d.openFleet(row)
+	after, err := fleetCommandBytes(plan, row.Placements[0])
+	if err != nil || string(before) != string(after) || !plan.RetargetAfterReplay {
+		t.Fatal("local removal rewrote an unknown survivor command")
+	}
+	b.mu.Lock()
+	editedInput := b.current(row.Placements[0].MonitorID).MonitorInput
+	editedInput.Name = "Direct node edit after the lost acknowledgement"
+	edited, err := b.writeMonitor(editedInput, b.heads[row.Placements[0].MonitorID], row.Placements[0].MonitorID, false)
+	b.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.finishFleet(context.Background(), id) // Resolve the original receipt, without overwriting that edit.
+	row = d.fleet[id]
+	plan, _ = d.openFleet(row)
+	if !plan.RetargetAfterReplay || row.Placements[0].Sequence != 1 {
+		t.Fatal("fixture did not retain replay mode after receipt confirmation")
+	}
+	w = dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+id+"/reconcile", owner, "", map[string]any{"revision": row.Revision, "observedRevisions": map[string]string{row.Placements[0].ID: edited.Revision}})
+	if w.Code != 202 {
+		t.Fatal("reviewed survivor reconciliation refused", w.Code, w.Body.String())
+	}
+	plan, _ = d.openFleet(d.fleet[id])
+	if plan.RetargetAfterReplay || plan.Prepared || len(plan.Commands) != 0 {
+		t.Fatal("reviewed retarget retained frozen replay mode")
+	}
+	for range 4 {
+		d.finishFleet(context.Background(), id)
+	}
+	if d.fleet[id].State != "applied" || len(b.heads) != 1 {
+		t.Fatal("saved survivor command did not resolve without duplication", d.fleet[id].Reason)
+	}
+}
+
+func TestForgetLostAcknowledgementHAHandoffCanReviewSurvivorRevision(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
+	a.peerSeen[b.ID], b.peerSeen[a.ID] = 1, 1
+	var lose, offlineA, offlineB atomic.Bool
+	serve := func(n *Node, offline *atomic.Bool) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if offline.Load() {
+				http.Error(w, "offline", 503)
+				return
+			}
+			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && lose.Swap(false) {
+				recorder := httptest.NewRecorder()
+				n.ServeHTTP(recorder, r)
+				if recorder.Code != 201 && recorder.Code != 200 {
+					t.Error(recorder.Code, recorder.Body.String())
+				}
+				w.Header().Set("X-Canary-Node-Id", n.ID)
+				errorReply(w, fail(503, "lost acknowledgement"))
+				return
+			}
+			n.ServeHTTP(w, r)
+		})
+	}
+	sa, sb := httptest.NewServer(serve(a, &offlineA)), httptest.NewServer(serve(b, &offlineB))
+	defer sa.Close()
+	defer sb.Close()
+	ra, rb := enrollDashboardNode(t, d, owner, sa.URL), enrollDashboardNode(t, d, owner, sb.URL)
+	fleet := forgetFleetFixture(t, d, owner, []string{ra.ID, rb.ID}, nil)
+	lose.Store(true)
+	d.finishFleet(context.Background(), fleet.ID)
+	before := d.fleet[fleet.ID]
+	if len(before.Placements) != 1 || before.Placements[0].Sequence != 0 || before.State != "pending" {
+		t.Fatal("lost-acknowledgement HA fixture did not leave unknown work")
+	}
+	anchor, survivor, peer := ra, rb, b
+	if before.Placements[0].RegistrationID == rb.ID {
+		anchor, survivor, peer = rb, ra, a
+	}
+	for _, pair := range [][2]*Node{{a, b}, {b, a}} {
+		for _, page := range causalCapacityPages(t, pair[0]) {
+			if err := pair[1].applySnapshot(page); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if anchor.ID == ra.ID {
+		offlineA.Store(true)
+	} else {
+		offlineB.Store(true)
+	}
+	forceNodeFixture(t, d, owner, anchor)
+	forgetNodeFixture(t, d, owner, anchor)
+	if err := d.finishForgottenNode(context.Background(), anchor.ID); err != nil {
+		t.Fatal(err)
+	}
+	d.finishFleet(context.Background(), fleet.ID)
+	row := d.fleet[fleet.ID]
+	if row.State != "blocked" {
+		t.Fatal("stale handoff did not require reviewed revision", row.State, row.Reason)
+	}
+	peer.mu.Lock()
+	current := *peer.current(before.Placements[0].MonitorID)
+	peer.mu.Unlock()
+	w := dashboardHTTP(d, "POST", "/api/dashboard/fleet/monitors/"+row.ID+"/reconcile", owner, "", map[string]any{"revision": row.Revision, "observedRevisions": map[string]string{row.Placements[0].ID: current.Revision}})
+	if w.Code != 202 {
+		t.Fatal("handoff cannot review its actual survivor revision", w.Code, w.Body.String())
+	}
+	d.finishFleet(context.Background(), row.ID)
+	row = d.fleet[row.ID]
+	if row.State != "applied" || !slices.Equal(row.RegistrationIDs, []string{survivor.ID}) || row.Placements[0].MonitorID != current.ID || len(peer.heads) != 1 {
+		t.Fatal("reviewed handoff lost its physical monitor", row.State, row.Reason)
+	}
+}
+
+func TestForgetOutboundRevocationUsesOnlyAuthenticatedJournal(t *testing.T) {
+	d, owner, _ := dashboardRegistryFixture(t)
+	d.connectionEnabled = true
+	server := httptest.NewTLSServer(d.ConnectionHandler())
+	defer server.Close()
+	d.connectionURL = server.URL
+	d.connectionTLSFingerprint = nodetls.CertificateFingerprint(server.Certificate())
+	invitation := connectionInvitation(t, d, owner, "forget-outbound", server.URL)
+	n, err := New(Options{NodeID: "forget-outbound", Host: "127.0.0.1", Port: Ptr(0), DBPath: ":memory:", IdentityDirectory: connectionIdentityDirectory(t), AdminToken: adminToken, ClusterToken: clusterToken, DashboardURL: server.URL, DashboardTLSFingerprint: invitation.ConnectionTLSFingerprint, DashboardEnrollToken: invitation.Token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer n.Stop()
+	if err = n.Start(); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.invitations[invitation.ID].State == "connected" && d.connections.LastSeen(invitation.ID) != 0
+	})
+	w := dashboardHTTP(d, "POST", "/api/dashboard/invitations/"+invitation.ID+"/confirm", owner, "", nil)
+	if w.Code != 201 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	reg := d.registry[invitation.ID].RegisteredNode
+	forceNodeFixture(t, d, owner, reg)
+	forgetNodeFixture(t, d, owner, reg)
+	if err = d.finishForgottenNode(context.Background(), reg.ID); err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	row := d.forgottenNodes[reg.ID]
+	if d.outboundCallAllowedLocked(row, "GET", "/api/overview") || d.outboundCallAllowedLocked(row, "PATCH", "/api/dashboard-enrollments/"+row.ID) || d.outboundCallAllowedLocked(row, "DELETE", "/api/dashboard-enrollments/wrong") {
+		t.Error("forgotten journal admitted ordinary management")
+	}
+	if !d.outboundCallAllowedLocked(row, "DELETE", "/api/dashboard-enrollments/"+row.ID) {
+		t.Error("forgotten journal refused its exact DELETE")
+	}
+	d.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err = d.finishForgottenNode(ctx, reg.ID); err != nil {
+		t.Fatal("real outbound revocation after registry removal failed", err)
+	}
+	n.mu.Lock()
+	accounts := len(n.accounts)
+	n.mu.Unlock()
+	if accounts != 1 || len(d.forgottenNodes) != 0 {
+		t.Fatal("outbound delegation or cleanup journal survived confirmed revocation")
+	}
+}

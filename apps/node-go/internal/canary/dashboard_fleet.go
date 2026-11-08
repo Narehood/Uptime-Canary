@@ -79,6 +79,11 @@ type dashboardFleetPlan struct {
 	References                       map[string]fleetTargetReferences   `json:"references,omitempty"`
 	Monitor                          MonitorInput                       `json:"monitor"`
 	Prepared                         bool                               `json:"prepared"`
+	ForgottenNodeIDs                 []string                           `json:"forgottenNodeIds,omitempty"`
+	ForgetHandoffs                   map[string]bool                    `json:"forgetHandoffs,omitempty"`
+	RetargetAfterReplay              bool                               `json:"retargetAfterReplay,omitempty"`
+	AfterForget                      []dashboardFleetPlacement          `json:"afterForget,omitempty"`
+	ForgetResourceTargets            []string                           `json:"forgetResourceTargets,omitempty"`
 	Deleted                          bool                               `json:"deleted"`
 	Rejected                         map[string]bool                    `json:"rejected,omitempty"`
 	Unsent                           map[string]bool                    `json:"unsent,omitempty"`
@@ -434,7 +439,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 			for placement, revision := range in.ObservedRevisions {
 				found := false
 				for _, p := range row.Placements {
-					if p.ID == placement && p.State != "removed" && (p.Sequence > 0 || row.Source != nil && p.MonitorID == row.Source.MonitorID && p.RegistrationID == row.Source.RegistrationID) {
+					if p.ID == placement && p.State != "removed" && (p.Sequence > 0 || plan.ForgetHandoffs[p.ID] || row.Source != nil && p.MonitorID == row.Source.MonitorID && p.RegistrationID == row.Source.RegistrationID) {
 						found = true
 					}
 				}
@@ -444,6 +449,7 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 				}
 			}
 			plan.ObservedRevisions = in.ObservedRevisions
+			resumeForgetRetarget(&row, &plan)
 			plan.Prepared, plan.Commands = false, nil
 		}
 		if r.Method == "DELETE" {
@@ -719,6 +725,8 @@ func (d *Dashboard) fleetRequest(w http.ResponseWriter, r *http.Request, actor A
 	plan.LegacyMonitors = previousPlan.LegacyMonitors
 	plan.LegacyMonitorAttempts = previousPlan.LegacyMonitorAttempts
 	plan.LegacyRegistrations = previousPlan.LegacyRegistrations
+	plan.ForgottenNodeIDs = slices.Clone(previousPlan.ForgottenNodeIDs)
+	plan.ForgetHandoffs = previousPlan.ForgetHandoffs
 	if !plan.SyncNotifications && !previousPlan.SyncNotifications && len(previousPlan.Resources) > 0 {
 		// Frozen removal settings must survive edits before their first apply.
 		plan.Resources, plan.LegacyResources = previousPlan.Resources, previousPlan.LegacyResources
@@ -994,6 +1002,9 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 
 func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]byte, error) {
 	command := plan.Commands[p.ID]
+	if plan.RetargetAfterReplay {
+		return json.Marshal(command) // Frozen before detachment; retain the exact saved survivor write.
+	}
 	if !command.Deleted {
 		input, err := fleetReferencedInput(plan, p)
 		if err != nil {
@@ -1263,7 +1274,7 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 			// wider than the last dashboard plan. Track every former runner; an
 			// unregistered runner cannot honestly be confirmed stopped here.
 			for _, nodeID := range current.Monitor.NodeIDs {
-				if slices.Contains(p.NodeIDs, nodeID) {
+				if slices.Contains(p.NodeIDs, nodeID) || slices.Contains(plan.ForgottenNodeIDs, nodeID) {
 					continue
 				}
 				d.mu.Lock()
@@ -1585,6 +1596,14 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 			return
 		}
 	}
+	if plan.RetargetAfterReplay {
+		resumeForgetRetarget(&row, &plan)
+		row.State, row.RetryAt, row.Reason = "pending", 0, "Updating remaining runners after local node removal"
+		save()
+		return
+	}
+	plan.ForgottenNodeIDs = nil
+	plan.ForgetHandoffs = nil
 	// Non-following settings snapshots are needed only until all placements
 	// confirm them. Do not replay frozen channel/tag data on later group edits.
 	finishFrozenFleetSettings(row, &plan)

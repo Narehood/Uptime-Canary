@@ -509,12 +509,13 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 	raw, bodyErr := readBounded(r.Body, 4096)
 	var input struct {
 		Force        bool   `json:"force"`
+		Forget       bool   `json:"forget"`
 		Confirmation string `json:"confirmation"`
 	}
 	if bodyErr == nil && len(raw) > 0 {
-		bodyErr = dashboardJSON(raw, &input, "force", "confirmation")
+		bodyErr = dashboardJSON(raw, &input, "force", "confirmation", "forget")
 	}
-	if bodyErr == nil && !input.Force && input.Confirmation != "" {
+	if bodyErr == nil && !input.Force && (input.Confirmation != "" || input.Forget) {
 		bodyErr = fail(400, "A removal confirmation requires force removal")
 	}
 	if bodyErr != nil {
@@ -527,6 +528,9 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 	}
 	d.mu.Lock()
 	row, ok := d.registry[id]
+	if !ok && input.Forget {
+		row, ok = d.forgottenNodes[id]
+	}
 	if !ok {
 		d.mu.Unlock()
 		errorReply(w, fail(404, "Registered node not found"))
@@ -535,6 +539,16 @@ func (d *Dashboard) removeNode(w http.ResponseWriter, r *http.Request, actor Acc
 	if row.Local && d.localURL != "" && row.URL == d.localURL {
 		d.mu.Unlock()
 		errorReply(w, fail(409, "The bundled local node is managed in deployment settings"))
+		return
+	}
+	if input.Forget {
+		err := d.queueNodeForget(r, actor, row, input.Confirmation)
+		d.mu.Unlock()
+		if err != nil {
+			errorReply(w, err)
+			return
+		}
+		reply(w, 202, d.publicNode(row, actor.Role))
 		return
 	}
 	if d.busy[id] {

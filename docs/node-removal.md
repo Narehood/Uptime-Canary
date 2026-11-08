@@ -29,6 +29,25 @@ connections outside these managed placements are not erased.
 
 ## Unfinished removal
 
+An administrator can choose **Remove now** on a pending removal and type the
+node's current name again. This explicitly removes its dashboard registration,
+node-group memberships and monitor assignments locally, without requiring the
+departing node to answer. It also works for jobs already pending before this
+option was added. The accepted request is durable; local cleanup waits only for
+in-flight dashboard operations to finish, then commits its changes atomically.
+
+Shared monitors keep their remaining nodes and physical monitor IDs. Definitions
+with no remaining nodes are retired on the dashboard. An unreachable node may
+still run checks and send alerts independently: local removal cannot confirm
+that those checks stopped. Stop or reconfigure that node separately if needed.
+The dashboard retains an encrypted revocation job and the abandoned command
+journal, and retries access revocation separately. It never replays abandoned
+monitor writes against the forgotten node. Pending writes on surviving nodes
+retain their original payload before runner assignments are updated.
+
+The regular **Retry removal** action below continues to require confirmed remote
+cleanup. **Remove now** is the explicit alternative when that cannot finish.
+
 A blocked or not-yet-started monitor operation does not have to become applied
 before removal can clean up its intended assignments. An unstarted definition
 with no remaining runners is cancelled without creating a monitor. A shared
@@ -71,6 +90,11 @@ review; cleanup does not silently overwrite those settings.
 ```json
 {"force": true, "confirmation": "Exact dashboard name"}
 ```
+
+For an already-pending removal, add `"forget": true` to request the separate
+local-removal path. Its `202` response confirms a durable local cleanup request,
+not remote retirement or revocation. A repeated name-confirmed request can renew
+the saved revocation authority after a dashboard administrator account changes.
 
 A successful queue returns `202` with the public registration in `removing`
 state. This confirms acceptance, not completion. Repeating an accepted request
