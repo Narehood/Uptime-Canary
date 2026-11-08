@@ -896,8 +896,11 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 				d.finishFleet(context.Background(), row.ID)
 			}
 			m = remaining.current(row.Placements[0].MonitorID)
-			if d.fleet[row.ID].State != "removed" || m == nil || !m.Deleted || len(remaining.heads) != 1 {
-				t.Fatal("survivor monitor survived deletion or retiring cleanup", d.fleet[row.ID].State, d.fleet[row.ID].Reason)
+			heads := remaining.heads[row.Placements[0].MonitorID]
+			// current deliberately hides tombstones; inspect the retained head as
+			// TestFleetPlacementRetirementCannotResurrect does.
+			if d.fleet[row.ID].State != "removed" || m != nil || len(heads) != 1 || !heads[0].Monitor.Deleted || len(remaining.heads) != 1 {
+				t.Fatal("survivor monitor survived deletion or retiring cleanup", d.fleet[row.ID].State, d.fleet[row.ID].Reason, "active", m != nil, "physical IDs", len(remaining.heads), "heads", len(heads))
 			}
 			if _, ok := d.registry[survivor.ID]; !ok {
 				t.Fatal("survivor registration was removed")
