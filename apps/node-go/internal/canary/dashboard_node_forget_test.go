@@ -776,16 +776,26 @@ func TestForgetInvalidatesInFlightRefreshForChangedGroups(t *testing.T) {
 }
 
 func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
-	for _, mode := range []string{"delete-before-handoff", "retiring-peer"} {
+	for _, mode := range []string{"delete-before-handoff", "retiring-peer", "lost-adoption-ack"} {
 		t.Run(mode, func(t *testing.T) {
 			d, owner, _ := dashboardRegistryFixture(t)
 			a, b := causalCapacityNode(t, "a", ":memory:"), causalCapacityNode(t, "b", ":memory:")
 			a.peerSeen[b.ID], b.peerSeen[a.ID] = 1, 1
-			var offlineA, offlineB atomic.Bool
+			var offlineA, offlineB, loseAdoption atomic.Bool
 			serve := func(n *Node, offline *atomic.Bool) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if offline.Load() {
 						http.Error(w, "offline", 503)
+						return
+					}
+					if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/fleet-placements/") && loseAdoption.Swap(false) {
+						recorder := httptest.NewRecorder()
+						n.ServeHTTP(recorder, r)
+						if recorder.Code != 200 && recorder.Code != 201 {
+							t.Error("fixture adoption failed", recorder.Code, recorder.Body.String())
+						}
+						w.Header().Set("X-Canary-Node-Id", n.ID)
+						errorReply(w, fail(503, "fixture lost adoption acknowledgement"))
 						return
 					}
 					n.ServeHTTP(w, r)
@@ -847,17 +857,45 @@ func TestForgetHandoffsRetainDeletionAndRetiringPeerCleanup(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if mode == "delete-before-handoff" {
+			if mode != "retiring-peer" {
 				pending := d.fleet[row.ID]
 				w := dashboardHTTP(d, "DELETE", "/api/dashboard/fleet/monitors/"+row.ID, owner, "", map[string]any{"revision": pending.Revision})
 				if w.Code != 202 {
 					t.Fatal("existing physical handoff was cancelled without deleting its monitor", w.Code, w.Body.String())
 				}
 			}
+			loseAdoption.Store(mode == "lost-adoption-ack")
+			d.finishFleet(context.Background(), row.ID)
+			if mode == "lost-adoption-ack" {
+				pending := d.fleet[row.ID]
+				plan, _ := d.openFleet(pending)
+				before, err := fleetCommandBytes(plan, pending.Placements[0])
+				if err != nil || !plan.Prepared || pending.Placements[0].Sequence != 0 {
+					t.Fatal("lost adoption was not journaled", err)
+				}
+				d.Close()
+				restarted, err := NewDashboard(DashboardOptions{Accounts: d.accounts, Key: dashboardKeyFixture})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer restarted.Close()
+				d = restarted
+				plan, _ = d.openFleet(d.fleet[row.ID])
+				after, err := fleetCommandBytes(plan, d.fleet[row.ID].Placements[0])
+				if err != nil || string(before) != string(after) {
+					t.Fatal("restart changed the saved adoption", err)
+				}
+				d.finishFleet(context.Background(), row.ID)
+			}
+			adopted := d.fleet[row.ID]
+			m := remaining.current(row.Placements[0].MonitorID)
+			if adopted.State != "pending" || len(adopted.Placements) != 1 || adopted.Placements[0].Sequence != 1 || m == nil || m.Deleted {
+				t.Fatal("handoff did not confirm before retirement", adopted.State, adopted.Reason)
+			}
 			for range 4 {
 				d.finishFleet(context.Background(), row.ID)
 			}
-			m := remaining.current(row.Placements[0].MonitorID)
+			m = remaining.current(row.Placements[0].MonitorID)
 			if d.fleet[row.ID].State != "removed" || m == nil || !m.Deleted || len(remaining.heads) != 1 {
 				t.Fatal("survivor monitor survived deletion or retiring cleanup", d.fleet[row.ID].State, d.fleet[row.ID].Reason)
 			}

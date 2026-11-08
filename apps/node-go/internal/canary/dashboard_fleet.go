@@ -1006,8 +1006,8 @@ func (d *Dashboard) nodeGroupRequest(w http.ResponseWriter, r *http.Request, act
 
 func fleetCommandBytes(plan dashboardFleetPlan, p dashboardFleetPlacement) ([]byte, error) {
 	command := plan.Commands[p.ID]
-	if plan.RetargetAfterReplay {
-		return json.Marshal(command) // Frozen before detachment; retain the exact saved survivor write.
+	if plan.RetargetAfterReplay || plan.ForgetHandoffs[p.ID] && command.Adopt && len(command.Monitor) > 0 {
+		return json.Marshal(command) // Replay the saved survivor write or the handoff's frozen adoption.
 	}
 	if !command.Deleted {
 		input, err := fleetReferencedInput(plan, p)
@@ -1300,6 +1300,23 @@ func (d *Dashboard) prepareFleet(ctx context.Context, row *dashboardFleetRecord,
 		if p.Sequence == 0 && p.MonitorID != "fleet-"+p.ID {
 			command.Adopt = true
 			command.MonitorID = p.MonitorID
+			if command.Deleted && plan.ForgetHandoffs[p.ID] {
+				// Existing nodes require adoption before retirement. Preserve the
+				// live copy's settings, first assigning only this surviving anchor;
+				// the next saved sequence deletes this same physical monitor.
+				if current == nil || current.ConfigConflict {
+					return fail(409, "Review the surviving monitor before completing its removal")
+				}
+				input := current.Monitor.MonitorInput
+				p.RegistrationIDs, p.NodeIDs = []string{p.RegistrationID}, []string{views[p.RegistrationID].Node.ID}
+				input.NodeIDs = slices.Clone(p.NodeIDs)
+				command.Deleted = false
+				body, err := json.Marshal(input)
+				if err != nil {
+					return err
+				}
+				command.Monitor = body
+			}
 		}
 		commands[p.ID] = command
 		p.State = "pending"
@@ -1606,6 +1623,16 @@ func (d *Dashboard) finishFleet(ctx context.Context, id string) {
 		row.State, row.RetryAt, row.Reason = "pending", 0, "Updating remaining runners after local node removal"
 		save()
 		return
+	}
+	for _, p := range row.Placements {
+		command := plan.Commands[p.ID]
+		if plan.ForgetHandoffs[p.ID] && command.Adopt && !command.Deleted &&
+			(plan.Deleted || !slices.Contains(row.RegistrationIDs, p.RegistrationID)) {
+			plan.Prepared, plan.Commands, plan.ObservedRevisions = false, nil, nil
+			row.State, row.RetryAt, row.Reason = "pending", 0, "Retiring the surviving monitor after its confirmed handoff"
+			save()
+			return
+		}
 	}
 	plan.ForgottenNodeIDs = nil
 	plan.ForgetHandoffs = nil

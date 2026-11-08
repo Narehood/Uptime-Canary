@@ -498,6 +498,12 @@ fieldset.fld > .fld { margin-top: 8px; padding-left: 27px; }
 .peer-pick li { display: flex; gap: 10px; align-items: center; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
 .peer-pick .grow { flex: 1; min-width: 0; }
 .peer-pick .sub { display: block; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+/* Give the authorization action its own row on phones so the explanation keeps a readable width. */
+@container app (max-width: 699px) {
+  .revocation-list li { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 8px 10px; }
+  .revocation-list li > .g { margin-top: 2px; }
+  .revocation-list li > .btn { grid-column: 1 / -1; justify-content: center; min-height: 44px; white-space: normal; }
+}
 .connect-form { display: flex; flex-direction: column; gap: 14px; }
 
 /* toasts */

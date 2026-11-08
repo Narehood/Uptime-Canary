@@ -862,7 +862,7 @@ function PendingRevocationsCard() {
             </Banner>
           ) : null}
           {rows.length ? (
-            <div className="peer-pick">
+            <div className="peer-pick revocation-list">
               <ul>
                 {rows.map(row => {
                   const status = row.authorizationRequired ? 'Administrator authorization required' : 'Retrying when the node is available';

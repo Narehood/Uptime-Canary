@@ -147,9 +147,10 @@ export async function reviewForceNodeRemoval({ fixture, A, B, page, step, until,
       await until(() => page.eval(`!!document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)})`), 'detached access cleanup visible', 30000);
       await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
       await page.eval(`document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)}).scrollIntoView({block:'center'})`);
-      const cleanupWidth = await page.eval('({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth})');
-      assert.ok(cleanupWidth.scroll <= cleanupWidth.width + 1, 'detached cleanup actions must fit on a narrow screen');
+      const cleanupWidth = await page.eval(`(() => {const row=document.querySelector(${q(`[data-revocation-id="${entry.id}"]`)});return {width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,row:row.clientWidth,text:row.querySelector('.grow').clientWidth};})()`);
       writeFileSync(new URL('../.canary/node-revocation-current.png', import.meta.url), Buffer.from((await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+      assert.ok(cleanupWidth.scroll <= cleanupWidth.width + 1, 'detached cleanup actions must fit on a narrow screen');
+      assert.ok(cleanupWidth.text >= cleanupWidth.row * 0.55, 'detached cleanup must keep its explanation readable beside the action');
       await click(`Authorize revocation for ${entry.label}`);
       await until(() => page.eval('!!document.querySelector("dialog[open] input")'), 'revocation authority dialog opens');
       assert.match(await page.eval('document.querySelector("dialog[open]").innerText'), /already removed/iu);
