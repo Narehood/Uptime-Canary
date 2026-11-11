@@ -218,7 +218,7 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   // run directory. Its tokens join the redaction list; the harness stops it with every other owned process.
   // `connect: true` is for a node that reaches the dashboard. Its connector checks the HTTPS front's certificate with the
   // normal verifier, no proxy and nothing skipped, against only the loopback test certificate: SSL_CERT_FILE replaces the
-  // system roots (on Windows and macOS too, from Go 1.27 with go.mod's `go 1.27.3`) and SSL_CERT_DIR is dropped. Its output
+  // system roots (on Windows and macOS too, from Go 1.27 with go.mod's `go 1.27.4`) and SSL_CERT_DIR is dropped. Its output
   // stays in memory, bounded: the first 16 KiB for the fingerprint line it prints at start, and the last 16 KiB.
   async function startNode(id, settings, nodePort, { connect = false } = {}) {
     for (const value of Object.values(settings)) if (value.length >= 24) secrets.add(value);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { createServer as createHTTPServer } from 'node:http';
 import test from 'node:test';
 import { createQueryServer, decode, PROFILE } from './server.mjs';
 import catalogue from '../../apps/node-go/internal/gamedigmonitor/catalogue.json' with { type: 'json' };
@@ -64,6 +65,33 @@ test('actual locked GameDig queries private Minecraft and returns only fixed evi
   assert.deepEqual(Object.keys(result.body).sort(), ['id', 'latencyMs', 'profile', 'state']);
   assert.equal(JSON.stringify(result).includes('private-server-name'), false);
   assert.ok(fixture.connections >= 1);
+});
+
+test('locked GameDig XML parser preserves Farming Simulator queries and rejects malformed XML', { timeout: 10000 }, async t => {
+  let malformed = false, requests = 0;
+  const target = createHTTPServer((request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1');
+    assert.equal(url.pathname, '/feed/dedicated-server-stats.xml');
+    assert.equal(url.searchParams.get('code'), 'private-farming-token');
+    requests++;
+    response.writeHead(200, { 'Content-Type': 'application/xml' }).end(malformed ? '<Server><broken' :
+      '<Server name="private-farm &amp; friends" mapName="private-map" version="1.0"><Slots numUsed="1" capacity="4">' +
+      '<Player isUsed="true" isAdmin="false" uptime="30" x="1" y="2" z="3">private-player</Player>' +
+      '<Player isUsed="false" isAdmin="false" uptime="0" x="0" y="0" z="0"></Player></Slots></Server>');
+  });
+  target.listen(0, '127.0.0.1'); await once(target, 'listening');
+  t.after(() => { target.closeAllConnections(); target.close(); });
+  const api = await service(t);
+  const input = { ...base, game: 'farmingsimulator25', port: target.address().port, token: 'private-farming-token' };
+  const good = await api.query(input);
+  assert.equal(good.status, 200); assert.equal(good.body.state, 'up');
+  assert.deepEqual(Object.keys(good.body).sort(), ['id', 'latencyMs', 'profile', 'state']);
+  assert.equal(JSON.stringify(good).includes('private-'), false);
+  malformed = true;
+  const bad = await api.query(input);
+  assert.equal(bad.status, 200); assert.equal(bad.body.state, 'down');
+  assert.equal(JSON.stringify(bad).includes('private-'), false);
+  assert.ok(requests >= 2, 'both real XML responses must be queried');
 });
 
 test('query service never accepts a browser Origin or an absent credential', async t => {

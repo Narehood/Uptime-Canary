@@ -1,18 +1,18 @@
 {
-  "lockSha256": "0a3cbcf8160f9775bd038263c7bafc763f1a545f411418d6e7f5f2b7528acbe5",
+  "lockSha256": "62e44a988192447161855bba2b60b724a013eec6deecb3f0e3341d406b300f78",
   "packages": [
     {
       "name": "@nodable/entities",
-      "version": "2.2.0",
-      "integrity": "sha512-9uGyhaQavEUMC8AIddIjau4NsnsXhou+j5sBAGojCM1oxmQpVKTWR/9JxABD6UAv12vpIms55fPZKFQEhG6uBg==",
+      "version": "3.1.0",
+      "integrity": "sha512-LsS/DjHr+uDM647Gru/cA8+J3a3HfhttwCKLyuoyN7yXTFCxKBtSgMQBvrW9yNPa2/zDRUNuGPaH5QUFoa4arQ==",
       "notices": [
         {
           "file": "package.json",
-          "sha256": "6a025503d776124cd4371fcba8383afcc30a640c5783f96093f76f19ecb66241"
+          "sha256": "81fc13661f9431f9f72ae5a1723482a1bcb473af463b93ca0b27c42461a6c6c9"
         },
         {
           "file": "README.md",
-          "sha256": "57c1ecfd98f6262d516e66ea0d23697374b7dba3cb030897f3b5f40a38e80873"
+          "sha256": "7e3484a07c208b5c5813290a993244c6841efc3d4241c29a07ef948e8129a758"
         }
       ]
     },
@@ -209,20 +209,9 @@
       ]
     },
     {
-      "name": "xml-naming",
-      "version": "0.3.0",
-      "integrity": "sha512-ghig2TBE/H11aOVgmahA3MhimvkBr6JIYknH/Dhdk10nXwdbIqBJsbfMxpvFPG8bAw77gN29aQWvKpmVoPlvPQ==",
-      "notices": [
-        {
-          "file": "LICENSE",
-          "sha256": "8e75fc0e776c62ccadb8178ece8d3daa9ba7601fb0a49b2dfb0ea9a7a5c0aa07"
-        }
-      ]
-    },
-    {
       "name": "fast-xml-parser",
-      "version": "5.8.0",
-      "integrity": "sha512-6bIM7fsJxeo3uXv7OncQYsBAMPJ7V16Slahl/6M98C/i2q+vB1+4a0MtrvYwDFEUrwDSbAmeLDRXsOBwrL7yAg==",
+      "version": "5.12.0",
+      "integrity": "sha512-/pXxRBtwxY9w8z7YbgsvIPPcPvFDsTbIkWwTQJhzNJPokj+TbN6ftmcv4j/pEQDvOCNnKGDzuk5Bo2oogIOiFg==",
       "notices": [
         {
           "file": "LICENSE",
@@ -326,6 +315,17 @@
         {
           "file": "LICENSE",
           "sha256": "5ffe28e7ade7d8f10d85d5337a73fd793dac5c462fb9a28fbf8c5046c7fbca3b"
+        }
+      ]
+    },
+    {
+      "name": "is-unsafe",
+      "version": "2.0.3",
+      "integrity": "sha512-ZBllczCCO267vgdFb6Tq3pv+LhHaCiGMdr+ZsuL+OopruAg7S+3ZDs1vD0RPC0uSrkjzbraxaGjtX1YBxjPeFQ==",
+      "notices": [
+        {
+          "file": "LICENSE",
+          "sha256": "8e75fc0e776c62ccadb8178ece8d3daa9ba7601fb0a49b2dfb0ea9a7a5c0aa07"
         }
       ]
     },
@@ -693,16 +693,12 @@
     },
     {
       "name": "xml-naming",
-      "version": "0.1.0",
-      "integrity": "sha512-k8KO9hrMyNk6tUWqUfkTEZbezRRpONVOzUTnc97VnCvyj6Tf9lyUR9EDAIeiVLv56jsMcoXEwjW8Kv5yPY52lw==",
+      "version": "0.3.0",
+      "integrity": "sha512-ghig2TBE/H11aOVgmahA3MhimvkBr6JIYknH/Dhdk10nXwdbIqBJsbfMxpvFPG8bAw77gN29aQWvKpmVoPlvPQ==",
       "notices": [
         {
-          "file": "package.json",
-          "sha256": "b69775b228da8fb7f25c98f309bab65a3a27444a2fd6b96f6793ece74be1acdc"
-        },
-        {
-          "file": "README.md",
-          "sha256": "fbb211d0da0ae219c4f7a91c6be497c126fa0c30707181c2e509c25f9471fc5b"
+          "file": "LICENSE",
+          "sha256": "8e75fc0e776c62ccadb8178ece8d3daa9ba7601fb0a49b2dfb0ea9a7a5c0aa07"
         }
       ]
     },

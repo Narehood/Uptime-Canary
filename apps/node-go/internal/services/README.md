@@ -510,7 +510,7 @@ existing `golang.org/x/crypto v0.58.0`. New direct pins are
 `go.mongodb.org/mongo-driver/v2 v2.9.2`,
 `github.com/microsoft/go-mssqldb v1.11.2`, `google.golang.org/grpc v1.84.0`, and
 `google.golang.org/protobuf v1.36.12`. Driver module metadata requires Go 1.25
-(pgx/SFTP) or 1.24 (MySQL), compatible with the repository's Go 1.27.3. MQTT,
+(pgx/SFTP) or 1.24 (MySQL), compatible with the repository's Go 1.27.4. MQTT,
 Redis, and Docker use the standard library and their primary protocol specs.
 All dependencies are pinned in the root go.mod/go.sum; no CGO dependency is added.
 

@@ -90,7 +90,7 @@ await check('catalogue: 32 unique types, the 30 earlier ones in their order, the
 // browsermonitor.Validate: url.Parse succeeds, at most 2048 bytes, a host name, no user information, no fragment text,
 // no CR/LF/NUL, scheme ws/wss/http/https, and for http/https a path of "" or "/" with no query. Go 1.27 url.Parse:
 // control bytes refused; the scheme lowercased; "?" alone at the end is ForceQuery; IPv6 literals through netip.ParseAddr
-// (not IPv4, %25 zones non-empty); http/https hosts with extra colons refused (urlstrictcolons=1 for go 1.27.3), other
+// (not IPv4, %25 zones non-empty); http/https hosts with extra colons refused (urlstrictcolons=1 for go 1.27.4), other
 // schemes take the last colon; ports are digits and may be empty or out of range; hosts escape only bytes from 0x80 and
 // %25; paths may escape anything well-formed; a bare trailing "#" leaves no fragment. The node's JSON reading refuses
 // an unpaired surrogate anywhere in the body.

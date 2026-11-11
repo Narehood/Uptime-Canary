@@ -42,7 +42,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
     && TSX_DISABLE_CACHE=1 node scripts/tls-fixture-test.mjs \
     && npm run build --workspace @uptime-canary/web
 
-FROM golang:1.27.3-alpine3.24 AS server
+FROM golang:1.27.4-alpine3.24 AS server
 WORKDIR /app
 COPY go.mod go.sum ./
 COPY apps/node-go/third_party/goja ./apps/node-go/third_party/goja
