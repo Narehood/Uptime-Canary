@@ -81,7 +81,7 @@ separate from the verified published baseline above.
 
 This runs one headless node on your machine. You don't need Docker. For step-by-step Docker, Portainer and testing setup, see the [Setup and Testing](https://github.com/Narehood/Uptime-Canary/wiki/Setup-and-Testing) wiki page.
 
-**You need:** Go 1.27.3 or newer (the npm scripts use `CANARY_GO`, then a portable Go in `.canary/tools/go`, then `go` on your `PATH`), and Node.js 24 (24.13 or newer, below 25) with npm for the setup script, CLI wrapper and dashboard.
+**You need:** Go 1.27.4 or newer (the npm scripts use `CANARY_GO`, then a portable Go in `.canary/tools/go`, then `go` on your `PATH`), and Node.js 24 (24.13 or newer, below 25) with npm for the setup script, CLI wrapper and dashboard.
 
 ```sh
 npm ci

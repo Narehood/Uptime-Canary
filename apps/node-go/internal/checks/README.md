@@ -1,6 +1,6 @@
 # Standalone active checks
 
-Integration contract (Go 1.27.3, with the pinned x/net DNS codec for SOA/CAA):
+Integration contract (Go 1.27.4, with the pinned x/net DNS codec for SOA/CAA):
 
 ```go
 func Validate(Config) error

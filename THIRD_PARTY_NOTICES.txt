@@ -9,7 +9,7 @@ retains distributed notice files; it is not a substitute for reviewing changes
 to dependencies, container base packages or separately distributed tools.
 
 ==============================================================================
-Go standard library go1.27.3
+Go standard library go1.27.4
 ==============================================================================
 
 

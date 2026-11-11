@@ -5,7 +5,7 @@ notifications, management HTTP APIs, and a CLI independently of the optional UI.
 The superseded TypeScript implementation is retained only as an ignored local
 reference under `.canary/typescript-node-reference`.
 
-From the repository root, using Go 1.27.3:
+From the repository root, using Go 1.27.4:
 
 ```powershell
 .canary/tools/go/bin/go.exe test ./apps/node-go/...

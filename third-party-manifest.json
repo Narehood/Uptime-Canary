@@ -3,7 +3,7 @@
   "packages": [
     {
       "name": "Go standard library",
-      "version": "go1.27.3",
+      "version": "go1.27.4",
       "notices": [
         {
           "file": "LICENSE",

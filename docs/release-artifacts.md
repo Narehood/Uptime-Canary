@@ -188,7 +188,7 @@ process-proof suite runs only in the Alpine proof phase against the image
 binary.) The runner labels are
 listed in [GitHub's hosted-runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 The workflow checks out the actual PR head commit rather than a synthetic merge
-commit, with read-only permissions and no persisted Git credential. Go 1.27.3,
+commit, with read-only permissions and no persisted Git credential. Go 1.27.4,
 Node 24.13.0 and all actions are pinned; action dependency caches are disabled.
 It cannot tag, sign or publish a release.
 
