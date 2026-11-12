@@ -192,9 +192,13 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 	var connectionTLS *tls.Config
 	var connectionPin string
 	connectionMode := env("CANARY_DASHBOARD_CONNECTION_TLS_MODE")
+	connectionEnabled := connectionURL != "" || env("CANARY_DASHBOARD_CONNECTION_PORT") != "" || connectionMode == "auto"
+	if connectionMode == "" && connectionURL == "" && connectionEnabled {
+		connectionMode = "auto"
+	}
 	if connectionMode != "" && connectionMode != "off" {
-		if connectionMode != "auto" || connectionURL == "" {
-			return errors.New("Native connection TLS requires auto mode and an HTTPS connection URL")
+		if connectionMode != "auto" {
+			return errors.New("Native connection TLS requires auto mode")
 		}
 		connectionTLS, connectionPin, err = accounts.node.retainedTLS()
 		if err != nil {
@@ -209,7 +213,7 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 			return errors.New("Invalid CANARY_UPDATE_CHECKS")
 		}
 	}
-	d, err := NewDashboard(DashboardOptions{CheckUpdates: updateChecks, Accounts: accounts, Key: key, CORSOrigins: origins, LocalNodeURL: env("CANARY_LOCAL_NODE_URL"), LocalNodeToken: env("CANARY_LOCAL_NODE_TOKEN"), LocalNodeTLSFingerprint: env("CANARY_LOCAL_NODE_TLS_FINGERPRINT"), ConnectionTLSFingerprint: connectionPin, ConnectionURL: connectionURL, ConnectionEnabled: connectionURL != "", NodeImageTag: value("CANARY_DASHBOARD_NODE_IMAGE_TAG", "latest")})
+	d, err := NewDashboard(DashboardOptions{CheckUpdates: updateChecks, Accounts: accounts, Key: key, CORSOrigins: origins, LocalNodeURL: env("CANARY_LOCAL_NODE_URL"), LocalNodeToken: env("CANARY_LOCAL_NODE_TOKEN"), LocalNodeTLSFingerprint: env("CANARY_LOCAL_NODE_TLS_FINGERPRINT"), ConnectionTLSFingerprint: connectionPin, ConnectionURL: connectionURL, ConnectionEnabled: connectionEnabled, NodeImageTag: value("CANARY_DASHBOARD_NODE_IMAGE_TAG", "latest")})
 	if err != nil {
 		return err
 	}
@@ -230,7 +234,7 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 	server := &http.Server{Handler: DashboardHandler(d, os.DirFS(assets)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 * 1024}
 	listeners := []net.Listener{listener}
 	servers := []*http.Server{server}
-	if connectionURL != "" {
+	if connectionEnabled {
 		connectionPort, parseErr := strconv.Atoi(value("CANARY_DASHBOARD_CONNECTION_PORT", "8081"))
 		if parseErr != nil || connectionPort < 1 || connectionPort > 65535 {
 			return errors.New("Invalid dashboard node connection port")

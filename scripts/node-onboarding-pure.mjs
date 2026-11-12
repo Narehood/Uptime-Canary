@@ -308,7 +308,7 @@ await check('deployment text: previews hold no private value; Copy and Download 
     const all = real.map(block => block.text).join('\n');
     if (setup.outbound) {
       assert.ok(all.includes(CONNECT), `${where}: the server’s connection address`);
-      assert.ok(real.some(block => block.key === 'after' && /Remove CANARY_DASHBOARD_ENROLL_TOKEN/u.test(block.text)), `${where}: remove the one-time variable after pairing`);
+      assert.ok(real.some(block => block.key === 'after' && /No stack or environment edit is needed/u.test(block.text)), `${where}: restart requires no configuration edits`);
       assert.doesNotMatch(all, /\s-p\s|--publish|^\s*ports:/mu, `${where}: no inbound port`);
     } else {
       assert.ok(!real.some(block => block.key === 'after'), where);
@@ -354,6 +354,12 @@ await check('Docker run and Compose: the published image with the template’s h
       assert.ok(lines.includes(`    image: ${image}`), `${where}: the published image`);
       assert.ok(lines.includes('      CANARY_ADMIN_TOKEN: ${CANARY_ADMIN_TOKEN:?Set CANARY_ADMIN_TOKEN}'), `${where}: tokens come from the variables`);
       assert.equal(lines.includes(`name: ${res}`), platform === 'compose', `${where}: a fixed Compose project name; Portainer names it after the stack`);
+      if (platform === 'portainer') {
+        assert.ok(lines.includes(`    name: ${res}-data`), `${where}: data volume ignores a reused Portainer stack name`);
+        assert.ok(lines.includes(`    name: ${res}-identity`), `${where}: identity stays paired with this node's data`);
+      } else {
+        assert.ok(!lines.some(line => line.startsWith('    name: ')), `${where}: preserve existing Compose project-scoped volumes`);
+      }
       assert.equal(lines.includes('    ports:'), Boolean(setup.direct), where);
       if (setup.direct) assert.ok(lines.includes('      - "100.79.12.4:3100:3100"'), where);
       if (setup.outbound) assert.ok(lines.includes(`      CANARY_DASHBOARD_URL: '${CONNECT}'`) && lines.includes('      CANARY_DASHBOARD_ENROLL_TOKEN: ${CANARY_DASHBOARD_ENROLL_TOKEN:-}'), where);
@@ -452,7 +458,7 @@ await check('new-node names: one helper for every output, kept apart for IDs tha
     assert.notEqual(onboarding.resourceName(a), onboarding.resourceName(b), `${a} and ${b}`);
   }
   // Every name in a new node's steps (titles, text and file names) is that node's resourceName(), alone or with -data or
-  // -identity; Compose's own canary-data and canary-identity keys live inside the project or stack named by it.
+  // -identity; Compose keeps project-scoped keys, while Portainer gives the two volumes explicit node-specific names.
   const NAME = /(?<![\w.-])canary-[a-z0-9_-]+/gu;
   const namesIn = blocks => {
     const found = { tokens: new Set(), files: new Set() };
@@ -755,15 +761,15 @@ await check('node connections off: setup remains selectable while Go still refus
   // The user explicitly requested access to setup before the endpoint is configured. This supersedes only the old
   // disabled-radio expectation; the server must still refuse invitations without a connection address.
   const go = readFileSync(resolve(root, 'apps/node-go/internal/canary/dashboard_invitations.go'), 'utf8');
-  assert.match(go, /"outboundEnabled": d\.connectionEnabled && d\.connectionURL != ""/u, 'Go offers outbound only with an address');
-  assert.match(go, /if !d\.connectionEnabled \|\| d\.connectionURL == "" \{\s*errorReply\(w, fail\(409, "Configure the dedicated HTTPS node connection endpoint first"\)\)/u, 'Go refuses to invite without it');
+  assert.match(go, /"outboundEnabled": d\.connectionEnabled && \(d\.connectionURL != "" \|\| d\.connectionTLSFingerprint != ""\)/u, 'Go offers outbound only with an address');
+  assert.match(go, /if !d\.connectionEnabled \|\| d\.connectionURL == "" && d\.connectionTLSFingerprint == "" \{\s*errorReply\(w, fail\(409, "Configure the dedicated HTTPS node connection endpoint first"\)\)/u, 'Go refuses to invite without it');
   const disabled = api.normalizeOnboarding({ ...CAPS, outboundEnabled: false, connectionUrl: undefined });
   assert.deepEqual([disabled.outboundEnabled, 'connectionUrl' in disabled], [false, false]);
   const chooser = onboarding => within('admin', [], React.createElement(wizard.AddNodeChooser, { plan: { fresh: true, link: 'direct' }, onPlan: noop, onboarding }));
   const radiosOf = markup => tags(markup, 'input').map(attributes).filter(found => found.get('type') === 'radio').map(found => found.has('disabled'));
   const off = chooser(resource(disabled));
   assert.deepEqual(radiosOf(off), [false, false, false, false], 'setup is available before an address is configured');
-  assert.match(text(off), /The node reaches this dashboard Not set up here: this dashboard’s deployment has no node-connection address\./u);
+  assert.match(text(off), /The node reaches this dashboard Not set up here: this dashboard’s server has no node-connection listener\./u);
   const configured = chooser(resource(CAPS));
   assert.deepEqual(radiosOf(configured), [false, false, false, false], 'with an address it can be picked');
   assert.match(text(configured), /The node reaches this dashboard The node connects out over HTTPS and needs no inbound port/u);
@@ -850,7 +856,7 @@ await check('wizard pieces render masked: no private value in markup; tabs, Show
   assert.doesNotMatch(identify, new RegExp(PAGE.replace(/[.]/gu, '\\.'), 'u'), 'the page’s own address is never offered as the connection address');
   assert.equal(typeof guard.current, 'function');
   assert.equal(guard.current(), true, 'nothing made yet, so closing needs no question');
-  assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Set up this dashboard for incoming node connections.*Not set up here/u);
+  assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /This dashboard isn’t accepting node connections/u);
   assert.match(text(outbound({ onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) })), /Name on this dashboard.*Node ID/u, 'identity fields are available before endpoint setup');
   for (const { value: platform } of onboarding.PLATFORMS) {
     const beforeSetup = outbound({ platform, onboarding: resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }) });
@@ -957,10 +963,8 @@ await check('outbound setup explains which stack to configure and offers a refre
   };
   const off = setup(resource({ ...CAPS, outboundEnabled: false, connectionUrl: undefined }));
   const words = text(off);
-  for (const phrase of ['existing dashboard service: web', 'ghcr.io/narehood/uptime-canary-web', 'CANARY_DASHBOARD_CONNECTION_URL: https://NODE_REACHABLE_HOST:18348',
-    'CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto', 'CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0', 'DASHBOARD_BIND_IP:18348:8081',
-    'These may differ behind NAT or a VPN',
-    'keep its other settings, browser port, data and identity volumes', 'Check dashboard setup', 'No invitation is created until the dashboard is ready']) assert.ok(words.includes(phrase), phrase);
+  for (const phrase of ['This dashboard isn’t accepting node connections', 'Current dashboard images start it automatically with built-in HTTPS', 'Check dashboard setup', 'No invitation is created until the dashboard is ready']) assert.ok(words.includes(phrase), phrase);
+  assert.doesNotMatch(words, /DASHBOARD_BIND_IP|CANARY_DASHBOARD_CONNECTION_URL:/u, 'no hidden manual configuration step in the wizard');
   assert.equal(refreshButton(off).has('disabled'), false, 'setup can be checked now');
   const loading = setup(resource(undefined));
   assert.match(text(loading), /Checking dashboard setup…/u);
@@ -1591,7 +1595,7 @@ await check('TLS: an invitation’s dashboard certificate pin becomes CANARY_DAS
       assert.ok(keys.every(key => ['CANARY_DASHBOARD_URL', 'CANARY_DASHBOARD_TLS_FINGERPRINT', 'CANARY_DASHBOARD_ENROLL_TOKEN'].includes(key)), `${where}: ${keys}`);
     }
     const after = step('after');
-    assert.ok(after.startsWith('Remove CANARY_DASHBOARD_ENROLL_TOKEN from the node\'s settings; it works only once.'), where);
+    assert.ok(after.startsWith('Keep these settings and the identity '), where);
     assert.ok(after.endsWith(' Keep CANARY_DASHBOARD_URL and CANARY_DASHBOARD_TLS_FINGERPRINT as they are: the node saved both with that credential, and refuses to start if either one changes.'), `${where}: ${after}`);
     // A node that connects out keeps its own TLS mode, new or running.
     assert.deepEqual(real.flatMap(block => block.text.split('\n').filter(tlsSetting)), [], `${where}: no TLS mode`);
@@ -2113,21 +2117,26 @@ await check('unpaired new-node exports need no dashboard listener, address or in
 
 });
 
-await check('the unpaired wizard enables exports only for valid local node fields', () => {
-  const offline = { ...CAPS, outboundEnabled: false, connectionUrl: undefined };
+// Accepted 2026-11-12: the wizard must export a complete first-start connection, never a standalone node.
+await check('new outbound exports require the visible address and a ready listener', () => {
+  const pinOnly = api.normalizeOnboarding({ ...CAPS, connectionUrl: undefined, connectionTlsFingerprint: DASH_PIN });
+  assert.equal(pinOnly.outboundEnabled, true);
+  assert.equal(pinOnly.connectionTlsFingerprint, DASH_PIN);
+  assert.ok(!('connectionUrl' in pinOnly));
+  assert.equal(api.normalizeOnboarding({ ...CAPS, connectionUrl: 'http://bad', connectionTlsFingerprint: DASH_PIN }).outboundEnabled, false);
+  assert.equal(onboarding.outboundConnectionAddress('192.0.2.10'), 'https://192.0.2.10:18348');
   for (const { value: platform } of onboarding.PLATFORMS) {
-    const props = { capabilities: offline, platform, onPlatform: noop, nodeId: 'home-dns01', name: 'DNS01', secrets: SECRETS,
-      onUse: noop, taken: { nodes: [], invitations: [] }, addressError: 'Unused address is invalid' };
+    const props = { capabilities: pinOnly, platform, onPlatform: noop, nodeId: 'home-dns01', name: 'DNS01', secrets: { ...SECRETS, nodeId: 'home-dns01' },
+      taken: { nodes: [], invitations: [] }, addressError: undefined, connectionUrl: 'https://192.0.2.10:18348', prepare: async () => undefined };
     const render = change => within('admin', [], React.createElement(wizard.NewOutboundDeploy, { ...props, ...change }));
     const actions = markup => tags(markup, 'button').map(attributes).filter(button => /^(?:Show private values in|Copy|Download) /u.test(button.get('aria-label') ?? ''));
     const valid = render({});
-    assert.ok(actions(valid).length >= 3 && actions(valid).every(button => !button.has('disabled')), `${platform}: unrelated dashboard input cannot block exports`);
-    assert.match(text(valid), /You can deploy this node now/u);
-    assert.doesNotMatch(text(valid), /Complete the fields above first/u);
+    assert.ok(actions(valid).length >= 3 && actions(valid).every(button => !button.has('disabled')), `${platform}: complete local fields can generate an invitation on export`);
     for (const token of PRIVATE) assert.ok(!valid.includes(token), 'private values stay masked');
-    for (const change of [{ name: '' }, { nodeId: '' }, { secrets: null }, { secrets: { ...SECRETS, nodeId: 'other' } }, { capabilities: undefined }]) {
-      assert.ok(actions(render(change)).every(button => button.has('disabled')), 'missing local prerequisites still disable exports');
-      assert.doesNotMatch(text(render(change)), /You can deploy this node now/u, 'a disabled export never claims deployment is ready');
+    for (const change of [{ name: '' }, { nodeId: '' }, { secrets: null }, { secrets: { ...SECRETS, nodeId: 'other' } }, { capabilities: undefined },
+      { capabilities: { ...CAPS, outboundEnabled: false } }, { addressError: 'Enter the dashboard address' }]) {
+      assert.ok(actions(render(change)).every(button => button.has('disabled')), 'incomplete connection never exports a disconnected node');
+      assert.doesNotMatch(text(render(change)), /You can deploy this node now/u);
     }
   }
 });

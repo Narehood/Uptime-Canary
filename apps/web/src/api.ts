@@ -293,7 +293,8 @@ export function connectionOrigin(value: unknown): string | null {
 }
 
 /**
- * Administrators: what the Add node wizard may offer. `outboundEnabled` holds only with a usable connection address. A
+ * Administrators: what the Add node wizard may offer. A native TLS listener can be ready before its reachable address
+ * is entered in the wizard. An unpinned listener still needs its server-configured HTTPS origin. A
  * protocol this page doesn't know means the page is older than its dashboard, so nothing is guessed.
  */
 export function normalizeOnboarding(value: unknown): NodeOnboardingCapabilities {
@@ -305,15 +306,16 @@ export function normalizeOnboarding(value: unknown): NodeOnboardingCapabilities 
   // can't be pinned as the dashboard means it, so the address isn't offered rather than written without its pin.
   const pinned = absent(value.connectionTlsFingerprint) ? null : reportedFingerprint(value.connectionTlsFingerprint) ?? false;
   const connectionUrl = value.outboundEnabled === true && pinned !== false ? connectionOrigin(value.connectionUrl) : null;
+  const ready = value.outboundEnabled === true && pinned !== false && (connectionUrl !== null || absent(value.connectionUrl) && Boolean(pinned));
   const capabilities: NodeOnboardingCapabilities = {
-    outboundEnabled: connectionUrl !== null,
+    outboundEnabled: ready,
     connectionProtocol: 1,
     imageTag: value.imageTag,
     containerPlatforms: list<unknown>(value.containerPlatforms).filter((item): item is string => typeof item === 'string' && CONTAINER_PLATFORM.test(item)).slice(0, 8),
     nativeDownloadAvailable: value.nativeDownloadAvailable === true,
   };
   if (connectionUrl) capabilities.connectionUrl = connectionUrl;
-  if (connectionUrl && pinned) capabilities.connectionTlsFingerprint = pinned;
+  if (ready && pinned) capabilities.connectionTlsFingerprint = pinned;
   return capabilities;
 }
 

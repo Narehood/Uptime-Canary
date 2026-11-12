@@ -20,7 +20,8 @@ import { Glyph, Icon } from '../ui/icons';
  * console or browser storage, and both go when the dialog closes. Previews mask them; Show, Copy and Download are the
  * deliberate ways to see or take them. Only the administrator token is ever sent, to this dashboard's server, when a new
  * direct node is verified. Once used for one node ID, the two tokens are never shown for another (onboarding.ts
- * secretsFor). The node-connection address comes from the dashboard's server, never from this page's own.
+ * secretsFor). The node-connection address is the dashboard server's configured default or the one entered in this
+ * wizard, never this page's own; the server binds it to the invitation.
  */
 
 export type AddPlan = { fresh: boolean; link: 'direct' | 'outbound' };
@@ -41,7 +42,7 @@ export function useInvitations(refreshMs?: number): Resource<NodeInvitation[]> {
 /** Current setup status; choosing the outbound setup flow never depends on this read. */
 function outboundReason(onboarding: Resource<NodeOnboardingCapabilities>): string | null {
   const capabilities = onboarding.data;
-  if (capabilities) return capabilities.outboundEnabled ? null : 'Not set up here: this dashboard’s deployment has no node-connection address.';
+  if (capabilities) return capabilities.outboundEnabled ? null : 'Not set up here: this dashboard’s server has no node-connection listener.';
   return onboarding.error ? 'This dashboard’s server didn’t say whether nodes can connect to it.' : 'Checking whether nodes can connect to this dashboard…';
 }
 
@@ -86,37 +87,25 @@ export function AddNodeChooser({ plan, onPlan, onboarding }: { plan: AddPlan; on
 }
 
 /**
- * Configuration help stays available before the dashboard has a connection listener. Uses the existing guide controls.
- * `separate`: it sits below a new node's own steps, which don't depend on it, so it doesn't call itself their first step.
+ * While this dashboard's server isn't taking node connections yet (still checking, unreadable, or an older or custom
+ * deployment without the listener), the outbound flow says so, offers a check, and exports nothing deployable: a node set
+ * up now couldn't connect. Current dashboard images start the listener with built-in HTTPS themselves, and the address
+ * nodes use is entered in this wizard, so this asks for no dashboard address setting. `children`: a new node's fields.
  */
-export function OutboundDashboardSetup({ onboarding, onClose, separate = false }: { onboarding: Resource<NodeOnboardingCapabilities>; onClose: () => void; separate?: boolean }) {
-  const settings: GuideBlock = {
-    key: 'dashboard-connection', kind: 'command', secret: false, title: 'Configure the existing dashboard service',
-    text: `environment:
-  CANARY_DASHBOARD_CONNECTION_URL: https://NODE_REACHABLE_HOST:18348
-  CANARY_DASHBOARD_CONNECTION_TLS_MODE: auto
-  CANARY_DASHBOARD_CONNECTION_HOST: 0.0.0.0
-  CANARY_DASHBOARD_CONNECTION_PORT: "8081"
-ports:
-  - "DASHBOARD_BIND_IP:18348:8081"`,
-  };
+export function OutboundDashboardSetup({ onboarding, onClose, children }: { onboarding: Resource<NodeOnboardingCapabilities>; onClose: () => void; children?: ReactNode }) {
+  const off = onboarding.data ? !onboarding.data.outboundEnabled : false;
   return (
     <>
-      <Banner tone="info" title="Set up this dashboard for incoming node connections" actions={
+      <Banner tone={off ? 'warn' : 'info'} title={off ? 'This dashboard isn’t accepting node connections' : onboarding.error ? 'This dashboard’s node connections couldn’t be checked' : 'Checking this dashboard’s node connections'} actions={
         <button type="button" className="btn sm" onClick={onboarding.reload} disabled={onboarding.loading}>
           <Icon name="refresh" />{onboarding.loading ? 'Checking dashboard setup…' : 'Check dashboard setup'}
         </button>
       }>
-        {outboundReason(onboarding)} You can configure it now, then check again without closing this menu.
+        {outboundReason(onboarding)}{off ? ' Current dashboard images start it automatically with built-in HTTPS; update this dashboard to a current image, then check again. A dashboard run outside the supplied images needs its node-connection listener turned on first.' : null}
         {onboarding.error ? <p role="alert">{describeFailure(onboarding.error)}</p> : null}
       </Banner>
-      <p className="sec">{separate ? 'This is separate from the node’s steps above. To connect nodes to this dashboard, update' : 'First update'} the stack running this dashboard. In Portainer, edit its existing dashboard service: <code>web</code> in the supplied templates, using the <code>ghcr.io/narehood/uptime-canary-web</code> image.{separate ? '' : ' The remote node is configured after this step.'}</p>
-      <p className="modal-note">Replace NODE_REACHABLE_HOST with the hostname or IP your nodes use to reach this dashboard, and DASHBOARD_BIND_IP with an IP actually assigned to its Docker host. These may differ behind NAT or a VPN; forward TCP port 18348 to the published host port where needed. Merge these entries into the service’s existing environment and ports; keep its other settings, browser port, data and identity volumes.</p>
-      <ol className="gsteps"><GuideStep n={1} block={settings} real={settings} onHandled={() => {}} /></ol>
-      <p className="modal-note">Update the stack to recreate the dashboard container, then select Check dashboard setup. This uses built-in HTTPS on port 18348, separate from the browser dashboard and its sign-in proxy. The nodes must be able to reach that port without interactive sign-in.</p>
-      <p className="modal-note">{separate
-        ? 'Once the dashboard reports its connection address, this menu can connect nodes. For a node you’ve already deployed from the steps above, choose “A node that’s already running”, so it keeps its identity and credentials. A node you haven’t deployed yet gets one complete first-start setup here instead.'
-        : 'Once the dashboard reports its connection address, this menu lets you create an invitation and shows the Docker, Compose, Portainer or Linux VM steps for the node.'} No invitation is created until the dashboard is ready.</p>
+      {children}
+      <p className="modal-note">No invitation is created until the dashboard is ready, and nothing here can be deployed before then. Once it is, this wizard makes one complete setup for the node, with the address the node uses to reach this dashboard.</p>
       <div className="modal-foot"><span /><button type="button" className="btn" onClick={onClose}>Cancel</button></div>
     </>
   );
@@ -316,8 +305,8 @@ export function SetupGuide({ setup, platform, onPlatform, onHandled, disabledRea
 }
 
 /** Keep every setup action visible but disabled until this new node's required fields are valid. */
-export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, unpaired = false, fieldsValid = false, nodeId = '', name = '', prepare, onHandled = () => {}, onRevealPrepared, onExportResult, connectionUrl }: {
-  capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; reason: string; direct?: boolean; unpaired?: boolean; fieldsValid?: boolean; nodeId?: string; name?: string;
+export function NodeDeploymentPreview({ capabilities, loading = false, platform, onPlatform, reason, direct = false, fieldsValid = false, nodeId = '', name = '', prepare, onHandled = () => {}, onRevealPrepared, onExportResult, connectionUrl }: {
+  capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; reason: string; direct?: boolean; fieldsValid?: boolean; nodeId?: string; name?: string;
   prepare?: PrepareSetup; onHandled?: () => void; onRevealPrepared?: (key: string | null) => void;
   onExportResult?: (result: ExportResult) => void;
   connectionUrl?: string;
@@ -327,50 +316,39 @@ export function NodeDeploymentPreview({ capabilities, loading = false, platform,
       {capabilities ? <ImageLine capabilities={capabilities} /> : loading ? <p className="small muted" role="status">Reading this dashboard’s image tag…</p> : null}
       <SetupGuide setup={{ nodeId: nodeIdProblem(nodeId) ? 'canary-new-node' : nodeId, name: labelProblem(name) ? 'New node' : name,
         imageTag: capabilities?.imageTag ?? 'IMAGE_TAG_FROM_DASHBOARD', secrets: { admin: 'ADMIN_TOKEN', cluster: 'CLUSTER_TOKEN' },
-        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : unpaired ? { unpaired: true } : { outbound: { connectionUrl: connectionUrl ?? capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
+        ...(direct ? { direct: { url: 'https://node.example.invalid:3100', host: '0.0.0.0', listen: '0.0.0.0', port: 3100, allInterfaces: true } } : { outbound: { connectionUrl: connectionUrl ?? capabilities?.connectionUrl ?? 'https://DASHBOARD_IP:18348', token: 'INVITATION_TOKEN', ...(capabilities?.connectionTlsFingerprint ? { tlsFingerprint: capabilities.connectionTlsFingerprint } : {}) } }) }}
         platform={platform} onPlatform={onPlatform} onHandled={onHandled} disabledReason={reason || undefined} fieldsValid={fieldsValid} prepare={prepare} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} />
     </>
   );
 }
 
 /**
- * A new node that will reach this dashboard. Once the dashboard takes node connections, this exports nothing until the
- * node's one-time invitation can be included in its first deployment. Until then it exports a node that isn't connected
- * yet: only the name, the node ID, that ID's own tokens and the image tag decide, never the dashboard address or invitation
- * readiness. Show, Copy and Download then send nothing anywhere, and the node connects later as an already-running node.
+ * A new node that will reach this dashboard. Its only export is one complete first start: that node ID's own tokens, the
+ * dashboard address entered above, the certificate pin and a one-time invitation, which the first Show, Copy or Download
+ * (or Generate setup) requests. Until the dashboard's server takes node connections and the fields are valid, the
+ * actions stay visible but disabled over a masked preview, so nothing that would need editing later is ever exported.
  */
-export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, earlier, taken, onUse, addressError, prepare, onHandled, onRevealPrepared, busy = false, onExportResult, connectionUrl }: {
+export function NewOutboundDeploy({ capabilities, loading = false, platform, onPlatform, nodeId, name, secrets, earlier, taken, addressError, prepare, onHandled, onRevealPrepared, busy = false, onExportResult, connectionUrl }: {
   capabilities?: NodeOnboardingCapabilities; loading?: boolean; platform: Platform; onPlatform: (platform: Platform) => void; nodeId: string; name: string;
-  secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; onUse: (nodeId: string) => void; addressError?: string;
+  secrets: NodeSecrets | null; earlier?: string | null; taken: Taken; addressError?: string;
   prepare?: PrepareSetup; onHandled?: () => void; onRevealPrepared?: (key: string | null) => void; busy?: boolean;
   onExportResult?: (result: ExportResult) => void;
   connectionUrl?: string;
 }) {
   const pair = secretsFor(secrets, nodeId);
-  const unpaired = !capabilities?.outboundEnabled || !capabilities.connectionUrl;
-  const fields = [labelProblem(name), nodeIdProblem(nodeId, taken), unpaired ? null : addressError].filter(Boolean);
-  const reason = [...fields, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.') : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
-  const notConnected = capabilities && unpaired && pair && !reason && !busy ? (
-    <Banner tone="info" role="note" title="You can deploy this node now, but it won’t connect to this dashboard yet">
-      These settings start it on its own, with no inbound port, and it won’t appear here yet. To connect it later, set up this dashboard’s listener below, then add it with “A node that’s already running” and “The node reaches this dashboard”: it keeps its identity and credentials. Its tokens live only in this dialog, so save the private settings before you close it. Keep those settings and the node’s data and identity storage.
-    </Banner>
-  ) : null;
-  // No `prepare` here: nothing is requested, so Show, Copy and Download are the export, and the first one binds the pair.
-  if (capabilities && unpaired && pair && !reason && !busy) {
-    return <>
-      {notConnected}
-      <ImageLine capabilities={capabilities} />
-      <TokensNote nodeId={nodeId} earlier={earlier} />
-      <SetupGuide setup={{ nodeId, name, imageTag: capabilities.imageTag, secrets: pair, unpaired: true }} platform={platform} onPlatform={onPlatform} onHandled={() => onUse(nodeId)} />
-    </>;
-  }
+  const fields = [labelProblem(name), nodeIdProblem(nodeId, taken), addressError].filter(Boolean);
+  const reason = [...fields, !capabilities ? (loading ? 'Wait for the dashboard’s image tag to load.' : 'This dashboard’s setup is unavailable. Use Try again above.')
+    : !capabilities.outboundEnabled ? NOT_ACCEPTING : null, !pair ? NO_TOKENS : null].filter(Boolean).join(' ');
   return <>
-    {notConnected}
-    <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform} unpaired={unpaired} fieldsValid={!fields.length}
+    {pair && !reason ? <TokensNote nodeId={nodeId} earlier={earlier} /> : null}
+    <NodeDeploymentPreview capabilities={capabilities} loading={loading} platform={platform} onPlatform={onPlatform} fieldsValid={!fields.length}
       reason={reason || (busy ? 'Generating the complete setup…' : !prepare ? 'Choose Generate setup below to include the one-time invitation in a complete first-start deployment.' : '')} nodeId={nodeId} name={name}
-      prepare={unpaired ? undefined : prepare} onHandled={onHandled} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} connectionUrl={connectionUrl} />
+      prepare={prepare} onHandled={onHandled} onRevealPrepared={onRevealPrepared} onExportResult={onExportResult} connectionUrl={connectionUrl} />
   </>;
 }
+
+/** A node set up before this dashboard takes node connections couldn't connect, so nothing is exported until it does. */
+const NOT_ACCEPTING = 'This dashboard’s server isn’t accepting node connections yet, so no complete setup can be made.';
 
 // ----- a new node that this dashboard's server reaches: deploy it, then verify it with its new administrator token
 
@@ -492,7 +470,7 @@ function ConnectionTrust({ pin }: { pin?: string }) {
   if (!pin) return <p className="small muted">Set by this dashboard’s deployment. The node must reach it over HTTPS and trust its certificate; nothing here turns certificate checks off.</p>;
   return (
     <p className="small muted">
-      Set by this dashboard’s deployment, whose server serves this address with a certificate of its own. The node’s settings below pin exactly that certificate with CANARY_DASHBOARD_TLS_FINGERPRINT, so it connects only to this dashboard; nothing here turns certificate checks off. This page got the fingerprint from this dashboard’s server over your sign-in. If you reached this page over a network you don’t trust, first compare it with the line “{DASHBOARD_TLS_LOG_LINE}” in the dashboard server’s own log. It names the dashboard’s certificate: it isn’t the node’s connection fingerprint you compare when the node connects.
+      This dashboard’s server serves its node-connection listener with a certificate of its own. The node’s settings below pin exactly that certificate with CANARY_DASHBOARD_TLS_FINGERPRINT, so it connects only to this dashboard; nothing here turns certificate checks off. This page got the fingerprint from this dashboard’s server over your sign-in. If you reached this page over a network you don’t trust, first compare it with the line “{DASHBOARD_TLS_LOG_LINE}” in the dashboard server’s own log. It names the dashboard’s certificate: it isn’t the node’s connection fingerprint you compare when the node connects.
     </p>
   );
 }
@@ -645,7 +623,8 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
   const pair = secretsFor(secrets, nodeId);
 
   const generate = async (): Promise<PreparedSetup | null> => {
-    if (busy || !capabilities?.outboundEnabled || !capabilities.connectionUrl) return null;
+    // A ready listener may have no configured default (api.ts normalizeOnboarding): then the entered address is sent.
+    if (busy || !capabilities?.outboundEnabled) return null;
     setShow(true); setFailure(null); setExportResult(null);
     if (errors.label || errors.nodeId || errors.connectionUrl || !connectionUrl) { failed(); return null; }
     // A new node's settings need its own tokens; without them nothing is created (the dialog says why above).
@@ -655,7 +634,8 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     setBusy('create');
     try {
       // The default uses the server's exact configured origin, including its
-      // IPv6 spelling. Only an actual alternate destination needs an override.
+      // IPv6 spelling. Only an actual alternate destination needs an override;
+      // without a configured default, the entered address is always sent.
       const result = await api.createInvitation({ label, nodeId, ...(connectionUrl === capabilities.connectionUrl ? {} : { connectionUrl }) }, controller.signal);
       if (!stillCurrent()) return null;
       setInvitation(withoutToken(result));
@@ -741,18 +721,20 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
     <TextField label="Node ID" mono value={nodeId} onChange={setNodeId} error={live(nodeId, errors.nodeId)} maxLength={128} disabled={busy !== null} placeholder="canary-office"
       hint={fresh ? 'New and unique, such as canary-office. It can’t change later; never reuse a live node’s ID.' : 'Its current CANARY_NODE_ID. The dashboard refuses a node that connects with any other ID.'} />
   </>;
-  // Only an invitation uses this address, so a node that isn't connected yet isn't asked for it.
+  // Always asked here: the invitation and the node's settings are bound to this address, so nothing is set afterwards.
+  const configured = capabilities?.connectionUrl;
   const addressField = <TextField label="Dashboard IP or HTTPS address" mono value={addressInput} onChange={setConnectionAddress} error={live(addressInput, errors.connectionUrl)} maxLength={2048} disabled={busy !== null}
-    placeholder="https://192.168.10.10:18348" hint={`The address this node can reach. An IP or hostname keeps the configured connection port; a full HTTPS address can specify another port. It must route to this dashboard’s node-connection listener. A different address requires this dashboard’s certificate fingerprint from native TLS. Configured address: ${capabilities?.connectionUrl ?? 'not configured yet'}.`} />;
+    placeholder="https://192.168.10.10:18348" hint={`The address this node uses to reach this dashboard’s node-connection listener, such as its LAN, VPN or public IP or hostname. ${configured ? 'An IP or hostname keeps the configured connection port' : 'An IP or hostname uses port 18348, the connection port the supplied dashboard templates publish'}; a full HTTPS address can name another port. ${configured ? `A different address requires this dashboard’s certificate fingerprint from native TLS. Configured address: ${configured}.` : capabilities ? 'This dashboard has no configured default, so the setup uses the address entered here.' : ''}`} />;
   const deployment = fresh ? <NewOutboundDeploy capabilities={capabilities} loading={onboarding.loading} platform={platform} onPlatform={onPlatform} nodeId={nodeId} name={label}
-    secrets={secrets} earlier={earlier} taken={taken} onUse={onUse} addressError={errors.connectionUrl} prepare={prepare} busy={busy !== null}
+    secrets={secrets} earlier={earlier} taken={taken} addressError={errors.connectionUrl} prepare={prepare} busy={busy !== null}
     onHandled={() => setHandled(true)} onRevealPrepared={setInitiallyRevealed} onExportResult={setExportResult} connectionUrl={connectionUrl ?? undefined} /> : null;
 
-  if (!capabilities?.outboundEnabled || !capabilities.connectionUrl) {
-    return <>
-      {fresh && !invitation ? <form className="connect-form" onSubmit={event => event.preventDefault()} noValidate>{identityFields}{deployment}</form> : null}
-      <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose} separate={fresh && !invitation} />
-    </>;
+  if (!capabilities?.outboundEnabled) {
+    return (
+      <OutboundDashboardSetup onboarding={onboarding} onClose={onRequestClose}>
+        {fresh && !invitation ? <form className="connect-form" onSubmit={event => event.preventDefault()} noValidate>{identityFields}{addressField}{deployment}</form> : null}
+      </OutboundDashboardSetup>
+    );
   }
 
   const failureBox = failure ? <div className="errsum" role="alert" ref={summaryRef} tabIndex={-1}><Glyph tone="down" /><div><b>{failure.title}</b><p>{failure.text}</p></div></div> : null;
@@ -769,7 +751,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
               : 'The dashboard’s server reads it over the node’s own connection, with access of its own for each dashboard role.'}</div>
           </div>
         </div>
-        <p className="modal-note">Now remove CANARY_DASHBOARD_ENROLL_TOKEN from the node’s settings: it works only once. The node keeps its connection credential in its identity {platform === 'vm' ? 'directory' : 'volume'}, so keep that.</p>
+        <p className="modal-note">Leave the node’s settings as they are: nothing needs editing. Its invitation is used up, and the node reconnects with the connection credential it saved in its identity {platform === 'vm' ? 'directory' : 'volume'}, so keep that storage.</p>
         <div className="modal-foot"><span /><button type="button" className="btn primary" onClick={onClose}>Done</button></div>
       </>
     );
@@ -780,7 +762,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
       <form className="connect-form" onSubmit={event => { void create(event); }} noValidate aria-busy={busy === 'create'}>
         <p className="sec">{fresh ? 'The new node' : 'The node'} opens an HTTPS connection to this dashboard’s node-connection address and keeps it open; this dashboard never dials it. No inbound port or firewall opening is needed on the node.</p>
         <dl className="kv">
-          <dt>Node-connection address</dt><dd className="mono">{capabilities.connectionUrl}</dd>
+          {configured ? <><dt>Node-connection address</dt><dd className="mono">{configured}</dd></> : null}
           {capabilities.connectionTlsFingerprint ? <><dt>Its certificate fingerprint</dt><dd className="mono">{capabilities.connectionTlsFingerprint}</dd></> : null}
         </dl>
         <ConnectionTrust pin={capabilities.connectionTlsFingerprint} />
@@ -789,7 +771,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
         {addressField}
         {exportFeedback}
         {deployment}
-        {fresh ? <p className="modal-note">Copy, Download or Show generates the complete setup when you first use it. Then paste its commands or stack YAML and environment settings and start the node. If it is already deployed, choose “A node that’s already running” to preserve its credentials and identity.</p> : null}
+        {fresh ? <p className="modal-note">Copy, Download or Show generates the complete setup when you first use it: this address, the node’s own credentials and a one-time invitation. Then paste its commands or stack YAML and environment settings as they are and start the node; nothing needs editing afterwards. If it is already deployed, choose “A node that’s already running” to preserve its credentials and identity.</p> : null}
         <div className="modal-foot">
           <span className="small muted"><Icon name="lock" className="inline" />Administrators only</span>
           <span className="row-wrap">
@@ -838,7 +820,7 @@ export function OutboundNode({ fresh, draft, onDraft, onboarding, secrets, earli
       {token && current.state !== 'confirmed' ? (
           <>
             <ImageLine capabilities={capabilities} />
-            {fresh ? <p className="modal-note">This is the complete configuration for a new node’s first start, including its own credentials and this invitation. Paste the commands or stack YAML and environment settings together, then start it. Keep its data and identity storage.</p> : null}
+            {fresh ? <p className="modal-note">This is the complete configuration for a new node’s first start, including its own credentials and this invitation. Paste the commands or stack YAML and environment settings together as they are, then start it; nothing needs editing after it pairs. Keep its data and identity storage.</p> : null}
             {/* The invitation's own address and pin, which the dashboard's server bound to it; never the page's own. */}
             {fresh && !secretsFor(invitationBootstrap, current.nodeId) ? <Banner tone="down" title="This new node’s setup is unavailable">Cancel this invitation and generate it again, or choose an already-running node if it was previously deployed.</Banner> : <SetupGuide setup={{ nodeId: current.nodeId, name: current.label, imageTag: capabilities.imageTag, secrets: fresh ? secretsFor(invitationBootstrap, current.nodeId) : null,
               outbound: { connectionUrl: current.connectionUrl, token, ...(current.connectionTlsFingerprint ? { tlsFingerprint: current.connectionTlsFingerprint } : {}) } }}
@@ -945,7 +927,7 @@ export function PairingDialog({ invitation: opened, onClose, onChanged }: { invi
       const node = await api.confirmInvitation(current.id);
       if (!stillCurrent()) return;
       registry.reload(); onChanged();
-      notify(`${addedNotice(node)} Remove CANARY_DASHBOARD_ENROLL_TOKEN from its settings now; it works only once.`);
+      notify(`${addedNotice(node)} Its settings stay as they are: it reconnects with its saved connection credential.`);
       onClose();
     } catch (error) {
       if (!stillCurrent()) return;

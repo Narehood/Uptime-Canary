@@ -25,11 +25,11 @@ const CONNECTION_ROUTES = ['/connect/v1/enroll', '/connect/v1/open', '/connect/v
 // cmd/canary/main.go prints this once the node has started with CANARY_DASHBOARD_URL.
 const FINGERPRINT_LINE = /^Node connection fingerprint \(compare before confirming\): ([0-9a-f]{64})\r?$/mu;
 
-export async function createDashboardControlPlaneFixture({ runDir, port, env, owned, servers, until, secrets }) {
+export async function createDashboardControlPlaneFixture({ runDir, port, env, owned, servers, until, secrets, nativeConnection = false }) {
   const backend = `http://127.0.0.1:${await port()}`;
   const origin = `http://127.0.0.1:${await port()}`;
-  const identity = join(runDir, 'dashboard-identity');
-  const downloadDirectory = join(runDir, 'downloads');
+  const identity = join(runDir, nativeConnection ? 'bootstrap-dashboard-identity' : 'dashboard-identity');
+  const downloadDirectory = join(runDir, nativeConnection ? 'bootstrap-downloads' : 'downloads');
   mkdirSync(downloadDirectory, { mode: 0o700 });
   const password = 'Private dashboard browser fixture password';
   const proxyCookie = 'canary_dashboard_fixture_proxy';
@@ -116,50 +116,53 @@ export async function createDashboardControlPlaneFixture({ runDir, port, env, ow
   // and the node's own Authorization and X-Canary-Registration headers, never a cookie, and adds no Origin. It keeps only
   // bounded counts in memory and adds the bearer credentials it carries to the redaction list. The browser never gets
   // either address, and the harness's request filter allows neither.
-  const connectionBackend = `http://127.0.0.1:${await port()}`;
-  const connectionUrl = `https://127.0.0.1:${await port()}`;
+  const connectionBackend = `${nativeConnection ? 'https' : 'http'}://127.0.0.1:${await port()}`;
+  const connectionUrl = nativeConnection ? connectionBackend : `https://127.0.0.1:${await port()}`;
   const transport = { forwarded: 0, refused: [], overflow: 0, cookies: 0, origins: 0, unauthenticated: 0, unregistered: 0, tlsErrors: 0, routes: Object.fromEntries(CONNECTION_ROUTES.map(path => [path, 0])) };
-  const front = createHttpsServer({ cert: readFileSync(TRUST), key: readFileSync(TRUST_KEY) }, (req, res) => {
-    if (req.headers.cookie !== undefined) transport.cookies++;
-    if (req.headers.origin !== undefined) transport.origins++;
-    if (req.method !== 'POST' || !CONNECTION_ROUTES.includes(req.url)) {
-      if (transport.refused.length < 32) transport.refused.push(`${req.method} ${String(req.url).slice(0, 96)}`);
-      req.resume(); res.writeHead(404, { 'Cache-Control': 'no-store' }).end(); return;
-    }
-    if (transport.forwarded >= 4000) { transport.overflow++; req.resume(); res.writeHead(503, { 'Cache-Control': 'no-store' }).end(); return; }
-    transport.forwarded++; transport.routes[req.url]++;
-    const bearer = /^Bearer (\S+)$/u.exec(req.headers.authorization ?? '')?.[1];
-    if (bearer) secrets.add(bearer); else transport.unauthenticated++;
-    if (req.url !== '/connect/v1/enroll' && !req.headers['x-canary-registration']) transport.unregistered++;
-    const headers = { ...req.headers, host: new URL(connectionBackend).host };
-    delete headers.cookie;
-    // The node's long poll is answered within 15 s (nodeconnection.PollWait); its client gives up after 22 s.
-    const upstream = upstreamRequest(new URL(req.url, connectionBackend), { method: 'POST', headers, timeout: 25000 }, response => {
-      res.writeHead(response.statusCode, response.headers); response.pipe(res);
+  if (!nativeConnection) {
+    const front = createHttpsServer({ cert: readFileSync(TRUST), key: readFileSync(TRUST_KEY) }, (req, res) => {
+      if (req.headers.cookie !== undefined) transport.cookies++;
+      if (req.headers.origin !== undefined) transport.origins++;
+      if (req.method !== 'POST' || !CONNECTION_ROUTES.includes(req.url)) {
+        if (transport.refused.length < 32) transport.refused.push(`${req.method} ${String(req.url).slice(0, 96)}`);
+        req.resume(); res.writeHead(404, { 'Cache-Control': 'no-store' }).end(); return;
+      }
+      if (transport.forwarded >= 4000) { transport.overflow++; req.resume(); res.writeHead(503, { 'Cache-Control': 'no-store' }).end(); return; }
+      transport.forwarded++; transport.routes[req.url]++;
+      const bearer = /^Bearer (\S+)$/u.exec(req.headers.authorization ?? '')?.[1];
+      if (bearer) secrets.add(bearer); else transport.unauthenticated++;
+      if (req.url !== '/connect/v1/enroll' && !req.headers['x-canary-registration']) transport.unregistered++;
+      const headers = { ...req.headers, host: new URL(connectionBackend).host };
+      delete headers.cookie;
+      // The node's long poll is answered within 15 s (nodeconnection.PollWait); its client gives up after 22 s.
+      const upstream = upstreamRequest(new URL(req.url, connectionBackend), { method: 'POST', headers, timeout: 25000 }, response => {
+        res.writeHead(response.statusCode, response.headers); response.pipe(res);
+      });
+      upstream.on('timeout', () => upstream.destroy());
+      upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+      res.on('close', () => { if (!res.writableEnded) upstream.destroy(); });
+      req.pipe(upstream);
     });
-    upstream.on('timeout', () => upstream.destroy());
-    upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
-    res.on('close', () => { if (!res.writableEnded) upstream.destroy(); });
-    req.pipe(upstream);
-  });
-  // Idle connections close from the node's side first (its transport's IdleConnTimeout is 30 s): Go doesn't retry a POST
-  // whose reused connection the server closed meanwhile, so a shorter server keep-alive would make the session flap.
-  front.keepAliveTimeout = 35000;
-  front.on('tlsClientError', () => { transport.tlsErrors++; });
-  front.listen(Number(new URL(connectionUrl).port), '127.0.0.1'); await once(front, 'listening'); servers.push(front);
+    // Idle connections close from the node's side first (its transport's IdleConnTimeout is 30 s): Go doesn't retry a POST
+    // whose reused connection the server closed meanwhile, so a shorter server keep-alive would make the session flap.
+    front.keepAliveTimeout = 35000;
+    front.on('tlsClientError', () => { transport.tlsErrors++; });
+    front.listen(Number(new URL(connectionUrl).port), '127.0.0.1'); await once(front, 'listening'); servers.push(front);
+  }
   const child = spawn(join(runDir, process.platform === 'win32' ? 'review-node.exe' : 'review-node'), ['dashboard'], {
-    cwd: runDir, env: { ...env, CANARY_DASHBOARD_DATA: join(runDir, 'dashboard-data'), CANARY_DASHBOARD_IDENTITY: identity,
+    cwd: runDir, env: { ...env, CANARY_DASHBOARD_DATA: join(runDir, nativeConnection ? 'bootstrap-dashboard-data' : 'dashboard-data'), CANARY_DASHBOARD_IDENTITY: identity,
       CANARY_DASHBOARD_ASSETS: join(runDir, 'dist'), CANARY_DASHBOARD_HOST: '127.0.0.1',
       CANARY_DASHBOARD_PORT: new URL(backend).port, CANARY_DASHBOARD_ORIGINS: origin, CANARY_UPDATE_CHECKS: 'false',
-      CANARY_DASHBOARD_CONNECTION_URL: connectionUrl, CANARY_DASHBOARD_CONNECTION_HOST: '127.0.0.1', CANARY_DASHBOARD_CONNECTION_PORT: new URL(connectionBackend).port },
+      CANARY_DASHBOARD_CONNECTION_URL: nativeConnection ? '' : connectionUrl, CANARY_DASHBOARD_CONNECTION_TLS_MODE: nativeConnection ? '' : 'off', CANARY_DASHBOARD_CONNECTION_HOST: '127.0.0.1', CANARY_DASHBOARD_CONNECTION_PORT: new URL(connectionBackend).port },
     windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
   owned.push(child);
   let log = ''; for (const stream of [child.stdout, child.stderr]) stream.on('data', value => { log = (log + value).slice(-16000); });
+  const connectionPin = () => /Dashboard connection TLS certificate fingerprint: ([0-9a-f]{64})/u.exec(log)?.[1];
   await until(async () => {
     if (child.exitCode !== null) throw Error('Private dashboard fixture exited during startup');
     try {
-      return (await fetch(backend + '/healthz')).ok && (await fetch(connectionBackend + '/healthz')).ok && existsSync(join(identity, 'setup.code'));
+      return (await fetch(backend + '/healthz')).ok && (await (nativeConnection ? pinnedFixtureFetch(connectionBackend + '/healthz', connectionPin()) : fetch(connectionBackend + '/healthz'))).ok && existsSync(join(identity, 'setup.code'));
     } catch { return false; }
   }, 'private dashboard account service and its node-connection listener', 30000);
   const code = readFileSync(join(identity, 'setup.code'), 'utf8').trim();
@@ -939,45 +942,12 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
           assert.deepEqual(await page.eval('({copies:window.__copies.length,downloads:window.__saved.length})'), { copies: 0, downloads: 0 }, 'disabled setup actions neither copy nor download');
         }
       }
-      // Regression: valid visible node fields export without filling direct-node fields,
-      // the dashboard address, or any dashboard deployment settings below this section.
+      // Nov 12: complete node setup requires a listener and the address entered in this same form.
       await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
       await fill('Node ID', preparationId, 'dialog[open]');
-      const unpairedCredentials = [];
-      for (const method of ['Docker Compose', 'Portainer stack', 'Linux VM', 'Docker run']) {
-        await click(method, 'dialog[open]');
-        await captureOutputs();
-        const actions = await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].map(button=>({disabled:button.disabled,label:button.getAttribute("aria-label")}))');
-        assert.ok(actions.length >= 3 && actions.every(action => !action.disabled), `${method}: node exports have no unrelated prerequisites`);
-        const contents = await copyOf(preparationFile);
-        assert.doesNotMatch(contents, /INVITATION_TOKEN|CANARY_DASHBOARD_(?:URL|ENROLL_TOKEN|TLS_FINGERPRINT)=|\u2022{4}/u, 'complete real credentials without fake enrollment settings');
-        const own = envOf(contents);
-        const clean = value => value.replace(/^"|"$/gu, '');
-        const pair = [clean(own.CANARY_ADMIN_TOKEN), clean(own.CANARY_CLUSTER_TOKEN)];
-        for (const token of pair) { assert.ok(token.length >= 24); secrets.add(token); }
-        if (!unpairedCredentials.length) unpairedCredentials.push(...pair);
-        else assert.deepEqual(pair, unpairedCredentials, 'changing platforms retains the same bootstrap credentials');
-        await clickLabelled(`Download ${preparationFile}`);
-        const saved = await until(() => page.eval('window.__saved.length ? window.__saved.at(-1).blob.text() : null'), 'bootstrap environment downloaded');
-        assert.equal(saved, contents, `${method}: downloaded and copied environments match`);
-        assert.ok(!(await page.eval('document.querySelector("dialog[open] .guide").innerText')).includes(pair[0]), 'preview masks the real administrator token');
-        await clickLabelled(`Show private values in ${preparationFile}`);
-        assert.ok((await page.eval('document.querySelector("dialog[open] .guide").innerText')).includes(pair[0]), 'Show reveals the real administrator token');
-        await clickLabelled(`Hide private values in ${preparationFile}`);
-        assert.ok(!(await page.eval('document.querySelector("dialog[open] .guide").innerText')).includes(pair[0]), 'Hide masks the real token again');
-        if (method === 'Docker Compose' || method === 'Portainer stack') {
-          const yamlFile = (await downloads()).find(name => /\.ya?ml$/u.test(name));
-          assert.ok(yamlFile, 'stack/compose YAML is downloadable');
-          const yaml = await copyOf(yamlFile);
-          assert.ok(yaml.includes(preparationId) && !yaml.includes('INVITATION_TOKEN'));
-          const before = await page.eval('window.__saved.length');
-          await clickLabelled(`Download ${yamlFile}`);
-          await until(() => page.eval(`window.__saved.length > ${before}`), 'YAML downloaded');
-          assert.equal(await page.eval('window.__saved.at(-1).blob.text()'), yaml, 'downloaded and copied YAML match');
-        }
-      }
-      assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations'), 'bootstrap exports create no invitation');
-      await text('Set up this dashboard for incoming node connections');
+      await fill('Dashboard IP or HTTPS address', '127.0.0.1', 'dialog[open]');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'no disconnected bootstrap export');
+      assert.ok(!fixture.stats().paths.slice(begin).some(entry => entry.method === 'POST' && entry.path === '/api/dashboard/invitations'), 'disabled exports create no invitation');
       await pick('This dashboard reaches the node');
       await fill('Name on this dashboard', 'Wizard outbound node', 'dialog[open]');
       await fill('Node ID', preparationId, 'dialog[open]');
@@ -990,7 +960,7 @@ export async function reviewDashboardControlPlane({ fixture, A, B, page, step, u
       const draftValues = () => page.eval('({name:__field("Name on this dashboard","dialog[open]").value,nodeId:__field("Node ID","dialog[open]").value,method:document.querySelector("dialog[open] [role=tab][aria-selected=true]").innerText})');
       const expectedDraft = { name: 'Wizard outbound node', nodeId: preparationId, method: 'Portainer stack' };
       assert.deepEqual(await draftValues(), expectedDraft, 'switching to outbound keeps the entered identity and deployment method');
-      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>!button.disabled)'), 'valid node details enable bootstrap exports without a dashboard listener');
+      assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'complete exports wait for an available dashboard listener');
       await fill('Name on this dashboard', '', 'dialog[open]');
       assert.ok(await page.eval('[...document.querySelectorAll("dialog[open] .guide button:not([role=tab])")].every(button=>button.disabled)'), 'clearing a required field disables the visible actions again');
       await fill('Name on this dashboard', expectedDraft.name, 'dialog[open]');

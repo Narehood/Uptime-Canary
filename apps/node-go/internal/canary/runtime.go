@@ -176,7 +176,7 @@ func newNode(o Options, restoring bool) (result *Node, err error) {
 		return nil, errors.New("Cannot load persisted identity")
 	}
 	if o.NodeID != "" && exists && o.NodeID != identity.ID {
-		return nil, errors.New("Configured node ID differs from the persisted node ID")
+		return nil, errors.New("Configured node ID differs from the persisted node ID. Keep the original node ID when reusing its storage, or use separate data and identity volumes for a new node")
 	}
 	if o.NodeID != "" {
 		identity.ID = o.NodeID

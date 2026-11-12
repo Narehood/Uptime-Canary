@@ -19,93 +19,44 @@ the dashboard. Registering a node does not peer it, change its cluster token, or
 create a VPN route. A missing connection means the dashboard cannot read or
 manage that node; it is not evidence that the node stopped monitoring.
 
-## Export a new node before connecting it
+## Deploy a node that connects to this dashboard
 
-With **Deploy a new node**, valid name and Node ID fields are enough to export
-its stack/Compose YAML and private environment settings even when this dashboard
-has no incoming-node endpoint configured. No address from another section is
-required. The exports contain real administrator and cluster tokens, with no
-placeholder invitation. Save them before closing the dialog. They start the node
-without publishing an inbound port; the node will not appear on this dashboard yet.
+Use **Nodes → Add node → Deploy a new node → The node reaches this dashboard**.
+Enter its name, a new unique Node ID, and **Dashboard IP or HTTPS address** in
+that same form. Use the dashboard host's IP or hostname as reached by the node;
+a bare IP or hostname uses port **18348** when no default is configured. A full
+HTTPS URL can specify a different forwarded port. This is the node-connection
+address, rather than the browser dashboard port (18347).
 
-To connect that deployment later, configure the dashboard endpoint below, then
-choose **A node that's already running** and **The node reaches this dashboard**.
-Add the connection settings to the same deployment, retaining its Node ID,
-credentials, stack/service name, data and identity storage. Do not redeploy it as
-a new node with newly generated credentials.
+Current dashboard containers automatically start the dedicated listener with
+retained native TLS, even without `CANARY_DASHBOARD_CONNECTION_URL`. The supplied
+Compose and Portainer dashboard stacks publish it on port 18348 by default.
+The node must have a network route to that host and port. Existing stacks with
+an explicitly loopback-only port mapping need that dashboard mapping updated
+when upgrading; entering an address cannot change Docker's published ports.
 
-The remainder of this guide describes enrollment once the endpoint is configured.
+Choose Show, Copy, Download or Generate setup. The first action creates one
+invitation, bound to the entered address and this dashboard's certificate pin.
+All four platform tabs reuse it and this node's own administrator/cluster tokens.
+Paste the generated stack and environment values as given and start it: no node
+stack or environment edit is needed afterwards. It publishes no inbound node
+port. Compare its printed connection fingerprint and confirm it in the dashboard.
+Restart with the same settings; the consumed invitation can remain in the
+environment because the node reconnects with its saved connection credential.
 
-## Prepare the dashboard's connection endpoint
+Exports stay masked and disabled until the visible fields are complete and the
+listener is ready. There is no standalone export that silently omits the
+connection. Save private settings before closing the dialog. For an existing
+node, choose **A node that's already running** and retain its original Node ID,
+credentials, data and identity storage while applying only connection settings.
 
-**Nodes → Add node → The node reaches this dashboard** is available before the
-connection endpoint is configured. It identifies the existing dashboard service
-to update and shows the required environment and port settings. After updating
-the stack, use **Check dashboard setup** in that menu to reload its configuration;
-once the endpoint is enabled, the invitation form appears in the same menu.
-With **Deploy a new node → The node reaches this dashboard**, the Docker run,
-Docker Compose, Portainer stack and Linux VM tabs are visible from the start,
-including before the endpoint is configured or an invitation exists. Enter a
-name and a unique Node ID to export an unpaired node first. For enrollment after the endpoint is configured, also enter the dashboard address this node can reach. The address
-defaults to the configured HTTPS listener. An IP or hostname keeps its configured
-port; a complete HTTPS URL can specify a different port, for example behind NAT.
-The address must still route to this dashboard and use its configured TLS trust.
-IPv4 addresses use four decimal fields without leading zeros. A different address
-is allowed only when the dedicated listener terminates native TLS and reports its
-certificate fingerprint. With an HTTPS reverse proxy and ordinary CA trust, use
-the configured address so the node sends credentials only to that destination.
-Choose **Copy**, **Download** or **Show** once the fields are valid; the first
-action generates the complete setup. Copy and Show complete that action;
-Download requests the file while browser activation remains available. If it
-requires a fresh click, the ready guide says to choose Download again. A deferred
-download never marks the one-time token saved. **Generate setup**
-is also available. The first export includes the node’s own
-administrator and cluster tokens, the dashboard address, and the one-time
-invitation token. A certificate pin is included when the dedicated listener
-terminates native TLS; reverse proxies using ordinary CA trust need no pin.
-Paste the commands or stack YAML and private
-environment settings and start the node. It connects immediately without a
-second configuration edit or an inbound node port. Compare the fingerprint from
-its log and confirm it in this dashboard after it connects.
+## Optional reverse-proxy or custom listener configuration
 
-**Show**, **Copy** and **Download** remain visible but disabled while required
-local node fields are missing. A not-yet-connected export does not need dashboard setup. For enrollment, dashboard prerequisites still apply; Portainer’s individual copy controls do too. A warning
-explains the prerequisites. Switching between new-node connection directions
-preserves its name, Node ID, deployment method and credentials. The invitation
-retains the selected node-reachable address even when it differs from the default.
-Before generation, the masked preview stays labeled and its non-secret YAML
-uses that same entered address; it cannot be deployed without the real settings.
-
-For a node already deployed, choose **A node that’s already running** and enter
-its existing Node ID and original dashboard connection address. That path exports
-only connection settings and never replaces administrator or cluster tokens.
-Apply those settings while retaining its credentials, names, data and identity.
-Update the existing
-Compose YAML and add the enrollment token to its existing private settings file,
-update the existing Portainer stack, recreate the Docker container with the extra
-connection settings, or restart the native service after updating its environment.
-The dialog forgets bootstrap credentials when closed. If the node is already
-deployed when returning later, choose **A node that’s already running** with its
-same Node ID and apply only the invitation's connection settings.
-The tabs describe the new node independently of the dashboard deployment.
-The node-facing hostname or IP and the Docker host's bind IP are separate:
-behind NAT, publish on an address assigned to the Docker host, forward the
-advertised TCP port to it, and give nodes the externally reachable address.
-
-Keep the browser service behind your normal NetBird, Tailscale or other sign-in
-proxy. Give nodes a separate HTTPS origin with no interactive login. Canary
-authenticates invitations and devices itself on that origin. Do not exempt the
-browser service's `/api/` path from its sign-in proxy.
-
-For example, if nodes can reach the dashboard host at `172.16.99.101`, but the
-dashboard cannot initiate requests back to them, route a trusted name such as
-`canary-connect.example.net` to that address. The name and certificate must be
-usable from each node. With ordinary CA trust, a literal IP needs a certificate
-that explicitly covers that IP. The native TLS alternative below authenticates
-an exact independently checked certificate fingerprint. Canary refuses plain
-HTTP, redirects and invalid certificates; there is no skip-verification switch.
-
-Add these variables to the **dashboard** stack:
+A configured `CANARY_DASHBOARD_CONNECTION_URL` remains an optional default for
+new invitations. Bare IPs/hostnames preserve that default's port. Native TLS
+permits another entered address using the same certificate pin. With a trusted
+HTTPS-terminating reverse proxy, the configured origin stays mandatory; it is
+never guessed from this browser's address. For example:
 
 ```dotenv
 CANARY_DASHBOARD_CONNECTION_URL=https://canary-connect.example.net
@@ -145,8 +96,10 @@ The connection listener exposes only `/connect/v1/enroll`, `/connect/v1/open`,
 `/connect/v1/poll`, `/connect/v1/result`, and a basic `/healthz`. It serves no
 dashboard HTML, login, accounts, monitoring API, public status pages or HA peer
 exchange. The normal dashboard listener remains container 8080 / host 18347.
-Leaving `CANARY_DASHBOARD_CONNECTION_URL` empty disables the connection listener
-and outbound invitations. The connection host mapping defaults to loopback.
+With no default URL, container images still accept pinned node connections.
+The supplied host mapping defaults to all IPv4 interfaces; restrict
+`CANARY_CONNECT_BIND_ADDRESS` to a routed private interface when needed. Only the
+authenticated node-connection protocol is served on that dedicated port.
 
 For a native dashboard process, use `CANARY_DASHBOARD_CONNECTION_HOST` and
 `CANARY_DASHBOARD_CONNECTION_PORT` for its actual bind address and port. Those
@@ -182,6 +135,19 @@ page after copying. The separate **Copy .env** and Download options retain all
 `NAME=value` lines for Advanced mode or **Load variables from .env file**.
 Portainer stores these values with the stack; these are environment variables,
 not Docker secrets. Keep stack-edit access restricted.
+
+New Portainer exports give both volumes explicit names derived from the exact
+node ID. Reusing a Portainer stack name for another new node therefore does not
+reuse that stack's old database. Keep the named data and identity volumes as a
+pair. Existing nodes must keep their original volumes; use the already-running
+node flow to connect them rather than applying a new-node stack over them.
+
+If startup reports **Configured node ID differs from the persisted node ID**,
+the mounted database belongs to another ID. To keep that existing node, restore
+its original `CANARY_NODE_ID` and keep both original volumes. To create a new
+node instead, use its newly exported node-specific volume names and keep the
+old volumes intact. Changing the ID in a stack does not rename a persisted node;
+deleting its database or identity storage is not required to recover.
 
 Sign in as a dashboard administrator, open **Nodes → Add node**, and choose the
 node-initiated connection. Enter a unique, persistent Node ID and a display

@@ -69,7 +69,7 @@ export interface DashboardOwnerInput { name: string; password: string; code: str
 export interface NodeVerificationInput { label: string; url: string; token: string; tlsFingerprint?: string }
 export const DASHBOARD_ROLES: readonly Role[] = ['admin', 'editor', 'viewer'];
 
-/** Admin-only wizard configuration; the browser never contacts connectionUrl. */
+/** Admin-only wizard configuration; a ready pinned listener may omit its default URL until entered in the wizard. */
 export interface NodeOnboardingCapabilities {
   outboundEnabled: boolean;
   connectionUrl?: string;

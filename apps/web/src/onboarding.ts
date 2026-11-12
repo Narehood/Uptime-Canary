@@ -272,7 +272,7 @@ export interface GuideVariable { name: string; value: string; secret: boolean }
 
 export const imageReference = (tag: string): string => `${NODE_IMAGE}:${tag}`;
 
-/** An outbound node's dashboard address; a bare host keeps the deployment's configured connection port. */
+/** An outbound node's dashboard address; a bare host uses the configured port or the shipped connection port 18348. */
 export function outboundConnectionAddress(input: string, configured: string): string | null {
   let address = input.trim();
   if (!address || address.length > 2048) return null;
@@ -287,7 +287,7 @@ export function outboundConnectionAddress(input: string, configured: string): st
     const origin = connectionOrigin(address);
     if (!origin) return null;
     const url = new URL(origin);
-    if (!explicitUrl && !hasPort) url.port = new URL(configured).port;
+    if (!explicitUrl && !hasPort) url.port = configured ? new URL(configured).port : '18348';
     return url.origin;
   } catch { return null; }
 }
@@ -328,7 +328,7 @@ export function setupGuide(setup: NodeSetup, reveal: boolean): GuideBlock[] {
     const kept = out.tlsFingerprint ? ' Keep CANARY_DASHBOARD_URL and CANARY_DASHBOARD_TLS_FINGERPRINT as they are: the node saved both with that credential, and refuses to start if either one changes.' : '';
     blocks.push({
       key: 'after', kind: 'note', secret: false, title: 'After you add it here',
-      text: `Remove CANARY_DASHBOARD_ENROLL_TOKEN from the node's settings; it works only once. The node keeps its own connection credential in its identity ${setup.platform === 'vm' ? 'directory' : 'volume'} and reconnects with that, so keep it.${kept}`,
+      text: `Keep these settings and the identity ${setup.platform === 'vm' ? 'directory' : 'volume'} unchanged. The invitation works only once; after pairing, the node automatically reconnects with its saved connection credential. No stack or environment edit is needed.${kept}`,
     });
   }
   return blocks;
@@ -396,7 +396,7 @@ function newNodeBlocks(setup: NodeSetup, { name = setup.nodeId, res, image, hide
       if (portainer) {
         const started = tls ? ` ${tlsSteps('the container’s log in Portainer', 'volume')} Then choose Next and enter the fingerprint.` : '';
         return [
-          { key: 'stack', kind: 'note', secret: false, title: 'Add the stack', text: `In Portainer, open Stacks and choose Add stack. Name it ${res}, choose Web editor and paste the YAML below. Keep the stack name: Portainer names the two volumes after it.` },
+          { key: 'stack', kind: 'note', secret: false, title: 'Add the stack', text: `In Portainer, open Stacks and choose Add stack. Name it ${res}, choose Web editor and paste the YAML below. Both volumes have fixed names for this node, independent of the stack name. Keep those volume names across restarts. Use this setup only for a new node; an existing node must keep its original volumes and ID.` },
           { key: 'yaml', kind: 'file', file: `${res}.yml`, secret: false, title: 'Stack YAML (no private values)', text: yaml },
           { key: 'variables', kind: 'file', file: `${res}.env`, secret: true, title: 'Environment variables', text: `${variables.join('\n')}\n`, variables: variableFields },
           { key: 'deploy', kind: 'note', secret: false, title: 'Deploy', text: `Under Environment variables, add one entry for each row: copy its Name into Portainer's name field and its Value into the value field. Copy value includes only the value, without NAME= or a trailing line break. To import all entries together, use Advanced mode with Copy .env, or Load variables from .env file with the download. If this host has run ${image} before, pull it again first (under Images in Portainer), so the node doesn't start an older copy of that tag. Then choose Deploy the stack. Portainer keeps these variables with the stack, so anyone who can edit the stack in Portainer can read them.${out ? ' The node’s log in Portainer shows its connection fingerprint.' : ''}${started}` },
@@ -559,7 +559,8 @@ function composeFile({ project, nodeId, name, image, direct, tls, connection }: 
 }): string {
   const lines = [
     `# Uptime Canary node ${nodeId}, from this dashboard's Add node wizard. It pulls the published image; nothing is built.`,
-    `# Keep the ${project ? 'project' : 'stack'} name and both volumes: they hold the node's data and its identity.`,
+    project ? '# Keep the project name and both volumes: they hold the node\'s data and its identity.'
+      : '# These volumes are named for this node, independently of the Portainer stack. Keep both names: they hold its data and identity.',
     ...(project ? [`name: ${project}`] : []),
     'services:',
     '  node:',
@@ -603,7 +604,9 @@ function composeFile({ project, nodeId, name, image, direct, tls, connection }: 
     '        max-file: "3"',
     'volumes:',
     '  canary-data:',
+    ...(!project ? [`    name: ${resourceName(nodeId)}-data`] : []),
     '  canary-identity:',
+    ...(!project ? [`    name: ${resourceName(nodeId)}-identity`] : []),
     '',
   ];
   return lines.join('\n');

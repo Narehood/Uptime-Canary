@@ -127,7 +127,7 @@ def offline(output, uid, gid, parent_network, node, binary, control=False):
     routes = Path('/proc/net/route').read_text().splitlines()
     if len(routes) != 1:
         raise RuntimeError('Offline namespace has a route')
-    if subprocess.check_output([node, '--version'], text=True).strip() != 'v24.22.2':
+    if subprocess.check_output([node, '--version'], text=True).strip() != 'v24.22.3':
         raise RuntimeError('Unreviewed Node cluster implementation')
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     subreaper()
@@ -136,7 +136,7 @@ def offline(output, uid, gid, parent_network, node, binary, control=False):
            'TSX_DISABLE_CACHE': '1', 'CANARY_BIN': str(binary), 'PM2_GUARD': str(output)}
     (output / 'tmp').mkdir(exist_ok=True)
     report = {'passed': False, 'isolatedPIDNamespace': True, 'loopbackOnly': True,
-              'uid': uid, 'capabilities': 'none', 'node': 'v24.22.2', 'releaseSignoff': False}
+              'uid': uid, 'capabilities': 'none', 'node': 'v24.22.3', 'releaseSignoff': False}
     try:
         command = [node, '--max-old-space-size=96', '--import', 'tsx']
         if not control:
