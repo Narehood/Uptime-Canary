@@ -31,9 +31,14 @@ address, rather than the browser dashboard port (18347).
 Current dashboard containers automatically start the dedicated listener with
 retained native TLS, even without `CANARY_DASHBOARD_CONNECTION_URL`. The supplied
 Compose and Portainer dashboard stacks publish it on port 18348 by default.
-The node must have a network route to that host and port. Existing stacks with
-an explicitly loopback-only port mapping need that dashboard mapping updated
-when upgrading; entering an address cannot change Docker's published ports.
+The node must have a network route to that host and port. Adopting the updated
+templates changes the old default: stacks that left `CANARY_CONNECT_BIND_ADDRESS`
+unset and relied on loopback will publish the live listener on all IPv4
+interfaces. Set `CANARY_CONNECT_BIND_ADDRESS=127.0.0.1` explicitly to retain
+loopback-only access, or choose a routed private host interface. An image-only
+update does not change Docker's existing published ports. Explicitly loopback-only
+mappings need updating before remote nodes can connect; entering an address in
+the wizard cannot change them.
 
 Choose Show, Copy, Download or Generate setup. The first action creates one
 invitation, bound to the entered address and this dashboard's certificate pin.

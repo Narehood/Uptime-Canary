@@ -17,14 +17,31 @@ remains the build-from-checkout option, with the dashboard behind its `web`
 profile.
 
 For nodes behind NAT or a VPN without a return route, see [guided node onboarding](node-onboarding.md).
-The dashboard stack's optional `CANARY_DASHBOARD_CONNECTION_URL` enables a
-separate connection-only listener. `CANARY_CONNECT_BIND_ADDRESS` and
-`CANARY_CONNECT_PORT` publish that listener (default loopback port 18348 to
-container 8081); the browser dashboard remains on 18347 to container 8080.
-Keep the browser service behind its sign-in proxy and route the separate node
-HTTPS origin to the connection listener without interactive SSO. This candidate
-requires images built from matching source; stack variables do not add the
-feature to an older image. The linked guide records its acceptance limits.
+Current dashboard images start a separate native-TLS node-connection listener
+without requiring `CANARY_DASHBOARD_CONNECTION_URL`. In Add node, choose
+**The node reaches this dashboard** and enter the dashboard IP/HTTPS address
+that the node can reach. New-node exports include that address, its certificate
+pin and the invitation; deploy the stack and environment values unchanged.
+`CANARY_DASHBOARD_CONNECTION_URL` is an optional default address; an explicit
+HTTPS reverse-proxy configuration remains supported.
+
+`CANARY_CONNECT_BIND_ADDRESS` and `CANARY_CONNECT_PORT` publish the listener at
+**0.0.0.0:18348** by default, forwarding to container 8081. The browser dashboard
+stays on 18347 to container 8080. Keep the browser service behind its sign-in
+proxy. The separate connection protocol needs a reachable HTTPS destination
+without interactive SSO; it serves no dashboard login or management API.
+
+**Template upgrade:** stacks that left `CANARY_CONNECT_BIND_ADDRESS` unset and
+relied on its former loopback default will publish this live listener on all
+IPv4 interfaces when redeployed with these templates. Set
+`CANARY_CONNECT_BIND_ADDRESS=127.0.0.1` explicitly to retain loopback-only access,
+or choose a routed private host interface to restrict exposure while allowing
+remote nodes. An image-only update does not rewrite existing Docker port
+bindings. Stacks with an explicit loopback restriction need a reachable mapping
+before remote nodes can connect; entering an address in the wizard cannot
+change that mapping. Matching current images are required; stack variables do
+not add this behavior to an older image. The linked guide records validation
+limits.
 
 For the protocol-20 candidate, [native TLS](transport-tls.md) adds
 `CANARY_TLS_MODE=auto` for node API/HA connections and explicit certificate

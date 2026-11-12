@@ -403,8 +403,13 @@ When nodes can reach the dashboard but not the reverse, as on a one-way VPN to
 Current dashboard containers start the dedicated native-TLS listener
 without a preconfigured URL. Supplied dashboard stacks publish container `8081`
 on host `18348`, on all IPv4 interfaces by default. The node needs a route to
-that port. Older stacks explicitly bound to loopback need their dashboard port
-mapping updated when upgrading. The browser dashboard remains on its separate
+that port. When adopting these templates, stacks that left
+`CANARY_CONNECT_BIND_ADDRESS` unset and relied on its previous loopback default
+will now publish a live connection listener on all IPv4 interfaces. Set
+`CANARY_CONNECT_BIND_ADDRESS=127.0.0.1` explicitly to retain that restriction, or
+choose a routed private host interface. Image-only updates do not change existing
+Docker port bindings; explicitly loopback-bound mappings need updating before
+remote nodes can connect. The browser dashboard remains on its separate
 `18347`/`8080` port. A custom TLS proxy and default connection URL remain
 supported; see [node onboarding](docs/node-onboarding.md).
 
