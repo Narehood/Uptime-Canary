@@ -388,22 +388,30 @@ is merged and matching images are published.
 When nodes can reach the dashboard but not the reverse, as on a one-way VPN to
 `172.16.99.101`, choose **The node reaches this dashboard**:
 
-1. Set `CANARY_DASHBOARD_CONNECTION_URL` to a separate trusted HTTPS origin
-   without interactive sign-in. Your TLS proxy forwards it to the connection
-   listener: container port `8081`, published on
-   `CANARY_CONNECT_BIND_ADDRESS:CANARY_CONNECT_PORT` (`127.0.0.1:18348`). The
-   browser address (`18347` to `8080`) stays behind your sign-in proxy; never
-   route an external `/api` to a node.
-2. Create the invitation: it lasts 15 minutes and its token is shown once. If
-   it ends unconfirmed after the node is deployed, invite that node again as a
-   running node with the same ID and replace only the token.
-3. Start the node with `CANARY_DASHBOARD_URL` and `CANARY_DASHBOARD_ENROLL_TOKEN`;
-   `deploy/portainer-node-outbound.yml` publishes no node port. A running node
-   can connect out too, keeping its ID, tokens and volumes, if its
-   `CANARY_ADMIN_TOKEN` is still a current administrator token there;
-   otherwise it refuses to start until both settings are removed again.
-4. Compare the fingerprint in the node's log, tick the check and confirm. Then
-   remove the token; keep `CANARY_DASHBOARD_URL` and `/identity`.
+1. Choose **Deploy a new node**, enter its name and unique Node ID, and fill
+   **Dashboard IP or HTTPS address** with the dashboard host address the node
+   can reach. A bare IP/hostname uses port `18348` unless a configured default
+   specifies another port; a full HTTPS URL can specify a forwarded port.
+2. Copy the generated stack and private environment values and start the node.
+   The first export creates one invitation and includes the entered address,
+   retained dashboard certificate pin and this node's own tokens. No node stack
+   edits or extra connection settings are needed afterwards.
+3. Compare its printed connection fingerprint and confirm in the dashboard.
+   Keep the settings and identity storage unchanged on restart; the node uses
+   its saved connection credential even if the consumed invitation remains set.
+
+Current dashboard containers start the dedicated native-TLS listener
+without a preconfigured URL. Supplied dashboard stacks publish container `8081`
+on host `18348`, on all IPv4 interfaces by default. The node needs a route to
+that port. When adopting these templates, stacks that left
+`CANARY_CONNECT_BIND_ADDRESS` unset and relied on its previous loopback default
+will now publish a live connection listener on all IPv4 interfaces. Set
+`CANARY_CONNECT_BIND_ADDRESS=127.0.0.1` explicitly to retain that restriction, or
+choose a routed private host interface. Image-only updates do not change existing
+Docker port bindings; explicitly loopback-bound mappings need updating before
+remote nodes can connect. The browser dashboard remains on its separate
+`18347`/`8080` port. A custom TLS proxy and default connection URL remain
+supported; see [node onboarding](docs/node-onboarding.md).
 
 Role reads and edits, Check now, Rotate, Recover and Remove then use that
 connection. Removing a disconnected node stays pending until it reconnects and
@@ -522,11 +530,11 @@ identity reservations back with a database snapshot. Use the
 | `CANARY_DASHBOARD_ORIGINS` | from `CANARY_CORS_ORIGINS`, else `http://localhost:18347,http://127.0.0.1:18347` | Dashboard server only: exact browser origins it accepts, comma-separated, without paths |
 | `CANARY_DASHBOARD_DATA`, `CANARY_DASHBOARD_IDENTITY` | `/data`, `/identity` | Dashboard server only: separate clean absolute directories for its account database and for its key and setup material (its own `canary-dashboard-data` and `canary-dashboard-identity` volumes) |
 | `CANARY_DASHBOARD_ASSETS`, `CANARY_DASHBOARD_HOST` / `CANARY_DASHBOARD_PORT` | `/app/web`, `0.0.0.0` / `8080` | Dashboard server only: the built dashboard files and its listener inside the container; the image sets these |
-| `CANARY_DASHBOARD_CONNECTION_URL` | empty (off) | Dashboard server only, [onboarding candidate](#add-nodes-from-the-dashboard): the separate trusted HTTPS origin, without interactive sign-in, that nodes connecting out use. Empty turns off the connection listener and outbound invitations |
-| `CANARY_CONNECT_BIND_ADDRESS`, `CANARY_CONNECT_PORT` | `127.0.0.1`, `18348` | Compose and Portainer host mapping of the dashboard's connection listener (container port 8081), for your TLS proxy |
+| `CANARY_DASHBOARD_CONNECTION_URL` | empty (wizard asks) | Dashboard server only: optional default HTTPS node-connection origin. Current container images start a pinned native-TLS listener without it; enter the reachable address in Add node |
+| `CANARY_CONNECT_BIND_ADDRESS`, `CANARY_CONNECT_PORT` | `0.0.0.0`, `18348` | Compose and Portainer host mapping of the dedicated node-connection listener (container port 8081). Restrict the bind address to a routed private interface when needed |
 | `CANARY_DASHBOARD_CONNECTION_HOST` / `CANARY_DASHBOARD_CONNECTION_PORT` | `127.0.0.1` / `8081`; the image sets `0.0.0.0` | Dashboard server only: the connection listener's actual bind address and port, such as for a native process |
 | `CANARY_DASHBOARD_URL` | unset | Node only, connecting out: the dashboard's connection origin. Keep it after pairing |
-| `CANARY_DASHBOARD_ENROLL_TOKEN` | unset | Node only, connecting out: the one-time invitation token. Remove it after pairing; the node keeps its connection identity in its identity directory |
+| `CANARY_DASHBOARD_ENROLL_TOKEN` | unset | Node only, connecting out: the one-time invitation token. It can remain unchanged after pairing; the node reconnects with its saved identity credential |
 | `CANARY_GAME_QUERY_TOKEN` | unset; required when the optional service runs | Optional GameDig query service only: the bearer the service requires and each GameDig monitor stores as its query service token. Unset, `compose.yaml` passes it empty and the `game-query` profile's service refuses to start; the standalone `deploy/portainer-game-query.yml` stack requires a value to deploy. Generate a separate high-entropy value; never reuse an admin, cluster, dashboard or push credential |
 | `CANARY_IMAGE_TAG` | `latest` | Tag of the [published images](#published-images) in the `deploy/` templates, such as `sha-<full commit>`; not used for an image with a full override |
 | `CANARY_NODE_IMAGE`, `CANARY_WEB_IMAGE` | `ghcr.io/narehood/uptime-canary-node` and `…-web` at `CANARY_IMAGE_TAG` | Full image reference (tag or digest) for the `deploy/` templates |

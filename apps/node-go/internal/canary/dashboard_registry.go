@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 	"uptime-canary/apps/node-go/internal/nodeconnection"
+	"uptime-canary/apps/node-go/internal/nodetls"
 	"uptime-canary/apps/node-go/internal/updatecheck"
 )
 
@@ -159,7 +160,14 @@ func NewDashboard(o DashboardOptions) (*Dashboard, error) {
 			return nil, err
 		}
 	}
-	d.connectionTLSFingerprint, err = validateTLSOrigin(d.connectionURL, o.ConnectionTLSFingerprint)
+	if d.connectionURL == "" && d.connectionEnabled {
+		d.connectionTLSFingerprint, err = nodetls.Fingerprint(o.ConnectionTLSFingerprint)
+		if err == nil && d.connectionTLSFingerprint == "" {
+			err = errors.New("A node connection listener without a configured address requires native TLS")
+		}
+	} else {
+		d.connectionTLSFingerprint, err = validateTLSOrigin(d.connectionURL, o.ConnectionTLSFingerprint)
+	}
 	if err != nil {
 		return nil, err
 	}

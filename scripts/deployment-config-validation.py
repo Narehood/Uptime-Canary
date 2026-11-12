@@ -99,10 +99,10 @@ def validate(root):
     assert "ports" not in source_game and source_game["read_only"] is True
     assert set(source_game["environment"]) == {"CANARY_GAME_QUERY_TOKEN"}
 
-    def dashboard_port(rendered, published):
+    def dashboard_port(rendered, published, connection_host="0.0.0.0"):
         ports = rendered["services"]["web"]["ports"]
         # The browser mapping retains every original assertion. Outbound node
-        # support adds one separate loopback mapping; it never exposes /api.
+        # support adds a separate node-protocol mapping; it never exposes /api.
         assert len(ports) == 2
         browser = [port for port in ports if port["target"] == 8080]
         assert len(browser) == 1
@@ -111,10 +111,17 @@ def validate(root):
         connection = [port for port in ports if port["target"] == 8081]
         assert len(connection) == 1
         assert str(connection[0]["published"]) == "18348"
-        assert connection[0]["host_ip"] == "127.0.0.1"
+        assert connection[0]["host_ip"] == connection_host
 
     for rendered in (combined, web, local):
         dashboard_port(rendered, 18347)
+    # Accepted Nov 12 complete-setup default: remote nodes can reach the native
+    # TLS listener without a hidden dashboard mapping step. An administrator's
+    # explicit loopback restriction still overrides that default on every entry point.
+    for name in ("deploy/portainer-stack.yml", "deploy/portainer-dashboard.yml", "compose.yaml"):
+        restricted = config(name, {**clean, **fixture, "COMPOSE_PROFILES": "web",
+                                  "CANARY_CONNECT_BIND_ADDRESS": "127.0.0.1"})
+        dashboard_port(restricted, 18347, "127.0.0.1")
     # Explicit earlier and custom host ports remain supported. The browser
     # origin must follow the selected host mapping, not the internal listener.
     for published in (8080, 19283):
@@ -178,7 +185,7 @@ def validate(root):
     print("PASS dashboard host port 18347, internal port 8080, matching origins and explicit port overrides")
     print("PASS GHCR pulls, matching commit tags, full image overrides and offline pull policy")
     print("PASS optional GameDig source profile and registry stack use separate credentials and private networking")
-    print("PASS optional node connection listener, private host binding and outbound node with no inbound port")
+    print("PASS reachable node connection default, explicit private/loopback bindings and no inbound outbound-node port")
     print("PASS native TLS settings, explicit certificate pins, retained outbound trust and disabled update checks")
 
 

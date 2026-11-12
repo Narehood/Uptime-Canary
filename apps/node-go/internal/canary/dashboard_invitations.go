@@ -177,12 +177,12 @@ func (d *Dashboard) invitationRequest(w http.ResponseWriter, r *http.Request, ac
 		return
 	}
 	if r.URL.Path == "/api/dashboard/onboarding" && r.Method == "GET" {
-		out := map[string]any{"outboundEnabled": d.connectionEnabled && d.connectionURL != "", "connectionProtocol": 1, "imageTag": d.nodeImageTag, "containerPlatforms": []string{"linux/amd64"}, "nativeDownloadAvailable": false}
+		out := map[string]any{"outboundEnabled": d.connectionEnabled && (d.connectionURL != "" || d.connectionTLSFingerprint != ""), "connectionProtocol": 1, "imageTag": d.nodeImageTag, "containerPlatforms": []string{"linux/amd64"}, "nativeDownloadAvailable": false}
 		if d.connectionURL != "" {
 			out["connectionUrl"] = d.connectionURL
-			if d.connectionTLSFingerprint != "" {
-				out["connectionTlsFingerprint"] = d.connectionTLSFingerprint
-			}
+		}
+		if d.connectionEnabled && d.connectionTLSFingerprint != "" {
+			out["connectionTlsFingerprint"] = d.connectionTLSFingerprint
 		}
 		reply(w, 200, out)
 		return
@@ -253,7 +253,7 @@ func (d *Dashboard) invitationRequest(w http.ResponseWriter, r *http.Request, ac
 }
 
 func (d *Dashboard) createInvitation(w http.ResponseWriter, r *http.Request, actor AccountView) {
-	if !d.connectionEnabled || d.connectionURL == "" {
+	if !d.connectionEnabled || d.connectionURL == "" && d.connectionTLSFingerprint == "" {
 		errorReply(w, fail(409, "Configure the dedicated HTTPS node connection endpoint first"))
 		return
 	}
@@ -278,6 +278,9 @@ func (d *Dashboard) createInvitation(w http.ResponseWriter, r *http.Request, act
 		if err != nil {
 			err = fail(400, "Enter a canonical HTTPS dashboard connection address")
 		}
+	}
+	if err == nil && origin == "" {
+		err = fail(400, "Enter the HTTPS dashboard address this node can reach")
 	}
 	if err == nil && origin != d.connectionURL && d.connectionTLSFingerprint == "" {
 		err = fail(400, "A different address requires this dashboard's certificate fingerprint")

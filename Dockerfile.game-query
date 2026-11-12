@@ -1,4 +1,4 @@
-FROM node:24.22.2-alpine3.24 AS dependencies
+FROM node:24.22.3-alpine3.24 AS dependencies
 WORKDIR /app/services/game-query
 COPY services/game-query/package.json services/game-query/package-lock.json ./
 RUN npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund --no-bin-links
