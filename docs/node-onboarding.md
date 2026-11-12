@@ -57,6 +57,10 @@ credentials, data and identity storage while applying only connection settings.
 
 ## Optional reverse-proxy or custom listener configuration
 
+To keep the connection listener disabled, leave `CANARY_DASHBOARD_CONNECTION_URL`
+unset and set `CANARY_DASHBOARD_CONNECTION_TLS_MODE=off` explicitly. With a URL
+configured, `off` instead retains the plain backend for an HTTPS reverse proxy.
+
 A configured `CANARY_DASHBOARD_CONNECTION_URL` remains an optional default for
 new invitations. Bare IPs/hostnames preserve that default's port. Native TLS
 permits another entered address using the same certificate pin. With a trusted
@@ -157,8 +161,9 @@ deleting its database or identity storage is not required to recover.
 Sign in as a dashboard administrator, open **Nodes → Add node**, and choose the
 node-initiated connection. Enter a unique, persistent Node ID and a display
 label. Generate an invitation, then choose Docker, Compose, Portainer, or the VM
-instructions. The wizard obtains the connection origin from the server setting;
-it does not infer it from the browser's SSO-protected address.
+instructions. The wizard uses **Dashboard IP or HTTPS address** entered in this
+form; the server setting supplies an optional default. It does not infer that
+address from the browser's SSO-protected address.
 
 Invitations last 15 minutes. The secret is returned once and the dashboard
 stores only its hash. Treat exported commands and environment files as private.

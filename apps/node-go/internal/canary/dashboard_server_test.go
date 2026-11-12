@@ -14,6 +14,13 @@ import (
 )
 
 func TestDashboardServerStandaloneSetupAndMissingKeyRestore(t *testing.T) {
+	for _, mode := range []string{"unset", "off"} {
+		t.Run(mode, func(t *testing.T) { checkDashboardServerStandalone(t, mode) })
+	}
+}
+
+func checkDashboardServerStandalone(t *testing.T, mode string) {
+	t.Helper()
 	base := t.TempDir()
 	data, identity, assets := filepath.Join(base, "data"), filepath.Join(base, "identity"), filepath.Join(base, "assets")
 	if err := os.Mkdir(assets, 0700); err != nil {
@@ -30,6 +37,13 @@ func TestDashboardServerStandaloneSetupAndMissingKeyRestore(t *testing.T) {
 	_ = reservation.Close()
 	address := "http://127.0.0.1:" + port
 	values := map[string]string{"CANARY_DASHBOARD_DATA": data, "CANARY_DASHBOARD_IDENTITY": identity, "CANARY_DASHBOARD_ASSETS": assets, "CANARY_DASHBOARD_HOST": "127.0.0.1", "CANARY_DASHBOARD_PORT": port, "CANARY_DASHBOARD_ORIGINS": address}
+	if mode == "off" {
+		// Match an image-set connection port plus explicit TLS-off and no URL.
+		// Reusing the browser port also proves no second listener tries to bind.
+		values["CANARY_DASHBOARD_CONNECTION_PORT"] = port
+		values["CANARY_DASHBOARD_CONNECTION_TLS_MODE"] = "off"
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result := make(chan error, 1)

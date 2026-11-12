@@ -192,7 +192,7 @@ func RunDashboard(ctx context.Context, env func(string) string, log io.Writer) e
 	var connectionTLS *tls.Config
 	var connectionPin string
 	connectionMode := env("CANARY_DASHBOARD_CONNECTION_TLS_MODE")
-	connectionEnabled := connectionURL != "" || env("CANARY_DASHBOARD_CONNECTION_PORT") != "" || connectionMode == "auto"
+	connectionEnabled := connectionURL != "" || connectionMode == "auto" || (connectionMode == "" && env("CANARY_DASHBOARD_CONNECTION_PORT") != "")
 	if connectionMode == "" && connectionURL == "" && connectionEnabled {
 		connectionMode = "auto"
 	}

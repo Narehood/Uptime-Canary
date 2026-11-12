@@ -119,7 +119,7 @@ async function fixture() {
   });
   preview.listen(Number(new URL(origin).port), '127.0.0.1'); await once(preview, 'listening'); servers.push(preview);
   await until(async () => (await fetch(origin)).ok, 'private dashboard');
-  if (args.includes('--dashboard-control-plane')) dashboardControlPlaneFixture = await createDashboardControlPlaneFixture({ runDir, port, env: cleanEnv, owned, servers, until, secrets, nativeConnection: args.includes('--force-node-removal') || args.includes('--force-node-removal-only') });
+  if (args.includes('--dashboard-control-plane')) dashboardControlPlaneFixture = await createDashboardControlPlaneFixture({ runDir, port, env: cleanEnv, owned, servers, until, secrets, nativeConnection: args.includes('--force-node-removal-only') || (args.includes('--force-node-removal') && args.includes('--automation-only')) });
   const artifacts = files(dist).map(f => ({ path: relative(dist, f).replaceAll('\\', '/'), bytes: readFileSync(f).length, sha256: sha(readFileSync(f)) }));
   state = { kind: 'dashboard-contract-review', runDir, source, origin, sink: `http://127.0.0.1:${sink.address().port}`, nodes, sourceHash, binaryHash: sha(readFileSync(binary)), artifacts, startedAt: new Date().toISOString(), pid: process.pid, proxyAuthCrossOrigin: proxyAuthFixture?.crossOrigin, dashboardControlPlaneOrigin: dashboardControlPlaneFixture?.origin };
   write(join(runDir, 'state.private.json'), state); console.log(`READY ${runDir}`);
