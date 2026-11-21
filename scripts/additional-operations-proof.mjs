@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 
 const baseline = '84dffd43663f91f4a1b43204de6de5a18fdaa318';
 process.env.TSX_DISABLE_CACHE = '1';

@@ -8,7 +8,7 @@ are disposable guarded files; one compact `.canary/security-current.json`
 summary is overwritten. A source change makes the run incomplete. Arm64 and
 Windows can be selected explicitly.
 
-The runner uses the existing Go, npm and pinned govulncheck v1.9.0 tools. Do not
+The runner uses the existing Go, npm and pinned govulncheck v1.10.0 tools. Do not
 create another scanner installation or compiler cache for a validation task.
 
 The Go project describes [govulncheck and its reachability analysis](https://go.dev/doc/security/vuln/).

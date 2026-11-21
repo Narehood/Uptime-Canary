@@ -1,0 +1,53 @@
+name: Prepare dependency refresh
+on:
+  push:
+    branches: [chore/refresh-dependencies-containers]
+    paths: [.github/workflows/prepare-dependency-refresh.yml, scripts/prepare-dependency-refresh.py]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.13.1'
+          package-manager-cache: false
+      - name: Prepare locked modules and one owned toolchain
+        run: |
+          mkdir -p .canary/tools
+          ln -s "$(go env GOROOT)" .canary/tools/go
+          echo "GOCACHE=$GITHUB_WORKSPACE/.canary/cache/go-build" >> "$GITHUB_ENV"
+          go mod download
+      - name: Refresh through the storage guard
+        shell: python
+        run: |
+          import json, subprocess
+          result = subprocess.run(['python3', 'scripts/bounded_validation.py', '--timeout', '480', '--', 'python3', '-B', 'scripts/prepare-dependency-refresh.py'])
+          state = json.load(open('.canary/work/current/latest.json'))
+          print(open('.canary/work/current/latest.log').read())
+          # Updating dependency source is expected for this preparation step.
+          assert state.get('exitCode') == 0 and not any(state.get(k) for k in ('error', 'stopped', 'cleanupError', 'pauseRequired')), state
+      - name: Install dashboard dependencies and regenerate attribution
+        run: |
+          python3 scripts/bounded_validation.py --timeout 180 -- npm ci --ignore-scripts --no-audit --no-fund --cache .canary/work/current/outputs/npm-cache
+          python3 scripts/bounded_validation.py --timeout 120 -- python3 -B scripts/third-party-notices.py || test "$(python3 -c 'import json; print(json.load(open(".canary/work/current/latest.json"))["exitCode"])')" = 0
+          python3 scripts/bounded_validation.py --timeout 180 -- python3 -B scripts/game-query-dependencies.py
+          python3 scripts/bounded_validation.py --timeout 120 -- python3 -B scripts/game-query-notices.py || test "$(python3 -c 'import json; print(json.load(open(".canary/work/current/latest.json"))["exitCode"])')" = 0
+          git diff --binary > .canary/dependency-refresh.patch
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: dependency-refresh
+          include-hidden-files: true
+          path: |
+            .canary/dependency-refresh.patch
+            .canary/work/current/latest.json
+            .canary/work/current/latest.log
+          retention-days: 1

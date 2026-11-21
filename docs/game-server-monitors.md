@@ -48,7 +48,7 @@ hostile code or a public game-query API.
 
 Node's permission mode reduces accidental parent-process filesystem access;
 it is not a security sandbox, and its permissions do not propagate to worker
-threads in the supported Node 24 profile. Worker V8 heap limits do not bound
+threads in the supported Node 26 profile. Worker V8 heap limits do not bound
 Buffer/ArrayBuffer/native allocations. Keep the external container limits.
 
 ## Monitor contract

@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.13.0 <25" },
+  "engines": { "node": ">=26.13.1 <27" },
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "init": "node scripts/init.mjs",
@@ -21,8 +21,9 @@
     "canary": "node scripts/go.mjs cli"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2",
+    "@typescript/typescript6": "^6.0.2"
   }
 }

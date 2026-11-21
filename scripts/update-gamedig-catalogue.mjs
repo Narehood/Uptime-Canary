@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const commit = 'aff6afd252dc1c4853aae7522423623b7b5adec7', version = '5.3.3';
