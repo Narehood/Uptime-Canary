@@ -9,7 +9,9 @@ when they are current; prereleases are not substituted for stable releases.
   require `>=26.13.1 <27`, and Node declarations advance to **26.6.6**.
 - TypeScript advances to **7.0.2**. The two scripts using its compiler API import
   the official **@typescript/typescript6 6.0.2** compatibility package, which
-  resolves the maintained **6.0.3** API. Ordinary checking uses TypeScript 7.
+  resolves the maintained **6.0.3** API. Workspace scripts invoke the TypeScript
+  7 entrypoint explicitly: the compatibility package also installs a `tsc` bin
+  and can otherwise make npm select the old checker.
 - GameDig stays at its current **5.3.3**; its XML parser override advances from
   **5.12.0** to **5.12.1**. The dashboard, service and PM2 fixture locks refresh
   compatible transitive resolutions. PM2 remains **7.1.2**.
