@@ -26,24 +26,15 @@ jobs:
           mkdir -p .canary/tools
           ln -s "$(go env GOROOT)" .canary/tools/go
           echo "GOCACHE=$GITHUB_WORKSPACE/.canary/cache/go-build" >> "$GITHUB_ENV"
-          python3 -B scripts/prepare-dependency-refresh.py
           go mod download
-      - name: Refresh through the storage guard
-        shell: python
-        run: |
-          import json, subprocess
-          result = subprocess.run(['python3', 'scripts/bounded_validation.py', '--timeout', '480', '--', 'python3', '-B', 'scripts/prepare-dependency-refresh.py', '--finish'])
-          state = json.load(open('.canary/work/current/latest.json'))
-          print(open('.canary/work/current/latest.log').read())
-          # Updating dependency source is expected for this preparation step.
-          assert state.get('exitCode') == 0 and not any(state.get(k) for k in ('error', 'stopped', 'cleanupError', 'pauseRequired')), state
       - name: Install dashboard dependencies and regenerate attribution
         run: |
           python3 scripts/bounded_validation.py --timeout 180 -- npm ci --ignore-scripts --no-audit --no-fund --cache .canary/work/current/outputs/npm-cache
-          python3 scripts/bounded_validation.py --timeout 120 -- python3 -B scripts/third-party-notices.py || test "$(python3 -c 'import json; print(json.load(open(".canary/work/current/latest.json"))["exitCode"])')" = 0
+          python3 scripts/bounded_validation.py --timeout 120 -- python3 -B scripts/third-party-notices.py --check
           python3 scripts/bounded_validation.py --timeout 180 -- python3 -B scripts/game-query-dependencies.py
-          python3 scripts/bounded_validation.py --timeout 120 -- python3 -B scripts/game-query-notices.py || test "$(python3 -c 'import json; print(json.load(open(".canary/work/current/latest.json"))["exitCode"])')" = 0
+          python3 scripts/bounded_validation.py --timeout 120 -- python3 -B scripts/game-query-notices.py --check
           python3 scripts/bounded_validation.py --timeout 120 -- npm run typecheck
+          python3 scripts/bounded_validation.py --timeout 120 -- npm run build --workspace @uptime-canary/web
           python3 scripts/bounded_validation.py --timeout 30 -- node -e "console.log('TypeScript', require('typescript/package.json').version); console.log('Compiler API', require('@typescript/typescript6').version)"
           python3 scripts/bounded_validation.py --timeout 120 -- node --test --test-concurrency=1 services/game-query/server.test.mjs
           python3 scripts/bounded_validation.py --timeout 30 -- python3 -B scripts/verify-jsonquery-runtime.py

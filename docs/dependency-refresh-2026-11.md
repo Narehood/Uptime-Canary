@@ -13,6 +13,11 @@ when they are current; prereleases are not substituted for stable releases.
 - GameDig stays at its current **5.3.3**; its XML parser override advances from
   **5.12.0** to **5.12.1**. The dashboard, service and PM2 fixture locks refresh
   compatible transitive resolutions. PM2 remains **7.1.2**.
+- Go requirements refresh SQLite to **1.62.0**, pgx to **5.13.0**, MongoDB
+  to **2.10.1**, MSSQL to **1.12.0**, and the supporting crypto, network,
+  compression and other modules. Goja advances to upstream commit
+  `79d6ad37b976`; its own-data helper is retained byte for byte, and its
+  provenance and third-party notices are regenerated.
 - Go **1.27.4** and Alpine **3.24.4** remain current. All Dockerfile base images
   are pinned to registry-verified manifest digests, including Node 26's Alpine
   3.24 build. Runtime stages retain `apk upgrade --no-cache`.
