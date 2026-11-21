@@ -26,6 +26,11 @@ when they are current; prereleases are not substituted for stable releases.
 - CI uses setup-go **7.1.0**, docker/login-action **4.8.0**, and govulncheck
   **1.10.0**. Other action and Trivy pins were checked against current releases.
 
+The Node 26 Alpine manifest supports Linux amd64 and arm64. It no longer
+provides the s390x base that Node 24 provided, so source builds of the web,
+GameDig and process-proof images on s390x are unavailable. Published images
+continue to target Linux amd64; the Go-only node base is unaffected.
+
 The isolated PM2 fixture's exact Node admission advances with CI. Source review
 of Node 26.13.1's `lib/internal/cluster/primary.js` confirms that
 `createWorkerProcess` still calls `child_process.fork` without a detached option;
