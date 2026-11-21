@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import subprocess
 import urllib.request
+import concurrent.futures
+import sys
 
 ROOT = Path.cwd()
 os.environ['GOFLAGS'] = '-p=1'
@@ -13,6 +15,21 @@ os.environ['GOFLAGS'] = '-p=1'
 def run(*args):
     return subprocess.check_output(args, text=True)
 
+
+if '--finish' in sys.argv:
+    print(run('go', 'get', '-u', '-t', './apps/node-go/...'))
+    print(run('go', 'mod', 'tidy'))
+    raise SystemExit(0)
+
+requirements = json.loads(run('go', 'mod', 'edit', '-json'))['Require']
+def latest(item):
+    name = item['Path']
+    escaped = ''.join('!' + c.lower() if c.isupper() else c for c in name)
+    with urllib.request.urlopen('https://proxy.golang.org/' + escaped + '/@latest', timeout=30) as response:
+        return name, json.load(response)['Version']
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    for name, version in pool.map(latest, requirements):
+        print(run('go', 'mod', 'edit', '-require=' + name + '@' + version))
 
 vendor = ROOT / 'apps/node-go/third_party/goja'
 metadata = json.loads(run('go', 'mod', 'download', '-json', 'github.com/dop251/goja@latest'))
@@ -47,7 +64,4 @@ verifier = ROOT / 'scripts/verify-jsonquery-runtime.py'
 verifier.write_bytes(verifier.read_bytes()
                      .replace(f']) != {old_count}'.encode(), f']) != {len(files)}'.encode())
                      .replace(f'{old_count + 1} pinned Goja'.encode(), f'{len(files) + 1} pinned Goja'.encode()))
-print(run('go', 'get', 'github.com/dop251/goja@' + record['version']))
-print(run('go', 'get', '-u', '-t', './apps/node-go/...'))
-print(run('go', 'mod', 'tidy'))
 print('Updated Goja', record['version'], len(files), 'upstream files; helper retained')
