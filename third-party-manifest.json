@@ -27,7 +27,7 @@
     },
     {
       "name": "github.com/dlclark/regexp2/v2",
-      "version": "v2.12.0",
+      "version": "v2.13.2",
       "notices": [
         {
           "file": "LICENSE",
@@ -37,7 +37,7 @@
     },
     {
       "name": "github.com/dop251/goja",
-      "version": "v0.0.0-20261105002551-2413f2132ac8",
+      "version": "v0.0.0-20261121162556-79d6ad37b976",
       "notices": [
         {
           "file": "LICENSE",
@@ -45,7 +45,7 @@
         },
         {
           "file": "NOTICE.txt",
-          "sha256": "8244f67b422d7c2bd9fc9450073317ebcac159ba2cb91f2f29f3da5ab7ea1121"
+          "sha256": "2e61cb26a4ed8d54b11bcae4dacdb2fea0504c80c213e9ac40f64bf65ff3b594"
         }
       ]
     },
@@ -71,11 +71,11 @@
     },
     {
       "name": "github.com/go-sql-driver/mysql",
-      "version": "v1.10.1",
+      "version": "v1.10.2",
       "notices": [
         {
           "file": "AUTHORS",
-          "sha256": "ccb046784741000e0704273e837d4a3c310cb52d357adc09d47f93c06e46d6ed"
+          "sha256": "66e309c7bdcfe49c840a9343863e248f8b6b5868e768e7405889941d3fd5a848"
         },
         {
           "file": "LICENSE",
@@ -105,7 +105,7 @@
     },
     {
       "name": "github.com/google/pprof",
-      "version": "v0.0.0-20261105003125-4bf881d7fb0b",
+      "version": "v0.0.0-20261118010117-084b33a85f63",
       "notices": [
         {
           "file": "AUTHORS",
@@ -163,7 +163,7 @@
     },
     {
       "name": "github.com/jackc/pgx/v5",
-      "version": "v5.12.0",
+      "version": "v5.13.0",
       "notices": [
         {
           "file": "LICENSE",
@@ -173,7 +173,7 @@
     },
     {
       "name": "github.com/klauspost/compress",
-      "version": "v1.20.3",
+      "version": "v1.20.5",
       "notices": [
         {
           "file": "LICENSE",
@@ -203,7 +203,7 @@
     },
     {
       "name": "github.com/microsoft/go-mssqldb",
-      "version": "v1.11.2",
+      "version": "v1.12.0",
       "notices": [
         {
           "file": "LICENSE.txt",
@@ -223,7 +223,7 @@
     },
     {
       "name": "github.com/pierrec/lz4/v4",
-      "version": "v4.1.33",
+      "version": "v4.1.34",
       "notices": [
         {
           "file": "LICENSE",
@@ -273,7 +273,7 @@
     },
     {
       "name": "github.com/twmb/franz-go",
-      "version": "v1.22.2",
+      "version": "v1.22.3",
       "notices": [
         {
           "file": "LICENSE",
@@ -283,7 +283,7 @@
     },
     {
       "name": "github.com/twmb/franz-go/pkg/kmsg",
-      "version": "v1.15.0",
+      "version": "v1.15.1",
       "notices": [
         {
           "file": "LICENSE",
@@ -303,7 +303,7 @@
     },
     {
       "name": "github.com/xdg-go/stringprep",
-      "version": "v1.0.4",
+      "version": "v1.0.5",
       "notices": [
         {
           "file": "LICENSE",
@@ -323,7 +323,7 @@
     },
     {
       "name": "go.mongodb.org/mongo-driver/v2",
-      "version": "v2.9.3",
+      "version": "v2.10.1",
       "notices": [
         {
           "file": "LICENSE",
@@ -333,7 +333,7 @@
     },
     {
       "name": "golang.org/x/crypto",
-      "version": "v0.58.1-0.20261009181718-2f1f834330b2",
+      "version": "v0.59.0",
       "notices": [
         {
           "file": "LICENSE",
@@ -343,7 +343,7 @@
     },
     {
       "name": "golang.org/x/net",
-      "version": "v0.62.0",
+      "version": "v0.63.0",
       "notices": [
         {
           "file": "LICENSE",
@@ -353,7 +353,7 @@
     },
     {
       "name": "golang.org/x/sync",
-      "version": "v0.24.0",
+      "version": "v0.25.0",
       "notices": [
         {
           "file": "LICENSE",
@@ -363,7 +363,7 @@
     },
     {
       "name": "golang.org/x/sys",
-      "version": "v0.49.0",
+      "version": "v0.50.0",
       "notices": [
         {
           "file": "LICENSE",
@@ -373,7 +373,7 @@
     },
     {
       "name": "golang.org/x/text",
-      "version": "v0.43.0",
+      "version": "v0.44.0",
       "notices": [
         {
           "file": "LICENSE",
@@ -383,7 +383,7 @@
     },
     {
       "name": "google.golang.org/genproto/googleapis/rpc",
-      "version": "v0.0.0-20261104224025-d1e00e9f33ab",
+      "version": "v0.0.0-20261118221215-c8830f628b3f",
       "notices": [
         {
           "file": "LICENSE",
@@ -421,11 +421,11 @@
     },
     {
       "name": "modernc.org/libc",
-      "version": "v1.80.1",
+      "version": "v1.82.9",
       "notices": [
         {
           "file": "AUTHORS",
-          "sha256": "40224528f3c7363534f59521d803a4eb627966b334d732bfc68a788655cb2545"
+          "sha256": "242f3a81441864059f27db144707bff462b2d0dab449836ffe2daec88cbafd44"
         },
         {
           "file": "LICENSE",
@@ -453,7 +453,7 @@
     },
     {
       "name": "modernc.org/memory",
-      "version": "v1.12.1",
+      "version": "v1.13.0",
       "notices": [
         {
           "file": "AUTHORS",
@@ -479,7 +479,7 @@
     },
     {
       "name": "modernc.org/sqlite",
-      "version": "v1.61.1",
+      "version": "v1.62.0",
       "notices": [
         {
           "file": "AUTHORS",
@@ -491,7 +491,7 @@
         },
         {
           "file": "LICENSE-3RD-PARTY.md",
-          "sha256": "4194f8e7119be72babd499db4f6f1f7547e36e8a7bffcb2b9c8df241b8f1576a"
+          "sha256": "f4a00ade8f4057ab0ea49097d9c459df8559fcf10ca78da0c950343fb7428d37"
         },
         {
           "file": "LICENSE-SQLITE",

@@ -1,6 +1,6 @@
 """Check npm advisories and Go reachable vulnerabilities, retaining exact evidence.
 
-Requires npm and govulncheck v1.9.0. Uses portable workspace tools when present.
+Requires npm and govulncheck v1.10.0. Uses portable workspace tools when present.
 No dependencies, environment settings, credentials or application data change.
 """
 import argparse
@@ -166,7 +166,7 @@ def main():
     scan = args.govulncheck or (str(portable_scan) if portable_scan.is_file() else shutil.which("govulncheck"))
     npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
     if not go or not scan or not npm:
-        raise SystemExit("Go, npm and govulncheck are required; install govulncheck v1.9.0 into an isolated tool directory first")
+        raise SystemExit("Go, npm and govulncheck are required; install govulncheck v1.10.0 into an isolated tool directory first")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     output = guarded_output("security")
     _runtime_module.verify(source)

@@ -35,6 +35,7 @@ test('PM2 production workers retain local configuration, Pending and HA lifecycl
       socket.on('error', () => {});
       socket.on('data', data => {
         try {
+          assert.ok(Buffer.isBuffer(data), 'the fixture receives binary socket frames');
           buffered = Buffer.concat([buffered, data]);
           assert.ok(buffered.length <= 1024);
           while (buffered.length >= 5) {
