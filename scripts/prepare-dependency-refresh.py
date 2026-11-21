@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import urllib.request
 
 ROOT = Path.cwd()
 os.environ['GOFLAGS'] = '-p=1'
@@ -32,7 +33,10 @@ for name, data in files.items():
     target.write_bytes(data)
 old_version = record['version']
 old_count = len(record['upstreamFiles'])
-record.update(version=metadata['Version'], commit=metadata['Origin']['Hash'],
+with urllib.request.urlopen('https://api.github.com/repos/dop251/goja/commits/' + metadata['Version'].rsplit('-', 1)[1], timeout=30) as response:
+    commit = json.load(response)['sha']
+assert commit.startswith(metadata['Version'].rsplit('-', 1)[1])
+record.update(version=metadata['Version'], commit=commit,
               moduleChecksum=metadata['Sum'],
               upstreamFiles={name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())})
 (vendor / 'CANARY_PATCH.json').write_text(json.dumps(record, indent=2) + '\n')
