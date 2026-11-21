@@ -39,6 +39,14 @@ the source SHA-256 is
 The namespace, privilege-drop, source-integrity and supervisor-death assertions
 remain required. This source review alone does not prove runtime containment.
 
+Node 26's permission model also restricts network access. The query-service
+container command and real-process proof explicitly grant `--allow-net` for
+the service listener and game queries, alongside the existing worker and scoped
+filesystem-read grants. Without it, the first image smoke test failed with
+`ERR_ACCESS_DENIED` while binding the listener. The
+[Node permission documentation](https://nodejs.org/download/release/v26.13.1/docs/api/permissions.html)
+describes this required network grant.
+
 Go module and attribution preparation runs on a disposable GitHub Linux runner
 because the workstation's shared module cache is close to its growth allowance.
 No native Windows application or test executable is launched. Dependency,

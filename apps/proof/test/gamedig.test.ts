@@ -40,7 +40,7 @@ test('GameDig service and Go nodes retain private queries, Pending and HA lifecy
   async function startManager(): Promise<void> {
     const environment: NodeJS.ProcessEnv = { CANARY_GAME_QUERY_TOKEN: serviceToken, CANARY_GAME_QUERY_HOST: '127.0.0.1', CANARY_GAME_QUERY_PORT: String(servicePort) };
     for (const key of ['SystemRoot', 'WINDIR', 'TMPDIR', 'TMP', 'TEMP']) if (process.env[key]) environment[key] = process.env[key];
-    const child = spawn(process.execPath, ['--max-old-space-size=64', '--permission', '--allow-worker',
+    const child = spawn(process.execPath, ['--max-old-space-size=64', '--permission', '--allow-worker', '--allow-net',
       '--allow-fs-read=' + join(ROOT, 'services/game-query'),
       '--allow-fs-read=' + join(ROOT, 'apps/node-go/internal/gamedigmonitor'),
       join(ROOT, 'services/game-query/server.mjs')], { cwd: ROOT, env: environment, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });

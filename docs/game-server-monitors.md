@@ -46,10 +46,13 @@ monitor and their DNS. Its bearer grants query authority to those reachable
 addresses. It is an administrator-trusted network service, not a sandbox for
 hostile code or a public game-query API.
 
-Node's permission mode reduces accidental parent-process filesystem access;
-it is not a security sandbox, and its permissions do not propagate to worker
-threads in the supported Node 26 profile. Worker V8 heap limits do not bound
-Buffer/ArrayBuffer/native allocations. Keep the external container limits.
+Node's permission mode reduces accidental filesystem access; it is not a
+security sandbox. In the supported Node 26 profile, the service leaves worker
+`execArgv` unset, so workers inherit its `--permission` and `--allow-*` CLI
+flags, including `--allow-net` for game queries. An explicit worker `execArgv`
+would replace those inherited flags. See the [Node worker options](https://nodejs.org/download/release/v26.13.1/docs/api/worker_threads.html#new-workerfilename-options).
+Worker V8 heap limits do not bound Buffer/ArrayBuffer/native allocations. Keep
+the external container limits.
 
 ## Monitor contract
 
