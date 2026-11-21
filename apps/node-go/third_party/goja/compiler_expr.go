@@ -794,7 +794,7 @@ func (e *compiledSuperBracketExpr) emitUnary(prepare, body func(), postfix, putO
 	if !putOnStack {
 		e.c.emitLoadThis()
 		e.member.emitGetter(true)
-		e.c.emit(loadSuper, dupLast(3), getElemRecv)
+		e.c.emit(loadSuper, getElemRecvKeepKey)
 		body()
 		e.addSrcMap()
 		if e.c.scope.strict {
@@ -806,7 +806,7 @@ func (e *compiledSuperBracketExpr) emitUnary(prepare, body func(), postfix, putO
 		if !postfix {
 			e.c.emitLoadThis()
 			e.member.emitGetter(true)
-			e.c.emit(loadSuper, dupLast(3), getElemRecv)
+			e.c.emit(loadSuper, getElemRecvKeepKey)
 			if prepare != nil {
 				prepare()
 			}
@@ -821,7 +821,7 @@ func (e *compiledSuperBracketExpr) emitUnary(prepare, body func(), postfix, putO
 			e.c.emit(loadUndef)
 			e.c.emitLoadThis()
 			e.member.emitGetter(true)
-			e.c.emit(loadSuper, dupLast(3), getElemRecv)
+			e.c.emit(loadSuper, getElemRecvKeepKey)
 			if prepare != nil {
 				prepare()
 			}
@@ -1043,7 +1043,7 @@ func (e *compiledBracketExpr) emitUnary(prepare, body func(), postfix, putOnStac
 	if !putOnStack {
 		e.left.emitGetter(true)
 		e.member.emitGetter(true)
-		e.c.emit(dupLast(2), getElem)
+		e.c.emit(getElemKeepKey)
 		body()
 		e.addSrcMap()
 		if e.c.scope.strict {
@@ -1055,7 +1055,7 @@ func (e *compiledBracketExpr) emitUnary(prepare, body func(), postfix, putOnStac
 		if !postfix {
 			e.left.emitGetter(true)
 			e.member.emitGetter(true)
-			e.c.emit(dupLast(2), getElem)
+			e.c.emit(getElemKeepKey)
 			if prepare != nil {
 				prepare()
 			}
@@ -1070,7 +1070,7 @@ func (e *compiledBracketExpr) emitUnary(prepare, body func(), postfix, putOnStac
 			e.c.emit(loadUndef)
 			e.left.emitGetter(true)
 			e.member.emitGetter(true)
-			e.c.emit(dupLast(2), getElem)
+			e.c.emit(getElemKeepKey)
 			if prepare != nil {
 				prepare()
 			}
@@ -1500,6 +1500,14 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 		e.c.compileDeclList(e.declarationList, false)
 		e.c.createFunctionBindings(funcs)
 		e.c.compileLexicalDeclarationsFuncBody(body, calleeBinding)
+		if e.typ != funcArrow {
+			// A var named 'arguments' in the body starts with the arguments object, unless
+			// a parameter has that name (FunctionDeclarationInstantiation, steps 22 and 28).
+			if b := varScope.boundNames["arguments"]; b != nil && b.isVar && s.boundNames["arguments"] == nil {
+				s.argsNeeded = true
+				s.bindName("arguments")
+			}
+		}
 		for _, b := range varScope.bindings {
 			if b.isVar {
 				if parentBinding := s.boundNames[b.name]; parentBinding != nil && parentBinding != calleeBinding {
@@ -1561,7 +1569,7 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 			e.c.throwSyntaxError(e.offset, "'arguments' is not allowed in class field initializer or static initialization block")
 		}
 		b, created := s.bindNameLexical("arguments", false, 0)
-		if created || b.isVar {
+		if !b.isArg && (created || b.isVar) {
 			if !s.argsInStash {
 				s.moveArgsToStash()
 			}
@@ -2863,9 +2871,9 @@ func (e *compiledObjectLiteral) emitGetter(putOnStack bool) {
 				switch prop.Kind {
 				case ast.PropertyKindValue:
 					if ne != nil {
-						e.c.emit(setElem1Named)
+						e.c.emit(definePropNamed)
 					} else {
-						e.c.emit(setElem1)
+						e.c.emit(defineProp{})
 					}
 				case ast.PropertyKindMethod:
 					e.c.emit(&defineMethod{enumerable: true})

@@ -1,5 +1,5 @@
 {
-  "lockSha256": "62e44a988192447161855bba2b60b724a013eec6deecb3f0e3341d406b300f78",
+  "lockSha256": "a4db1a660483e40e050771ed52c58580a608c6d97cdb4454d726442ac398b6a4",
   "packages": [
     {
       "name": "@nodable/entities",
@@ -199,8 +199,8 @@
     },
     {
       "name": "fast-xml-builder",
-      "version": "1.3.1",
-      "integrity": "sha512-pIM/1n3ntFXKYrUZwW7QCK0gAW7XY+wzj1YMIV3tLDvPj/V+zTGJK5e3/4WJfwj0qWw2ElNXiTixda/R+3YSug==",
+      "version": "1.3.2",
+      "integrity": "sha512-OX91VSlShLPDgRZV7tk/YQ4l8tT75QziF5Ixg8g4PFbCVPjuTWwN+yQfAxLJ0dufJpprdOd6HlM74Jhd39TcBQ==",
       "notices": [
         {
           "file": "LICENSE",
@@ -210,8 +210,8 @@
     },
     {
       "name": "fast-xml-parser",
-      "version": "5.12.0",
-      "integrity": "sha512-/pXxRBtwxY9w8z7YbgsvIPPcPvFDsTbIkWwTQJhzNJPokj+TbN6ftmcv4j/pEQDvOCNnKGDzuk5Bo2oogIOiFg==",
+      "version": "5.12.1",
+      "integrity": "sha512-wR8dO/fx+z8C5exuem1e7BKOWvjsuzvjS/tvA/Xu3Z1zQqJGcXrPzXbcAiaMgp2KjreEROcTkmnnisrcmJ2hYQ==",
       "notices": [
         {
           "file": "LICENSE",
