@@ -40,6 +40,13 @@ No native Windows application or test executable is launched. Dependency,
 container and interoperability checks are component evidence; they do not
 constitute a complete release signoff for the monitoring system.
 
+The [bounded Linux preparation checks](https://github.com/Narehood/Uptime-Canary/actions/runs/44934758675)
+pass locked installation, all workspace typechecks, the dashboard build,
+query-service tests, both compiler-API scripts, runtime provenance and both
+attribution checks. The explicitly selected checker reports **7.0.2**. The
+one-time preparation workflow is removed from the final change; the existing
+container, security, race, process and release-package CI gates remain required.
+
 Sources: [Node release](https://nodejs.org/en/blog/release/v26.13.1/),
 [Go releases](https://go.dev/dl/),
 [Alpine releases](https://www.alpinelinux.org/releases/),
